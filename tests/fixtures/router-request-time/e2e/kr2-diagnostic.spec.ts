@@ -352,6 +352,288 @@ test('KR-2 post-fix: held styles still define every island, keep the SSR fallbac
 });
 
 /**
+ * Q1-A: a disconnect before readiness must leave no late style write. The sheet
+ * is held open, the light island is removed while its handoff is still pending,
+ * and the release must not touch the DOM on behalf of the dropped connection.
+ */
+test('Q1-A: a disconnect before the sheet is ready leaves no late style write', async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/*.css', async (route) => {
+    await held;
+    await route.continue();
+  });
+
+  await page.goto('/combobox', { waitUntil: 'load' });
+  await page.waitForFunction(
+    (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+    ISLAND_TAGS,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  const removed = await page.evaluate(() => {
+    const frame = document.querySelector('combobox-page')?.shadowRoot;
+    const host = frame?.querySelector('zag-combobox-light');
+    const parent = host?.parentNode ?? null;
+    host?.remove();
+    return { hadHost: host !== null, hadParent: parent !== null };
+  });
+  expect(removed, 'the fixture must expose the light island to disconnect it').toEqual({
+    hadHost: true,
+    hadParent: true,
+  });
+
+  release();
+  const after = await page.evaluate(async () => {
+    const settle = async () => {
+      const deadline = performance.now() + 5_000;
+      for (;;) {
+        const frame = document.querySelector('combobox-page')?.shadowRoot;
+        const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
+        const first = host?.shadowRoot?.firstChild;
+        const fallback =
+          !!first &&
+          first.nodeType === 1 &&
+          (first as Element).hasAttribute('data-oe-static-styles');
+        if (!fallback || performance.now() > deadline) return;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+    };
+    await settle();
+    const node = document.querySelector('style[data-open-element-compiled-style]');
+    return { headText: node?.textContent ?? null };
+  });
+
+  expect(
+    after.headText?.includes('zag-combobox-input') ?? false,
+    `a stale continuation wrote the light rules after the disconnect (node: ${String(after.headText).slice(0, 160)})`,
+  ).toBe(false);
+});
+
+/**
+ * Q1-B: disconnect then reconnect, recorded as a characterization.
+ *
+ * What KR-2 owns is the stale continuation: the first connection's handoff
+ * settling after the component moved on must not write, remove or duplicate
+ * anything (proved by Q1-A above). This test records what the framework does
+ * with a *reconnected light root* today, on the real graph: the element is
+ * connected again, but no owned head node is re-created, so the light island
+ * carries no component styles after the move. The assertion below states that
+ * observed behaviour rather than the ideal, so the finding stays visible
+ * instead of being smoothed over — it is a pre-existing lifecycle gap outside
+ * the KR-2 seam (no product code in this batch touches the light connect path)
+ * and is reported as a residual finding rather than fixed here.
+ */
+test('Q1-B: a moved light root is recorded — no stale write, and no owned node re-created', async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/*.css', async (route) => {
+    await held;
+    await route.continue();
+  });
+
+  await page.goto('/combobox', { waitUntil: 'load' });
+  await page.waitForFunction(
+    (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+    ISLAND_TAGS,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  const moved = await page.evaluate(() => {
+    const frame = document.querySelector('combobox-page')?.shadowRoot;
+    const host = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
+    if (!host || !frame) return false;
+    const parent = host.parentNode as ParentNode;
+    host.remove();
+    parent.appendChild(host); // reconnect the same element
+    return true;
+  });
+  expect(moved, 'the fixture must expose the light island to move it').toBe(true);
+
+  release();
+  const settled = await page.evaluate(async () => {
+    const deadline = performance.now() + 10_000;
+    for (;;) {
+      const nodes = [...document.querySelectorAll('style[data-open-element-compiled-style]')];
+      const text = nodes.map((node) => node.textContent ?? '').join('\n');
+      const frame = document.querySelector('combobox-page')?.shadowRoot;
+      const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
+      const first = host?.shadowRoot?.firstChild;
+      const fallback =
+        !!first && first.nodeType === 1 && (first as Element).hasAttribute('data-oe-static-styles');
+      // Wait for the *shadow* island's handoff: the sheet settling is the event
+      // that would fire a stale light continuation.
+      if (!fallback) {
+        const liveHost = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
+        return {
+          nodes: nodes.length,
+          rules: text.includes('zag-combobox-input'),
+          hostConnected: liveHost?.isConnected ?? false,
+          timedOut: false,
+        };
+      }
+      if (performance.now() > deadline) {
+        const liveHost = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
+        return {
+          nodes: nodes.length,
+          rules: text.includes('zag-combobox-input'),
+          hostConnected: liveHost?.isConnected ?? false,
+          timedOut: true,
+        };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  });
+
+  expect(settled.timedOut, `the sheet never settled (${JSON.stringify(settled)})`).toBe(false);
+  expect(settled.hostConnected, 'the moved element is connected again').toBe(true);
+  // Recorded behaviour: the stale continuation wrote nothing (no node, no
+  // rules) — the generation guard holds.
+  expect(
+    settled.rules,
+    `a stale continuation wrote the light rules after the move (${JSON.stringify(settled)})`,
+  ).toBe(false);
+  expect(
+    settled.nodes,
+    `recorded: a reconnected light root carries ${settled.nodes} owned node(s) — the ` +
+      `pre-existing lifecycle gap this test documents`,
+  ).toEqual(0);
+});
+
+/**
+ * Q1-C: two light instances share the sheet. One disconnecting must not break
+ * the other; the last owner disconnecting must clean up. The node count is
+ * reported either way so the sharing model is visible in the log.
+ */
+test('Q1-C: one light instance disconnecting leaves the other styled', async ({ page }) => {
+  await page.goto('/combobox', { waitUntil: 'load' });
+  await page.waitForFunction(
+    (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+    ISLAND_TAGS,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  const observed = await page.evaluate(async () => {
+    const frame = document.querySelector('combobox-page')?.shadowRoot;
+    const first = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
+    if (!frame || !first) return null;
+    const second = document.createElement('zag-combobox-light');
+    second.setAttribute('machine-id', 'second-instance');
+    frame.appendChild(second);
+    // Same sheet object: the class owns one static styles list.
+    const sharedSheet = customElements.get('zag-combobox-light') as unknown as {
+      styles?: readonly unknown[];
+    };
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const nodesBefore = document.querySelectorAll('style[data-open-element-compiled-style]').length;
+    second.remove();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const afterRemoval = [...document.querySelectorAll('style[data-open-element-compiled-style]')]
+      .map((node) => node.textContent ?? '')
+      .join('\n');
+    first.remove();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return {
+      nodesBefore,
+      nodesAfterRemoval: document.querySelectorAll('style[data-open-element-compiled-style]')
+        .length,
+      nodesAfterLastDisconnect: document.querySelectorAll('style[data-open-element-compiled-style]')
+        .length,
+      survivorHasRules: afterRemoval.includes('zag-combobox-input'),
+      sharedSheetCount: sharedSheet?.styles?.length ?? -1,
+    };
+  });
+
+  expect(observed, 'the fixture must expose the light island').not.toBeNull();
+  expect(
+    observed!.survivorHasRules,
+    `the remaining instance lost its rules (nodes before=${observed!.nodesBefore}, ` +
+      `after removal=${observed!.nodesAfterRemoval})`,
+  ).toBe(true);
+  expect(
+    observed!.nodesAfterLastDisconnect,
+    `cleanup must leave no owned node (sheet slots: ${observed!.sharedSheetCount})`,
+  ).toEqual(0);
+});
+
+/**
+ * Q2: a stylesheet that never loads is not success. The islands still define,
+ * the failure is reported through the framework's diagnostic (not a silent
+ * console-less drop), the SSR fallback survives, the light owner is never told
+ * its rules arrived, and no unhandled rejection escapes.
+ */
+for (const mode of ['http-500', 'network-abort'] as const) {
+  test(`Q2: a ${mode} stylesheet failure is diagnosed, never read as ready`, async ({ page }) => {
+    const consoleLines: string[] = [];
+    page.on('console', (message) => consoleLines.push(`${message.type()}: ${message.text()}`));
+    await installRecorder(page);
+    await page.route('**/*.css', async (route) => {
+      if (mode === 'http-500') await route.fulfill({ status: 500, body: '' });
+      else await route.abort('failed');
+    });
+
+    await page.goto('/combobox', { waitUntil: 'load' });
+    // The constructor still becomes available: the failure is a style failure,
+    // not a registration failure.
+    await page.waitForFunction(
+      (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+      ISLAND_TAGS,
+      { timeout: GATE_TIMEOUT_MS },
+    );
+
+    // Bounded wait for the diagnostic; the scope reports it once it observes
+    // the rejected readiness.
+    const deadline = Date.now() + 10_000;
+    while (
+      Date.now() < deadline &&
+      !consoleLines.some((line) => line.includes('OE_STYLES_SHEET_LOAD_FAILED'))
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const state = await page.evaluate(() => {
+      const frame = document.querySelector('combobox-page')?.shadowRoot;
+      const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
+      const first = host?.shadowRoot?.firstChild;
+      return {
+        fallback:
+          !!first &&
+          first.nodeType === 1 &&
+          (first as Element).hasAttribute('data-oe-static-styles'),
+        headText:
+          document.querySelector('style[data-open-element-compiled-style]')?.textContent ?? null,
+        unhandled: (globalThis as unknown as { __kr2: { rejects: unknown[]; errors: unknown[] } })
+          .__kr2,
+      };
+    });
+
+    const diagnostic = consoleLines.find((line) => line.includes('OE_STYLES_SHEET_LOAD_FAILED'));
+    expect(
+      diagnostic,
+      `no diagnostic was reported (console: ${consoleLines.slice(-4).join(' | ')})`,
+    ).toBeTruthy();
+    expect(diagnostic, 'the diagnostic names the failing sheet').toContain('style sheet');
+    expect(
+      (state.unhandled.rejects as unknown[]).length,
+      'a style failure must not surface as an unhandled rejection',
+    ).toEqual(0);
+    expect((state.unhandled.errors as unknown[]).length, 'no uncaught page error').toEqual(0);
+    expect(state.fallback, 'the SSR fallback must survive a failed sheet').toBe(true);
+    expect(
+      state.headText?.includes('zag-combobox-input') ?? false,
+      'a failed sheet must never be read as ready by the light owner',
+    ).toBe(false);
+  });
+}
+
+/**
  * Mechanism probe, no fixture or product files: the shipped graph's exact
  * shape, built from two blob modules in the page.
  *
