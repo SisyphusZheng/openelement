@@ -72,7 +72,7 @@ function resolveHostname(): string {
  * the file through the host runtime (a plain dynamic import) and never through
  * Vite, so serving a built app needs no Vite config bundling. Nothing else in
  * this CLI consumes framework options: `dist/` already carries the built
- * document (head, shells, middleware) from the build-time resolution.
+ * document (head, layouts, middleware) from the build-time resolution.
  */
 async function loadProductionConfig(mode: ServeMode): Promise<void> {
   const { root } = resolveServePaths();

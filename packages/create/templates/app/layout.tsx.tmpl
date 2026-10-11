@@ -1,8 +1,8 @@
 /**
- * app/islands/app-shell.tsx — the auto-registered application shell.
+ * app/layout.tsx — the auto-registered layout.
  *
  * The convention path is enough: the build finds this module, registers its
- * compiled class under the `app-shell` tag, and renders EVERY page inside
+ * compiled class under the `app-layout` tag, and renders EVERY page inside
  * it, projecting the page's own render into the default <slot>. The header
  * and footer markup that used to be copied onto every page lives here
  * exactly once — a page module now carries only its own content.
@@ -13,15 +13,15 @@
  * stays in the page element's own light DOM with its own @scope styles.
  * Layout tokens from app/styles/theme.css inherit through the boundary.
  *
- * The shell is a convention, not a requirement: delete this file and every
+ * The layout is a convention, not a requirement: delete this file and every
  * page still renders (back to carrying its own chrome), or opt out
- * explicitly with `appShell: false` in openelement.config.ts.
+ * explicitly with `layout: false` in openelement.config.ts.
  */
 import { element, OpenElement } from "@openelement/element";
-import siteChromeStyles from "../components/site-chrome.css";
+import siteChromeStyles from "./components/site-chrome.css";
 
-@element("app-shell", { root: "shadow-open" })
-export default class AppShell extends OpenElement {
+@element("app-layout", { root: "shadow-open" })
+export default class Layout extends OpenElement {
   static override styles = [siteChromeStyles];
 
   render() {

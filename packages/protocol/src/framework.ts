@@ -1,5 +1,5 @@
 /**
- * framework.ts - Framework, build, app-shell, routing, and plugin
+ * framework.ts - Framework, build, layout, routing, and plugin
  * metadata contracts.
  */
 
@@ -87,13 +87,13 @@ export interface LocalePath {
 }
 
 /**
- * Application shell declaration: `false` disables the shell entirely,
- * `'default'` uses the built-in shell, and the object form names a tag with the
+ * Layout declaration: `false` disables the layout entirely,
+ * `'default'` uses the built-in layout, and the object form names a tag with the
  * module path that defines it (`import`, resolved like a
- * {@link FrameworkOptions.middleware.use} entry) plus the compiled shell
+ * {@link FrameworkOptions.middleware.use} entry) plus the compiled layout
  * properties the router injects per route.
  */
-export type AppShellConfig =
+export type LayoutConfig =
   | false
   | 'default'
   | {
@@ -101,7 +101,12 @@ export type AppShellConfig =
       import: string;
       props?: Record<string, unknown>;
     };
-type LayoutsConfig = Record<string, AppShellConfig | undefined>;
+/**
+ * Pre-rename layout declaration type (alpha15 R batch 3 transitional alias; batch 4 removes).
+ * @deprecated Use LayoutConfig.
+ */
+export type AppShellConfig = LayoutConfig;
+type LayoutsConfig = Record<string, LayoutConfig | undefined>;
 
 /**
  * One route admitted by the scanner: URL `path`, source `filePath`, the
@@ -159,7 +164,7 @@ export type Middleware = (request: Request, next: () => Promise<Response>) => Pr
 
 /**
  * The adapter-facing framework options: where routes and islands
- * live, which renderer serializes pages, the application shell and layout
+ * live, which renderer serializes pages, the default layout and named-layout
  * declarations, the document `<html>`/head injection channels, and the
  * request-time middleware switches.
  *
@@ -175,7 +180,7 @@ export interface FrameworkOptions {
    * @lit-labs/ssr and hydrates them with @lit-labs/ssr-client. Routing,
    * loaders, actions, form enhancement and morphing are shared; only page
    * rendering and the client claim layer fork. 'lit' currently requires
-   * `appShell: false` (no compiled shell); the build fails closed otherwise.
+   * `layout: false` (no compiled layout); the build fails closed otherwise.
    */
   renderer?: 'native' | 'lit';
   /** Directory the route scanner walks, relative to the Vite root. Defaults to `app/routes`. */
@@ -184,9 +189,9 @@ export interface FrameworkOptions {
   islandsDir?: string;
   /** Extra package names whose island modules the build admits, e.g. `['@openelement/ui']`. */
   packageIslands?: string[];
-  /** Application shell declaration; `false` disables the shell, `'default'` uses the built-in one. */
-  appShell?: AppShellConfig;
-  /** Per-layout shell declarations keyed by layout name. */
+  /** Layout declaration; `false` disables the layout, `'default'` uses the built-in one. */
+  layout?: LayoutConfig;
+  /** Named layout declarations keyed by layout name. */
   layouts?: LayoutsConfig;
   /** @dangerous injected as-is, only use with controlled content */
   headExtras?: string;
@@ -275,7 +280,7 @@ export interface FrameworkOptions {
      * `(origin: string) => string | undefined`. The generated entry imports
      * the module — the callback is never serialized — so it may close over
      * module scope and import dependencies. Resolved with the same idiom as
-     * `appShell.import` (e.g. './app/cors-origin.ts'). Mutually exclusive
+     * `layout.import` (e.g. './app/cors-origin.ts'). Mutually exclusive
      * with `corsOrigin`.
      */
     corsOriginModule?: string;
@@ -295,7 +300,7 @@ export interface FrameworkOptions {
      * Fetch middleware chain (#858), composed around the
      * framework handler in onion order (`use[0]` outermost), outside all
      * built-in middleware above. Each entry is a MODULE PATH (same resolution
-     * idiom as `appShell.import`, e.g. './app/middleware/auth.ts') whose
+     * idiom as `layout.import`, e.g. './app/middleware/auth.ts') whose
      * default export is a {@link Middleware}; the generated entry emits
      * `import * as __mw_N from '<path>'` and composes `__mw_N.default` in
      * configured order.

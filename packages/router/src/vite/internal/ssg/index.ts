@@ -13,8 +13,8 @@
 
 export type {
   ApiRouteDecl,
-  AppShellDecl,
-  AppShellPlan,
+  LayoutDecl,
+  LayoutPlan,
   BuildArtifacts,
   BuildClientAsset,
   BuildI18nOptions,
@@ -36,7 +36,7 @@ export type {
   MiddlewareScopeDecl,
   PageRouteDecl,
   RendererDecl,
-  ResolvedAppShell,
+  ResolvedLayout,
   SpeculationRulesOptions,
   SsgBehaviorOptions,
   SsgPageOutput,

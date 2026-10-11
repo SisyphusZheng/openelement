@@ -46,7 +46,7 @@ interface PageRouteIntent {
   /**
    * Named layout selection (decision 0123): a string picks one of the
    * `openElement({ layouts })` entries by name (unknown names fall back to
-   * the default shell); `false` renders the page without any app shell.
+   * the default layout); `false` renders the page without any layout.
    * Unset means the default shell.
    */
   layout?: string | false;

@@ -33,12 +33,11 @@ export function transformIslandSource(
   // segment-anchored on both sides (`app/islands-backup` never matches) and
   // anchored on its LAST occurrence: an outer same-named directory (nested
   // checkouts, fixtures) must not hijack the admission or the tag derivation
-  // — the innermost islands root wins. (Layout-convention admission is the R
-  // lane's job, not this gate's.)
+  // — the innermost islands root wins.
   const needle = `/${normalizedIslandsDir}/`;
   const anchor = normalizedIslandsDir === '' ? -1 : normalizedPath.lastIndexOf(needle);
   if (anchor === -1) {
-    return { code: source, islands: [] };
+    return layoutAdmission(source, options);
   }
 
   // Extract tag name from file path using the same helper as the SSG route
@@ -58,14 +57,50 @@ export function transformIslandSource(
 
   // Inject metadata markers
   const injected = `
-// --- Island Markers (auto-injected) ---
-export const __island = true;
-export const __tagName = '${tagName}';
-// --- End Island Markers ---
-`;
+ // --- Island Markers (auto-injected) ---
+ export const __island = true;
+ export const __tagName = '${tagName}';
+ // --- End Island Markers ---
+ `;
 
   return {
     code: source + '\n' + injected,
     islands: [{ tagName, filePath }],
+  };
+}
+
+/**
+ * Layout-convention admission (alpha15 R batch 3): the layout module lives
+ * outside `islandsDir` (`app/layout.tsx`), so the islands gate above never
+ * sees it. When the caller passes the router-resolved layout, admit exactly
+ * that one project-relative path with its resolved tag — never a basename
+ * guess, so `app/components/layout-helper.tsx` and friends stay out. No
+ * admission configured (or no match) means the source passes through
+ * unchanged: a deleted convention file is a supported shell-less project,
+ * and a configured-but-missing module fails closed later at import time.
+ */
+function layoutAdmission(source: string, options: IslandTransformOptions): IslandTransformResult {
+  const { filePath, layout } = options;
+  if (!layout) return { code: source, islands: [] };
+  let normalizedPath = normalizeSeparators(filePath);
+  if (!normalizedPath.startsWith('/')) {
+    normalizedPath = '/' + normalizedPath;
+  }
+  // Vite ids may carry a query/hash (?v=, ?t=); the admission compares the
+  // module path only.
+  const idPath = normalizedPath.split(/[?#]/, 1)[0];
+  const want = normalizeSeparators(layout.path).replace(/^(\.\/|\/)+/, '');
+  if (want === '' || (idPath !== `/${want}` && !idPath.endsWith(`/${want}`))) {
+    return { code: source, islands: [] };
+  }
+  const injected = `
+// --- Island Markers (auto-injected) ---
+export const __island = true;
+export const __tagName = '${layout.tagName}';
+// --- End Island Markers ---
+`;
+  return {
+    code: source + '\n' + injected,
+    islands: [{ tagName: layout.tagName, filePath }],
   };
 }

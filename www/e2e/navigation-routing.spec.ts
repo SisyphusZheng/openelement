@@ -85,9 +85,7 @@ test.describe('Link Navigation', () => {
     expect(url).toContain('/guide/');
   });
 
-  test('home-to-guide navigation loads the compiled route inside the app shell', async ({
-    page,
-  }) => {
+  test('home-to-guide navigation loads the compiled route inside the layout', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -109,7 +107,7 @@ test.describe('Link Navigation', () => {
     await page.goto('/guide/islands-and-ssr');
     await page.waitForLoadState('networkidle');
 
-    // The app shell landmarks survive the navigation (nested mains: shell +
+    // The layout landmarks survive the navigation (nested mains: shell +
     // page body — the first is the shell's).
     await expect(page.locator('open-layout')).toHaveCount(1);
     await expect(page.getByRole('main').first()).toBeVisible();

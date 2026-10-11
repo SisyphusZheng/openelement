@@ -174,7 +174,7 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
     'app/components/page-home.tsx',
     'app/components/site-chrome.css',
     'app/head.tsx',
-    'app/islands/app-shell.tsx',
+    'app/layout.tsx',
     'app/islands/live-timer.css',
     'app/islands/live-timer.tsx',
     'app/islands/my-counter.css',
@@ -236,8 +236,8 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
   expect(home).toContain('badge-island');
   expect(home).toContain('The architecture');
   // Nav links across the chrome: home, about, and the API surface. The
-  // chrome lives in the app shell now — the page itself carries none.
-  const shell = templates['app/islands/app-shell.tsx'];
+  // chrome lives in the layout now — the page itself carries none.
+  const shell = templates['app/layout.tsx'];
   for (const target of ['href="/"', 'href="/about"', 'href="/api/ping"']) {
     expect(shell.includes(target), target).toBeTruthy();
   }
@@ -260,7 +260,7 @@ test('starter pages are compiled elements with light roots and shared chrome', (
     'app/components/page-home.tsx',
     'app/components/page-about.tsx',
     'app/components/page-404.tsx',
-    'app/islands/app-shell.tsx',
+    'app/layout.tsx',
     'app/islands/my-counter.tsx',
     'app/islands/live-timer.tsx',
   ]) {
@@ -319,13 +319,13 @@ test('starter islands are single-module compiled classes with declared strategie
   expect(/\.value\s*\{/.test(timerCss), `no .value rule: ${timerCss}`).toBeFalsy();
 });
 
-test('the app shell owns the site chrome every page renders inside (T2)', () => {
-  const shell = readTemplate('app/islands/app-shell.tsx');
+test('the layout owns the site chrome every page renders inside (T2)', () => {
+  const shell = readTemplate('app/layout.tsx');
   // The convention path is the contract: the build registers the compiled
-  // class under the app-shell tag and projects each page into the default
+  // class under the layout tag and projects each page into the default
   // slot. The tag name must match the derived convention tag exactly — the
   // generated entry fails closed on a mismatch.
-  expect(shell).toContain('@element("app-shell"');
+  expect(shell).toContain('@element("app-layout"');
   // The projection requires a shadow root: slotted page content stays in the
   // page element's light DOM while the chrome renders in the shell's shadow
   // tree, styled by the shared chrome sheet.
@@ -392,7 +392,7 @@ test('starter pages own their styles via static styles, not the global baseline'
   ).toBeFalsy();
 
   // Page rules live in .css files (#1558 — the one style authoring form):
-  // the shared chrome sheet (arrayed by the app shell), the badge vocabulary,
+  // the shared chrome sheet (arrayed by the layout), the badge vocabulary,
   // and one sheet per page.
   for (const sheet of [
     'app/components/site-chrome.css',
@@ -431,18 +431,18 @@ test('starter pages import their sheets from .css files', () => {
       source.includes(specifier),
       `${path} must import its sheet from the .css file`,
     ).toBeTruthy();
-    // The chrome sheet moved to the app shell with the chrome markup (T2):
+    // The chrome sheet moved to the layout with the chrome markup (T2):
     // a page arrays only the sheets its own content consumes.
     expect(
       source.includes('site-chrome.css'),
-      `${path} must not array the chrome sheet — the app shell owns it`,
+      `${path} must not array the chrome sheet — the layout owns it`,
     ).toBeFalsy();
   }
   // The shell arrays the shared chrome sheet: the header/footer/main rules
   // style the shell's own shadow tree.
-  const shell = readTemplate('app/islands/app-shell.tsx');
+  const shell = readTemplate('app/layout.tsx');
   expect(
-    shell.includes('from "../components/site-chrome.css"'),
+    shell.includes('from "./components/site-chrome.css"'),
     'the shell imports the chrome sheet',
   ).toBeTruthy();
   expect(
@@ -491,7 +491,7 @@ test('TypeScript starter sources are pack-safe template payloads', () => {
   for (const path of [
     'vite.config.ts',
     'app/head.tsx',
-    'app/islands/app-shell.tsx',
+    'app/layout.tsx',
     'app/islands/my-counter.tsx',
     'app/islands/live-timer.tsx',
     'app/components/page-home.tsx',
@@ -820,10 +820,10 @@ test('source CLI generates the showcase starter with git init and the boxed hand
     expect(existsSync(join(appDir, 'app', 'routes', 'contact.tsx'))).toBeFalsy();
     expect(existsSync(join(appDir, 'app', 'styles', 'theme.css'))).toBeTruthy();
     expect(existsSync(join(appDir, 'README.md'))).toBeTruthy();
-    // The Vite+ scaffold artifacts: the auto-registered app shell and the
+    // The Vite+ scaffold artifacts: the auto-registered layout and the
     // workspace bookkeeping with the catalog/exemption form (scaffold product
     // assertions — the same surface the starter-smoke gate drives).
-    expect(existsSync(join(appDir, 'app', 'islands', 'app-shell.tsx'))).toBeTruthy();
+    expect(existsSync(join(appDir, 'app', 'layout.tsx'))).toBeTruthy();
     expect(existsSync(join(appDir, 'pnpm-workspace.yaml'))).toBeTruthy();
     const workspace = readFileSync(join(appDir, 'pnpm-workspace.yaml'), 'utf8');
     expect(workspace).toContain('npm:@voidzero-dev/vite-plus-core@1.1.0');
@@ -1169,9 +1169,7 @@ test.skipIf(!pnpmAvailable)(
         existsSync(join(tmpRoot, 'sample-app', 'app', 'components', 'page-home.tsx')),
       ).toBeTruthy();
       // The Vite+ scaffold artifacts survive the pack too.
-      expect(
-        existsSync(join(tmpRoot, 'sample-app', 'app', 'islands', 'app-shell.tsx')),
-      ).toBeTruthy();
+      expect(existsSync(join(tmpRoot, 'sample-app', 'app', 'layout.tsx'))).toBeTruthy();
       expect(existsSync(join(tmpRoot, 'sample-app', 'pnpm-workspace.yaml'))).toBeTruthy();
       // No JSR bridge may ship in packed scaffolds, not just workspace runs.
       // B5 (ADR-0161): the packed scaffold is a Node/pnpm project — the

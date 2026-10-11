@@ -8,7 +8,7 @@ type RendererMode = 'native' | 'lit';
  * @openelement/router/server-runtime functions the generated entry imports
  * and how its `createGeneratedApp` config binds the page-render runtime to
  * the entry's own Element imports. The emitted call sites (`__ssr`,
- * `__pageProps`, `__renderAppShell`, …) are identical for both renderers —
+ * `__pageProps`, `__renderLayout`, …) are identical for both renderers —
  * only this seam forks. The runtime binding itself moved into the factory
  * (server-runtime/app.ts, #1470 block e); the entry keeps only the
  * adapter-selected imports and the `pageRuntime` config lines.

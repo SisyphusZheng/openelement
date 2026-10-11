@@ -66,9 +66,9 @@ export function assertUnifiedProductVersions(versions: ProductVersions): Product
 // starter file mapping (M-C2). The cli.test.ts toolchain gate consumes this
 // exact list instead of keeping its own 28-pair copy, so adding a template
 // file cannot pass the scaffold and fail the gate (or vice versa).
-// The app-shell entry key (`app/islands/app-shell.tsx.tmpl`) is owned by the
-// R layout batch (app-shell → layout rename); this lane must not rename keys,
-// only de-duplicate the mechanism.
+// The layout entry key (`app/layout.tsx.tmpl`, renamed from
+// `app/islands/app-shell.tsx.tmpl` by the R layout batch) rides this same
+// list; the cli.test.ts toolchain gate consumes these exact keys.
 //
 // The starter manifest is stored
 // as package.json.tmpl so the templates/ directory never looks like a nested
@@ -129,9 +129,9 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   ['app/islands/my-counter.css', 'app/islands/my-counter.css'],
   ['app/islands/live-timer.tsx.tmpl', 'app/islands/live-timer.tsx'],
   ['app/islands/live-timer.css', 'app/islands/live-timer.css'],
-  // The auto-registered application shell (the islands/app-shell.tsx
+  // The auto-registered layout (the app/layout.tsx
   // convention): owns the shared site chrome every page renders inside.
-  ['app/islands/app-shell.tsx.tmpl', 'app/islands/app-shell.tsx'],
+  ['app/layout.tsx.tmpl', 'app/layout.tsx'],
 ];
 
 function versionTokens(v: ProductVersions): Record<string, string> {

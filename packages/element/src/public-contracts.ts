@@ -11,7 +11,7 @@ export type {
 } from '@openelement/protocol/data';
 export { ACTION_FETCH_HEADER, PROBLEM_JSON_MEDIA_TYPE } from '@openelement/protocol/data';
 export type {
-  AppShellConfig,
+  LayoutConfig,
   CompatibilityClassification,
   CompatibilityTier,
   ComponentLayer,
@@ -22,6 +22,11 @@ export type {
   RouteEntry,
   SpecialFileType,
 } from '@openelement/protocol/framework';
+/**
+ * Pre-rename layout declaration type (alpha15 R batch 3 transitional alias; batch 4 removes).
+ * @deprecated Use LayoutConfig.
+ */
+export type { LayoutConfig as AppShellConfig } from '@openelement/protocol/framework';
 export { HYDRATION_STRATEGIES } from '@openelement/protocol/framework';
 export type { OpenElementRouteKind, OpenElementRouteNode } from '@openelement/protocol/app-model';
 export type {

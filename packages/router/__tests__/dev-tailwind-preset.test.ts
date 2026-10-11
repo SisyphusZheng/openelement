@@ -180,7 +180,7 @@ async function bootDev(plugins: Plugin[]): Promise<DevHandle> {
 const PRESET_OPTIONS = {
   routesDir: 'app/routes',
   islandsDir: 'app/islands',
-  appShell: false as const,
+  layout: false as const,
 };
 
 /** The one option under test: the declared theme source, preset ON. */

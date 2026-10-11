@@ -183,13 +183,21 @@ async function assertShowcaseStarter(manifestPath: string, starterDir: string): 
       throw new Error(`[starter-smoke setup] the generated starter is missing app/styles/${sheet}`);
     }
   }
-  for (const island of ['my-counter.tsx', 'live-timer.tsx', 'app-shell.tsx']) {
+  for (const island of ['my-counter.tsx', 'live-timer.tsx']) {
     if (!existsSync(join(starterDir, 'app', 'islands', island))) {
       throw new Error(
         `[starter-smoke setup] the generated starter is missing the island module ` +
-          `app/islands/${island} (#1530; app-shell is the alpha.14 chrome convention)`,
+          `app/islands/${island} (#1530)`,
       );
     }
+  }
+  // The layout convention lives outside the islands directory (alpha15 R
+  // batch 3: app/layout.tsx, tag app-layout).
+  if (!existsSync(join(starterDir, 'app', 'layout.tsx'))) {
+    throw new Error(
+      '[starter-smoke setup] the generated starter is missing the layout module ' +
+        'app/layout.tsx (the alpha.15 chrome convention)',
+    );
   }
   console.log('[starter-smoke setup] starter is the showcase form, Vite+ toolchain, Tailwind-ON');
 }

@@ -118,7 +118,7 @@ curl -s http://localhost:5173/hello | grep -o 'Hello from a page'
 Hello from a page
 ```
 
-标题本来就在服务端发出的 HTML 里，不是脚本注入的。这个页面加载的客户端模块只有 starter 自带的 `app-shell`；这条路由本身没有引入任何 island。
+标题本来就在服务端发出的 HTML 里，不是脚本注入的。这个页面加载的客户端模块只有 starter 自带的 `app-layout`；这条路由本身没有引入任何 island。
 
 ## 第 3 步：加第一个 island
 

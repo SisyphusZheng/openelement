@@ -2,7 +2,7 @@
  * @openelement/router - island-transform.ts tests
  */
 import { describe, expect, test } from 'vitest';
-import { islandTransformPlugin } from '../src/vite/island-transform.ts';
+import { islandTransformPlugin, layoutAdmissionFromOptions } from '../src/vite/island-transform.ts';
 import { generateClientEntry } from '../src/vite/internal/ssg/index.ts';
 
 type TransformFn = (code: string, id: string) => string | null;
@@ -73,6 +73,63 @@ describe('island-transform - islandTransformPlugin', () => {
       'C:\\project\\app\\islands\\my-counter.ts',
     );
     expect(result!.includes('export const __island = true')).toEqual(true);
+  });
+});
+
+describe('island-transform - layout-convention admission (router-convention <-> element-compile-gate seam)', () => {
+  const SHELL = 'export default class Layout extends OpenElement {}';
+
+  test('admits the resolved layout module outside islandsDir with its resolved tag', () => {
+    const plugin = islandTransformPlugin('app/islands', {
+      path: 'app/layout.tsx',
+      tagName: 'app-layout',
+    });
+    const transform = plugin.transform as unknown as TransformFn;
+    const result = transform(SHELL, '/project/app/layout.tsx');
+    expect(result!.includes('export const __island = true')).toEqual(true);
+    expect(result!.includes("export const __tagName = 'app-layout'")).toEqual(true);
+  });
+
+  test('no basename guessing: same-named files elsewhere stay out', () => {
+    const plugin = islandTransformPlugin('app/islands', {
+      path: 'app/layout.tsx',
+      tagName: 'app-layout',
+    });
+    const transform = plugin.transform as unknown as TransformFn;
+    expect(transform(SHELL, '/project/app/components/layout-helper.tsx')).toEqual(null);
+    expect(transform(SHELL, '/project/other-app/layout.tsx')).toEqual(null);
+  });
+
+  test('without admission the layout file passes through (layout: false / deleted convention)', () => {
+    const plugin = islandTransformPlugin('app/islands');
+    const transform = plugin.transform as unknown as TransformFn;
+    expect(transform(SHELL, '/project/app/layout.tsx')).toEqual(null);
+  });
+
+  test('custom project-relative layout admits with its own tag', () => {
+    const plugin = islandTransformPlugin('app/islands', {
+      path: 'app/shell.tsx',
+      tagName: 'open-layout',
+    });
+    const transform = plugin.transform as unknown as TransformFn;
+    const result = transform(SHELL, '/project/app/shell.tsx');
+    expect(result!.includes("export const __tagName = 'open-layout'")).toEqual(true);
+  });
+
+  test('layoutAdmissionFromOptions maps the resolved layout, rejects the rest', () => {
+    expect(
+      layoutAdmissionFromOptions({ tagName: 'app-layout', import: './app/layout.tsx' }),
+    ).toEqual({ path: 'app/layout.tsx', tagName: 'app-layout' });
+    expect(layoutAdmissionFromOptions(false)).toEqual(undefined);
+    expect(layoutAdmissionFromOptions(undefined)).toEqual(undefined);
+    expect(layoutAdmissionFromOptions('default')).toEqual(undefined);
+    // Package-specifier layouts arrive prebuilt and never pass this transform.
+    expect(
+      layoutAdmissionFromOptions({
+        tagName: 'open-layout',
+        import: '@acme/components/open-layout',
+      }),
+    ).toEqual(undefined);
   });
 });
 

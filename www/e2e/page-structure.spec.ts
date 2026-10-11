@@ -289,7 +289,7 @@ test.describe('Unified page structure', () => {
     await page.setViewportSize({ width: 390, height: 844 });
     for (const route of ['/reference', '/changelog', '/contributing', '/guide/configuration']) {
       await page.goto(route);
-      // The app shell is the one landmark every page shares (contributing has
+      // The layout is the one landmark every page shares (contributing has
       // no reading shell — its h1 lives in the page component's shadow root).
       await expect(page.locator('open-layout').first()).toBeVisible();
       // Wrap points depend on font metrics: measure after the faces settle.

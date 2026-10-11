@@ -38,11 +38,11 @@ export default defineConfig({
 | --- | --- |
 | `dirs` | routes `app/routes`、islands `app/islands`、components `app/components` |
 | 设计 token | `<共享基目录>/styles/tokens.css`（内联进每个文档 `<head>`） |
-| app shell | `<共享基目录>/islands/app-shell.tsx`（自动注册；删除该文件是受支持的） |
+| layout | `<共享基目录>/layout.tsx`（自动注册；删除该文件是受支持的） |
 | 文档头内容 | `<共享基目录>/head.tsx` |
 | 站点标题 | `package.json` 的 `name` 字段 |
 
-共享基目录是三个根的公共前缀：`dirs: { routes: 'src/routes', islands: 'src/islands', components: 'src/components' }` 会把 token 文件移到 `src/styles/tokens.css`、shell 移到 `src/islands/app-shell.tsx`、head 模块移到 `src/head.tsx`。部分覆盖的 `dirs` 不再与默认的 `app/*` 共享前缀（例如只写 `src/pages`），因此它只移动自己点名的根，约定仍留在 `app`。
+共享基目录是三个根的公共前缀：`dirs: { routes: 'src/routes', islands: 'src/islands', components: 'src/components' }` 会把 token 文件移到 `src/styles/tokens.css`、layout 移到 `src/layout.tsx`、head 模块移到 `src/head.tsx`。部分覆盖的 `dirs` 不再与默认的 `app/*` 共享前缀（例如只写 `src/pages`），因此它只移动自己点名的根，约定仍留在 `app`。
 
 ### tokens.css 与 theme.css
 
@@ -57,7 +57,7 @@ export default defineConfig({
 
 - `renderer`——`'native'`（默认，编译后的 Part Program 序列化器）或 `'lit'`。
 - `dirs`——`{ routes, islands, components }`。
-- `appShell`——`false` 表示退出约定，或 `{ import, props }`。标签名由 import 的文件名推导，因此不可配置。
+- `layout`——`false` 表示退出约定，或 `{ import, props }`。标签名由 import 的文件名推导，因此不可配置。
 - `packageIslands`——构建额外接纳其 island 模块的包名，例如 `['@openelement/ui']`。加载器会把该列表并入 SSR 外部化列表（列出的包被打包而非运行时导入），因此没有 `ssr.noExternal` 键。
 - `head`——结构化文档头通道：`title`、`description`、`lang`、`favicon`、`ogImage`、`stylesheets: string[]` 与 `scripts: { src, defer?, crossOrigin?, integrity? }[]`。脚本与样式表都经框架自己的 link/script 序列化器写出，因此配置条目与内联 `inject` 条目产出的字节完全一致。`inject` 本身——框架的原始 HTML 通道——刻意在这里没有家。
 - `styles`——`{ tokens }`，把 token 约定指向另一个文件。
@@ -219,7 +219,7 @@ export const blogCollection: CollectionOptions = {
 
 ## middleware.use
 
-`middleware.use` 注册 WinterCG 形态的 fetch 中间件：`(request, next) => Promise<Response>`——不含任何 HTTP 框架方言。中间件链在生成的 handler 边界按洋葱序组合（`use[0]` 最外层：最先看到请求，最后看到响应），位于内置 `requestId`/`logger`/`cors`/`securityHeaders`/`csp` 中间件之外。中间件语义仅作用于请求时路径：静态 GET/HEAD 由构建产物直接给出（`tryStatic`），不经过 `middleware.use` 链与内置中间件，因此不要用中间件守卫预渲染页面。在请求时派发路径（dynamic 路由、POST 与非静态回退）上，dev server、`start` CLI、e2e fixture server 与 Nitro 生产入口运行同一条中间件链（由 request-time parity 契约测试锁定）。中间件可以不调用 `next()` 直接返回 `Response` 来短路。每一项是一个**模块路径**（解析方式与 `appShell.import` 相同）：模块默认导出中间件，生成的 server entry 直接 import 该模块——因此中间件可以闭包引用模块作用域，也可以 import 本地 helper 和第三方包。路由级 `_middleware.ts` 文件使用同一 WinterCG 形态：根级或嵌套的 `_middleware.ts` 默认导出 `(request, next) => Promise<Response>`，作用于其路由子树。
+`middleware.use` 注册 WinterCG 形态的 fetch 中间件：`(request, next) => Promise<Response>`——不含任何 HTTP 框架方言。中间件链在生成的 handler 边界按洋葱序组合（`use[0]` 最外层：最先看到请求，最后看到响应），位于内置 `requestId`/`logger`/`cors`/`securityHeaders`/`csp` 中间件之外。中间件语义仅作用于请求时路径：静态 GET/HEAD 由构建产物直接给出（`tryStatic`），不经过 `middleware.use` 链与内置中间件，因此不要用中间件守卫预渲染页面。在请求时派发路径（dynamic 路由、POST 与非静态回退）上，dev server、`start` CLI、e2e fixture server 与 Nitro 生产入口运行同一条中间件链（由 request-time parity 契约测试锁定）。中间件可以不调用 `next()` 直接返回 `Response` 来短路。每一项是一个**模块路径**（解析方式与 `layout.import` 相同）：模块默认导出中间件，生成的 server entry 直接 import 该模块——因此中间件可以闭包引用模块作用域，也可以 import 本地 helper 和第三方包。路由级 `_middleware.ts` 文件使用同一 WinterCG 形态：根级或嵌套的 `_middleware.ts` 默认导出 `(request, next) => Promise<Response>`，作用于其路由子树。
 
 ### vite.config.ts —— middleware.use
 

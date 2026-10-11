@@ -16,7 +16,7 @@ import type { FrameworkOptions } from './framework.ts';
 import type { SsgBehaviorOptions } from '@openelement/protocol/ssg';
 import { OpenElementBuildContext } from './build-context.ts';
 import { buildPlugin } from './build.ts';
-import { islandTransformPlugin } from './island-transform.ts';
+import { islandTransformPlugin, layoutAdmissionFromOptions } from './island-transform.ts';
 import { devIslandClientPlugin } from './dev-island-client.ts';
 import { lazyHonoDevServer } from './dev-server.ts';
 import { devTailwindPresetPlugin } from './dev-tailwind.ts';
@@ -108,7 +108,14 @@ export function createOpenPlugin(
   );
 
   plugins.push(
-    islandTransformPlugin(state.resolvedOptions.islandsDir!),
+    // The layout convention module lives outside islandsDir
+    // (`app/layout.tsx`): the gate admits exactly the resolved layout
+    // module with its resolved tag (router-convention ↔ element-compile-gate
+    // seam, docs/architecture/seams.md).
+    islandTransformPlugin(
+      state.resolvedOptions.islandsDir!,
+      layoutAdmissionFromOptions(state.resolvedOptions.layout),
+    ),
     buildPlugin(state.resolvedOptions, state.ctx),
     // #951: dev-only serving of the island client entry at the same public
     // URL the production build emits (<base>client/islands/client.js).

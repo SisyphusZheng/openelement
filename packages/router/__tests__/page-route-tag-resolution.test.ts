@@ -131,7 +131,7 @@ test('the generated entry imports the tag resolvers per renderer and never forks
   expect(nativeEntry.includes('resolveLitPageTag')).toEqual(false);
 
   const litEntry = renderEntry(
-    buildEntryDescriptor(definePageRoutes, { renderer: 'lit', appShell: false }),
+    buildEntryDescriptor(definePageRoutes, { renderer: 'lit', layout: false }),
   );
   expect(litEntry).toContain(
     "import { resolveLitPageTag as __resolvePageTag } from '@openelement/router/server-runtime'",

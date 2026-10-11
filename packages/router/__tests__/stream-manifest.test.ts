@@ -762,13 +762,13 @@ test('generated entry rejects opaque stream descriptors before serving GET', asy
   });
 });
 
-test('streaming requires the project-wide app shell to be off, and the gate says so', async () => {
+test('streaming requires the project-wide layout to be off, and the gate says so', async () => {
   const shell = { tagName: 'open-layout', import: '@acme/components/open-layout', props: {} };
   const cases: Array<[string, Parameters<typeof buildEntryDescriptor>[1], string]> = [
-    ['default appShell', { ssg: true, appShell: shell }, 'whole project'],
+    ['default layout', { ssg: true, layout: shell }, 'whole project'],
     [
       'named layout with no default shell',
-      { ssg: true, appShell: false, layouts: { post: shell } },
+      { ssg: true, layout: false, layouts: { post: shell } },
       'Streaming routes: / (index.tsx)',
     ],
     ['layouts.default', { ssg: true, layouts: { default: shell, post: false } }, 'whole project'],
@@ -781,7 +781,7 @@ test('streaming requires the project-wide app shell to be off, and the gate says
       // The gate is project-level, so the guidance must name the project-wide
       // action instead of a per-route opt-out the build cannot see.
       expect(error.message, name).toContain(expected);
-      expect(error.message, name).toContain('appShell: false');
+      expect(error.message, name).toContain('layout: false');
       expect(error.message, name).toContain('layouts');
       expect(error.message, name).toContain('cannot satisfy this gate');
       expect(error.message, name).toContain('route: { layout: false }');
@@ -792,9 +792,9 @@ test('streaming requires the project-wide app shell to be off, and the gate says
   await fixture(
     async (dir) => {
       const routes = await scanRoutes(dir);
-      const desc = buildEntryDescriptor(routes, { ssg: true, appShell: shell });
+      const desc = buildEntryDescriptor(routes, { ssg: true, layout: shell });
       expect(desc.pageRoutes[0].streamManifest).toEqual(undefined);
-      expect(desc.appShell.default === false).toEqual(false);
+      expect(desc.layout.default === false).toEqual(false);
     },
     page,
     route.replace("stream: { defer: ['first', 'second'] }", ''),
@@ -803,9 +803,9 @@ test('streaming requires the project-wide app shell to be off, and the gate says
   // configuration) and the gate stays silent.
   await fixture(async (dir) => {
     const routes = await scanRoutes(dir);
-    const desc = buildEntryDescriptor(routes, { ssg: true, appShell: false, layouts: {} });
+    const desc = buildEntryDescriptor(routes, { ssg: true, layout: false, layouts: {} });
     expect(desc.pageRoutes[0].streamManifest?.fields.length).toEqual(2);
-    expect(desc.appShell.default).toEqual(false);
+    expect(desc.layout.default).toEqual(false);
   });
 });
 

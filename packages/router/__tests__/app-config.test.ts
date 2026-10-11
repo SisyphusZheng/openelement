@@ -3,7 +3,7 @@
  *
  * Covers the three acceptance-critical behaviors:
  *   1. no config file + no inline options  -> every option comes from a
- *      convention (tokens.css / app-shell.tsx / package.json name);
+ *      convention (tokens.css / layout.tsx / package.json name);
  *   2. a NON-EMPTY config file + inline framework options -> hard error
  *      (framework options have one home, P6 — silent merging is rejected);
  *   3. unknown keys / wrong types -> hard error naming the accepted surface.
@@ -79,7 +79,7 @@ test('defineConfig: identity helper, accepted key set is the documented surface'
   expect([...OPEN_ELEMENT_CONFIG_KEYS]).toEqual([
     'renderer',
     'dirs',
-    'appShell',
+    'layout',
     'packageIslands',
     'head',
     'styles',
@@ -104,13 +104,13 @@ test('app config: no file and no inline options resolves every convention', asyn
       JSON.stringify({ name: 'convention-app', private: true, type: 'module' }),
     );
     app.write('app/styles/tokens.css', ':root { --brand: #8262db; }\n');
-    app.write('app/islands/app-shell.tsx', 'export default class Shell {}\n');
+    app.write('app/layout.tsx', 'export default class Shell {}\n');
 
     const resolved = resolveAppConfig({ root: app.root, configFile: null });
     expect(resolved.configFile).toEqual(null);
-    expect(resolved.options.appShell).toEqual({
-      tagName: 'app-shell',
-      import: './app/islands/app-shell.tsx',
+    expect(resolved.options.layout).toEqual({
+      tagName: 'app-layout',
+      import: './app/layout.tsx',
       props: {},
     });
     expect(resolved.options.html).toEqual({ title: 'convention-app' });
@@ -118,34 +118,34 @@ test('app config: no file and no inline options resolves every convention', asyn
       '<style>\n:root { --brand: #8262db; }\n</style>',
     ]);
     expect(resolved.conventions.map((use) => `${use.path}:${use.provides}`)).toEqual([
-      'app/islands/app-shell.tsx:appShell',
+      'app/layout.tsx:layout',
       'app/styles/tokens.css:tokens',
       'package.json:title',
     ]);
   });
 });
 
-test('app config: a convention app without app-shell still resolves (deletable)', async () => {
+test('app config: a convention app without layout still resolves (deletable)', async () => {
   await withApp((app) => {
     app.write('package.json', JSON.stringify({ name: 'no-shell' }));
     const resolved = resolveAppConfig({ root: app.root, configFile: null });
-    expect(resolved.options.appShell).toEqual(undefined);
-    expect(resolved.conventions.some((use) => use.provides === 'appShell')).toEqual(false);
+    expect(resolved.options.layout).toEqual(undefined);
+    expect(resolved.conventions.some((use) => use.provides === 'layout')).toEqual(false);
   });
 });
 
 test('app config: empty config object keeps the conventions (starter default)', async () => {
   await withApp((app) => {
     app.write('package.json', JSON.stringify({ name: 'empty-config' }));
-    app.write('app/islands/app-shell.tsx', 'export default class Shell {}\n');
+    app.write('app/layout.tsx', 'export default class Shell {}\n');
     const resolved = resolveAppConfig({
       root: app.root,
       configFile: configFileIn(app.root),
       importedConfig: defineConfig({}),
     });
-    expect(resolved.options.appShell).toEqual({
-      tagName: 'app-shell',
-      import: './app/islands/app-shell.tsx',
+    expect(resolved.options.layout).toEqual({
+      tagName: 'app-layout',
+      import: './app/layout.tsx',
       props: {},
     });
     expect(resolved.options.html).toEqual({ title: 'empty-config' });
@@ -184,7 +184,7 @@ test('app config: non-empty file + inline options is a hard conflict', async () 
 
 test('app config: an all-undefined inline object is not a second home', async () => {
   await withApp((app) => {
-    expect(hasInlineFrameworkOptions({ head: undefined, appShell: undefined })).toEqual(false);
+    expect(hasInlineFrameworkOptions({ head: undefined, layout: undefined })).toEqual(false);
     expect(hasInlineFrameworkOptions({ head: { title: 'x' } })).toEqual(true);
     const resolved = resolveAppConfig({
       root: app.root,
@@ -205,7 +205,7 @@ test('app config: unknown top-level and nested keys fail closed', () => {
     [{ dirs: { routez: 'app/routes' } }, 'routez'],
     [{ head: { titel: 'typo' } }, 'titel'],
     [{ head: { scripts: [{ src: '/x.js', type: 'module' }] } }, 'type'],
-    [{ appShell: { import: './x.tsx', props: {}, tagName: 'x-y' } }, 'tagName'],
+    [{ layout: { import: './x.tsx', props: {}, tagName: 'x-y' } }, 'tagName'],
     [{ styles: { token: 'x.css' } }, 'token'],
     [{ i18n: { locale: ['en'] } }, 'locale'],
     [{ build: { manifestBudgets: {} } }, 'manifestBudgets'],
@@ -236,8 +236,8 @@ test('app config: type violations fail closed with the offending key named', () 
     { renderer: 'preact' },
     { dirs: { routes: 42 } },
     { dirs: 'app' },
-    { appShell: { import: '' } },
-    { appShell: true },
+    { layout: { import: '' } },
+    { layout: true },
     { packageIslands: '@openelement/ui' },
     { packageIslands: [1, 2] },
     { head: { title: 42 } },
@@ -287,20 +287,20 @@ test('app config: explicit overrides beat the conventions', async () => {
   await withApp((app) => {
     app.write('package.json', JSON.stringify({ name: 'convention-app' }));
     app.write('app/styles/tokens.css', ':root { --brand: red; }\n');
-    app.write('app/islands/app-shell.tsx', 'export default class Shell {}\n');
+    app.write('app/layout.tsx', 'export default class Shell {}\n');
     app.write('app/styles/brand.css', ':root { --brand: blue; }\n');
 
     const resolved = resolveAppConfig({
       root: app.root,
       configFile: configFileIn(app.root),
       importedConfig: defineConfig({
-        appShell: { import: './app/islands/other-shell.tsx', props: { siteName: 'Custom' } },
+        layout: { import: './app/islands/other-shell.tsx', props: { siteName: 'Custom' } },
         head: { title: 'Custom title', favicon: '/favicon.svg' },
         styles: { tokens: 'app/styles/brand.css' },
         middleware: { corsOrigin: ['https://example.com'] },
       }),
     });
-    expect(resolved.options.appShell).toEqual({
+    expect(resolved.options.layout).toEqual({
       tagName: 'other-shell',
       import: './app/islands/other-shell.tsx',
       props: { siteName: 'Custom' },
@@ -320,15 +320,15 @@ test('app config: explicit overrides beat the conventions', async () => {
   });
 });
 
-test('app config: appShell false opts out of the convention', async () => {
+test('app config: layout false opts out of the convention', async () => {
   await withApp((app) => {
-    app.write('app/islands/app-shell.tsx', 'export default class Shell {}\n');
+    app.write('app/layout.tsx', 'export default class Shell {}\n');
     const resolved = resolveAppConfig({
       root: app.root,
       configFile: configFileIn(app.root),
-      importedConfig: defineConfig({ appShell: false }),
+      importedConfig: defineConfig({ layout: false }),
     });
-    expect(resolved.options.appShell).toEqual(false);
+    expect(resolved.options.layout).toEqual(false);
   });
 });
 
@@ -423,8 +423,12 @@ test('app config: head fragments from the file merge after inline fragments', ()
   expect(resolved.options.inject?.headFragments).toEqual(['<meta name="inline" content="1">']);
 });
 
-test('config: tagNameFromModule derives the convention shell tag', () => {
-  expect(tagNameFromModule('./app/islands/app-shell.tsx')).toEqual('app-shell');
+test('config: tagNameFromModule derives shell tags from module basenames', () => {
+  // The convention tag itself is explicit (CONVENTION_LAYOUT_TAG): derivation
+  // is only for custom imports, and hyphenless basenames derive hyphenless
+  // tags (callers must point at a valid custom-element name).
+  expect(tagNameFromModule('./app/layout.tsx')).toEqual('layout');
+  expect(tagNameFromModule('./app/islands/open-layout.tsx')).toEqual('open-layout');
   expect(tagNameFromModule('app/islands/siteLayout.ts')).toEqual('site-layout');
   expect(tagNameFromModule('app/islands/open_layout.tsx')).toEqual('open-layout');
 });
@@ -458,16 +462,16 @@ test('config: resolveDirs shares a base so the conventions follow the move', () 
   expect(resolveDirs({ routes: 'src/routes/' }).routes).toEqual('src/routes');
 });
 
-test('app config: dirs moves the tokens/app-shell conventions with the roots', async () => {
+test('app config: dirs moves the tokens/layout conventions with the roots', async () => {
   await withApp((app) => {
     app.write('package.json', JSON.stringify({ name: 'moved-app' }));
     // The moved roots …
     app.write('src/styles/tokens.css', ':root { --brand: green; }\n');
-    app.write('src/islands/app-shell.tsx', 'export default class Shell {}\n');
+    app.write('src/layout.tsx', 'export default class Shell {}\n');
     app.write('src/head.tsx', 'export default [];\n');
     // … and the defaults, which must NOT contribute.
     app.write('app/styles/tokens.css', ':root { --brand: red; }\n');
-    app.write('app/islands/app-shell.tsx', 'export default class OldShell {}\n');
+    app.write('app/layout.tsx', 'export default class OldShell {}\n');
 
     const resolved = resolveAppConfig({
       root: app.root,
@@ -478,9 +482,9 @@ test('app config: dirs moves the tokens/app-shell conventions with the roots', a
     });
     expect(resolved.options.routesDir).toEqual('src/routes');
     expect(resolved.options.islandsDir).toEqual('src/islands');
-    expect(resolved.options.appShell).toEqual({
-      tagName: 'app-shell',
-      import: './src/islands/app-shell.tsx',
+    expect(resolved.options.layout).toEqual({
+      tagName: 'app-layout',
+      import: './src/layout.tsx',
       props: {},
     });
     const fragments = resolved.options.inject?.headFragments ?? [];
@@ -492,7 +496,7 @@ test('app config: dirs moves the tokens/app-shell conventions with the roots', a
     expect(resolved.conventions.map((use) => `${use.path}:${use.provides}`)).toEqual([
       'package.json:title',
       'src/head.tsx:head',
-      'src/islands/app-shell.tsx:appShell',
+      'src/layout.tsx:layout',
       'src/styles/tokens.css:tokens',
     ]);
     expect(resolved.headConventionFile).toEqual('src/head.tsx');
@@ -502,7 +506,7 @@ test('app config: dirs moves the tokens/app-shell conventions with the roots', a
 test('app config: a partial dirs override leaves the conventions at their defaults', async () => {
   await withApp((app) => {
     app.write('app/styles/tokens.css', ':root { --brand: red; }\n');
-    app.write('app/islands/app-shell.tsx', 'export default class Shell {}\n');
+    app.write('app/layout.tsx', 'export default class Shell {}\n');
     const resolved = resolveAppConfig({
       root: app.root,
       configFile: configFileIn(app.root),
@@ -512,9 +516,9 @@ test('app config: a partial dirs override leaves the conventions at their defaul
     // A `dirs` block states all three roots; the two the author omitted take
     // the documented defaults, and the conventions follow the shared base.
     expect(resolved.options.islandsDir).toEqual('app/islands');
-    expect(resolved.options.appShell).toEqual({
-      tagName: 'app-shell',
-      import: './app/islands/app-shell.tsx',
+    expect(resolved.options.layout).toEqual({
+      tagName: 'app-layout',
+      import: './app/layout.tsx',
       props: {},
     });
     const fragments = resolved.options.inject?.headFragments ?? [];
@@ -681,7 +685,7 @@ test('starter template: openelement.config.ts validates against the accepted sch
     ).toBeTruthy();
   }
   // The starter ships the token stylesheet and its two showcase islands.
-  // The app-shell layout island is NOT part of the showcase template (#1530):
+  // The layout layout island is NOT part of the showcase template (#1530):
   // pages own their chrome as light-root markup, so island-free pages (like
   // /about) carry no island hosts at all.
   expect(

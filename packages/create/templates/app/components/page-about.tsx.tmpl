@@ -4,7 +4,7 @@
  * Compiled page with the default static renderIntent: prerendered to HTML at
  * build time (SSG). There are NO islands on this page — everything below is
  * prerendered markup and CSS. The page renders inside the auto-registered
- * app shell (app/islands/app-shell.tsx), which owns the header, main region
+ * layout (app/layout.tsx), which owns the header, main region
  * and footer; the badges come from ./badges.css (light root, inlined into
  * SSR as @scope(about-page)). The compiled grammar lowers one root per
  * render, so the page returns a single content wrapper.
@@ -53,7 +53,7 @@ export default class AboutPage extends OpenElement {
             <span>client islands — the only code that ships JavaScript</span>
           </li>
           <li>
-            <code>app/islands/app-shell.tsx</code>
+            <code>app/layout.tsx</code>
             <span>the shared site chrome wrapped around every page</span>
           </li>
           <li>

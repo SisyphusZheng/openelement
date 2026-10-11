@@ -3,7 +3,7 @@ import type { FrameworkOptions as ElementFrameworkOptions } from '@openelement/e
 import type { CriticalAssetsOptions } from './internal/ssg/critical-assets.ts';
 
 export type {
-  AppShellConfig,
+  LayoutConfig,
   CompatibilityClassification,
   CompatibilityTier,
   ComponentLayer,
@@ -13,13 +13,18 @@ export type {
   SpecialFileType,
   SsrAdmissionDecision,
 } from '@openelement/element';
+/**
+ * Pre-rename layout declaration type (alpha15 R batch 3 transitional alias; batch 4 removes).
+ * @deprecated Use LayoutConfig.
+ */
+export type { LayoutConfig as AppShellConfig } from '@openelement/element';
 
 /**
  * Project locale declaration.
  *
  * The build expands every static and dynamic route under each additional
  * locale prefix (`/zh/docs`), passes the resolved locale to page `head`/`props`
- * hooks and localizes app-shell navigation. Absent means a single-locale site
+ * hooks and localizes layout navigation. Absent means a single-locale site
  * with no locale prefixing — the pre-i18n output, byte for byte.
  */
 export interface OpenElementI18nOptions {

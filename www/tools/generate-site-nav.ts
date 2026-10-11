@@ -1,10 +1,10 @@
 /**
  * Generate the site navigation data module.
  *
- * Router 1.0 deliberately does not synthesize app-shell nav data (the
+ * Router 1.0 deliberately does not synthesize layout nav data (the
  * generated entry carries empty defaults); the Site owns its own navigation,
  * and this generator projects the two nav sources into
- * `www/app/data/_generated-nav-data.ts` for the app shell:
+ * `www/app/data/_generated-nav-data.ts` for the layout:
  *
  *   navSections — grouped sidebar tree consumed by the open-layout sidebar
  *   headerNav   — the curated top-level header links, filtered to real routes

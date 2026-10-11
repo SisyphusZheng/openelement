@@ -117,7 +117,7 @@ interface BuildSSGOptions {
   headExtras?: string;
   allowHeadExtrasScripts?: boolean;
   html?: { lang?: string; title?: string };
-  appShell?: FrameworkOptions['appShell'];
+  layout?: FrameworkOptions['layout'];
   layouts?: FrameworkOptions['layouts'];
   upgradeStrategy?: HydrationStrategy;
   /** Page renderer (#1339). Defaults to ctx.options.renderer. */
@@ -164,7 +164,7 @@ interface SsgEntryDescriptorInputs {
   allowHeadExtrasScripts?: boolean;
   html?: { lang?: string; title?: string };
   upgradeStrategy: HydrationStrategy;
-  appShell?: FrameworkOptions['appShell'];
+  layout?: FrameworkOptions['layout'];
   layouts?: FrameworkOptions['layouts'];
   /** Page renderer (#1339) — threaded from FrameworkOptions. */
   renderer?: 'native' | 'lit';
@@ -206,7 +206,7 @@ export function buildSsgEntryDescriptor(
     allowHeadExtrasScripts: inputs.allowHeadExtrasScripts,
     html: inputs.html,
     upgradeStrategy: inputs.upgradeStrategy,
-    appShell: inputs.appShell,
+    layout: inputs.layout,
     layouts: inputs.layouts,
     renderer: inputs.renderer,
     i18n: inputs.i18n,
@@ -223,7 +223,7 @@ async function buildSSG(
   const outDir = options.outDir || ctx.phase3.outDir || DEFAULT_OUT_DIR;
   const routesDir = options.routesDir || ctx.phase3.routesDir || DEFAULT_ROUTES_DIR;
   const islandsDir = options.islandsDir || ctx.phase3.islandsDir || DEFAULT_ISLANDS_DIR;
-  const appShell = options.appShell ?? ctx.phase3.appShell;
+  const layout = options.layout ?? ctx.phase3.layout;
   const layouts = options.layouts ?? ctx.phase3.layouts;
   const renderer = options.renderer ?? ctx.options.renderer ?? 'native';
 
@@ -294,7 +294,7 @@ async function buildSSG(
       allowHeadExtrasScripts: options.allowHeadExtrasScripts,
       html: options.html,
       upgradeStrategy: options.upgradeStrategy || 'idle',
-      appShell,
+      layout,
       layouts,
       renderer,
       i18n: ctx.plugins.i18nOptions ?? undefined,

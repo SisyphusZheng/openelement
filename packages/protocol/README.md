@@ -16,7 +16,7 @@ into the others' graphs.
 | `@openelement/protocol/data`           | The platform-neutral data adapter protocol.                                                                                                  |
 | `@openelement/protocol/errors`         | The single declaration site of the error contract (#1386): coded error classes, phase catalogs (`RuntimeErrorCode`, `KernelErrorCode`, ...).   |
 | `@openelement/protocol/forbidden-sinks`| The one canonical deny list for every Part Program boundary (compiler, validator, server): sink names that fail closed.                       |
-| `@openelement/protocol/framework`      | Framework, build, app-shell, routing, and plugin metadata contracts.                                                                          |
+| `@openelement/protocol/framework`      | Framework, build, layout, routing, and plugin metadata contracts.                                                                          |
 | `@openelement/protocol/island`         | Island contracts (`IslandOptions`, hydration options).                                                                                       |
 | `@openelement/protocol/island-admission` | The single definition of the router's island admission descriptor.                                                                         |
 | `@openelement/protocol/manifest`       | CEM manifest and compatibility contract types.                                                                                               |

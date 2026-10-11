@@ -25,7 +25,7 @@ export default defineConfig({
     ...openElement({
       routesDir: 'app/routes',
       islandsDir: 'app/islands',
-      appShell: false,
+      layout: false,
       head: {
         title: 'site-light-probe fixture',
       },

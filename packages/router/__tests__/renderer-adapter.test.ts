@@ -52,13 +52,21 @@ const routes: RouteEntry[] = [
 // baked site default (+1720 bytes each mode; the native/lit delta is
 // unchanged at 113, so the cross-mode invariant holds). Client bytes are
 // untouched.
+// Server pins moved once more for the alpha15 R batch 3 layout rename:
+// `appShellPlan:` became `layoutPlan:`, the factory destructuring
+// `resolveAppShell`/`renderAppShell` became `resolveLayout`/`renderLayout`,
+// and every emitted `__renderAppShell` call became `__renderLayout` (-18
+// bytes each mode; the native/lit delta is unchanged at 113, so the
+// cross-mode invariant holds). Diffing the dumped entries across the rename
+// shows exactly those identifier lines and nothing else. Client bytes are
+// untouched.
 const expected = {
   native: {
-    server: [16008, 'f58b2285eb17db28284adf0125bbe2af17963b44e8fba6564c3799e9d0265314'],
+    server: [15990, '471d03f8fbc170a5ce6cb344aadc864dc00e46b5338004c732a618d22e19aa46'],
     client: [2004, 'dbd5414e1f2a392a26e98cdce1a2b7c2dc69d4305228c6b7d199b4af6ce00d6f'],
   },
   lit: {
-    server: [16121, '2bca8403fbd5a7c65a02bf23cf2c762eff6a907f2308d053bc538622a4729d59'],
+    server: [16103, '077be07d403788ac747a78fcddc91db797e06526c8a8b01d59ff944d883b1d69'],
     client: [3167, '7dcb18fd659ffe53b039adfc5139a2496e1b4c02b5d4322ed6c216606511f418'],
   },
 } as const;

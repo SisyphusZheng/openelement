@@ -11,7 +11,7 @@
  *
  * This module deliberately does NOT import Vite: only the plugin path hands in
  * an already-loaded module. File conventions (`app/styles/tokens.css`,
- * `app/islands/app-shell.tsx`, the package.json `name`) are resolved here so
+ * `app/layout.tsx`, the package.json `name`) are resolved here so
  * every consumer agrees on what "configured" means.
  */
 
@@ -21,7 +21,7 @@ import { join } from 'pathe';
 import { pathToFileURL } from 'node:url';
 import { escapeAttr } from '@openelement/element/html';
 import { OpenElementError } from '@openelement/element/authoring';
-import { conventionAppShellPath } from '../config.ts';
+import { conventionLayoutPath } from '../config.ts';
 import { conventionHeadPath } from '../config.ts';
 import { conventionTokensPath } from '../config.ts';
 import { resolveDirs } from '../config.ts';
@@ -29,7 +29,7 @@ import { headScriptsToInject } from './head-channel.ts';
 import { headStylesheetsToInject } from './head-channel.ts';
 import {
   assertValidUserConfig,
-  CONVENTION_APP_SHELL_TAG,
+  CONVENTION_LAYOUT_TAG,
   CONVENTION_PACKAGE_JSON,
   frameworkOptionsConflict,
   hasInlineFrameworkOptions,
@@ -45,7 +45,7 @@ export interface ConventionUse {
   /** Project-relative convention path. */
   path: string;
   /** What the convention provided. */
-  provides: 'tokens' | 'appShell' | 'title' | 'head';
+  provides: 'tokens' | 'layout' | 'title' | 'head';
 }
 
 /** Resolution result handed back to the consumers. */
@@ -397,29 +397,29 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
   const headBlock: OpenElementUserConfig['head'] | undefined = overrides.head ?? inlineHead;
 
   const inlineInject = (inline['inject'] ?? undefined) as FrameworkOptions['inject'];
-  const inlineAppShell = inline['appShell'] as FrameworkOptions['appShell'];
+  const inlineLayout = inline['layout'] as FrameworkOptions['layout'];
 
-  // --- app shell: override > inline > convention ---
-  let appShell: FrameworkOptions['appShell'];
-  if (overrides.appShell === false) {
-    appShell = false;
-  } else if (overrides.appShell) {
-    appShell = {
-      tagName: tagNameFromModule(overrides.appShell.import),
-      import: overrides.appShell.import,
-      props: overrides.appShell.props ?? {},
+  // --- layout: override > inline > convention ---
+  let layout: FrameworkOptions['layout'];
+  if (overrides.layout === false) {
+    layout = false;
+  } else if (overrides.layout) {
+    layout = {
+      tagName: tagNameFromModule(overrides.layout.import),
+      import: overrides.layout.import,
+      props: overrides.layout.props ?? {},
     };
-  } else if (inlineAppShell !== undefined) {
-    appShell = inlineAppShell;
+  } else if (inlineLayout !== undefined) {
+    layout = inlineLayout;
   } else {
-    const conventionPath = conventionAppShellPath(dirs.base);
+    const conventionPath = conventionLayoutPath(dirs.base);
     if (existsSync(join(root, conventionPath))) {
-      appShell = {
-        tagName: CONVENTION_APP_SHELL_TAG,
+      layout = {
+        tagName: CONVENTION_LAYOUT_TAG,
         import: `./${conventionPath}`,
         props: {},
       };
-      conventions.push({ path: conventionPath, provides: 'appShell' });
+      conventions.push({ path: conventionPath, provides: 'layout' });
     }
   }
 
@@ -476,7 +476,7 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
     options.routesDir = dirs.routes;
     options.islandsDir = dirs.islands;
   }
-  if (appShell !== undefined) options.appShell = appShell;
+  if (layout !== undefined) options.layout = layout;
   if (overrides.i18n !== undefined) {
     options.i18n = {
       locales: [...overrides.i18n.locales],

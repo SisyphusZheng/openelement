@@ -99,10 +99,10 @@ export const DescriptorErrorCode = {
   MIDDLEWARE_USE: 'OE_DESCRIPTOR_MIDDLEWARE_USE',
   /** A stream route reaches an opaque renderer wrapper. */
   STREAM_RENDERER: 'OE_DESCRIPTOR_STREAM_RENDERER',
-  /** Streaming conflicts with the compiled app shell/layout wrapper. */
-  STREAM_APP_SHELL: 'OE_DESCRIPTOR_STREAM_APP_SHELL',
-  /** The lit renderer does not support a compiled appShell/layouts. */
-  LIT_APP_SHELL: 'OE_DESCRIPTOR_LIT_APP_SHELL',
+  /** Streaming conflicts with the compiled layout wrapper. */
+  STREAM_LAYOUT: 'OE_DESCRIPTOR_STREAM_LAYOUT',
+  /** The lit renderer does not support a compiled layout/layouts. */
+  LIT_LAYOUT: 'OE_DESCRIPTOR_LIT_LAYOUT',
 } as const;
 
 /**

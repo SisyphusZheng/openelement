@@ -147,7 +147,7 @@ export type {
 } from './public-contracts.ts';
 export { ACTION_FETCH_HEADER, PROBLEM_JSON_MEDIA_TYPE } from './public-contracts.ts';
 export type {
-  AppShellConfig,
+  LayoutConfig,
   CompatibilityClassification,
   CompatibilityTier,
   ComponentLayer,
@@ -158,6 +158,11 @@ export type {
   RouteEntry,
   SpecialFileType,
 } from './public-contracts.ts';
+/**
+ * Pre-rename layout declaration type (alpha15 R batch 3 transitional alias; batch 4 removes).
+ * @deprecated Use LayoutConfig.
+ */
+export type { LayoutConfig as AppShellConfig } from './public-contracts.ts';
 // Runtime export: canonical hydration strategy list consumed by app and build
 // adapters (#496). The HydrationStrategy type derives from this const.
 export { HYDRATION_STRATEGIES } from './public-contracts.ts';
