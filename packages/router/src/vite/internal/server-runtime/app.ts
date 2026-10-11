@@ -60,7 +60,7 @@ export interface GeneratedPageRuntime {
   trustedHtml: (html: string) => TrustedHtmlValue;
   escapeHtml: (value: string) => string;
   /** native only: the compiled serializer and the SSR registry. */
-  renderDsd?: NativePageRendererDeps['renderDsd'];
+  renderToString?: NativePageRendererDeps['renderToString'];
   customElements?: { get(tag: string): unknown };
   /** lit only: the lit-ssr page renderer. */
   renderLitPageToHtml?: LitPageRendererDeps['renderLitPageToHtml'];
@@ -216,7 +216,7 @@ export function createGeneratedApp(config: GeneratedAppConfig): GeneratedApp {
     const ssr =
       page.mode === 'native'
         ? createNativePageRenderer({
-            renderDsd: page.renderDsd!,
+            renderToString: page.renderToString!,
             customElements: page.customElements!,
             ssrRenderableTags: page.ssrRenderableTags,
           })

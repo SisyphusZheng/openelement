@@ -53,7 +53,7 @@ const GLOBAL_WRITE_PATTERN =
 /**
  * A seam install at module scope: an `install<Something>(...)` call. The
  * naming is the codebase's install convention (`installHydrationExecutor` in
- * claim-seam.ts), and it is the shape a tree-shaking bundler silently drops
+ * hydrate-seam.ts), and it is the shape a tree-shaking bundler silently drops
  * (#1425): the call has no used export to keep it, so a package that declares
  * the module side-effect-free loses the install while still shipping. Narrow
  * on purpose — a module-scope factory call (`createLogger()`) is not an

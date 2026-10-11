@@ -11,9 +11,9 @@
  *
  * The when/each Block builders stay installed (#1548): a client-only island
  * still builds fresh Blocks from client state (`{cond}` branches,
- * `list.map(...)`), so this entry imports `regions-install.ts` while skipping
+ * `list.map(...)`), so this entry imports `blocks-install.ts` while skipping
  * the hydration. For apps whose programs carry no Block Parts at all, the
- * `./no-regions` and `./base` entries (#1548) drop the builders
+ * `./no-blocks` and `./base` entries (#1548) drop the builders
  * axis the same way this entry drops the hydration axis.
  *
  * Use it when — and only when — every island the page can upgrade is
@@ -30,6 +30,6 @@
  * the SSG client-only stub emits `<tag data-client-only="true"></tag>` — so
  * this is an authoring error, never a silent mis-render.
  */
-import './internal/compiled/runtime/regions-install.ts';
+import './internal/compiled/runtime/blocks-install.ts';
 
 export * from './public-surface.ts';

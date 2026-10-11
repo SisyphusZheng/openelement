@@ -1,6 +1,6 @@
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
-import { renderDsd } from '../../src/public-runtime.ts';
+import { renderToString } from '../../src/public-runtime.ts';
 import { trustedHtml } from '../../src/internal/core/security.ts';
 import type { PartProgram } from '@openelement/protocol/part-program';
 import { testProgram } from '../compiled-runtime/test-program.ts';
@@ -121,7 +121,7 @@ test('Element server owns nested composition, slots, DSD, and foreign passthroug
     ['oe-page-rail', compiledClass(rail)],
   ]);
   withRegistry(registry, () => {
-    const html = renderDsd('oe-guide-page', {
+    const html = renderToString('oe-guide-page', {
       componentClass: compiledClass(page),
       ssrRenderableTags: ['oe-reading-shell', 'oe-page-rail'],
     });
@@ -160,7 +160,7 @@ test('Trusted HTML remains opaque to nested component composition', () => {
   });
 
   withRegistry(new Map([['oe-safe-child', compiledClass(child)]]), () => {
-    const html = renderDsd('oe-html-parent', {
+    const html = renderToString('oe-html-parent', {
       componentClass: compiledClass(parent),
       props: { body: trustedHtml('<oe-safe-child>opaque</oe-safe-child>') },
       ssrRenderableTags: ['oe-safe-child'],
@@ -202,7 +202,7 @@ test('nested compiled boolean host attributes preserve presence semantics', () =
   });
 
   withRegistry(new Map([['oe-boolean-child', compiledClass(child)]]), () => {
-    const html = renderDsd('oe-boolean-parent', {
+    const html = renderToString('oe-boolean-parent', {
       componentClass: compiledClass(parent),
       ssrRenderableTags: ['oe-boolean-child'],
     });
@@ -220,7 +220,7 @@ test('public light-child projection rejects forged TrustedHtml values', () => {
 
   assertThrowsIncludes(
     () => {
-      renderDsd('oe-safe-shell', {
+      renderToString('oe-safe-shell', {
         componentClass: compiledClass(shell),
         projectedChildren: new Map([['', { html: '<script>forged</script>' }]]),
       });
@@ -230,7 +230,7 @@ test('public light-child projection rejects forged TrustedHtml values', () => {
   );
 });
 
-test('renderDsd threads the compiled delegatesFocus static into the DSD template (#1226)', () => {
+test('renderToString threads the compiled delegatesFocus static into the DSD template (#1226)', () => {
   const program = testProgram({
     tag: 'oe-focusable',
     rootMode: 'shadow-open',
@@ -241,10 +241,10 @@ test('renderDsd threads the compiled delegatesFocus static into the DSD template
   const plain = compiledClass(program);
   // The client kernel passes the static to attachShadow; the DSD template
   // must carry the matching marker or the claimed root loses delegation.
-  expect(renderDsd('oe-focusable', { componentClass: focusable })).toContain(
+  expect(renderToString('oe-focusable', { componentClass: focusable })).toContain(
     '<template shadowrootmode="open" shadowrootdelegatesfocus>',
   );
-  expect(renderDsd('oe-focusable', { componentClass: plain })).toContain(
+  expect(renderToString('oe-focusable', { componentClass: plain })).toContain(
     '<template shadowrootmode="open">',
   );
 });

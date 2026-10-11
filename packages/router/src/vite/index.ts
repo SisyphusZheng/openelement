@@ -8,7 +8,7 @@
  * - SSG build pipeline (Phase 1/2/3)
  * - Core subpath resolution
  *
- * Runtime code (renderDsd, escapeHtml, etc.) lives in @openelement/element;
+ * Runtime code (renderToString, escapeHtml, etc.) lives in @openelement/element;
  * the island authoring helper (defineIslandConfig) is exported from the
  * @openelement/router root entry.
  * This package only contains Vite-specific build orchestration.

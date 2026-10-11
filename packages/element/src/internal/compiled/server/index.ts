@@ -15,7 +15,7 @@
 import {
   DATA_OE_LIGHT,
   PART_PROGRAM_VERSION,
-  type PartProgramV1,
+  type PartProgramV2,
   type ProgramEachPart,
   type ProgramTreeNode,
   type ProgramWhenPart,
@@ -38,7 +38,7 @@ import type { RuntimeProgramIR } from '../runtime-program.ts';
 // OpenElementError carrying a code from the catalogue.
 import { frameworkError, ProgramErrorCode } from '@openelement/protocol/errors';
 // Streamed-frame admission policy (canonical lists live in the protocol
-// module): the deferred executor must refuse any pending Block whose
+// module): the stream executor must refuse any pending Block whose
 // serialized frame the browser installer is contractually required to reject.
 import {
   STREAM_FRAME_FORBIDDEN_TAGS,
@@ -90,7 +90,7 @@ export interface CompiledNestedElement {
 }
 
 // The serializer emits the component's static styles as the first child of
-// the DSD template (renderDsd parity): never-upgrading hosts (pages)
+// the DSD template (renderToString parity): never-upgrading hosts (pages)
 // need their styles in the SSR payload. The hydration path skips exactly this
 // marked element; the client style scope still adopts the live sheets.
 export { STATIC_STYLES_MARKER } from '@openelement/protocol/part-program';
@@ -441,21 +441,21 @@ function serializeCompiledSnapshot(
 }
 
 /** A request-local owner; its program reference and object identity are never serialized. */
-export interface DeferredServerOwner {
-  readonly program: PartProgramV1;
+export interface StreamOwner {
+  readonly program: PartProgramV2;
   readonly version: number;
   readonly instanceId: string;
 }
 
-export interface DeferredServerSelection {
-  readonly owner: DeferredServerOwner;
+export interface StreamSelection {
+  readonly owner: StreamOwner;
   readonly pendingParts: readonly number[];
 }
 
-export interface DeferredServerExecutor {
+export interface StreamExecutor {
   readonly shell: string;
   /** Returns only the owned range's HTML, without anchors or transport framing. */
-  serializeResolved(owner: DeferredServerOwner, partIndex: number, value: unknown): string;
+  serializeResolved(owner: StreamOwner, partIndex: number, value: unknown): string;
 }
 
 const STREAM_FRAME_FORBIDDEN_TAG_SET: ReadonlySet<string> = new Set(STREAM_FRAME_FORBIDDEN_TAGS);
@@ -489,12 +489,12 @@ function hasOpaqueBlockNode(nodes: readonly ProgramTreeNode[]): boolean {
  * dependencies remains the compiler's job; this boundary rejects non-range
  * sinks and foreign owners before any pending shell can be emitted.
  */
-export function createDeferredServerExecutor(
-  raw: PartProgramV1,
+export function createStreamServerExecutor(
+  raw: PartProgramV2,
   host: unknown,
-  selection: DeferredServerSelection,
+  selection: StreamSelection,
   options: CompiledServerOptions = {},
-): DeferredServerExecutor {
+): StreamExecutor {
   const program = assertCompiledProgram(raw);
   const { owner } = selection;
   if (
@@ -503,7 +503,10 @@ export function createDeferredServerExecutor(
     !owner.instanceId ||
     typeof owner.instanceId !== 'string'
   ) {
-    throw new CompiledProgramValidationError('owner', 'wrong program, version, or instance');
+    throw new CompiledProgramValidationError(
+      'owner',
+      `wrong program, version (expected ${PART_PROGRAM_VERSION}, got ${JSON.stringify(owner.version)}), or instance`,
+    );
   }
   if (
     (options.mode ?? 'open') === 'closed' ||

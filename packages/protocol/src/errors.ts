@@ -139,7 +139,7 @@ export type ErrorTelemetryHook = (error: OpenElementError) => void;
  * reject data before any DOM work starts.
  */
 export const ProgramErrorCode = {
-  /** A Part Program v1 failed structural validation. */
+  /** A Part Program v2 failed structural validation. */
   INVALID_PROGRAM: 'OE_PROGRAM_INVALID',
   /** A Part Program cannot be serialized to JSON, so it is not a wire artifact. */
   NOT_SERIALIZABLE: 'OE_PROGRAM_NOT_SERIALIZABLE',
@@ -161,7 +161,7 @@ export const EachKeyErrorCode = {
   ITEM_NOT_A_RECORD: 'OE_EACH_ITEM_NOT_A_RECORD',
   /** A key value cannot round-trip (an object, function or symbol has no stable identity). */
   KEY_NOT_ROUND_TRIPPABLE: 'OE_EACH_KEY_NOT_ROUND_TRIPPABLE',
-  /** Two items in one list Region derived the same key. */
+  /** Two items in one list Block derived the same key. */
   DUPLICATE_KEY: 'OE_EACH_KEY_DUPLICATE',
 } as const;
 
@@ -170,7 +170,7 @@ export const EachKeyErrorCode = {
  * built into fresh DOM, or re-read on a signal write (phase `render`).
  */
 export const RuntimeErrorCode = {
-  /** A list Region's signal does not hold an array. */
+  /** A list Block's signal does not hold an array. */
   LIST_VALUE_NOT_ARRAY: 'OE_RUNTIME_LIST_VALUE_NOT_ARRAY',
   /** render() reads a signal that is not registered on the host. */
   HOST_SIGNAL_MISSING: 'OE_RUNTIME_HOST_SIGNAL_MISSING',
@@ -188,9 +188,9 @@ export const RuntimeErrorCode = {
   PATH_UNRESOLVED: 'OE_RUNTIME_PATH_UNRESOLVED',
   /** A compiled node path resolved to a non-element node. */
   PATH_NOT_ELEMENT: 'OE_RUNTIME_PATH_NOT_ELEMENT',
-  /** An item value/attribute slot appears outside an `each` Region. */
+  /** An item value/attribute slot appears outside an `each` Block. */
   ITEM_SLOT_OUTSIDE_REGION: 'OE_RUNTIME_ITEM_SLOT_OUTSIDE_REGION',
-  /** An item slot found no owning `each` Region. */
+  /** An item slot found no owning `each` Block. */
   ITEM_SLOT_WITHOUT_REGION: 'OE_RUNTIME_ITEM_SLOT_WITHOUT_REGION',
   /** An item slot has no owner document to create nodes from. */
   ITEM_SLOT_WITHOUT_DOCUMENT: 'OE_RUNTIME_ITEM_SLOT_WITHOUT_DOCUMENT',
@@ -210,7 +210,7 @@ export const KernelErrorCode = {
   DISPOSED: 'OE_KERNEL_DISPOSED',
   /** `__partProgram.tag` does not match the host element's tag. */
   TAG_MISMATCH: 'OE_KERNEL_TAG_MISMATCH',
-  /** Existing DOM needs the claim executor, which this entry does not install. */
+  /** Existing DOM needs the hydration executor, which this entry does not install. */
   CLAIM_EXECUTOR_MISSING: 'OE_KERNEL_CLAIM_EXECUTOR_MISSING',
   /** A supplied root is not owned by the element it was passed for. */
   ROOT_NOT_OWNED: 'OE_KERNEL_ROOT_NOT_OWNED',
@@ -242,7 +242,7 @@ export const ClaimErrorCode = {
   STRUCTURE_MISMATCH: 'OPEN_ELEMENT_COMPILED_CLAIM_MISMATCH',
   /** A pre-upgrade event capture argument was neither an array nor a capture object. */
   PRE_UPGRADE_EVENTS_INVALID: 'OE_CLAIM_PRE_UPGRADE_EVENTS_INVALID',
-  /** Bounded recovery met a dynamic node inside a static Region. */
+  /** Bounded recovery met a dynamic node inside a static Block. */
   DYNAMIC_NODE_IN_STATIC_REGION: 'OE_CLAIM_DYNAMIC_NODE_IN_STATIC_REGION',
   /** An each item template carries Part anchors, which cannot be rebuilt statically. */
   ITEM_TEMPLATE_ANCHOR: 'OE_CLAIM_ITEM_TEMPLATE_ANCHOR',
@@ -311,21 +311,21 @@ export const FacadeErrorCode = {
   /** An `HTMLElement` member was reached during SSR, where no DOM exists. */
   SSR_DOM_ACCESS_UNSUPPORTED: 'SSR_DOM_ACCESS_UNSUPPORTED',
   /** A deferred shell read a pending property before it resolved. */
-  DEFERRED_PENDING_READ: 'OE_DEFERRED_PENDING_READ',
+  STREAM_PENDING_READ: 'OE_STREAM_PENDING_READ',
   /** A deferred seed value is not JSON-safe (cyclic, bigint, or class instance). */
-  DEFERRED_VALUE_NOT_SERIALIZABLE: 'OE_DEFERRED_VALUE_NOT_SERIALIZABLE',
+  STREAM_VALUE_NOT_SERIALIZABLE: 'OE_STREAM_VALUE_NOT_SERIALIZABLE',
   /** A deferred route manifest is malformed. */
-  DEFERRED_MANIFEST_MALFORMED: 'OE_DEFERRED_MANIFEST_MALFORMED',
+  STREAM_MANIFEST_MALFORMED: 'OE_STREAM_MANIFEST_MALFORMED',
   /** A deferred route manifest does not match the compiled program. */
-  DEFERRED_MANIFEST_MISMATCH: 'OE_DEFERRED_MANIFEST_MISMATCH',
+  STREAM_MANIFEST_MISMATCH: 'OE_STREAM_MANIFEST_MISMATCH',
   /** A reserved property name cannot enter a deferred seed. */
-  DEFERRED_RESERVED_PROPERTY: 'OE_DEFERRED_RESERVED_PROPERTY',
+  STREAM_RESERVED_PROPERTY: 'OE_STREAM_RESERVED_PROPERTY',
   /** A deferred manifest or seed exceeds its bounded budget. */
-  DEFERRED_BUDGET_EXCEEDED: 'OE_DEFERRED_BUDGET_EXCEEDED',
+  STREAM_BUDGET_EXCEEDED: 'OE_STREAM_BUDGET_EXCEEDED',
   /** A deferred field or Part owner is invalid or not deferrable. */
-  DEFERRED_FIELD_INVALID: 'OE_DEFERRED_FIELD_INVALID',
+  STREAM_FIELD_INVALID: 'OE_STREAM_FIELD_INVALID',
   /** An unknown deferred field was resolved or serialized. */
-  DEFERRED_UNKNOWN_FIELD: 'OE_DEFERRED_UNKNOWN_FIELD',
+  STREAM_UNKNOWN_FIELD: 'OE_STREAM_UNKNOWN_FIELD',
 } as const;
 
 /**

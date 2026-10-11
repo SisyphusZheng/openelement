@@ -304,7 +304,7 @@ test('pack surface: module-scope seam installs are found, deferred ones are not'
     // A factory call is not an install: it has no seam naming convention, and
     // Router's pure reachability imports must stay unflagged (#1425 scope).
     'createIslandScheduler({ log, win, doc });',
-    'export { installHydrationExecutor } from "./claim-seam.js";',
+    'export { installHydrationExecutor } from "./hydrate-seam.js";',
   ];
   for (const source of accepted) {
     expect(findModuleScopeSeamInstalls(source), `must pass: ${JSON.stringify(source)}`).toEqual([]);
@@ -315,12 +315,12 @@ test('pack surface: an undeclared seam install fails, a declared one passes', ()
   // The installer path in the fixture is the one the shipped element manifest
   // declares, so "declared" below means the real declaration actually covers
   // the real module — not a coincidental match on a test-only name.
-  const INSTALLER_PATH = 'src/internal/compiled/runtime/claim-install.js';
+  const INSTALLER_PATH = 'src/internal/compiled/runtime/hydrate-install.js';
   const packaged = (sideEffects: unknown): Map<string, string> =>
     new Map<string, string>([
       ['package/package.json', JSON.stringify(manifest('@openelement/element', { sideEffects }))],
       ['package/README.md', ''],
-      ['package/src/index.js', "import './internal/compiled/runtime/claim-install.js';"],
+      ['package/src/index.js', "import './internal/compiled/runtime/hydrate-install.js';"],
       [`package/${INSTALLER_PATH}`, 'installHydrationExecutor(hydrateExistingDom);'],
     ]);
   // Only the seam rule's findings: a fixture whose sideEffects differs from
@@ -358,13 +358,13 @@ test('pack surface: an undeclared seam install fails, a declared one passes', ()
   // And the shipped element manifest must not regress to the flat claim. The
   // flagged set names every install edge's importer and installer (#1425
   // class): the default entry, the entries that import one install
-  // (`./client-only` → regions, `./no-regions` → claim, #1548), and both
+  // (`./client-only` → blocks, `./no-blocks` → claim, #1548), and both
   // installers.
   expect(packedMetadata('@openelement/element').sideEffects).toEqual([
     './src/index.js',
     './src/client-only.js',
-    './src/no-regions.js',
-    './src/internal/compiled/runtime/claim-install.js',
-    './src/internal/compiled/runtime/regions-install.js',
+    './src/no-blocks.js',
+    './src/internal/compiled/runtime/hydrate-install.js',
+    './src/internal/compiled/runtime/blocks-install.js',
   ]);
 });

@@ -24,20 +24,20 @@ export { collectPublicProps } from './public-runtime.ts';
 
 // ─── Server render + client bootstrap (compiled pipeline) ──────────
 
-// renderDsd serializes a compiled class to deterministic HTML for generated
+// renderToString serializes a compiled class to deterministic HTML for generated
 // server entries; ensurePreHydrationClickCapture installs the pre-upgrade
 // capture that the compiled hydration replays after upgrade (generated client
 // entries call it).
 export {
-  createDeferredDsdExecutor,
+  createStreamShellExecutor,
   ensurePreHydrationClickCapture,
-  renderDsd,
+  renderToString,
 } from './public-runtime.ts';
-export type { RenderDsdOptions } from './public-runtime.ts';
+export type { RenderToStringOptions } from './public-runtime.ts';
 export type {
-  CreateDeferredDsdOptions,
-  DeferredDsdExecutor,
-  DeferredDsdManifest,
+  CreateStreamShellOptions,
+  StreamShellExecutor,
+  StreamShellManifest,
 } from './public-runtime.ts';
 
 // Explicit type-only surface for build adapters (#488).
@@ -91,9 +91,9 @@ export { DANGEROUS_KEYS, injectPropsSafe, isDangerousKey } from './public-runtim
 // ─── Streamed-frame policy (re-export from core) ───────────────────
 
 // The streamed-frame admission policy: one deny list for the build manifest
-// scan, the deferred executor admission, and the generated browser installer.
+// scan, the stream executor admission, and the generated browser installer.
 // Consumed by the router's streaming pipeline and available to custom
-// deferred executors.
+// stream executors.
 export {
   STREAM_FRAME_FORBIDDEN_TAGS,
   STREAM_FRAME_UNSAFE_URL,

@@ -10,7 +10,7 @@
  * conditional or list Blocks execute on every entry choice.
  *
  * `client-only.ts` re-exports the identical surface without the claim
- * install; `no-regions.ts` and `base.ts` drop the Block builders the same
+ * install; `no-blocks.ts` and `base.ts` drop the Block builders the same
  * way (#1548) — use them only for apps whose compiled Part Programs carry no
  * Block Parts. The generated client entry makes that selection (the
  * client-only split is #1416; the blocks split is #1548). The export list
@@ -28,7 +28,7 @@
  * lint-banned, so consuming tsconfigs load it through the standard
  * `types` array (the vite/client pattern).
  */
-import './internal/compiled/runtime/claim-install.ts';
-import './internal/compiled/runtime/regions-install.ts';
+import './internal/compiled/runtime/hydrate-install.ts';
+import './internal/compiled/runtime/blocks-install.ts';
 
 export * from './public-surface.ts';

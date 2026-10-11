@@ -63,7 +63,7 @@ export default class OpenLayout extends OpenElement {
   home = false;
 
   // ─── Derived chrome state ────────────────────────────────────────────
-  // The list-Region grammar (OEC9013) requires `.map()` to run over a
+  // The list-Block grammar (OEC9013) requires `.map()` to run over a
   // `this.<property>`, so the derived rows/links live in computed() signal
   // properties over the plain shell props. The property-contract layer
   // guarantees attribute promotion happens before claim-time reads and that

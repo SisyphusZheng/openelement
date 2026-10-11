@@ -96,7 +96,7 @@ export interface TailwindPresetOptions {
    * Whether the bundle link is also injected into every DSD shadow template
    * (seam 2's shadow adoption). Default `false`: the compiled claim requires
    * the DSD template's children to equal the Part Program's own nodes (the
-   * @openelement/element compiled-claim walk fails closed on any injected
+   * @openelement/element compiled-hydration walk fails closed on any injected
    * node), so the exact-claim default leaves the shadow templates untouched.
    * The head link alone still reaches every shadow tree, because CSS custom
    * properties — the theme layer's entire delivery — inherit across the
@@ -541,7 +541,7 @@ export function extractLayerComponents(css: string): string {
  * deduped by the browser cache across every page and shadow root).
  *
  * The placement is a contract, not a style choice: the compiled element
- * runtime's existing-DOM claim (@openelement/element claim.ts) walks the
+ * runtime's existing-DOM hydration (@openelement/element claim.ts) walks the
  * shadow template's children exactly as the Part Program lists them —
  * leading, interposed, AND trailing extras are structural drift (the walk
  * ends in an exact `consumed === childNodes.length` check). The DSD-template

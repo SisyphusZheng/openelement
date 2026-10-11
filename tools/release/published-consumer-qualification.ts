@@ -468,9 +468,9 @@ async function readJson<T = unknown>(path: string | URL): Promise<T> {
 // build entry imports on the same node host (the packed consumers' build
 // cells drive it in-process, this smoke proves the bare-import path).
 export const NODE_RUNTIME_SMOKE_SOURCE = [
-  "import { HYDRATION_STRATEGIES, OpenElement, renderDsd, signal } from '@openelement/element';",
+  "import { HYDRATION_STRATEGIES, OpenElement, renderToString, signal } from '@openelement/element';",
   "import { defineIslandConfig, definePage } from '@openelement/router';",
-  'for (const value of [OpenElement, renderDsd, signal, defineIslandConfig, definePage]) {',
+  'for (const value of [OpenElement, renderToString, signal, defineIslandConfig, definePage]) {',
   "  if (typeof value !== 'function') throw new Error('expected published public function');",
   '}',
   "if (!Array.isArray(HYDRATION_STRATEGIES)) throw new Error('expected hydration strategy list');",

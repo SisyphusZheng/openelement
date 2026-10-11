@@ -30,7 +30,7 @@
 import {
   partAnchorEndMarker,
   partAnchorMarker,
-  type PartProgramV1,
+  type PartProgramV2,
   type ProgramAttrPart,
   type ProgramBoolPart,
   type ProgramClassPart,
@@ -142,7 +142,7 @@ export interface SerializeProgramSeams {
 }
 
 interface WalkContext {
-  readonly program: PartProgramV1;
+  readonly program: PartProgramV2;
   readonly seams: SerializeProgramSeams;
   /** attr/prop/bool/class/style sinks keyed by template path (part order). */
   readonly sinksByPath: Map<string, ProgramAttributeSink[]>;
@@ -151,7 +151,7 @@ interface WalkContext {
   readonly consumedProjections: Set<string>;
 }
 
-function isAttributeSink(part: PartProgramV1['parts'][number]): part is ProgramAttributeSink {
+function isAttributeSink(part: PartProgramV2['parts'][number]): part is ProgramAttributeSink {
   return (
     part.k === 'attr' ||
     part.k === 'prop' ||
@@ -161,7 +161,7 @@ function isAttributeSink(part: PartProgramV1['parts'][number]): part is ProgramA
   );
 }
 
-function createWalkContext(program: PartProgramV1, seams: SerializeProgramSeams): WalkContext {
+function createWalkContext(program: PartProgramV2, seams: SerializeProgramSeams): WalkContext {
   const sinksByPath = new Map<string, ProgramAttributeSink[]>();
   const htmlSinksByPath = new Map<string, ProgramHtmlPart>();
   for (const part of program.parts) {
@@ -462,7 +462,7 @@ function serializeNode(
  * serializer modes project from the same walk.
  */
 export function serializeProgramTemplate(
-  program: PartProgramV1,
+  program: PartProgramV2,
   seams: SerializeProgramSeams,
 ): string {
   const ctx = createWalkContext(program, seams);
@@ -475,8 +475,8 @@ export function serializeProgramTemplate(
  * markers or transport framing.
  */
 export function serializeProgramRange(
-  program: PartProgramV1,
-  part: PartProgramV1['parts'][number],
+  program: PartProgramV2,
+  part: PartProgramV2['parts'][number],
   value: unknown,
   seams: SerializeProgramSeams,
 ): string {

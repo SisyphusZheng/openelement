@@ -115,10 +115,10 @@ export type {
 
 export { generateClientEntry } from './entry-client-codegen.ts';
 export {
-  islandsMightUseRegions,
-  elementRuntimeRegionsAlias,
-  type IslandsRegionsScanInput,
-} from './island-regions-scan.ts';
+  islandsMightUseBlocks,
+  elementRuntimeBlocksAlias,
+  type IslandsBlocksScanInput,
+} from './island-blocks-scan.ts';
 export { validateClientIslandEntry } from './entry-generators.ts';
 export {
   isIslandDeliveryStrategy,

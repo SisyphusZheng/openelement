@@ -4,7 +4,7 @@
  * Compiled page with the default static renderIntent: prerendered to HTML at
  * build time (SSG). There are NO islands on this page — everything below is
  * prerendered markup and CSS. The page renders inside the auto-registered
- * layout (app/layout.tsx), which owns the header, main region
+ * layout (app/layout.tsx), which owns the header, main block
  * and footer; the badges come from ./badges.css (light root, inlined into
  * SSR as @scope(about-page)). The compiled grammar lowers one root per
  * render, so the page returns a single content wrapper.

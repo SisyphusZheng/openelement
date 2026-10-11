@@ -39,7 +39,7 @@ const content = {
     sceneIslandsLead: 'Upgrade',
     sceneIslandsAccent: 'selectively.',
     sceneIslandsCopy:
-      'Interactive regions hydrate on your schedule. Non-interactive regions ship no JavaScript of their own.',
+      'Interactive blocks hydrate on your schedule. Non-interactive blocks ship no JavaScript of their own.',
     sceneOutputLead: 'Static first.',
     sceneOutputAccent: 'Deployable anywhere.',
     startBuilding: 'Start building',

@@ -53,7 +53,7 @@ import { resolveDynamicRoutePath } from '../src/vite/internal/ssg/ssg-helpers.ts
 import { mdxToCompiledPageSource } from '../src/vite/plugin-mdx-lower.ts';
 import { assertLitStreamRoute } from '../src/vite/internal/server-runtime/route-dispatch.ts';
 import {
-  createDeferredPageShell,
+  createStreamPageShell,
   streamFields,
 } from '../src/vite/internal/server-runtime/stream-runtime.ts';
 import { createNativePageRenderer } from '../src/vite/internal/server-runtime/renderer-runtime.ts';
@@ -296,9 +296,9 @@ test('error codes: the streaming pump reports ssr-phase codes', async () => {
   expect(loader.message).toEqual('stream loader must return one object');
 
   // The deferred-shell gate fails closed on a route/manifest/program mismatch.
-  const gate = createDeferredPageShell({
+  const gate = createStreamPageShell({
     streamManifests: {},
-    createDeferredDsdExecutor: () => Promise.reject(new Error('unreached')),
+    createStreamShellExecutor: () => Promise.reject(new Error('unreached')),
   });
   const mismatch = await assertRejectsIncludes(
     () => gate('/', { default: {} }, {}, 'i', 't'),
@@ -324,7 +324,7 @@ test('error codes: the dispatch guards and the renderer seam report ssr-phase co
   expect(litStream.phase).toEqual('ssr');
 
   const renderer = createNativePageRenderer({
-    renderDsd: () => ({ html: '' }),
+    renderToString: () => ({ html: '' }),
     customElements: { get: () => undefined },
     ssrRenderableTags: [],
   });

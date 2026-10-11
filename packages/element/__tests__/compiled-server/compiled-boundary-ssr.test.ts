@@ -4,10 +4,10 @@
  *
  * The audit finding: a subtree evaluation throw at SSR 500'd the whole route,
  * despite packages/element/README.md claiming the boundary renders its
- * fallback on SSR. renderDsdAtDepth now wraps each element's serialization:
+ * fallback on SSR. renderToStringAtDepth now wraps each element's serialization:
  * a throw surfacing from this element's own derivations or from a nested
  * recursion re-serializes the CURRENT program with the `hasError` signal
- * forced true — the compiled boundary's fallback is a `when` Region over that
+ * forced true — the compiled boundary's fallback is a `when` Block over that
  * signal, so the re-run takes the fallback branch in place of the failed
  * subtree. Non-boundary elements rethrow (route-500 semantics unchanged), so
  * the failure surfaces at the NEAREST boundary; nested recursion composes.
@@ -15,7 +15,7 @@
 
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
-import { renderDsd } from '../../src/public-runtime.ts';
+import { renderToString } from '../../src/public-runtime.ts';
 import type { PartProgram } from '@openelement/protocol/part-program';
 import { computed } from '../../src/internal/signal/index.ts';
 import { testProgram } from '../compiled-runtime/test-program.ts';
@@ -47,7 +47,7 @@ function markComputed(program: PartProgram, name: string, deps: string[]): void 
   Object.assign(record as Record<string, unknown>, { computed: true, deps });
 }
 
-/** The README boundary shape: a `when` Region over hasError swapping a fallback. */
+/** The README boundary shape: a `when` Block over hasError swapping a fallback. */
 function boundaryProgram(tag: string, offChildren: ReturnType<typeof testProgram>['template']) {
   return testProgram({
     tag,
@@ -149,7 +149,7 @@ test('a nested throwing child renders the boundary fallback branch in the serial
   ]);
 
   withRegistry(registry, () => {
-    const html = renderDsd(boundaryTag, {
+    const html = renderToString(boundaryTag, {
       componentClass: boundary,
       ssrRenderableTags: [childTag],
     });
@@ -176,7 +176,7 @@ test('a non-boundary parent keeps the route-500 semantics (the throw propagates)
 
   withRegistry(registry, () => {
     assertThrowsIncludes(
-      () => renderDsd(plainTag, { componentClass: plain, ssrRenderableTags: [childTag] }),
+      () => renderToString(plainTag, { componentClass: plain, ssrRenderableTags: [childTag] }),
       Error,
       'null',
     );
@@ -205,7 +205,7 @@ test('a nested failure surfaces at the nearest boundary through a non-boundary m
   ]);
 
   withRegistry(registry, () => {
-    const html = renderDsd(boundaryTag, {
+    const html = renderToString(boundaryTag, {
       componentClass: boundary,
       ssrRenderableTags: [middleTag, childTag],
     });
@@ -214,9 +214,9 @@ test('a nested failure surfaces at the nearest boundary through a non-boundary m
   });
 });
 
-test('a boundary-own failing derivation outside the fallback region still propagates (bounded retry)', () => {
-  // The compiled grammar keeps region branches static, so a derived signal
-  // read OUTSIDE the fallback region is evaluated in both serializations:
+test('a boundary-own failing derivation outside the fallback block still propagates (bounded retry)', () => {
+  // The compiled grammar keeps block branches static, so a derived signal
+  // read OUTSIDE the fallback block is evaluated in both serializations:
   // the capture retries once with the fallback branch and then fails loud —
   // it must never mask a failure the fallback cannot replace (React's
   // boundary re-render has the same shape: a fallback that throws propagates).
@@ -285,7 +285,7 @@ test('a boundary-own failing derivation outside the fallback region still propag
 
   withRegistry(new Map([[boundaryTag, boundary]]), () => {
     assertThrowsIncludes(
-      () => renderDsd(boundaryTag, { componentClass: boundary }),
+      () => renderToString(boundaryTag, { componentClass: boundary }),
       Error,
       'boundary own evaluation boom',
     );
@@ -299,7 +299,7 @@ test('a clean boundary render is unchanged by the capture path (no capture, no o
   ]);
   const boundary = compiledClass(program, { isErrorBoundary: true });
   withRegistry(new Map([[boundaryTag, boundary]]), () => {
-    const html = renderDsd(boundaryTag, { componentClass: boundary });
+    const html = renderToString(boundaryTag, { componentClass: boundary });
     expect(html).toContain('happy path');
     expect(html).not.toContain('fallback');
   });

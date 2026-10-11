@@ -9,7 +9,7 @@
  * page-lifetime entry table).
  */
 
-import type { CompiledHydrationOptions } from './claim.ts';
+import type { CompiledHydrationOptions } from './hydrate.ts';
 import { ClaimErrorCode } from '@openelement/protocol/errors';
 import { fail } from './program-kernel.ts';
 
@@ -443,7 +443,7 @@ export function preUpgradeEventList(
   }
   fail(
     ClaimErrorCode.PRE_UPGRADE_EVENTS_INVALID,
-    '[compiled-claim] preUpgradeEvents: expected an event array or capture object',
+    '[compiled-hydration] preUpgradeEvents: expected an event array or capture object',
   );
 }
 

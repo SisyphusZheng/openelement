@@ -28,7 +28,7 @@ interface RuntimeSeam {
 
 interface RendererAdapter {
   readonly mode: RendererMode;
-  readonly hydration: 'compiled-claim' | 'lit-adoption';
+  readonly hydration: 'compiled-hydration' | 'lit-adoption';
   readonly supportsCompiledStream: boolean;
   readonly firstServerImport?: string;
   serverImports(hasStreamRoute: boolean): ImportDecl[];
@@ -39,16 +39,16 @@ const RUNTIME_MODULE = '@openelement/router/server-runtime';
 
 const native: RendererAdapter = {
   mode: 'native',
-  hydration: 'compiled-claim',
+  hydration: 'compiled-hydration',
   supportsCompiledStream: true,
   serverImports(hasStreamRoute) {
     return [
       {
         from: '@openelement/element',
         names: [
-          'createDeferredDsdExecutor',
+          'createStreamShellExecutor',
           ...(hasStreamRoute ? ['documentStreamParts', 'escapeAttr'] : []),
-          'renderDsd',
+          'renderToString',
           'trustedHtml',
           'escapeHtml',
           'wrapInDocument',
@@ -71,7 +71,7 @@ const native: RendererAdapter = {
       },
       pageRuntimeLines: [
         `mode: 'native',`,
-        `renderDsd,`,
+        `renderToString,`,
         `customElements,`,
         `trustedHtml,`,
         `escapeHtml,`,

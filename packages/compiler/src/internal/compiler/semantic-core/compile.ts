@@ -1,8 +1,8 @@
 /**
- * @openelement/element — TSX-to-Part Program v1 compiler (#1161–#1163).
+ * @openelement/element — TSX-to-Part Program v2 compiler (#1161–#1163).
  *
  * The compiler accepts one deliberately bounded authoring grammar. It lowers
- * every accepted dynamic expression to a typed fixed Part or Region with a
+ * every accepted dynamic expression to a typed fixed Part or Block with a
  * stable compiler-owned location. Anything outside that grammar produces a
  * source-located diagnostic; no runtime discovery or fallback renderer is
  * emitted.
@@ -30,7 +30,7 @@ import { Lowering } from './lower-program.ts';
 import { typescriptParser } from './parse-module.ts';
 import { createModuleIntrinsicBindings, type SemanticCoreOptions } from './module-analysis.ts';
 import { type CompiledElementSourceMap } from './source-map.ts';
-import { type PartProgramV1 } from '@openelement/protocol/part-program';
+import { type PartProgramV2 } from '@openelement/protocol/part-program';
 
 export { CompiledElementError, type ElementCompilerDiagnostic } from './compiler-diagnostics.ts';
 
@@ -80,7 +80,7 @@ export interface CompileElementResult {
    * as its `map` output for downstream composition (#1210).
    */
   map: CompiledElementSourceMap;
-  program: PartProgramV1;
+  program: PartProgramV2;
   /**
    * The module's style edges (#1558): the authored `.css` specifiers the
    * class's `static styles` arrays, in authored order. The host build's

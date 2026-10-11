@@ -381,7 +381,7 @@ async function buildSSG(
           output: {
             format: 'esm',
             // customElements polyfill must run before ESM imports.
-            // Uses Map-backed define()/get(); renderDsdByName() looks up
+            // Uses Map-backed define()/get(); renderToStringByName() looks up
             // components via customElements.get(tagName) during SSG rendering.
             // The HTMLElement stub is self-contained in @openelement/element.
             // #1339: the lit renderer installs the @lit-labs/ssr DOM shim as

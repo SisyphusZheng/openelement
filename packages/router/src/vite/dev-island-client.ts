@@ -23,7 +23,7 @@ import type { Plugin } from 'vite';
 import type { FrameworkOptions } from './framework.ts';
 import type { OpenElementBuildContext } from './build-context.ts';
 
-import { generateClientEntry, islandsMightUseRegions } from './internal/ssg/index.ts';
+import { generateClientEntry, islandsMightUseBlocks } from './internal/ssg/index.ts';
 import { buildClientIslandEntries } from './internal/ssg/client-island-entries.ts';
 import { VIRTUAL_RUNTIME_SPECIFIERS } from './internal/ssg/entry-generators.ts';
 import { DEFAULT_ISLANDS_DIR } from './internal/paths.ts';
@@ -100,11 +100,11 @@ export function devIslandClientPlugin(
         ),
         upgradeStrategy: options.island?.upgradeStrategy,
       });
-      // #1548: same regions scan the production build runs, so dev serves the
+      // #1548: same blocks scan the production build runs, so dev serves the
       // same entry specialization (and exercises it) instead of diverging
       // from the built bundle. The scan is conservative: any unresolvable
       // island module keeps the builders-carrying entry.
-      const mightUseRegions = islandsMightUseRegions({
+      const mightUseBlocks = islandsMightUseBlocks({
         root,
         islandsDir,
         islandTagNames: ctx.phase1.islandTagNames ?? [],
@@ -119,7 +119,7 @@ export function devIslandClientPlugin(
       return generateClientEntry(islandEntries, {
         enhancedForms,
         renderer: options.renderer,
-        ...(mightUseRegions ? {} : { includeRegionsRuntime: false }),
+        ...(mightUseBlocks ? {} : { includeBlocksRuntime: false }),
       });
     },
   };

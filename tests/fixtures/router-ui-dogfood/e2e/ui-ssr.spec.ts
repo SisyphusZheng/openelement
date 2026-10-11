@@ -28,7 +28,7 @@ test.describe('ui dogfood SSR/DSD output', () => {
     expect(html).toContain('<dialog part="overlay" open aria-label="SSR open dialog">');
   });
 
-  test('/dropdown emits open-dropdown DSD with a native popover content region', async ({
+  test('/dropdown emits open-dropdown DSD with a native popover content block', async ({
     request,
   }) => {
     const response = await request.get('/dropdown');
@@ -77,7 +77,7 @@ test.describe('ui dogfood SSR/DSD output', () => {
  * The fixture is preset-ON with `injectDsdLinks` explicitly false — the
  * exact-claim contract: the compiled bundle reaches the document through the
  * head link, every DSD template stays byte-exact Part Program children (the
- * compiled-claim walk fails closed on an injected node), and shadow trees
+ * compiled-hydration walk fails closed on an injected node), and shadow trees
  * take the theme through CSS custom property inheritance. Verified here end
  * to end: SSR bytes, then real hydration on the prerendered page.
  */

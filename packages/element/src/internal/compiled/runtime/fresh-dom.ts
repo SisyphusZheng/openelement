@@ -3,14 +3,14 @@
  * walk that mounts static nodes, item value/attribute slots, and one anchor
  * Part per index. The walk re-enters the Block builders for anchor Parts
  * through the blocks seam (#1548) — buildWhen/buildEach are installed by the
- * importing entry (regions-install.ts), not statically imported here, so a
+ * importing entry (blocks-install.ts), not statically imported here, so a
  * blocks-free graph drops the whole blocks module — while those builders
  * call back into {@linkcode mountNodes} for nested item/branch templates — a
  * function-level cycle with no top-level evaluation, which is safe.
  */
 
 import type {
-  PartProgramV1,
+  PartProgramV2,
   ProgramEachPart,
   ProgramTreeNode,
 } from '@openelement/protocol/part-program';
@@ -33,8 +33,8 @@ import {
   removeNodes,
 } from './program-kernel.ts';
 import { attachFixedParts, buildTextPart } from './parts.ts';
-import { blockBuildersOrFail } from './regions-seam.ts';
-import type { ItemAttrSlot, ItemValueSlot } from './regions.ts';
+import { blockBuildersOrFail } from './blocks-seam.ts';
+import type { ItemAttrSlot, ItemValueSlot } from './blocks.ts';
 
 export function mountNodes(
   ctx: MountContext,
@@ -148,7 +148,7 @@ function mountPart(
 
 /** Fresh browser DOM creation from the validated Part Program. */
 export function createFreshDom(
-  program: PartProgramV1,
+  program: PartProgramV2,
   host: CompiledRuntimeHost,
   root: Node,
   ownerScope?: LifetimeScope,

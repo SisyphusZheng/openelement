@@ -16,6 +16,6 @@ test('@openelement/element exports the compiled pipeline entries', () => {
   expect('defineLayout' in elementSurface).toEqual(false);
   expect('For' in elementSurface).toEqual(false);
   expect('jsx' in elementSurface).toEqual(false);
-  expect(typeof elementSurface.renderDsd).toEqual('function');
+  expect(typeof elementSurface.renderToString).toEqual('function');
   expect(typeof elementSurface.ensurePreHydrationClickCapture).toEqual('function');
 });

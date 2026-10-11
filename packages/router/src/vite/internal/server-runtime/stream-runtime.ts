@@ -10,14 +10,14 @@
  * than inside a codegen template string, so it is directly unit-testable
  * (#1470 block d).
  *
- * The per-route shell gate (`__createDeferredPageShell`) is the typed
- * {@linkcode createDeferredPageShell} factory (Amendment 1): the
+ * The per-route shell gate (`__createStreamPageShell`) is the typed
+ * {@linkcode createStreamPageShell} factory (Amendment 1): the
  * entry binds it to its serialized stream manifests and its
- * `createDeferredDsdExecutor` import and keeps only the call site.
+ * `createStreamShellExecutor` import and keeps only the call site.
  *
  * The admission budgets and the frame deny lists come from the policy
  * constants on Element's kernel-free `/authoring` leaf — the same numbers the
- * build-time manifest scan and the deferred executor enforce, so no copy of
+ * build-time manifest scan and the stream executor enforces, so no copy of
  * 256 KiB / 32 / 64 / 30 s lives in generated code. The Element functions the
  * pump calls (escapeAttr) are injected at binding time — the module carries
  * no Element runtime edge, so the LIT entry's import graph stays kernel-free
@@ -70,7 +70,7 @@ export interface StreamRequestScope {
   cancel(): void;
 }
 
-/** The slice of the element deferred executor the pump consumes. */
+/** The slice of the element stream executor the pump consumes. */
 export interface StreamExecutorView {
   readonly shell: string;
   readonly owner: { readonly instanceId: string };
@@ -456,19 +456,19 @@ export function createStreamBody(config: StreamBodyConfig): StreamBodyFn {
 }
 
 /**
- * The entry bindings the deferred-shell gate reads. `streamManifests` is the
+ * The entry bindings the stream-shell gate reads. `streamManifests` is the
  * generated `__streamManifests` build data; the executor creator is the
- * entry's `createDeferredDsdExecutor` Element import, injected so this module
+ * entry's `createStreamShellExecutor` Element import, injected so this module
  * stays free of an Element runtime edge (#1339).
  */
-export interface DeferredPageShellConfig {
+export interface StreamPageShellConfig {
   /** The entry's serialized route→stream-manifest build data (`__streamManifests`). */
   streamManifests: Record<string, StreamRouteManifest>;
   /**
-   * The entry's `createDeferredDsdExecutor` import — the deferred shell it
+   * The entry's `createStreamShellExecutor` import — the stream shell it
    * produces is the pump's executor view.
    */
-  createDeferredDsdExecutor: (options: {
+  createStreamShellExecutor: (options: {
     componentClass: unknown;
     props?: unknown;
     manifest: StreamRouteManifest;
@@ -483,12 +483,12 @@ export interface DeferredPageShellConfig {
  * must carry the compiled Part Program, and both must agree on tag and
  * program version — the gate fails closed with the route before the executor
  * re-verifies the wire hash (#1276 B1.3-F1). Bound to the entry's serialized
- * manifests and its `createDeferredDsdExecutor` import; the returned gate is
- * the `__createDeferredPageShell` call site (Amendment 1 — the last
+ * manifests and its `createStreamShellExecutor` import; the returned gate is
+ * the `__createStreamPageShell` call site (Amendment 1 — the last
  * runtime function body that stayed emitted for its oracle pin).
  */
-export function createDeferredPageShell(
-  config: DeferredPageShellConfig,
+export function createStreamPageShell(
+  config: StreamPageShellConfig,
 ): (
   route: string,
   routeModule: unknown,
@@ -496,8 +496,8 @@ export function createDeferredPageShell(
   instanceId: string,
   documentToken: string,
 ) => Promise<StreamExecutorView> {
-  const { streamManifests, createDeferredDsdExecutor } = config;
-  return async function __createDeferredPageShell(
+  const { streamManifests, createStreamShellExecutor } = config;
+  return async function __createStreamPageShell(
     route,
     routeModule,
     props,
@@ -527,7 +527,7 @@ export function createDeferredPageShell(
     // `return await` (not a bare return) keeps this an async function in the
     // linter's eyes, so the fail-closed check above rejects instead of
     // throwing synchronously.
-    return await createDeferredDsdExecutor({
+    return await createStreamShellExecutor({
       componentClass: Cls,
       props,
       manifest,

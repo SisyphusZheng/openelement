@@ -60,7 +60,7 @@ export default defineConfig({
         // The @scope light-DOM face, one block per declared ui tag.
         scopeTags: manifest.declarations.map((declaration) => declaration.tagName),
         // The ui components are compiled DSD elements that claim their
-        // shadow DOM exactly (the compiled-claim walk requires the shadow
+        // shadow DOM exactly (the compiled-hydration walk requires the shadow
         // root's children to equal the Part Program's own nodes — an
         // injected trailing link is structural drift, e2e-verified on
         // firefox). Same opt-out as the www site: the head link alone

@@ -22,7 +22,7 @@ export default class LiveTimer extends OpenElement {
   static override styles = [timerStyles];
 
   /** Elapsed seconds as preformatted text (compiled text Parts bind plain
-   * properties — no method calls in a text region, OEC9013). */
+   * properties — no method calls in a text block, OEC9013). */
   @property({ reflect: false, attribute: false })
   elapsed = "0.0";
 

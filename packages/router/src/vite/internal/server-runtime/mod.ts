@@ -111,14 +111,14 @@ export type { LayoutRuntime as AppShellRuntime } from './document-runtime.ts';
 /** Pre-rename runtime deps type. @deprecated Use LayoutRuntimeDeps. */
 export type { LayoutRuntimeDeps as AppShellRuntimeDeps } from './document-runtime.ts';
 export {
-  createDeferredPageShell,
+  createStreamPageShell,
   createStreamBody,
   createStreamRequestScope,
   STREAM_BROWSER_BOOTSTRAP,
   streamFields,
 } from './stream-runtime.ts';
 export type {
-  DeferredPageShellConfig,
+  StreamPageShellConfig,
   StreamBodyConfig,
   StreamBodyFn,
   StreamBodyOptions,

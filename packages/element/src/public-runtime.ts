@@ -1,14 +1,14 @@
 /**
  * Deliberate root-facade implementation boundary. Not a package subpath.
  *
- * This facade exposes the server-render entry (`renderDsd`, implemented over
+ * This facade exposes the server-render entry (`renderToString`, implemented over
  * the compiled Part Program serializer) and the pre-upgrade capture bootstrap
  * (implemented over the compiled claim capture/replay seam), alongside the
  * shared core/protocol/signal surface re-exported below.
  */
 import {
-  createDeferredServerExecutor,
-  type DeferredServerOwner,
+  createStreamServerExecutor,
+  type StreamOwner,
   serializeCompiledProgram,
 } from './internal/compiled/server/index.ts';
 import { convertToAttribute } from './internal/compiled/facade-host.ts';
@@ -60,7 +60,7 @@ export {
   wrapInDocument,
 } from './internal/core/html-escape.ts';
 // Streamed-frame admission policy (#1412 companion): the single source the
-// build manifest scan, the deferred executor admission, and the generated
+// build manifest scan, the stream executor admission, and the generated
 // browser installer all consume.
 export {
   STREAM_FRAME_FORBIDDEN_TAGS,
@@ -136,12 +136,12 @@ function collectStaticStyleCss(ctor: CompiledComponentConstructor): string | und
 }
 
 /**
- * Options for one `renderDsd()` call: the compiled component class to
+ * Options for one `renderToString()` call: the compiled component class to
  * serialize, the values projected onto its compiled properties, optional
  * route/source diagnostics metadata, the nested compiled tags the build
  * admitted, and trusted parent-owned light children keyed by slot name.
  */
-export interface RenderDsdOptions {
+export interface RenderToStringOptions {
   componentClass?: CustomElementConstructor;
   props?: Record<string, unknown>;
   sourceInfo?: { route?: string; source?: string };
@@ -152,7 +152,7 @@ export interface RenderDsdOptions {
 }
 
 /** Element-private normalized options used while recursively composing components. */
-interface InternalRenderDsdOptions extends Omit<RenderDsdOptions, 'projectedChildren'> {
+interface InternalRenderToStringOptions extends Omit<RenderToStringOptions, 'projectedChildren'> {
   hostAttrs?: readonly (readonly [string, unknown])[];
   projectedChildren?: ReadonlyMap<string, string>;
 }
@@ -166,7 +166,7 @@ function failUncompiled(ctor: object, tag: string): never {
     'ssr',
     FacadeErrorCode.PROGRAM_MISSING,
     `[openElement] <${tag}> (${classNameOf(ctor)}) has no compiled Part Program. ` +
-      'renderDsd only serializes classes produced by the OpenElement compiler ' +
+      'renderToString only serializes classes produced by the OpenElement compiler ' +
       '(@openelement/compiler open:compiled-element transform).',
   );
 }
@@ -252,8 +252,8 @@ function seedCompiledProperties(
       signals[record.name] = {
         get value(): never {
           throw new OpenElementError(
-            `[openElement] pending property "${record.name}" was read while creating a deferred shell.`,
-            { code: FacadeErrorCode.DEFERRED_PENDING_READ, phase: 'ssr' },
+            `[openElement] pending property "${record.name}" was read while creating a stream shell.`,
+            { code: FacadeErrorCode.STREAM_PENDING_READ, phase: 'ssr' },
           );
         },
         subscribe: () => () => {},
@@ -291,8 +291,8 @@ function seedCompiledProperties(
   return { signals, hostAttrs };
 }
 
-/** Maps route-local deferred fields to the compiled Part or Region owners they update. */
-export interface DeferredDsdManifest {
+/** Maps route-local deferred fields to the compiled Part or Block owners they update. */
+export interface StreamShellManifest {
   program: { version: number; tag: string; sha256: string };
   fields: readonly {
     field: string;
@@ -301,19 +301,19 @@ export interface DeferredDsdManifest {
   }[];
 }
 
-/** Inputs for a request-scoped deferred DSD server executor. */
-export interface CreateDeferredDsdOptions {
+/** Inputs for a request-scoped stream shell executor. */
+export interface CreateStreamShellOptions {
   componentClass: CustomElementConstructor;
   props?: Record<string, unknown>;
-  manifest: DeferredDsdManifest;
+  manifest: StreamShellManifest;
   instanceId: string;
   documentToken?: string;
 }
 
-/** Initial shell, typed seed, and bounded updates for a deferred DSD request. */
-export interface DeferredDsdExecutor {
+/** Initial shell, typed seed, and bounded updates for a stream shell request. */
+export interface StreamShellExecutor {
   readonly shell: string;
-  readonly owner: DeferredServerOwner;
+  readonly owner: StreamOwner;
   readonly seed: Record<
     string,
     | { state: 'resolved'; type: string; value: unknown }
@@ -334,7 +334,7 @@ function jsonSeed(value: unknown, field: string): unknown {
   const reject = (): never => {
     throw new OpenElementError(
       `[openElement] deferred property "${field}" is not a JSON-safe typed value.`,
-      { code: FacadeErrorCode.DEFERRED_VALUE_NOT_SERIALIZABLE, phase: 'ssr' },
+      { code: FacadeErrorCode.STREAM_VALUE_NOT_SERIALIZABLE, phase: 'ssr' },
     );
   };
   const seen = new Set<object>();
@@ -371,13 +371,13 @@ function jsonSeed(value: unknown, field: string): unknown {
 }
 
 /**
- * Create one request-local deferred shell from a generated route manifest.
+ * Create one request-local stream shell from a generated route manifest.
  * The manifest hash is checked against the exact runtime wire program before
  * any shell can be produced.
  */
-export async function createDeferredDsdExecutor(
-  options: CreateDeferredDsdOptions,
-): Promise<DeferredDsdExecutor> {
+export async function createStreamShellExecutor(
+  options: CreateStreamShellOptions,
+): Promise<StreamShellExecutor> {
   const ctor = options.componentClass as CompiledComponentConstructor;
   const program = ctor.__partProgram;
   if (!program) failUncompiled(ctor, '<unknown>');
@@ -388,7 +388,7 @@ export async function createDeferredDsdExecutor(
     typeof options.manifest.program.sha256 !== 'string'
   ) {
     throw new OpenElementError('[openElement] deferred route manifest is malformed.', {
-      code: FacadeErrorCode.DEFERRED_MANIFEST_MALFORMED,
+      code: FacadeErrorCode.STREAM_MANIFEST_MALFORMED,
       phase: 'ssr',
     });
   }
@@ -405,8 +405,8 @@ export async function createDeferredDsdExecutor(
     manifest.program.sha256 !== sha256
   ) {
     throw new OpenElementError(
-      `[openElement] deferred route manifest does not match compiled program <${program.tag}>.`,
-      { code: FacadeErrorCode.DEFERRED_MANIFEST_MISMATCH, phase: 'ssr' },
+      `[openElement] deferred route manifest does not match compiled program <${program.tag}> (manifest ${manifest.program.tag}@v${manifest.program.version} vs compiled ${program.tag}@v${program.version}).`,
+      { code: FacadeErrorCode.STREAM_MANIFEST_MISMATCH, phase: 'ssr' },
     );
   }
   const properties = Array.isArray(ctor.__compiledProperties)
@@ -420,7 +420,7 @@ export async function createDeferredDsdExecutor(
   ) {
     throw new OpenElementError(
       '[openElement] reserved compiled property name cannot enter a deferred seed.',
-      { code: FacadeErrorCode.DEFERRED_RESERVED_PROPERTY, phase: 'ssr' },
+      { code: FacadeErrorCode.STREAM_RESERVED_PROPERTY, phase: 'ssr' },
     );
   }
   // Same bounded budget the build manifest scan and the runtime/browser
@@ -437,7 +437,7 @@ export async function createDeferredDsdExecutor(
         `deferred budget: ${manifest.fields.length} fields (max ${STREAM_MAX_FIELDS}), ` +
         `${manifestOwnerTotal} Part owners (max ${STREAM_MAX_OWNERS}). Defer fewer fields, reduce ` +
         'the deferred sinks per field, or split the page.',
-      { code: FacadeErrorCode.DEFERRED_BUDGET_EXCEEDED, phase: 'ssr' },
+      { code: FacadeErrorCode.STREAM_BUDGET_EXCEEDED, phase: 'ssr' },
     );
   }
   const propertyNames = new Set(properties.map((record) => record.name));
@@ -453,14 +453,14 @@ export async function createDeferredDsdExecutor(
     ) {
       throw new OpenElementError(
         `[openElement] invalid deferred field "${field.field}" in route manifest.`,
-        { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
+        { code: FacadeErrorCode.STREAM_FIELD_INVALID, phase: 'ssr' },
       );
     }
     const record = properties.find((property) => property.name === field.field)!;
     if (record.computed || record.attribute !== null || record.reflect) {
       throw new OpenElementError(
         `[openElement] deferred property "${field.field}" must be writable and nonreflecting.`,
-        { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
+        { code: FacadeErrorCode.STREAM_FIELD_INVALID, phase: 'ssr' },
       );
     }
     pending.add(field.field);
@@ -476,7 +476,7 @@ export async function createDeferredDsdExecutor(
       ) {
         throw new OpenElementError(
           `[openElement] deferred field "${field.field}" has an invalid Part owner ${owner.index}.`,
-          { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
+          { code: FacadeErrorCode.STREAM_FIELD_INVALID, phase: 'ssr' },
         );
       }
       selectedParts.push(owner.index);
@@ -484,13 +484,13 @@ export async function createDeferredDsdExecutor(
     if (field.owners.length === 0) {
       throw new OpenElementError(
         `[openElement] deferred field "${field.field}" has no Part owners.`,
-        { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
+        { code: FacadeErrorCode.STREAM_FIELD_INVALID, phase: 'ssr' },
       );
     }
   }
   const props = options.props ?? {};
   const { signals, hostAttrs } = seedCompiledProperties(ctor, props, pending, true);
-  const seed: DeferredDsdExecutor['seed'] = {};
+  const seed: StreamShellExecutor['seed'] = {};
   for (const record of properties) {
     if (record.computed) continue;
     if (pending.has(record.name)) {
@@ -518,7 +518,7 @@ export async function createDeferredDsdExecutor(
         Object.keys(seed).length
       } properties; the browser seed contract accepts at most ${STREAM_MAX_SEED_PROPERTIES}. ` +
         'Trim the component property surface or the seed is silently rejected at hydration.',
-      { code: FacadeErrorCode.DEFERRED_BUDGET_EXCEEDED, phase: 'ssr' },
+      { code: FacadeErrorCode.STREAM_BUDGET_EXCEEDED, phase: 'ssr' },
     );
   }
   if (options.documentToken) {
@@ -535,13 +535,13 @@ export async function createDeferredDsdExecutor(
       : program.root.kind === 'shadow-open'
         ? 'open'
         : 'closed';
-  const owner: DeferredServerOwner = {
+  const owner: StreamOwner = {
     program,
     version: program.version,
     instanceId: options.instanceId,
   };
   const styleCss = collectStaticStyleCss(ctor);
-  const executor = createDeferredServerExecutor(
+  const executor = createStreamServerExecutor(
     program,
     { signals, handlers: {} },
     { owner, pendingParts: selectedParts },
@@ -561,7 +561,7 @@ export async function createDeferredDsdExecutor(
       const record = deferredProperties.get(field);
       if (!record) {
         throw new OpenElementError(`[openElement] unknown deferred field "${field}".`, {
-          code: FacadeErrorCode.DEFERRED_UNKNOWN_FIELD,
+          code: FacadeErrorCode.STREAM_UNKNOWN_FIELD,
           phase: 'ssr',
         });
       }
@@ -571,7 +571,7 @@ export async function createDeferredDsdExecutor(
       const entry = manifest.fields.find((candidate) => candidate.field === field);
       if (!entry) {
         throw new OpenElementError(`[openElement] unknown deferred field "${field}".`, {
-          code: FacadeErrorCode.DEFERRED_UNKNOWN_FIELD,
+          code: FacadeErrorCode.STREAM_UNKNOWN_FIELD,
           phase: 'ssr',
         });
       }
@@ -596,9 +596,9 @@ export async function createDeferredDsdExecutor(
  * Fails closed with `OE_PROGRAM_MISSING` for unregistered or uncompiled
  * classes — there is no runtime JSX fallback renderer.
  */
-function renderDsdAtDepth(
+function renderToStringAtDepth(
   input: string | CustomElementConstructor,
-  options: InternalRenderDsdOptions = {},
+  options: InternalRenderToStringOptions = {},
   depth = 0,
 ): string {
   if (depth > MAX_COMPOSITION_DEPTH) {
@@ -615,7 +615,7 @@ function renderDsdAtDepth(
       : input)) as CompiledComponentConstructor | undefined;
   if (!resolvedClass) {
     throw new OpenElementError(
-      `[openElement] renderDsd(${
+      `[openElement] renderToString(${
         typeof input === 'string' ? JSON.stringify(input) : 'class'
       }) found no compiled class: pass options.componentClass or register the tag. ` +
         'The serializer reads the compiled statics from the class and fails ' +
@@ -628,7 +628,7 @@ function renderDsdAtDepth(
   const tag = program.tag;
   if (typeof input === 'string' && input !== tag) {
     throw new OpenElementError(
-      `[openElement] renderDsd tag "${input}" does not match the compiled program tag "${tag}".`,
+      `[openElement] renderToString tag "${input}" does not match the compiled program tag "${tag}".`,
       { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
     );
   }
@@ -705,7 +705,7 @@ function renderDsdAtDepth(
                 ([name]) => !propertyAttributes.has(name),
               );
               const nestedMode = nestedClass.__partProgram.root.kind;
-              const rendered = renderDsdAtDepth(
+              const rendered = renderToStringAtDepth(
                 nested.tag,
                 {
                   componentClass: nestedClass,
@@ -757,9 +757,9 @@ function renderDsdAtDepth(
 
 /** Server-render one compiled element through canonical Element composition:
  * returns the serialized DSD `html` string directly. */
-export function renderDsd(
+export function renderToString(
   input: string | CustomElementConstructor,
-  options: RenderDsdOptions = {},
+  options: RenderToStringOptions = {},
 ): string {
   const { projectedChildren, ...publicOptions } = options;
   const normalizedProjectedChildren = projectedChildren
@@ -767,7 +767,7 @@ export function renderDsd(
         [...projectedChildren].map(([slot, value]) => [slot, trustedHtmlValue(value)] as const),
       )
     : undefined;
-  return renderDsdAtDepth(input, {
+  return renderToStringAtDepth(input, {
     ...publicOptions,
     projectedChildren: normalizedProjectedChildren,
   });

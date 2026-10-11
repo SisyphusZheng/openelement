@@ -355,11 +355,11 @@ test('renderEntry: imports DSD renderer; Hono assembly is the factory (#1470 blo
   expect(code).toContain('const __app = createGeneratedApp({');
   expect(code).toContain('export default app');
   // v0.5.0: DSD renderer replaces @lit-labs/ssr; v0.44: the compiled sync
-  // renderDsd is the only serializer — no runtime JSX or tree renderer.
+  // renderToString is the only serializer — no runtime JSX or tree renderer.
   expect(code).toContain(
-    "import { createDeferredDsdExecutor, renderDsd, trustedHtml, escapeHtml, wrapInDocument } from '@openelement/element'",
+    "import { createStreamShellExecutor, renderToString, trustedHtml, escapeHtml, wrapInDocument } from '@openelement/element'",
   );
-  expect(code.includes('renderDsdTree')).toBeFalsy();
+  expect(code.includes('renderToStringTree')).toBeFalsy();
   expect(code.includes("import { jsx } from '@openelement/element'")).toBeFalsy();
   // Element owns document/head/body semantics; generated entries only call it.
   expect(code.includes('function wrapInDocument(html, options = {}) {')).toBeFalsy();

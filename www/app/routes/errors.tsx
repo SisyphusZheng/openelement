@@ -84,8 +84,8 @@ const content = {
 
 /**
  * Project the generated inventory onto the page's fixed row grammar. Row
- * fields are strings: the compiled list Region admits `{item.<field>}` values
- * and elements, not a nested list Region, so the multi-value columns are
+ * fields are strings: the compiled list Block admits `{item.<field>}` values
+ * and elements, not a nested list Block, so the multi-value columns are
  * joined here (the generator already sorted them deterministically).
  */
 function projectCodes(locale: Locale): ErrorCodeItem[] {

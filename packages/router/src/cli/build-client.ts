@@ -20,8 +20,8 @@ import { dirname, isAbsolute, join, relative, resolve } from 'pathe';
 import {
   extractCustomElementTags,
   generateClientEntry,
-  islandsMightUseRegions,
-  elementRuntimeRegionsAlias,
+  islandsMightUseBlocks,
+  elementRuntimeBlocksAlias,
 } from '../vite/internal/ssg/index.ts';
 import { runtimeModulePath } from '../vite/internal/runtime-module-path.ts';
 import { findBuildWorkspaceRoot } from '../vite/workspace-alias.ts';
@@ -457,13 +457,13 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const packageDeclIdentities = () =>
     selectedPackageDecls.map((island) => packageIslandIdentity(island, islandModuleIds));
 
-  // #1548: the regions axis of the element entry selection. The scan asks the
+  // #1548: the blocks axis of the element entry selection. The scan asks the
   // compiler (the single owner of the fact) whether any admitted island
-  // module lowers when/each Region Parts; only its proof of absence drops
-  // the Region builders from the page's element entry. The sidecar
+  // module lowers when/each Block Parts; only its proof of absence drops
+  // the Block builders from the page's element entry. The sidecar
   // descriptors match the compiledElementPlugin call below, so the scan
   // admits exactly the modules the build's own transform admits.
-  const mightUseRegions = islandsMightUseRegions({
+  const mightUseBlocks = islandsMightUseBlocks({
     root,
     islandsDir,
     islandTagNames: selectedLocalTags,
@@ -473,12 +473,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     staticSidecars: [ISLAND_ADMISSION],
   });
   // The emission half of the same axis: resolve the bare element specifier to
-  // the regions-free entry for the whole client graph. Native renderer only —
+  // the blocks-free entry for the whole client graph. Native renderer only —
   // a lit build's element modules arrive transitively through the router
   // client runtime and its generated entry is element-free (#1339).
-  const elementRuntimeRegionsAliasValue =
-    !mightUseRegions && ctx.options.renderer !== 'lit'
-      ? elementRuntimeRegionsAlias(root, serializedAlias)
+  const elementRuntimeBlocksAliasValue =
+    !mightUseBlocks && ctx.options.renderer !== 'lit'
+      ? elementRuntimeBlocksAlias(root, serializedAlias)
       : undefined;
 
   const clientEntryCode = generateClientEntry(islandEntries, {
@@ -489,7 +489,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     // alias bailing out does not flip this flag: the entry subpath resolves
     // through the package exports regardless of the alias, and keeping the
     // builders in the entry graph is the safe direction.
-    ...(mightUseRegions ? {} : { includeRegionsRuntime: false }),
+    ...(mightUseBlocks ? {} : { includeBlocksRuntime: false }),
   });
 
   // Restore RegExp from serialized noExternal patterns
@@ -645,15 +645,15 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     },
     resolve: {
       alias: [
-        // #1548: with the regions scan's proof of absence, the WHOLE client
-        // graph resolves the element runtime to the regions-free entry — the
-        // generated entry's specifier alone cannot prune the regions cluster,
+        // #1548: with the blocks scan's proof of absence, the WHOLE client
+        // graph resolves the element runtime to the blocks-free entry — the
+        // generated entry's specifier alone cannot prune the blocks cluster,
         // because every island module imports `@openelement/element` for its
         // base class and the package's sideEffects declaration (#1425) keeps
         // the default entry's installs alive in every graph that touches it.
         // Undefined (or lit, whose element modules arrive transitively and
         // whose entry is element-free) keeps the default resolution.
-        ...(elementRuntimeRegionsAliasValue !== undefined ? [elementRuntimeRegionsAliasValue] : []),
+        ...(elementRuntimeBlocksAliasValue !== undefined ? [elementRuntimeBlocksAliasValue] : []),
         ...serializedAlias,
       ],
       // The browser-client resolve policy the outer resolved config carries

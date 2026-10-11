@@ -283,18 +283,18 @@ test('#1416: the lit renderer entry imports no element entry at all', () => {
   expect(importLines(code).some((line) => line.includes('@openelement/element'))).toEqual(false);
 });
 
-// #1548: the regions axis. The entry carries the when/each Region builders
-// unless the island regions scan proved no island module lowers one — the
+// #1548: the blocks axis. The entry carries the when/each Block builders
+// unless the island blocks scan proved no island module lowers one — the
 // codegen only translates that proof into the subpath choice.
 
-test('#1548: includeRegionsRuntime:false picks the no-regions entry for a hydrating page', () => {
+test('#1548: includeBlocksRuntime:false picks the no-blocks entry for a hydrating page', () => {
   const code = generateClientEntry(
     [{ tagName: 'x-counter', modulePath: './counter.ts', strategy: 'idle', ssr: true, dsd: true }],
-    { includeRegionsRuntime: false },
+    { includeBlocksRuntime: false },
   );
   expect(
-    importLines(code).some((line) => line.includes("from '@openelement/element/no-regions'")),
-    'the claim stays (the page hydrates) while the Region builders drop',
+    importLines(code).some((line) => line.includes("from '@openelement/element/no-blocks'")),
+    'the claim stays (the page hydrates) while the Block builders drop',
   ).toBeTruthy();
   expect(importLines(code).some((line) => line.endsWith("from '@openelement/element';"))).toEqual(
     false,
@@ -303,7 +303,7 @@ test('#1548: includeRegionsRuntime:false picks the no-regions entry for a hydrat
   assertEntrySyntax(code);
 });
 
-test('#1548: includeRegionsRuntime:false picks the base entry for a client-only page', () => {
+test('#1548: includeBlocksRuntime:false picks the base entry for a client-only page', () => {
   const code = generateClientEntry(
     [
       {
@@ -314,18 +314,18 @@ test('#1548: includeRegionsRuntime:false picks the base entry for a client-only 
         dsd: false,
       },
     ],
-    { includeRegionsRuntime: false },
+    { includeBlocksRuntime: false },
   );
   expect(
     importLines(code).some((line) => line.includes("from '@openelement/element/base'")),
-    'neither claim nor regions on a page that can hydrate nothing and use no Regions',
+    'neither claim nor blocks on a page that can hydrate nothing and use no Blocks',
   ).toBeTruthy();
   expect(importLines(code).some((line) => line.includes('client-only'))).toEqual(false);
-  expect(importLines(code).some((line) => line.includes('no-regions'))).toEqual(false);
+  expect(importLines(code).some((line) => line.includes('no-blocks'))).toEqual(false);
   assertEntrySyntax(code);
 });
 
-test('#1548: the regions default keeps the full entry (conservative)', () => {
+test('#1548: the blocks default keeps the full entry (conservative)', () => {
   // No option = the scan did not run or proved nothing: the default entry
   // stands, exactly like the #1416 claim default.
   const code = generateClientEntry([
@@ -334,24 +334,24 @@ test('#1548: the regions default keeps the full entry (conservative)', () => {
   expect(importLines(code).some((line) => line.endsWith("from '@openelement/element';"))).toBe(
     true,
   );
-  expect(importLines(code).some((line) => line.includes('no-regions'))).toBe(false);
+  expect(importLines(code).some((line) => line.includes('no-blocks'))).toBe(false);
   expect(importLines(code).some((line) => line.includes('/base'))).toBe(false);
 });
 
-test('#1548: includeRegionsRuntime:true is explicit and equivalent to the default', () => {
+test('#1548: includeBlocksRuntime:true is explicit and equivalent to the default', () => {
   const code = generateClientEntry(
     [{ tagName: 'x-counter', modulePath: './counter.ts', strategy: 'idle' }],
-    { includeRegionsRuntime: true },
+    { includeBlocksRuntime: true },
   );
   expect(importLines(code).some((line) => line.endsWith("from '@openelement/element';"))).toBe(
     true,
   );
 });
 
-test('#1548: the lit renderer ignores the regions axis (no element entry either way)', () => {
+test('#1548: the lit renderer ignores the blocks axis (no element entry either way)', () => {
   const code = generateClientEntry(
     [{ tagName: 'x-lit', modulePath: './lit.ts', strategy: 'idle' }],
-    { renderer: 'lit', includeRegionsRuntime: false },
+    { renderer: 'lit', includeBlocksRuntime: false },
   );
   expect(importLines(code).some((line) => line.includes('@openelement/element'))).toEqual(false);
 });

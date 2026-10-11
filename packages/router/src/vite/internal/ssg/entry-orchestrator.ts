@@ -93,7 +93,7 @@ export function renderEntry(desc: EntryDescriptor): string {
   // --- Layout imports + explicit registration ---
   // Compiled layout modules do not self-register: the entry imports the
   // module namespace and registers the default-exported compiled class under
-  // the configured layout tag. renderDsd fails closed on a tag mismatch.
+  // the configured layout tag. renderToString fails closed on a tag mismatch.
   // Deduped by importPath — one module maps to one compiled class and tag.
   const layoutModules = new Map<string, string>();
   const collectLayoutModule = (shell: typeof desc.layout.default) => {
@@ -213,15 +213,15 @@ export function renderEntry(desc: EntryDescriptor): string {
     // Stream pump runtime (#1470 block d): the pump, the browser bootstrap,
     // and (Amendment 1) the deferred-shell gate are imported runtime; the
     // entry binds the pump to its escapeAttr import and the gate to its
-    // serialized manifests + createDeferredDsdExecutor import.
+    // serialized manifests + createStreamShellExecutor import.
     lines.push("// Stream pump runtime, bound to the entry's escapeAttr import.");
     lines.push('const __streamBody = __createStreamBody({ escapeAttr });');
     lines.push(
       "// The deferred-shell gate (Amendment 1), bound to the entry's",
-      '// serialized stream manifests and its createDeferredDsdExecutor import.',
+      '// serialized stream manifests and its createStreamShellExecutor import.',
     );
     lines.push(
-      'const __createDeferredPageShell = __createDeferredPageShellGate({ streamManifests: __streamManifests, createDeferredDsdExecutor });',
+      'const __createStreamPageShell = __createStreamPageShellGate({ streamManifests: __streamManifests, createStreamShellExecutor });',
     );
     lines.push('');
   }

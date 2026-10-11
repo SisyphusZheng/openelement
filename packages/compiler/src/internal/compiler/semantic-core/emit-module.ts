@@ -17,7 +17,7 @@ import { type CompiledElementSourceMap, SourceMapSegmentBuilder } from './source
 import {
   COMPILED_MODULE_ABI_VERSION,
   PART_PROGRAM_VERSION,
-  type PartProgramV1,
+  type PartProgramV2,
 } from '@openelement/protocol/part-program';
 
 /**
@@ -108,7 +108,7 @@ export interface EmitModuleInput {
   fileName: string;
   analyzed: AnalyzedModule;
   lowering: Lowering;
-  program: PartProgramV1;
+  program: PartProgramV2;
   programJson: string;
   propertiesJson: string;
   metadataJson: string;
@@ -363,7 +363,7 @@ export function emitCompiledModule(input: EmitModuleInput): EmitModuleResult {
   const computedFields = fields.filter((field) => field.computed);
   if (computedFields.length > 0) {
     // Derived-signal factories: each builds the field's read-only computed
-    // over the instance's plain property signals (facade + renderDsd run the
+    // over the instance's plain property signals (facade + renderToString run the
     // same factories, so server output and client claim read one value set).
     // The outer annotation gives every factory an explicit function type
     // (consumer:packaged gate): the return is the authored field type, the

@@ -160,7 +160,7 @@ function sharedActivationFactory(
 /**
  * Whether any island this page can upgrade may hydrate server-rendered DOM
  * (#1416). The generated entry imports `@openelement/element` when it can, and
- * `@openelement/element/client-only` (same surface, no claim executor) when it
+ * `@openelement/element/client-only` (same surface, no hydration executor) when it
  * cannot — a page whose every island is client-only never needs the ~9 KB of
  * claim machinery.
  *
@@ -181,25 +181,25 @@ function pageCanHydrateServerDom(islands: readonly NormalizedClientIsland[]): bo
 
 /**
  * The element entry a generated client bundle imports, on two predicates
- * (the #1416 claim split plus the #1548 regions split):
+ * (the #1416 claim split plus the #1548 blocks split):
  *
  * - claim axis (#1416): `canHydrateServerDom` — `false` proves every island is
- *   client-only and the entry drops the compiled claim executor
+ *   client-only and the entry drops the compiled hydration executor
  *   (`./client-only`);
- * - regions axis (#1548): `includeRegionsRuntime` — `false` records the
- *   island regions scan's proof that no admitted island module lowers a
- *   conditional or list Region, and the entry drops the compiled when/each
- *   builders (`./no-regions`, or `./base` when both axes drop).
+ * - blocks axis (#1548): `includeBlocksRuntime` — `false` records the
+ *   island blocks scan's proof that no admitted island module lowers a
+ *   conditional or list Block, and the entry drops the compiled when/each
+ *   builders (`./no-blocks`, or `./base` when both axes drop).
  *
  * Both defaults keep the full runtime: the claim default is "any island can
- * hydrate", the regions default is "the scan did not run or proved nothing".
+ * hydrate", the blocks default is "the scan did not run or proved nothing".
  */
 function elementEntrySpecifier(
   canHydrateServerDom: boolean,
-  includeRegionsRuntime: boolean,
+  includeBlocksRuntime: boolean,
 ): string {
-  if (!includeRegionsRuntime) {
-    return canHydrateServerDom ? '@openelement/element/no-regions' : '@openelement/element/base';
+  if (!includeBlocksRuntime) {
+    return canHydrateServerDom ? '@openelement/element/no-blocks' : '@openelement/element/base';
   }
   return canHydrateServerDom ? '@openelement/element' : '@openelement/element/client-only';
 }
@@ -223,16 +223,16 @@ interface GenerateClientEntryOptions {
    */
   renderer?: 'native' | 'lit';
   /**
-   * Whether the page's element entry installs the compiled when/each Region
+   * Whether the page's element entry installs the compiled when/each Block
    * builders (#1548). Defaults to true — the full runtime. `false` is the
-   * island regions scan's proof (`islandsMightUseRegions` === false) that no
-   * admitted island module lowers a Region Part; the entry then drops the
-   * builders (`./no-regions`, or `./base` when the page is also all
+   * island blocks scan's proof (`islandsMightUseBlocks` === false) that no
+   * admitted island module lowers a Block Part; the entry then drops the
+   * builders (`./no-blocks`, or `./base` when the page is also all
    * client-only). Any doubt keeps the builders: a wrong `false` breaks every
    * when/each Part with a fail-closed runtime error, a wrong `true` costs
    * only bytes.
    */
-  includeRegionsRuntime?: boolean;
+  includeBlocksRuntime?: boolean;
 }
 
 export function generateClientEntry(
@@ -252,13 +252,13 @@ export function generateClientEntry(
 
   const lit = selectRendererAdapter(options.renderer).hydration === 'lit-adoption';
   // Lit hydration is owned by lit-element-hydrate-support, not by the compiled
-  // claim, so the element package's claim executor is never part of a lit
+  // claim, so the element package's hydration executor is never part of a lit
   // client bundle: that entry already keeps its element imports minimal and
   // the subpath choice below is a native-renderer concern.
   const canHydrateServerDom = pageCanHydrateServerDom(admittedIslands);
-  // #1548: the regions axis defaults to installed; only the scan's proof of
-  // absence drops the builders (see includeRegionsRuntime above).
-  const includeRegionsRuntime = options.includeRegionsRuntime !== false;
+  // #1548: the blocks axis defaults to installed; only the scan's proof of
+  // absence drops the builders (see includeBlocksRuntime above).
+  const includeBlocksRuntime = options.includeBlocksRuntime !== false;
   const groupsByKey = new Map<string, ActivationGroup>();
   for (const entry of admittedIslands) {
     const key = activationGroupKey(entry);
@@ -379,7 +379,7 @@ var __liftDeferHydration = function (root, tag) {
 };`
     : `import { createLogger, ensureDeepFragmentNavigation, ensurePreHydrationClickCapture } from '${elementEntrySpecifier(
         canHydrateServerDom,
-        includeRegionsRuntime,
+        includeBlocksRuntime,
       )}';
 import { createIslandScheduler as __schedule } from '${VIRTUAL_RUNTIME_SPECIFIERS.scheduler}';
 ${

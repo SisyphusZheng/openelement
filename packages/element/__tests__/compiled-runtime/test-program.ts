@@ -1,10 +1,10 @@
 /**
- * Test-only builder for valid Part Program v1 values.
+ * Test-only builder for valid Part Program v2 values.
  *
  * Runtime tests declare the executable core of a program (tag, template,
  * parts) and this builder derives the compiler-owned identity records exactly
  * the way the canonical encoding requires: stable element/anchor ids, per-part
- * locations, region/dependency/location records, and a consistent source map
+ * locations, block/dependency/location records, and a consistent source map
  * and metadata envelope. Every built value is round-tripped through
  * `validatePartProgram`, so a spec mistake fails at build time with the real
  * validator diagnostic.
@@ -157,21 +157,21 @@ function resolveElementId(template: BuiltNode[], path: number[], partIndex: numb
 }
 
 const FIXED_KINDS = new Set(['prop', 'attr', 'bool', 'class', 'style', 'html', 'ref', 'event']);
-const REGION_KINDS = new Set(['when', 'each']);
+const BLOCK_KINDS = new Set(['when', 'each']);
 
-function sourceKind(recordId: string, regionPartIds: Set<string>): string {
+function sourceKind(recordId: string, blockPartIds: Set<string>): string {
   if (recordId === 'root') return 'root';
   if (recordId.startsWith('e')) return 'element';
-  if (regionPartIds.has(recordId) || recordId.startsWith('r')) return 'region';
+  if (blockPartIds.has(recordId) || recordId.startsWith('r')) return 'region';
   return 'part';
 }
 
-/** Build one validated Part Program v1 from the executable core of a spec. */
+/** Build one validated Part Program v2 from the executable core of a spec. */
 export function testProgram(spec: TestProgramSpec): PartProgram {
   const state: BuildState = { nextElementId: 0, elements: [], anchors: [] };
   const template = buildNodes(spec.template, [], [], false, state);
 
-  // Region subtrees are walked in part order, after the template, matching the
+  // Block subtrees are walked in part order, after the template, matching the
   // compiler's identity assignment discipline.
   const parts = spec.parts.map((part) => {
     const built: Record<string, unknown> = { ...part };
@@ -188,7 +188,7 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
   for (const element of state.elements) {
     locations.push({ id: element.id, kind: 'element', tag: element.tag, path: element.path });
   }
-  const regionPartIds = new Set<string>();
+  const blockPartIds = new Set<string>();
   const blocks: Array<Record<string, unknown>> = [];
   const dependencies: Array<Record<string, unknown>> = [];
   for (const part of spec.parts) {
@@ -204,8 +204,8 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
       parts[part.index].location = { id: locationId, kind: 'anchor', path };
       locations.push({ id: locationId, kind: 'anchor', part: part.index, path });
     }
-    if (REGION_KINDS.has(part.k)) {
-      regionPartIds.add(locationId);
+    if (BLOCK_KINDS.has(part.k)) {
+      blockPartIds.add(locationId);
       blocks.push({
         id: `r${part.index}`,
         index: part.index,
@@ -218,7 +218,7 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
     if (part.signal !== undefined) {
       dependencies.push({
         signal: part.signal,
-        owner: { kind: REGION_KINDS.has(part.k) ? 'region' : 'part', index: part.index },
+        owner: { kind: BLOCK_KINDS.has(part.k) ? 'region' : 'part', index: part.index },
         location: locationId,
       });
     }
@@ -238,7 +238,7 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
     file: sourceFile,
     records: recordIds.map((id, position) => ({
       id,
-      kind: id.startsWith('property:') ? 'property' : sourceKind(id, regionPartIds),
+      kind: id.startsWith('property:') ? 'property' : sourceKind(id, blockPartIds),
       source: {
         file: sourceFile,
         start: { offset: position * 16, line: position + 1, column: 1 },
@@ -290,9 +290,6 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
     template,
     parts,
     blocks,
-    // Transitional `regions` mirror (alpha15 R batch 1): batch-4 readers
-    // still read this key — always the identical array.
-    regions: blocks,
     dependencies,
     locations,
     sourceMap,

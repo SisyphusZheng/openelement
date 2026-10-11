@@ -1,5 +1,5 @@
 /**
- * Part Program v1 assembly for the compiled grammar (#1473 split): metadata,
+ * Part Program v2 assembly for the compiled grammar (#1473 split): metadata,
  * source-provenance
  * records, path-safety and wire validation, plus the serialized payloads the
  * module emission embeds.
@@ -12,7 +12,7 @@ import type { Lowering } from './lower-program.ts';
 import {
   PART_PROGRAM_VERSION,
   type CompiledElementMetadata,
-  type PartProgramV1,
+  type PartProgramV2,
   type ProgramElementNode,
   type ProgramSourceRecord,
   validatePartProgram,
@@ -25,7 +25,7 @@ import {
  * different nodes. The v1 location id remains the identity; this guard keeps
  * the path retained for seed consumers safe until they consume that id.
  */
-function assertPathSafety(program: PartProgramV1): void {
+function assertPathSafety(program: PartProgramV2): void {
   for (const part of program.parts) {
     if (part.k === 'text' || part.k === 'when' || part.k === 'each') continue;
     let nodes = program.template;
@@ -67,7 +67,7 @@ export interface EmitProgramInput {
 }
 
 export interface EmitProgramResult {
-  program: PartProgramV1;
+  program: PartProgramV2;
   programJson: string;
   propertiesJson: string;
   metadataJson: string;
@@ -129,16 +129,13 @@ export function buildPartProgram(input: EmitProgramInput): EmitProgramResult {
     })),
     ...lowering.sourceRecords,
   ];
-  const program: PartProgramV1 = {
+  const program: PartProgramV2 = {
     version: PART_PROGRAM_VERSION,
     tag,
     root: { id: 'root', kind: rootKind, nodes: [root.id] },
     template: [root],
     parts: lowering.parts,
     blocks: lowering.blocks,
-    // Transitional `regions` mirror (alpha15 R batch 1): batch-4 readers still
-    // read this key — always the identical array; the validator rejects drift.
-    regions: lowering.blocks,
     dependencies: lowering.dependencies,
     locations: lowering.locations,
     sourceMap: { version: 1, file: fileName, records: sourceRecords },

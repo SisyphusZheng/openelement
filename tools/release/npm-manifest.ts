@@ -79,7 +79,7 @@ const ENGINES: Record<string, Record<string, string>> = {
  *
  * `@openelement/element` cannot be a flat `false` (#1425). The default entry
  * installs the compiled hydration executor through an import-time seam: the entry
- * performs `import './internal/compiled/runtime/claim-install.js'` and that
+ * performs `import './internal/compiled/runtime/hydrate-install.js'` and that
  * module calls `installHydrationExecutor(...)` at module scope. A bundler that
  * reads `sideEffects: false` removes BOTH halves — the bare import inside the
  * entry (an unused statement in a side-effect-free module) and the installer
@@ -92,9 +92,9 @@ const ENGINES: Record<string, Record<string, string>> = {
  * either entry is removed from this list.
  *
  * #1548 adds the blocks axis to the same contract: the default entry and
- * `./client-only` also import `regions-install.js` (`installBlockBuilders(...)`
+ * `./client-only` also import `blocks-install.js` (`installBlockBuilders(...)`
  * at module scope), so the when/each Block builders ship on those entries and
- * are droppable on `./no-regions` and `./base`. The flagged set is therefore
+ * are droppable on `./no-blocks` and `./base`. The flagged set is therefore
  * the three importing entries plus both installers; the source-side mirror
  * lives in packages/element/package.json `sideEffects` and the walker shared
  * by both guards is packages/element/__tests__/side-effects-declaration.test.ts.
@@ -104,9 +104,9 @@ const SIDE_EFFECTS: Record<string, false | string[]> = {
   '@openelement/element': [
     './src/index.js',
     './src/client-only.js',
-    './src/no-regions.js',
-    './src/internal/compiled/runtime/claim-install.js',
-    './src/internal/compiled/runtime/regions-install.js',
+    './src/no-blocks.js',
+    './src/internal/compiled/runtime/hydrate-install.js',
+    './src/internal/compiled/runtime/blocks-install.js',
   ],
   '@openelement/compiler': false,
   '@openelement/router': false,

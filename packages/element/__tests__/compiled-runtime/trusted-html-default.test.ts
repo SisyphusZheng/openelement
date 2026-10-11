@@ -32,7 +32,7 @@ import { installFacadeDom, mountSerialized, toHtml } from './facade-dom.ts';
 
 const dom = installFacadeDom();
 
-const { OpenElement, renderDsd, trustedHtml } = await import('../../src/index.ts');
+const { OpenElement, renderToString, trustedHtml } = await import('../../src/index.ts');
 
 // The island form, exactly as a consumer writes it: the README's recipe
 // (package manifest + island config) over a trustedHtml property.
@@ -99,7 +99,7 @@ test('the compile artifact separates the serializable projection from the runtim
 });
 
 test('island SSR with no props renders the branded default (the KR-12 failure)', () => {
-  const rendered = renderDsd(TAG, {
+  const rendered = renderToString(TAG, {
     componentClass: TrustedHtmlIsland as unknown as CustomElementConstructor,
   });
   expect(rendered).toContain('<b class="branded">branded default</b>');
@@ -108,7 +108,7 @@ test('island SSR with no props renders the branded default (the KR-12 failure)',
 test('an explicit unbranded string still fails closed (capability unchanged)', () => {
   assertThrowsIncludes(
     () =>
-      renderDsd(TAG, {
+      renderToString(TAG, {
         componentClass: TrustedHtmlIsland as unknown as CustomElementConstructor,
         props: { bodyHtml: '<b>raw string</b>' },
       }),
@@ -118,7 +118,7 @@ test('an explicit unbranded string still fails closed (capability unchanged)', (
 });
 
 test('an explicit branded prop wins (the page-component props() form)', () => {
-  const rendered = renderDsd(TAG, {
+  const rendered = renderToString(TAG, {
     componentClass: TrustedHtmlIsland as unknown as CustomElementConstructor,
     props: { bodyHtml: trustedHtml('<i>from props</i>') },
   });
@@ -127,7 +127,7 @@ test('an explicit branded prop wins (the page-component props() form)', () => {
 });
 
 test('the claimed element hydrates against the same branded content', () => {
-  const serialized = renderDsd(TAG, {
+  const serialized = renderToString(TAG, {
     componentClass: TrustedHtmlIsland as unknown as CustomElementConstructor,
   });
   const element = mountSerialized(dom, serialized) as AnyElement;

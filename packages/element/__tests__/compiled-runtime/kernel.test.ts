@@ -2,12 +2,12 @@ import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
 import { CompiledErrorBoundary } from '../../src/error-boundary.ts';
 import { ElementFormController } from '../../src/open-element-form.ts';
-// The claim executor is installed by the package entry, not by the kernel
+// The hydration executor is installed by the package entry, not by the kernel
 // (#1416): the kernel resolves it through the claim seam. This file reaches
 // the kernel directly, so it installs it exactly as the default
 // '@openelement/element' entry does — the claim cases below are about the
 // kernel's claim path, which presupposes an installing entry.
-import '../../src/internal/compiled/runtime/claim-install.ts';
+import '../../src/internal/compiled/runtime/hydrate-install.ts';
 import { CompiledElementKernel } from '../../src/internal/compiled/runtime/kernel.ts';
 import { createFreshDom } from '../../src/internal/compiled/runtime.ts';
 import { signal } from '../../src/internal/signal/framework.ts';
@@ -416,7 +416,7 @@ test('kernel boundary captures a failing signal update (#1375)', () => {
   expect(toHtml(list)).toEqual('<ul><!--oe:p0--><li>alpha</li><!--oe:/p0--></ul>');
 
   // A non-array write throws inside the update phase. The kernel boundary
-  // captures it — the write site never sees the throw — and the each Region's
+  // captures it — the write site never sees the throw — and the each Block's
   // pre-validation leaves the previous DOM untouched. #1413: the message names
   // the authored property and the compiled module, never the part index.
   items.value = 'not-an-array';

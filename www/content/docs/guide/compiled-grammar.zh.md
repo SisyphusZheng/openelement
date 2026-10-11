@@ -329,7 +329,7 @@ render() { return <p>{this.name.trim()}</p>; }
 
 ## 分支必须全静态
 
-条件降级为 `when` Region，因此每个分支必须恰好是一个静态 JSX 元素（可自带 Part）。形状依赖运行时数据的分支——三元落到非元素表达式、嵌套三元——无法表示；修法是用一个 `computed(...)` 布尔值来测试分支。
+条件降级为 `when` Block，因此每个分支必须恰好是一个静态 JSX 元素（可自带 Part）。形状依赖运行时数据的分支——三元落到非元素表达式、嵌套三元——无法表示；修法是用一个 `computed(...)` 布尔值来测试分支。
 
 ```tsx
 import { element, OpenElement, property } from '@openelement/element';
@@ -348,7 +348,7 @@ export class MyStatus extends OpenElement {
 ```text
 // 拒绝：分支必须是单个静态 JSX 元素 —— OEC9012
 render() { return <div>{this.ready ? <b>{this.label}</b> : <i>Waiting</i>}</div>; }
-// 纯文本三元甚至不是 Region：
+// 纯文本三元甚至不是 Block：
 render() { return <div>{this.ready ? 'yes' : 'no'}</div>; }
 ```
 

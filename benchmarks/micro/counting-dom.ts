@@ -16,7 +16,7 @@ export interface DomCounts {
   valueWrites: number;
   /** Attribute writes (setAttribute/removeAttribute) — micro diagnostics (#1219). */
   attrWrites: number;
-  /** appendChild/insertBefore calls — Region move diagnostics (#1219). */
+  /** appendChild/insertBefore calls — Block move diagnostics (#1219). */
   insertions: number;
   listenerAdds: number;
   listenerRemoves: number;

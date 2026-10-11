@@ -81,7 +81,7 @@ export default defineConfig({
   tailwind: {
     theme: ['@openelement/ui/theme.css', ...SITE_FONT_SOURCES],
     // The Site's compiled DSD islands claim their shadow DOM exactly (the
-    // compiled-claim walk requires the shadow root's children to equal the
+    // compiled-hydration walk requires the shadow root's children to equal the
     // Part Program's own nodes), so the per-shadow-template link injection is
     // off: the head link alone reaches every shadow tree — the theme layer is
     // custom properties, which inherit across the shadow boundary.

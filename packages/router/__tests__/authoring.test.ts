@@ -7,14 +7,14 @@
  * projectors) to the compiled element class the route module default-exports.
  * The render coverage of the legacy suite (VNode rendering, render-scope data
  * hooks) is replaced by the compiled serializer path — the hand-built
- * compiled class below renders through the public renderDsd(), and the
+ * compiled class below renders through the public renderToString(), and the
  * request-time fixture (tests/fixtures/router-request-time)
  * covers loader/action data reaching rendered HTML end-to-end.
  */
 
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
-import { OpenElement, OpenElementError, renderDsd } from '@openelement/element';
+import { OpenElement, OpenElementError, renderToString } from '@openelement/element';
 import { IslandErrorCode, PageErrorCode } from '../src/internal/error-codes.ts';
 import {
   classifyActionResult,
@@ -32,7 +32,7 @@ import * as appSurface from '../src/index.ts';
 /** A minimal valid compiled statics set for a static <main> page program. */
 function makeCompiledPageClass(tag: string, text: string): CustomElementConstructor {
   const program = {
-    version: 1,
+    version: 2,
     tag,
     root: { id: 'root', kind: 'light', nodes: ['e0'] },
     template: [
@@ -45,7 +45,7 @@ function makeCompiledPageClass(tag: string, text: string): CustomElementConstruc
       },
     ],
     parts: [],
-    regions: [],
+    blocks: [],
     dependencies: [],
     locations: [{ id: 'e0', kind: 'element', tag: 'main', path: [0] }],
     sourceMap: {
@@ -171,7 +171,7 @@ test('definePage() descriptor renders through the compiled serializer', () => {
   const Page = makeCompiledPageClass('rendered-page', 'Hello from definePage');
   definePage(Page, { head: { title: 'Rendered' } });
 
-  const out = renderDsd('rendered-page', { componentClass: Page });
+  const out = renderToString('rendered-page', { componentClass: Page });
 
   expect(out.includes('Hello from definePage')).toEqual(true);
 });

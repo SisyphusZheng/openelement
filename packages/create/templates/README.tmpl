@@ -73,7 +73,7 @@ accepted-key list. `vite.config.ts` stays Vite-only: `plugins: [...openElement()
   client-only) through `defineIslandConfig`.
 - `app/layout.tsx` — the auto-registered layout, not an island itself: the
   site chrome every page renders inside. The header, the `main` content
-  region, and the footer live here exactly once instead of being copied onto
+  block, and the footer live here exactly once instead of being copied onto
   each page. The build registers the layout automatically and projects each
   page's render into its default slot, so a page module carries only its own
   content. The layout is a convention: delete the file and pages still render

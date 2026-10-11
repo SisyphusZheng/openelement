@@ -176,7 +176,7 @@ function restatesDefault(record: CompiledPropertyMetadata, value: unknown): bool
  * Two passes: plain property signals first, then computed fields derive their
  * read-only signals over them (declaration order) via the generated
  * `__computedFields` factories — #723 semantics: dependencies compile into
- * Part/Region subscriptions, and a computed field is just another signal the
+ * Part/Block subscriptions, and a computed field is just another signal the
  * Parts subscribe to.
  */
 export function createFacadePropertyState(
@@ -198,7 +198,7 @@ export function createFacadePropertyState(
       // runs after syncAttributesToSignals), so a computed field deriving from
       // the property would claim against default-value-derived chrome while
       // the SSR DOM was rendered from the injected props — the
-      // "[compiled-claim] item attribute drift" seen on every non-default
+      // "[compiled-hydration] item attribute drift" seen on every non-default
       // locale page (#1318). Only a value that actually differs from the
       // compiled default is a real pre-upgrade set.
       if (!restatesDefault(property, own.value)) {
@@ -283,7 +283,7 @@ export function installAccessors(
         const next = coercePropertyValue(record, value);
         if (Object.is(sig.value, next)) return;
         // Signal-graph evaluation is synchronous at the write: assigning a
-        // plain property re-evaluates the computeds and Region subscriptions
+        // plain property re-evaluates the computeds and Block subscriptions
         // that depend on it on this stack, so a throwing derivation (e.g.
         // `computed(() => this.payload.nested.deep)` after the handler wrote
         // `{ nested: null }`) would otherwise escape through this setter into
@@ -374,7 +374,7 @@ export function applyPendingOwnValues(state: FacadePropertyState): void {
     // (coercePropertyValue would map it to the compiled default): letting it
     // through would clobber the attribute-promoted value at connect and
     // desync every computed field deriving from that property (#1318 — the
-    // "[compiled-claim] item attribute drift" on non-default locales).
+    // "[compiled-hydration] item attribute drift" on non-default locales).
     if (value === null || value === undefined) continue;
     if (record && sig) sig.value = coercePropertyValue(record, value);
   }

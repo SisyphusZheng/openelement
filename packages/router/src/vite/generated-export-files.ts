@@ -21,7 +21,7 @@ export const OPENELEMENT_EXPORT_FILES: Record<string, Record<string, string>> = 
     'jsx-dev-runtime': 'src/jsx-dev-runtime.ts',
     'jsx-runtime': 'src/jsx-runtime.ts',
     logger: 'src/logger.ts',
-    'no-regions': 'src/no-regions.ts',
+    'no-blocks': 'src/no-blocks.ts',
   },
   protocol: {
     '.': 'src/index.ts',
