@@ -14,6 +14,7 @@ import type { Plugin } from 'vite';
 import {
   compiledArtifactStyleRequests,
   compileElementModule,
+  registerClassCandidates,
   registerStyleRequest,
   stableModuleId,
   stripInlineSourceMapComment,
@@ -76,6 +77,17 @@ export function createCompilerHooks(
               file: styleRequestFile(id, specifier),
             });
           }
+        }
+        // The class-candidate channel (alpha15 S lane) travels with the same
+        // host binding: the compile's statically admitted class tokens are
+        // registered exactly as the style edges are, so the build layer can
+        // hand them to the official Tailwind compiler as explicit candidates.
+        if (result?.classCandidates !== undefined) {
+          registerClassCandidates(id, result.classCandidates, {
+            // Only shadow-root classes need the component stylesheet; light
+            // classes live in document DOM and the document entry covers them.
+            shadow: result.program.root.kind !== 'light',
+          });
         }
         // The edge registration is the whole job for an adopted artifact:
         // it ships as its own module, nothing to compile or hand back.

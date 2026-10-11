@@ -219,7 +219,12 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
         // emits the generated CSS as an external stylesheet asset. The
         // compiler attaches no Tailwind semantics to them (opaque strings).
         if (compiled?.classCandidates !== undefined) {
-          registerClassCandidates(id, compiled.classCandidates);
+          registerClassCandidates(id, compiled.classCandidates, {
+            // The root scope is part of the fact: only a shadow-root
+            // component's classes need the component stylesheet — light-root
+            // classes live in document DOM and the document entry covers them.
+            shadow: compiled.program.root.kind !== 'light',
+          });
         }
         // The edge registration above is the whole job for an adopted
         // artifact: it ships as its own emitted module, nothing to compile or

@@ -41,6 +41,13 @@ export interface CompiledStatics {
   delegatesFocus?: boolean;
   formAssociated?: boolean;
   isErrorBoundary?: boolean;
+  /**
+   * Emitted by the compiler on shadow-root components whose static class
+   * candidates were admitted (alpha15 S lane): the class's SSR/DSD template
+   * declares the framework's component stylesheet as a marked external
+   * `<link>`, so the claim expects (and keeps) that node.
+   */
+  __oeUtilityClasses?: boolean;
 }
 
 /** Facade element surface the property contract touches. */

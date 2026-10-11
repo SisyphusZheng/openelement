@@ -58,7 +58,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Plugin } from 'vite';
 import { getStyleRequest, hasStyleImporter, styleRequestModuleId } from '@openelement/compiler';
-import { STYLE_SHEET_READY } from '@openelement/protocol/style-sheet';
+import { STYLE_SHEET_READY, STYLE_SHEET_URL } from '@openelement/protocol/style-sheet';
 import { buildError, ClientBuildErrorCode } from '../../internal/error-codes.ts';
 
 /**
@@ -164,6 +164,11 @@ export function fetchSheetAdapterModule(referenceId: string): string {
     '// rejected state, so a consumer that awaits it still sees the failure.',
     'void ready.catch(() => {});',
     `sheet['${STYLE_SHEET_READY}'] = ready;`,
+    '// The external identity of this sheet: a root whose SSR/DSD markup',
+    '// references this URL keeps that declarative link as the delivery and does',
+    '// not adopt this constructable copy (alpha15 S lane) — one stylesheet',
+    '// resource, one delivery, no duplicate application.',
+    `sheet['${STYLE_SHEET_URL}'] = sheetUrl;`,
     'export default sheet;',
     '',
   ].join('\n');

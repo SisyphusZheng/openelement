@@ -60,6 +60,14 @@ const routes: RouteEntry[] = [
 // cross-mode invariant holds). Diffing the dumped entries across the rename
 // shows exactly those identifier lines and nothing else. Client bytes are
 // untouched.
+// Server pins moved once more for the alpha15 S lane: the generated entry
+// carries `import 'virtual:open-element-style-links';` — the component
+// stylesheet URL channel the SSG build answers (the element runtime declares
+// the emitted asset as a marked `<link>` inside the DSD templates of
+// components whose classes were statically admitted) (+43 bytes each mode;
+// the native/lit delta stays 103, so the cross-mode invariant holds). Client
+// bytes are untouched: the client entry's component-sheet registration only
+// appears when the build admits shadow candidates, which this probe does not.
 // Server pins moved once more for the alpha15 R batch 4 routing renames:
 // `renderDsd` became `renderToString` (+5 bytes × 2 native server lines: the
 // element import and the pageRuntime field), while
@@ -70,11 +78,11 @@ const routes: RouteEntry[] = [
 // 113→103 (lit carries no native serializer import). Client bytes untouched.
 const expected = {
   native: {
-    server: [16000, '8c2342e32fc169960f94deaaf3b1bd4c7badd6417cef578270eacd5a11207b66'],
+    server: [16043, 'fd84460be81cd6de9b870e0de1ac1d5fad0adbcddbc7e1f17e70f282553da1dd'],
     client: [2004, 'dbd5414e1f2a392a26e98cdce1a2b7c2dc69d4305228c6b7d199b4af6ce00d6f'],
   },
   lit: {
-    server: [16103, '077be07d403788ac747a78fcddc91db797e06526c8a8b01d59ff944d883b1d69'],
+    server: [16146, '7b75de0aeb5d38733ea7b8f5b22d99b2d9d82beac45c8b1e03ed834561b2b635'],
     client: [3167, '7dcb18fd659ffe53b039adfc5139a2496e1b4c02b5d4322ed6c216606511f418'],
   },
 } as const;

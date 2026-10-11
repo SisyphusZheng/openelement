@@ -124,6 +124,14 @@ export interface CompiledElementKernelOptions extends CompiledRuntimeHost {
   root?: CompiledStyleRoot;
   delegatesFocus?: boolean;
   styles?: StyleSheetLike | StyleSheetLike[];
+  /**
+   * True when the compiler admitted static class candidates for this class
+   * (alpha15 S lane): its SSR/DSD template may carry a marked
+   * `<link rel="stylesheet">` for the framework's component stylesheet, so the
+   * claim must expect (and skip) leading static-style nodes even when the
+   * class itself declares no `styles`.
+   */
+  utilityStyleLinks?: boolean;
   formAssociated?: boolean;
   errorBoundary?: CompiledErrorBoundaryOptions;
 }
@@ -404,7 +412,7 @@ export class CompiledElementKernel {
       host,
       root,
       {
-        expectStaticStyle: styleCount > 0,
+        expectStaticStyle: styleCount > 0 || this.#options.utilityStyleLinks === true,
         staticStyleReady: staticStyleReadiness(this.#options.styles),
         streamParts: stream?.parts,
         pendingParts: stream ? [...stream.pending] : undefined,

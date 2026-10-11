@@ -300,10 +300,18 @@ export function recoverHydrationOwner(
   const doc = root.ownerDocument;
   if (!doc) return false;
   const replacement = buildRecoveryTemplateNodes(ctx, doc, ctx.program.template, []);
-  const firstChild = root.childNodes[0];
-  const keepStyle = isStaticStyleNode(firstChild);
+  // Preserve every leading marked static-style node in order — the external
+  // `<link>` delivery and/or the inline fallback (alpha15 S lane). Recovery
+  // rebuilds the Part-owned nodes only; the style nodes are the framework's
+  // delivery and must survive exactly as the claim found them.
+  const leadingStyles: Node[] = [];
+  while (isStaticStyleNode(root.childNodes[0])) {
+    const node = root.childNodes[0]!;
+    root.removeChild(node);
+    leadingStyles.push(node);
+  }
   removeAllChildren(root);
-  if (keepStyle && firstChild) root.appendChild(firstChild);
+  for (const node of leadingStyles) root.appendChild(node);
   for (const node of replacement) root.appendChild(node);
   return true;
 }

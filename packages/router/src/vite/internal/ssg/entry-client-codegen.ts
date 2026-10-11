@@ -241,6 +241,16 @@ interface GenerateClientEntryOptions {
    * is emitted even when the entry carries no islands.
    */
   styleEntry?: string;
+  /**
+   * The component stylesheet's adapter module (alpha15 S lane): when present,
+   * the entry imports the fetch adapter and registers the sheet globally
+   * (`OpenElement.registerGlobalStyles`), so every compiled shadow root adopts
+   * it through the style scope. Components whose DSD already references the
+   * emitted asset keep that declarative link instead — the runtime skips the
+   * adopted copy for a link-delivered root, so one resource has one delivery.
+   * Native renderer only: the lit entry is element-free by design (#1339).
+   */
+  utilitySheet?: string;
 }
 
 export function generateClientEntry(
@@ -269,6 +279,10 @@ export function generateClientEntry(
   }
 
   const lit = selectRendererAdapter(options.renderer).hydration === 'lit-adoption';
+  // The component stylesheet's registration rides the native entry only: the
+  // lit entry is element-free by design (#1339), and its DSD-delivered link
+  // still styles server-rendered lit shadow trees.
+  const nativeUtilitySheet = lit || options.utilitySheet === undefined ? '' : options.utilitySheet;
   // Lit hydration is owned by lit-element-hydrate-support, not by the compiled
   // claim, so the element package's hydration executor is never part of a lit
   // client bundle: that entry already keeps its element imports minimal and
@@ -395,10 +409,9 @@ var __liftDeferHydration = function (root, tag) {
   };
   visit(root);
 };`
-    : `import { createLogger, ensureDeepFragmentNavigation, ensurePreHydrationClickCapture } from '${elementEntrySpecifier(
-        canHydrateServerDom,
-        includeBlocksRuntime,
-      )}';
+    : `import { createLogger, ensureDeepFragmentNavigation, ensurePreHydrationClickCapture${
+        nativeUtilitySheet === '' ? '' : ', OpenElement'
+      } } from '${elementEntrySpecifier(canHydrateServerDom, includeBlocksRuntime)}';
 import { createIslandScheduler as __schedule } from '${VIRTUAL_RUNTIME_SPECIFIERS.scheduler}';
 ${
   options.enhancedForms === true
@@ -412,7 +425,18 @@ ensureDeepFragmentNavigation();`;
 
   return `${headerComment}
 
-${styleImport}${importsBlock}
+${styleImport}${
+    nativeUtilitySheet === ''
+      ? ''
+      : `import __oeUtilitySheet from ${quoteGeneratedJavaScriptValue(nativeUtilitySheet)};
+// The framework component stylesheet (alpha15 S lane): one shared sheet for
+// every compiled shadow root whose classes were statically admitted. The style
+// scope adopts it on connect; a root whose DSD already carries the declarative
+// link for this asset keeps that link instead — one resource, one delivery.
+OpenElement.registerGlobalStyles([__oeUtilitySheet]);
+
+`
+  }${importsBlock}
 
 var __map = {
 ${islandMap}

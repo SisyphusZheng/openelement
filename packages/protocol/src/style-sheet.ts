@@ -29,3 +29,16 @@ export interface StyleSheetLike {
  * the promise into a fulfilled one.
  */
 export const STYLE_SHEET_READY = '__openElementStyleReady';
+
+/**
+ * The one key under which a sheet carries the URL of the external CSS resource
+ * that delivers its rules: the generated client style adapter records the
+ * emitted asset URL on the sheet it exports, and the element runtime compares
+ * it against the declarative `<link rel="stylesheet" data-oe-static-styles>`
+ * nodes an SSR/DSD template already carries (alpha15 S lane). A root whose
+ * serialized markup already references the sheet's URL keeps that link as the
+ * delivery and does NOT adopt a second constructable copy — one stylesheet
+ * resource, one delivery, no duplicate application. Build-time and runtime
+ * cannot drift because the adapter generator interpolates this exact name.
+ */
+export const STYLE_SHEET_URL = '__openElementStyleSheetUrl';

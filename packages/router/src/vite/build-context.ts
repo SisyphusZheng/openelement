@@ -192,6 +192,17 @@ export class OpenElementBuildContext {
   clientStyleAssets: string[] = [];
 
   /**
+   * Phase 2 output (alpha15 S lane): the emitted component stylesheet — the
+   * CSS generated from the compiler's shadow-root class candidates, compiled
+   * by the official Tailwind pipeline and content-addressed like the island
+   * sheets. Phase 3 injects its URL into the SSR bundle
+   * (`COMPONENT_STYLE_LINKS_DEFINE`), so every DSD template of a component
+   * whose classes were admitted declares it as a marked external `<link>`.
+   * Null when the app declares no Tailwind entry or no shadow candidates.
+   */
+  componentStyleSheet: { fileName: string } | null = null;
+
+  /**
   /** Canonical result consumed by release evidence and deployment adapters. */
   buildArtifacts: BuildArtifacts | null = null;
   /** Phase 1: Route scanning & build metadata */

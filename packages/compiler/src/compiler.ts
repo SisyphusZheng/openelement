@@ -52,6 +52,7 @@ export {
 // candidates. The compiler never interprets Tailwind's class grammar.
 export {
   allClassCandidates,
+  allShadowClassCandidates,
   classCandidatesForModule,
   clearClassCandidates,
   hasClassCandidates,

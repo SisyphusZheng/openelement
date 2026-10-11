@@ -44,11 +44,15 @@ import {
   packageIslandChunkName,
   readViteClientManifest,
 } from '../vite/client-asset-manifest.ts';
+import { collectShadowClassCandidates } from '../vite/internal/collect-shadow-candidates.ts';
 import {
+  COMPONENT_SHEET_SPECIFIER,
+  componentStyleSheetPlugin,
   resolveTailwindOptions,
   tailwindEntryPath,
   tailwindEntryPlugin,
   tailwindPlugins,
+  type ComponentStyleSheetRecord,
 } from '../vite/tailwind.ts';
 import {
   ELEMENT_RUNTIME_ENTRY_SPECIFIER,
@@ -58,6 +62,7 @@ import {
   resolveElementRuntimeIdentity,
 } from '../vite/internal/element-runtime-chunk.ts';
 import {
+  allShadowClassCandidates,
   analyzeModuleSemantics,
   clearStyleRequests,
   compiledElementPlugin,
@@ -75,6 +80,7 @@ import {
   CHUNK_SIZE_WARNING_LIMIT_KB,
   DEFAULT_ISLANDS_DIR,
   DEFAULT_OUT_DIR,
+  DEFAULT_ROUTES_DIR,
 } from '../vite/internal/paths.ts';
 
 const log = createLogger('build-client');
@@ -300,6 +306,9 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const root = ctx.phase3.root || process.cwd();
   const outDir = ctx.phase3.outDir || DEFAULT_OUT_DIR;
   const islandsDir = ctx.phase3.islandsDir || DEFAULT_ISLANDS_DIR;
+  // The candidate collection pass resolves route modules the same way the
+  // scanners recorded them: their `filePath` is relative to this root.
+  const candidateRoutesDir = ctx.phase3.routesDir || DEFAULT_ROUTES_DIR;
   const localIslands = ctx.phase1.islandTagNames || [];
   const localIslandFiles = ctx.phase1.islandFiles || [];
   const packageIslandDecls = ctx.phase1.packageIslandDecls || [];
@@ -333,6 +342,44 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   // document stylesheet asset. Island-free apps still build here — the entry
   // is the reason.
   const tailwindOptions = resolveTailwindOptions(ctx.options.tailwind);
+
+  // The component stylesheet (alpha15 S lane): the compiler's shadow-root
+  // class candidates compiled by the same official peer into one shared,
+  // content-addressed asset. The generated client entry registers it globally;
+  // the SSR build declares it as a marked `<link>` in the DSD templates of the
+  // components whose classes were admitted.
+  //
+  // The client graph holds islands only, so the pass below compiles the
+  // page/layout/static modules the Phase 1 scanners already inventoried — the
+  // same official compiler, run here so the shadow candidates are known before
+  // this build generates the stylesheet's entry.
+  if (tailwindOptions) {
+    await collectShadowClassCandidates({
+      root,
+      modules: [
+        ...ctx.phase1.staticComponents.map((decl) => ({
+          // The scanner records the declaration path root-relative with a
+          // leading slash; the collector resolves plain project-relative paths.
+          path: decl.modulePath.replace(/^\/+/, ''),
+        })),
+        ...(ctx.phase1.islandTagNames ?? []).map((tagName, index) => ({
+          path: `${islandsDir}/${ctx.phase1.islandFiles[index] ?? `${tagName}.tsx`}`,
+        })),
+        ...(ctx.phase1.cachedRoutes ?? [])
+          .filter((route) => route.type === 'page')
+          .map((route) => ({ path: `${candidateRoutesDir}/${route.filePath}` })),
+      ],
+    });
+  }
+  const shadowCandidates = tailwindOptions ? allShadowClassCandidates() : [];
+  if (shadowCandidates.length > 0) {
+    log.info(
+      `Component stylesheet: ${shadowCandidates.length} statically admitted shadow class candidate(s)`,
+    );
+  }
+  const componentSheetRecord: ComponentStyleSheetRecord = { fileName: undefined };
+  const componentSheetSpecifier =
+    shadowCandidates.length > 0 ? COMPONENT_SHEET_SPECIFIER : undefined;
 
   if (
     localIslands.length === 0 &&
@@ -506,6 +553,9 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     // `url()` asset the sources reference) into dist/client. No other module
     // imports it, so the entry chunk's CSS is exactly the document stylesheet.
     ...(tailwindOptions ? { styleEntry: tailwindEntryPath(root) } : {}),
+    // The component stylesheet's adapter: imported and registered by the entry
+    // (native renderer) when the compiler admitted shadow-root candidates.
+    ...(componentSheetSpecifier === undefined ? {} : { utilitySheet: componentSheetSpecifier }),
     // Omitted on any doubt: the flag's default (builders installed) is the
     // entry codegen's own conservative default, not a second copy of it. The
     // alias bailing out does not flip this flag: the entry subpath resolves
@@ -708,6 +758,13 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       ...(tailwindOptions
         ? [tailwindEntryPlugin(root, tailwindOptions), ...tailwindPeerPlugins]
         : []),
+      // The component stylesheet's half of the same seam: it sits AFTER the
+      // peer (same `enforce: 'pre'` seat), so its transform receives the
+      // compiled CSS, emits the content-addressed asset and hands the graph
+      // the fetch adapter the client entry registers.
+      ...(tailwindOptions && componentSheetSpecifier !== undefined
+        ? [componentStyleSheetPlugin(root, tailwindOptions, shadowCandidates, componentSheetRecord)]
+        : []),
       // The compiler is part of the official client build path. The outer
       // open:core hook covers normal Vite transforms; this inline build owns
       // its own plugin list and must use the same transform exactly once.
@@ -861,6 +918,21 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         );
       }
       log.info(`Tailwind document stylesheet emitted: ${ctx.clientStyleAssets.join(', ')}`);
+    }
+
+    // The component stylesheet (alpha15 S lane): a declared shadow-candidate
+    // set whose entry emitted no CSS would ship unstyled shadow components —
+    // fail closed instead.
+    if (componentSheetSpecifier !== undefined) {
+      if (componentSheetRecord.fileName === undefined) {
+        throw buildError(
+          ClientAssetErrorCode.STYLESHEET_MISSING,
+          'The compiler admitted shadow-root class candidates but the client build emitted no ' +
+            'component stylesheet — the official Tailwind compile produced no CSS for the entry',
+        );
+      }
+      ctx.componentStyleSheet = { fileName: componentSheetRecord.fileName };
+      log.info(`Tailwind component stylesheet emitted: ${componentSheetRecord.fileName}`);
     }
 
     const { printBuildManifest } = await import('../vite/build-manifest.ts');

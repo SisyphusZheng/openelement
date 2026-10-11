@@ -109,6 +109,18 @@ export interface CompiledServerOptions {
    * into markup injection.
    */
   styleCss?: string;
+  /**
+   * External document stylesheet references for this component's shadow tree
+   * (alpha15 S lane): framework-generated component CSS ships as a real,
+   * content-hashed asset, and the DSD template declares it with a
+   * parser-visible `<link rel="stylesheet">` — never as inlined CSS text and
+   * never as a client-side DOM write. Each entry must be a site-absolute path
+   * (`/…`) or an absolute `http(s)` URL; anything else fails closed, so a
+   * malformed href can never reach the markup. The nodes carry
+   * {@linkcode STATIC_STYLES_MARKER}, which is what the claim recognizes (and
+   * keeps — these links are the delivery, not a fallback).
+   */
+  styleLinks?: readonly string[];
   /** Canonical nested-component seam; adapters supply registry/admission only. */
   renderNestedElement?: (element: CompiledNestedElement) => string | undefined;
   /** Light-root projection supplied by an owning compiled parent. */
@@ -433,11 +445,41 @@ function serializeCompiledSnapshot(
     );
   }
   const styleElement = styleCss ? `<style ${STATIC_STYLES_MARKER}>${styleCss}</style>` : '';
+  // External component stylesheets (alpha15 S lane): declarative links in the
+  // shadow tree, emitted before the inline fallback so the sheet's rules and
+  // the legacy fallback keep a deterministic order. The href is validated
+  // here — the one serializer is the boundary where a malformed URL must fail
+  // closed instead of reaching markup.
+  const styleLinks = serializeStyleLinks(options.styleLinks);
+  const styleNodes = `${styleLinks}${styleElement}`;
   if (mode === 'light') {
-    return `<${program.tag}${hostAttrs}>${styleElement}${content}</${program.tag}>`;
+    return `<${program.tag}${hostAttrs}>${styleNodes}${content}</${program.tag}>`;
   }
   const dsdAttrs = serializeDsdAttributes(options.dsd);
-  return `<${program.tag}${hostAttrs}><template shadowrootmode="${mode}"${dsdAttrs}>${styleElement}${content}</template></${program.tag}>`;
+  return `<${program.tag}${hostAttrs}><template shadowrootmode="${mode}"${dsdAttrs}>${styleNodes}${content}</template></${program.tag}>`;
+}
+
+/**
+ * Serialize the component's external stylesheet references as marked
+ * `<link rel="stylesheet">` nodes. The href must be a site-absolute path or an
+ * absolute http(s) URL and may not carry whitespace or markup-significant
+ * characters — a framework-emitted asset address always satisfies this, and a
+ * value that does not is a defect that must fail closed (never escape into
+ * markup).
+ */
+function serializeStyleLinks(links: readonly string[] | undefined): string {
+  if (!links || links.length === 0) return '';
+  let markup = '';
+  for (const href of links) {
+    if (!/^(?:\/[^/\s]|https?:\/\/[^\s])/.test(href) || /["'<>\s]/.test(href)) {
+      throw new CompiledProgramValidationError(
+        'styleLinks',
+        `component stylesheet href must be a site-absolute path or an absolute http(s) URL, got ${JSON.stringify(href)}`,
+      );
+    }
+    markup += `<link rel="stylesheet" href="${escapeAttr(href)}" ${STATIC_STYLES_MARKER} />`;
+  }
+  return markup;
 }
 
 /** A request-local owner; its program reference and object identity are never serialized. */

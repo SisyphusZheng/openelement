@@ -44,6 +44,7 @@
  */
 
 import type { EntryDescriptor } from '@openelement/protocol/ssg';
+import { STYLE_LINKS_VIRTUAL_ID } from '../element-style-links.ts';
 import { validateIslandModuleSpecifier } from './entry-generators.ts';
 import { renderActionRoute, renderPageRoute } from './entry-codegen.ts';
 import { renderNotFoundRoute } from './entry-not-found-codegen.ts';
@@ -79,6 +80,12 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push(
     `import { isOpenElementRedirect as __isOpenElementRedirect, isOpenElementNotFound as __isOpenElementNotFound } from '@openelement/router';`,
   );
+  // alpha15 S lane: the component stylesheet URLs for DSD `<link>` emission.
+  // The module hands the emitted addresses to the element runtime (a setter);
+  // the SSG build provides the real addresses, every other build an empty
+  // list, so the import is always resolvable and the runtime's no-link state
+  // is explicit.
+  lines.push(`import '${STYLE_LINKS_VIRTUAL_ID}';`);
 
   // --- Imports ---
   for (const imp of desc.imports) {

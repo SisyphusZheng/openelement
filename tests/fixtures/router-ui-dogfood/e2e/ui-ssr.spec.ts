@@ -91,19 +91,31 @@ test.describe('tailwind entry delivery (entry-on + compiled DSD)', () => {
     const response = await request.get('/dialog');
     expect(response.ok()).toBe(true);
     const html = await response.text();
-    // Document adoption: exactly one compiled-stylesheet link, inside <head>.
-    const stylesheetHrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(
+    // Document adoption: exactly one compiled-stylesheet link in the HEAD.
+    // (Shadow templates carry their own marked links — see the loop below.)
+    const head = html.slice(0, html.indexOf('</head>'));
+    const headStylesheetHrefs = [...head.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(
       (match) => match[1]!,
     );
     expect(
-      stylesheetHrefs.filter((href) => BUNDLE_HREF.test(href)),
-      `exactly one document stylesheet link, got ${stylesheetHrefs.join(', ')}`,
+      headStylesheetHrefs.filter((href) => BUNDLE_HREF.test(href)),
+      `exactly one document stylesheet link, got ${headStylesheetHrefs.join(', ')}`,
     ).toHaveLength(1);
     expect(html).toMatch(/<head>[\s\S]*?<link rel="stylesheet" href="\/client\/assets\//);
-    // Shadow adoption rides inheritance, not injection: every DSD template's
-    // children are exactly the Part Program's nodes.
+    // Shadow adoption: every DSD template link must be the framework's MARKED
+    // component-stylesheet declaration (alpha15 S lane) — a declarative
+    // external resource the serializer wrote, never an unmarked node and never
+    // a runtime-injected one. Unmarked links in templates stay structural
+    // drift.
     for (const match of html.matchAll(/<template shadowrootmode=[^>]*>([\s\S]*?)<\/template>/g)) {
-      expect(match[1], 'a DSD template must stay claim-exact').not.toContain('<link');
+      for (const link of match[1].matchAll(/<link\b[^>]*>/g)) {
+        expect(link[0], 'a DSD template link must be the marked stylesheet').toContain(
+          'data-oe-static-styles',
+        );
+        expect(link[0], 'a DSD template link must be a stylesheet reference').toContain(
+          'rel="stylesheet"',
+        );
+      }
     }
   });
 

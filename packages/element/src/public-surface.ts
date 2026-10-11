@@ -33,6 +33,13 @@ export {
   ensurePreHydrationClickCapture,
   renderToString,
 } from './public-runtime.ts';
+// alpha15 S lane: the component-stylesheet URL channel the router's generated
+// SSR/SSG entry feeds before rendering (the DSD templates of components whose
+// classes were statically admitted declare the emitted assets as external
+// `<link rel="stylesheet">` nodes). Internal by convention (`__` prefix):
+// application code never calls it; the generated entry does, and the deployed
+// request-time server re-applies it at startup.
+export { __setRequestTimeStyleSheetUrls } from './internal/compiled/server/style-links.ts';
 export type { RenderToStringOptions } from './public-runtime.ts';
 export type {
   CreateStreamShellOptions,

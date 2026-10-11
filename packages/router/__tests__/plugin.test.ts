@@ -59,7 +59,7 @@ function callLoad(plugin: unknown, id: string): unknown {
 
 test('openPlugin: returns retained plugins in correct order', () => {
   const plugins = createOpenPlugin();
-  expect(plugins.length).toEqual(9);
+  expect(plugins.length).toEqual(10);
 
   const names = plugins.map((p) => p.name);
   expect(names).toEqual([
@@ -72,6 +72,9 @@ test('openPlugin: returns retained plugins in correct order', () => {
     // The dev half of the Tailwind entry (apply: 'serve'), inert until the
     // resolved options carry the `tailwind` key.
     'open:tailwind-dev',
+    // alpha15 S lane: the component stylesheet channel the generated SSR/dev
+    // entry imports (empty list outside the build that emits the addresses).
+    'open:element-style-links',
     'open:virtual-entry',
     '@hono/vite-dev-server',
     'open:island-transform',
@@ -170,8 +173,8 @@ test('openPlugin: island.upgradeStrategy flows into the SSR admission plan', asy
   expect(onlyCode).toContain('client-only');
 
   // 'load' / 'visible' remain valid construction options.
-  expect(createOpenPlugin({ island: { upgradeStrategy: 'load' } }).length).toEqual(9);
-  expect(createOpenPlugin({ island: { upgradeStrategy: 'visible' } }).length).toEqual(9);
+  expect(createOpenPlugin({ island: { upgradeStrategy: 'load' } }).length).toEqual(10);
+  expect(createOpenPlugin({ island: { upgradeStrategy: 'visible' } }).length).toEqual(10);
 });
 
 // ─── Invalid Options ──────────────────────────────────────────
@@ -194,12 +197,12 @@ test('openPlugin: rejects script tags in inject.headFragments', () => {
 
 test('openPlugin: handles empty options object', () => {
   const plugins = createOpenPlugin({});
-  expect(plugins.length).toEqual(9);
+  expect(plugins.length).toEqual(10);
 });
 
 test('openPlugin: handles undefined options', () => {
   const plugins = createOpenPlugin();
-  expect(plugins.length).toEqual(9);
+  expect(plugins.length).toEqual(10);
 });
 
 // ─── Virtual Entry Plugin Behaviors ───────────────────────────
@@ -365,9 +368,9 @@ test('openPlugin: dev server plugin is @hono/vite-dev-server', () => {
   expect(devServerPlugin).toEqual(expect.anything());
 });
 
-test('openPlugin: SSG mode (default) includes @hono/vite-dev-server (9 plugins)', () => {
+test('openPlugin: SSG mode (default) includes @hono/vite-dev-server (10 plugins)', () => {
   const plugins = createOpenPlugin({});
-  expect(plugins.length).toEqual(9);
+  expect(plugins.length).toEqual(10);
   expect(plugins.find((p) => p.name === '@hono/vite-dev-server')).toEqual(expect.anything());
 });
 
@@ -376,13 +379,13 @@ test('openPlugin: SSG mode (default) includes @hono/vite-dev-server (9 plugins)'
 test('openPlugin: accepts packageIslands option', () => {
   const plugins = createOpenPlugin({ packageIslands: ['@acme/components'] });
   expect(plugins).toEqual(expect.anything());
-  expect(plugins.length).toEqual(9);
+  expect(plugins.length).toEqual(10);
 });
 
 test('openPlugin: accepts empty packageIslands', () => {
   const plugins = createOpenPlugin({ packageIslands: [] });
   expect(plugins).toEqual(expect.anything());
-  expect(plugins.length).toEqual(9);
+  expect(plugins.length).toEqual(10);
 });
 
 test('openPlugin: accepts multiple packageIslands', () => {

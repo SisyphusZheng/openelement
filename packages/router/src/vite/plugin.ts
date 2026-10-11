@@ -20,6 +20,7 @@ import { islandTransformPlugin, layoutAdmissionFromOptions } from './island-tran
 import { devIslandClientPlugin } from './dev-island-client.ts';
 import { lazyHonoDevServer } from './dev-server.ts';
 import { devTailwindPlugin } from './dev-tailwind.ts';
+import { elementStyleLinksPlugin } from './internal/element-style-links.ts';
 import { mdxPlugin } from './plugin-mdx.ts';
 import { createConfigHooks, createOpenPluginState } from './plugin-config.ts';
 import { createCompilerHooks } from './plugin-hmr.ts';
@@ -85,6 +86,10 @@ export function createOpenPlugin(
     // mount owns the compile. Both channels link through the same head
     // channel, so they still never coexist in one artifact.
     devTailwindPlugin(state),
+    // alpha15 S lane: the generated SSR/dev entry imports the component
+    // stylesheet channel; the build that knows the emitted addresses provides
+    // them (the SSG build), and every other channel resolves the empty list.
+    elementStyleLinksPlugin([]),
     virtualEntryPlugin,
   ];
 

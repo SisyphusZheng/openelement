@@ -1,4 +1,24 @@
-import type { StyleSheetLike } from '@openelement/protocol/style-sheet';
+import { STYLE_SHEET_URL, type StyleSheetLike } from '@openelement/protocol/style-sheet';
+import { STATIC_STYLES_MARKER } from '@openelement/protocol/part-program';
+
+/**
+ * True when the root's own serialized markup already delivers this sheet: a
+ * marked `<link rel="stylesheet">` whose href is the sheet's
+ * {@linkcode STYLE_SHEET_URL} (alpha15 S lane). Such a root keeps the
+ * declarative reference as the single delivery and must NOT adopt a second
+ * constructable copy — duplicate application would parse and apply the same
+ * rules twice. Sheets without a URL (dev inline adapters, the SSR shim) are
+ * never link-delivered.
+ */
+function sheetDeliveredByLink(root: ShadowRoot, sheet: StyleSheetLike): boolean {
+  const url = (sheet as { [STYLE_SHEET_URL]?: unknown })[STYLE_SHEET_URL];
+  if (typeof url !== 'string' || url === '') return false;
+  const links = root.querySelectorAll(`link[${STATIC_STYLES_MARKER}][rel="stylesheet"]`);
+  for (const link of links) {
+    if (link.getAttribute('href') === url) return true;
+  }
+  return false;
+}
 
 /**
  * The broadcast attribute this manager owns on every connected compiled host.
@@ -43,8 +63,17 @@ export class OpenElementThemeManager {
   applyStyles(root: ShadowRoot, component?: StyleSheetLike | StyleSheetLike[]): void {
     const componentStyles = component ? (Array.isArray(component) ? component : [component]) : [];
     const existing: readonly unknown[] = root.adoptedStyleSheets;
-    const styles = [...new Set([...existing, ...this.#styles, ...componentStyles])];
-    if (styles.length > 0) root.adoptedStyleSheets = styles as unknown as CSSStyleSheet[];
+    // A sheet the root's own DSD markup already delivers as a marked
+    // `<link rel="stylesheet">` is NOT adopted again (alpha15 S lane): the
+    // declarative reference is the delivery, and a second constructable copy
+    // would apply the same rules twice. Every other sheet keeps today's
+    // behavior, and sheets the root already adopted are preserved untouched.
+    const missing = [...new Set([...this.#styles, ...componentStyles])].filter(
+      (sheet) => !existing.includes(sheet) && !sheetDeliveredByLink(root, sheet),
+    );
+    if (missing.length > 0) {
+      root.adoptedStyleSheets = [...existing, ...missing] as unknown as CSSStyleSheet[];
+    }
   }
 
   connect(host: HTMLElement): void {

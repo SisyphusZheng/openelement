@@ -12,6 +12,7 @@ import {
   serializeCompiledProgram,
 } from './internal/compiled/server/index.ts';
 import { convertToAttribute } from './internal/compiled/facade-host.ts';
+import { requestTimeStyleLinks } from './internal/compiled/server/style-links.ts';
 import { scopeCompiledLightCss } from './internal/compiled/style.ts';
 import type {
   CompiledElementMetadata,
@@ -110,6 +111,29 @@ interface CompiledComponentConstructor extends CustomElementConstructor {
   delegatesFocus?: boolean;
   /** Marks a compiled ErrorBoundary subclass (the public base sets it). */
   isErrorBoundary?: boolean;
+  /**
+   * True when the compiler admitted static class candidates for this component
+   * (alpha15 S lane, emitted by the compiler on shadow-root components that
+   * carry utility classes). The SSR serializer then declares the server
+   * build's component stylesheet as external `<link>` nodes in the DSD
+   * template; a false/absent flag means the component needs none.
+   */
+  __oeUtilityClasses?: boolean;
+}
+
+/**
+ * The declarative external stylesheet links this component's DSD template
+ * declares (alpha15 S lane): the emitted component-sheet URL(s) the server
+ * build injected, carried only by components whose classes were statically
+ * admitted. Light-root components never take links in their subtree — their
+ * content lives in the document, which the document stylesheet already styles.
+ */
+function utilityStyleLinks(
+  ctor: CompiledComponentConstructor,
+  mode: 'light' | 'open' | 'closed',
+): readonly string[] {
+  if (mode === 'light') return [];
+  return ctor.__oeUtilityClasses === true ? requestTimeStyleLinks() : [];
 }
 
 /**
@@ -551,6 +575,7 @@ export async function createStreamShellExecutor(
       dsd: ctor.delegatesFocus === true ? { delegatesFocus: true } : undefined,
       styleCss:
         mode === 'light' && styleCss ? scopeCompiledLightCss(program.tag, styleCss) : styleCss,
+      styleLinks: utilityStyleLinks(ctor, mode),
     },
   );
   return {
@@ -665,6 +690,7 @@ function renderToStringAtDepth(
         mode === 'light' && staticStyleCss
           ? scopeCompiledLightCss(tag, staticStyleCss)
           : staticStyleCss,
+      styleLinks: utilityStyleLinks(resolvedClass, mode),
       projectedChildren: options.projectedChildren,
       renderNestedElement:
         admitted.size === 0

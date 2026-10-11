@@ -360,6 +360,14 @@ export function emitCompiledModule(input: EmitModuleInput): EmitModuleResult {
   );
   if (delegatesFocus) push('  static override delegatesFocus: boolean = true;');
   if (formAssociated) push('  static override formAssociated: boolean = true;');
+  // The static-candidate flag (alpha15 S lane): a shadow-root component whose
+  // classes were admitted needs the framework's component stylesheet, and the
+  // server serializer reads this flag to declare it as a marked external
+  // `<link>` in the DSD template. Emitted only when the flag is true, so a
+  // class with no candidates stays byte-identical to before.
+  if (analyzed.rootKind !== 'light' && lowering.classCandidates.size > 0) {
+    push('  static __oeUtilityClasses: boolean = true;');
+  }
   const computedFields = fields.filter((field) => field.computed);
   if (computedFields.length > 0) {
     // Derived-signal factories: each builds the field's read-only computed

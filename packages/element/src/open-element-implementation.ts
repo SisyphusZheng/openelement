@@ -148,6 +148,11 @@ export class OpenElement extends OpenElementConfiguration {
       rootMode,
       delegatesFocus: ctor.delegatesFocus ?? false,
       styles: ctor.styles as never,
+      // The compiler's static-candidate flag (alpha15 S lane): a component
+      // whose TSX classes were admitted carries the framework's component
+      // stylesheet as a marked external link in its DSD template, so the claim
+      // expects leading static-style nodes even with no authored `styles`.
+      utilityStyleLinks: ctor.__oeUtilityClasses === true,
       formAssociated: ctor.formAssociated ?? false,
       errorBoundary:
         ctor.isErrorBoundary === true

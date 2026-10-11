@@ -641,26 +641,57 @@ export interface CompiledHydrationOptions {
 }
 
 export function isStaticStyleNode(node: Node | undefined): boolean {
+  if (!node || !isElement(node)) return false;
+  const tag = node.tagName.toLowerCase();
+  // The inline fallback (authored component CSS) and the declarative external
+  // reference (framework-generated component CSS, alpha15 S lane) are the two
+  // marked node shapes the serializer emits. The tag check comes FIRST: only
+  // these two shapes are ever asked for the marker, so every other node is
+  // rejected without touching attributes it may not carry.
+  if (tag !== 'style' && tag !== 'link') return false;
+  if (!node.hasAttribute(STATIC_STYLES_MARKER)) return false;
+  // Only `rel="stylesheet"` links qualify: a marked link with any other
+  // relation is drift.
+  return tag === 'style' || node.getAttribute('rel') === 'stylesheet';
+}
+
+/** True for the marked inline fallback node (the one hydration may retire). */
+function isStaticStyleFallbackNode(node: Node | undefined): boolean {
   return (
-    !!node &&
-    isElement(node) &&
-    node.tagName.toLowerCase() === 'style' &&
-    node.hasAttribute(STATIC_STYLES_MARKER)
+    !!node && isStaticStyleNode(node) && isElement(node) && node.tagName.toLowerCase() === 'style'
   );
 }
 
 /**
- * Hydration-then-delete: remove the marked DSD style node this
+ * The count of marked static-style nodes the serializer emitted as the
+ * template's leading children. The scan skips exactly these; the claim keeps
+ * every link (an external reference is the delivery, not a fallback) and may
+ * retire the inline fallback once the replacing sheets are installed.
+ */
+function leadingStaticStyleNodeCount(root: Node): number {
+  let count = 0;
+  while (isStaticStyleNode(root.childNodes[count])) count++;
+  return count;
+}
+
+/**
+ * Hydration-then-delete: remove the marked inline DSD style node this
  * hydration skipped at index 0. Called only after the staged plan has attached —
  * removal must not precede hydration because Part paths resolve against
  * rootOffset=1 — so the node served first paint and anchored the scan, and
  * the shared adopted sheet the kernel applied is the one remaining channel.
  * A failed hydration never reaches the caller, leaving the node in place for
  * recovery and for pages that never upgrade.
+ *
+ * Only the INLINE fallback is retired. The marked `<link rel="stylesheet">`
+ * nodes (framework-generated component CSS, alpha15 S lane) are a declarative
+ * external resource, not a duplicate of an adopted sheet: the runtime keeps
+ * them and does not adopt the sheet they deliver (open-element-theme.ts), so a
+ * root always has exactly one delivery.
  */
 function removeHydratedStaticStyle(root: Node): void {
   const node = root.childNodes[0];
-  if (isStaticStyleNode(node)) root.removeChild(node);
+  if (isStaticStyleFallbackNode(node)) root.removeChild(node);
 }
 
 /**
@@ -719,12 +750,11 @@ function scanHydration(
   stream?: StreamHydrationState,
 ): number {
   const owner: RootHydrationOwner = { kind: 'root', root };
-  const styleNode = root.childNodes[0];
-  const hasStaticStyle = isStaticStyleNode(styleNode);
-  if (hasStaticStyle && !options.expectStaticStyle) {
+  const styleNodeCount = leadingStaticStyleNodeCount(root);
+  if (styleNodeCount > 0 && !options.expectStaticStyle) {
     hydrateFailure('template', 'unexpected static style element', owner);
   }
-  const cursorStart = hasStaticStyle ? 1 : 0;
+  const cursorStart = styleNodeCount;
   const consumed = hydrateNodes(
     ctx,
     root,
@@ -816,7 +846,7 @@ export function hydrateExistingDom(
       // is still filling keeps the fallback — it is the only styling channel
       // until the replacement is installed on this root, and the style scope
       // reports the failure if it never arrives.
-      if (cursorStart === 1) {
+      if (cursorStart > 0) {
         const ready = options.staticStyleReady;
         if (ready === undefined) removeHydratedStaticStyle(root);
         else

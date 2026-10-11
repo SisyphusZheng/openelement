@@ -27,6 +27,7 @@ import type {
 } from '../vite/framework.ts';
 import type { EntryDescriptor, IslandDecl, StaticComponentDecl } from '@openelement/protocol/ssg';
 import type { OpenElementBuildContext } from '../vite/build-context.ts';
+import { elementStyleLinksPlugin } from '../vite/internal/element-style-links.ts';
 import { findBuildWorkspaceRoot } from '../vite/workspace-alias.ts';
 import {
   buildEntryDescriptor,
@@ -247,6 +248,19 @@ async function buildSSG(
   if (options.viewTransition === undefined) options.viewTransition = ctx.phase3.viewTransition;
   if (!options.speculation) options.speculation = ctx.phase3.speculation || undefined;
 
+  // The component stylesheet URL (alpha15 S lane): Phase 2 emitted one shared,
+  // content-addressed asset for the compiler's shadow-root class candidates,
+  // and its public address is base-joined exactly like the client asset
+  // manifest's URLs — the DSD `<link>` and the client fetch adapter therefore
+  // name one resource. Empty when the app declares no Tailwind entry or no
+  // shadow candidates (the element seam then folds to no link).
+  const componentStyleSheetUrls = ctx.componentStyleSheet
+    ? [`${options.base}client/${ctx.componentStyleSheet.fileName}`]
+    : [];
+  if (componentStyleSheetUrls.length > 0) {
+    log.info(`Component stylesheet linked into DSD: ${componentStyleSheetUrls.join(', ')}`);
+  }
+
   // Generate SSG entry code (all statically imported — no cycle with the
   // internal/ssg barrel, #847).
   const routes =
@@ -412,6 +426,11 @@ async function buildSSG(
         },
       },
       plugins: [
+        // The component stylesheet URLs (alpha15 S lane): the generated entry
+        // imports this module, which hands the emitted asset addresses to the
+        // element runtime before the render pass (and at request-time startup,
+        // because the module is bundled into dist/server/index.js).
+        elementStyleLinksPlugin(componentStyleSheetUrls),
         // MDX route support must mirror the outer plugin list (plugin.ts),
         // otherwise .mdx routes fail Phase 3 parse (the oxc transform treats
         // them as JS).
