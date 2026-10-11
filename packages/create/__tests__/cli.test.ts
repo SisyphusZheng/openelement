@@ -629,7 +629,7 @@ test('generated starter README maps the JS cost of every surface', async () => {
   const readme = templates['README.md'];
   // The cost map is the starter's contract with its reader: every page and
   // island appears with an honest JS answer.
-  for (const surface of ['/', '/about', '/api/ping', 'my-counter', 'live-timer']) {
+  for (const surface of ['/', '/about', '/404', '/api/ping', 'my-counter', 'live-timer']) {
     expect(readme.includes(surface), `README must map ${surface}`).toBeTruthy();
   }
   // The app-wide island-client honesty note is present, not marketing.

@@ -13,7 +13,7 @@
       "tagName": "open-button",
       "className": "OpenButton",
       "superclassName": "OpenElement",
-      "description": "Button or link control: an `href` property switches the compiled anchor",
+      "description": "Button or link control: an `href` property switches the compiled anchor branch (no-JS navigation survives SSR), `variant`/`size` pick the styled surface, and the disabled state follows the reflected host attribute.",
       "attributes": [
         {
           "name": "variant",
@@ -80,7 +80,7 @@
       "tagName": "open-input",
       "className": "OpenInput",
       "superclassName": "OpenElement",
-      "description": "Form-associated text input with a label, an inline error slot, and native",
+      "description": "Form-associated text input with a label, an inline error slot, and native constraint validation (required → valueMissing via setValidity).",
       "attributes": [
         {
           "name": "type",
@@ -179,7 +179,7 @@
       "tagName": "open-theme-toggle",
       "className": "OpenThemeToggle",
       "superclassName": "OpenElement",
-      "description": "Theme toggle button for dark/light mode: reads and flips the document's",
+      "description": "Theme toggle button for dark/light mode: reads and flips the document's `data-theme` (with an initialization priority chain) and persists the choice; icon visibility follows the current theme attribute.",
       "attributes": [
         {
           "name": "theme",
