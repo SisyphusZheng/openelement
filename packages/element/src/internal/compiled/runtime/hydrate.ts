@@ -140,7 +140,12 @@ function hydrateElementAttributes(
   path: string,
   programPath: number[],
   owner: HydrationOwner,
+  resume: boolean,
 ): void {
+  // Resume binds the runtime's own DOM: the static template values were valid
+  // at first activation and the component may have legitimately changed them
+  // since. Only the first activation compares against the SSR artifact.
+  if (resume) return;
   const dynamic = dynamicAttributeNames(ctx, programPath);
   // Per-item attribute slots are verified with their item context by the
   // caller; they are not static drift.
@@ -302,6 +307,7 @@ export function hydrateNodes(
   itemValueSlots?: ItemValueSlot[],
   itemAttrSlots?: ItemAttrSlot[],
   stream?: StreamHydrationState,
+  resume = false,
 ): number {
   const at = (index: number): Node => {
     const node = parent.childNodes[index];
@@ -316,7 +322,7 @@ export function hydrateNodes(
     if (node.k === 'text') {
       const dom = at(cursor++);
       if (!isText(dom)) hydrateFailure(nodePath, 'expected a text node', owner);
-      if (dom.data !== node.value) {
+      if (!resume && dom.data !== node.value) {
         hydrateFailure(
           nodePath,
           `text drift: expected ${JSON.stringify(node.value)}, found ${JSON.stringify(dom.data)}`,
@@ -361,7 +367,7 @@ export function hydrateNodes(
           owner,
         );
       }
-      hydrateElementAttributes(ctx, dom, node, nodePath, nodeProgramPath, owner);
+      hydrateElementAttributes(ctx, dom, node, nodePath, nodeProgramPath, owner, resume);
       if (node.iattrs !== undefined) {
         // Per-item attribute slots carry the item context: values are verified
         // against the item (deterministic) and tracked for keyed-reuse updates.
@@ -408,6 +414,7 @@ export function hydrateNodes(
               itemValueSlots,
               itemAttrSlots,
               stream,
+              resume,
             );
       if (consumed !== dom.childNodes.length) {
         hydrateFailure(`${nodePath}.children`, 'unexpected trailing nodes', owner);
@@ -490,6 +497,7 @@ export function hydrateNodes(
         itemValueSlots,
         undefined,
         stream,
+        resume,
       );
       const end = expectComment(
         at(cursor++),
@@ -564,6 +572,7 @@ export function hydrateNodes(
           itemSlots,
           itemAttrs,
           stream,
+          resume,
         );
         // Claimed item DOM gets the same per-item listeners a fresh build
         // mounts (#1556 IR v2): the box keeps them live across keyed reuse.
@@ -623,6 +632,15 @@ export interface CompiledHydrationOptions {
    * shadow tree without styling. Absent means every sheet is already usable.
    */
   staticStyleReady?: Promise<unknown>;
+  /**
+   * Resume after a successful activation: bind the runtime's own DOM again
+   * without re-running the SSR-artifact consistency checks (text and static
+   * attribute drift, trailing-node count, the not-yet-retired style node). The
+   * first activation never sets this — it keeps the strict fail-closed claim —
+   * and structural safety is still enforced: anchors, fixed-part targets and
+   * the program's node identity must resolve, or the resume fails closed.
+   */
+  resume?: boolean;
   /** Default is `throw`; `owning` enables one bounded recovery attempt. */
   recovery?: HydrationRecoveryMode;
   /** Observe the exact structured mismatch before optional recovery. */
@@ -715,7 +733,9 @@ function scanHydration(
   const owner: RootHydrationOwner = { kind: 'root', root };
   const styleNode = root.childNodes[0];
   const hasStaticStyle = isStaticStyleNode(styleNode);
-  if (hasStaticStyle && !options.expectStaticStyle) {
+  // A resume reads the runtime's own DOM: the SSR style node may already have
+  // retired into the adopted sheet, so its presence is not drift.
+  if (hasStaticStyle && !options.expectStaticStyle && options.resume !== true) {
     hydrateFailure('template', 'unexpected static style element', owner);
   }
   const cursorStart = hasStaticStyle ? 1 : 0;
@@ -734,8 +754,11 @@ function scanHydration(
     undefined,
     undefined,
     stream,
+    options.resume === true,
   );
-  if (consumed !== root.childNodes.length) {
+  // A resumed root legitimately carries extra nodes (runtime block ranges, app
+  // children); the program's own nodes still had to resolve above.
+  if (consumed !== root.childNodes.length && options.resume !== true) {
     hydrateFailure('template', 'unexpected trailing nodes', owner);
   }
   validateFixedPartTargets(ctx, root, cursorStart, owner);

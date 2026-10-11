@@ -132,6 +132,15 @@ export class CompiledElementKernel {
   #program: PartProgram;
   #options: CompiledElementKernelOptions;
   #styleScope = new CompiledStyleScope();
+  /**
+   * True only after a complete successful activation. The next connect of the
+   * same instance is a RESUME: the runtime binds the DOM it already produced
+   * instead of claiming server markup again (which would fail closed on the
+   * component's own runtime changes and tear the activation down). A failed
+   * first activation never sets it, and a destroyed kernel keeps its DISPOSED
+   * semantics.
+   */
+  #activatedOnce = false;
   #lifecycle = new LifetimeScope();
   #root?: CompiledStyleRoot;
   #instance?: CompiledProgramInstance;
@@ -233,11 +242,12 @@ export class CompiledElementKernel {
       this.#instance =
         mode === 'fresh'
           ? createFreshDom(this.#program, host, root, this.#lifecycle)
-          : this.#claim(host, root, styleCount);
+          : this.#claim(host, root, styleCount, this.#activatedOnce);
       this.context.connect();
       if (this.errors.hasError) this.errors.reset();
       this.#activation = { mode, root };
       this.#active = true;
+      this.#activatedOnce = true;
       return this.#activation;
     } catch (error) {
       try {
@@ -315,6 +325,7 @@ export class CompiledElementKernel {
     host: CompiledRuntimeHost,
     root: CompiledStyleRoot,
     styleCount: number,
+    resume = false,
   ): CompiledProgramInstance {
     const executor = hydrationExecutor();
     if (!executor) {
@@ -340,6 +351,7 @@ export class CompiledElementKernel {
       {
         expectStaticStyle: styleCount > 0,
         staticStyleReady: staticStyleReadiness(this.#options.styles),
+        resume,
         streamParts: stream?.parts,
         pendingParts: stream ? [...stream.pending] : undefined,
         recovery: stream ? 'owning' : 'throw',

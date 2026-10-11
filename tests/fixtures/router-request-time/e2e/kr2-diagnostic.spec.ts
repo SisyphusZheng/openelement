@@ -415,30 +415,21 @@ test('Q1-A: a disconnect before the sheet is ready leaves no late style write', 
 });
 
 /**
- * Q1-B: disconnect then reconnect, recorded as a characterization.
+ * Q1-B (positive regression): a reconnected light island resumes — styles,
+ * bindings, dynamic content and state — instead of being treated as an
+ * un-hydrated component. The reconnect must not re-claim the component's own
+ * runtime DOM (that fails closed on legitimate runtime drift and tears the
+ * activation down) and must not rebuild it either.
  *
- * What KR-2 owns is the stale continuation: the first connection's handoff
- * settling after the component moved on must not write, remove or duplicate
- * anything (proved by Q1-A above). This test records what the framework does
- * with a *reconnected light root* today, on the real graph: the element is
- * connected again, but no owned head node is re-created, so the light island
- * carries no component styles after the move. The assertion below states that
- * observed behaviour rather than the ideal, so the finding stays visible
- * instead of being smoothed over — it is a pre-existing lifecycle gap outside
- * the KR-2 seam (no product code in this batch touches the light connect path)
- * and is reported as a residual finding rather than fixed here.
+ * The island is driven through real runtime changes before the move (its block
+ * structure opens, its state changes), then moved in the same task, and finally
+ * driven again — the second round is what proves the resumed bindings, not just
+ * a restored style node.
  */
-test('Q1-B: a moved light root is recorded — no stale write, and no owned node re-created', async ({
-  page,
-}) => {
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await page.route('**/*.css', async (route) => {
-    await held;
-    await route.continue();
-  });
+test('Q1-B: a moved light island resumes styles, bindings and dynamic state', async ({ page }) => {
+  const consoleLines: string[] = [];
+  page.on('console', (message) => consoleLines.push(`${message.type()}: ${message.text()}`));
+  page.on('pageerror', (error) => consoleLines.push(`pageerror: ${error.message}`));
 
   await page.goto('/combobox', { waitUntil: 'load' });
   await page.waitForFunction(
@@ -447,65 +438,66 @@ test('Q1-B: a moved light root is recorded — no stale write, and no owned node
     { timeout: GATE_TIMEOUT_MS },
   );
 
+  // First round of real runtime change: open the list (a dynamic block range
+  // moves into the DOM) and let the machine write its state.
+  const input = page.locator('zag-combobox-light input[data-part="input"]');
+  await input.click();
+  await page.keyboard.press('ArrowDown');
+  await expect(input).toHaveAttribute('aria-activedescendant', 'combobox:light-fruit:option:apple');
+  await input.fill('typed-before-move');
+
   const moved = await page.evaluate(() => {
     const frame = document.querySelector('combobox-page')?.shadowRoot;
     const host = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
-    if (!host || !frame) return false;
+    if (!frame || !host) return null;
     const parent = host.parentNode as ParentNode;
+    (globalThis as { __q1bIdentity?: unknown }).__q1bIdentity = host;
+    const nodesBefore = document.querySelectorAll('style[data-open-element-compiled-style]').length;
     host.remove();
-    parent.appendChild(host); // reconnect the same element
-    return true;
+    parent.appendChild(host);
+    return { nodesBefore };
   });
-  expect(moved, 'the fixture must expose the light island to move it').toBe(true);
+  expect(moved, 'the fixture must expose the light island').not.toBeNull();
 
-  release();
-  const settled = await page.evaluate(async () => {
-    const deadline = performance.now() + 10_000;
-    for (;;) {
-      const nodes = [...document.querySelectorAll('style[data-open-element-compiled-style]')];
-      const text = nodes.map((node) => node.textContent ?? '').join('\n');
-      const frame = document.querySelector('combobox-page')?.shadowRoot;
-      const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
-      const first = host?.shadowRoot?.firstChild;
-      const fallback =
-        !!first && first.nodeType === 1 && (first as Element).hasAttribute('data-oe-static-styles');
-      // Wait for the *shadow* island's handoff: the sheet settling is the event
-      // that would fire a stale light continuation.
-      if (!fallback) {
-        const liveHost = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
-        return {
-          nodes: nodes.length,
-          rules: text.includes('zag-combobox-input'),
-          hostConnected: liveHost?.isConnected ?? false,
-          timedOut: false,
-        };
-      }
-      if (performance.now() > deadline) {
-        const liveHost = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
-        return {
-          nodes: nodes.length,
-          rules: text.includes('zag-combobox-input'),
-          hostConnected: liveHost?.isConnected ?? false,
-          timedOut: true,
-        };
-      }
-      await new Promise((resolve) => setTimeout(resolve, 25));
-    }
+  // The resume must restore the owned node; wait for the observable event.
+  await page.waitForFunction(
+    () => document.querySelectorAll('style[data-open-element-compiled-style]').length > 0,
+    undefined,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  const state = await page.evaluate(() => {
+    const frame = document.querySelector('combobox-page')?.shadowRoot;
+    const host = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
+    const nodes = [...document.querySelectorAll('style[data-open-element-compiled-style]')];
+    const liveInput = frame?.querySelector(
+      'zag-combobox-light input[data-part="input"]',
+    ) as HTMLInputElement | null;
+    return {
+      identity: (globalThis as { __q1bIdentity?: unknown }).__q1bIdentity === host,
+      nodes: nodes.length,
+      rules: nodes.some((node) => (node.textContent ?? '').includes('zag-combobox-input')),
+      value: liveInput?.value ?? 'missing',
+    };
   });
+  expect(state.identity, 'the reconnected island is the same element instance').toBe(true);
+  expect(state.nodes, 'the resumed handoff owns exactly one light node').toEqual(1);
+  expect(state.rules, 'the resumed node carries the component rules').toBe(true);
+  expect(state.value, 'runtime state survives the move').toEqual('typed-before-move');
 
-  expect(settled.timedOut, `the sheet never settled (${JSON.stringify(settled)})`).toBe(false);
-  expect(settled.hostConnected, 'the moved element is connected again').toBe(true);
-  // Recorded behaviour: the stale continuation wrote nothing (no node, no
-  // rules) — the generation guard holds.
+  // Second round of real runtime change after the resume: the resumed bindings
+  // must drive the DOM again.
+  await page.keyboard.press('Escape');
+  await input.click();
+  await page.keyboard.press('ArrowDown');
+  await expect(input).toHaveAttribute('aria-activedescendant', 'combobox:light-fruit:option:apple');
+  await page.keyboard.press('Enter');
+  await expect(input).toHaveValue('Apple');
+
   expect(
-    settled.rules,
-    `a stale continuation wrote the light rules after the move (${JSON.stringify(settled)})`,
-  ).toBe(false);
-  expect(
-    settled.nodes,
-    `recorded: a reconnected light root carries ${settled.nodes} owned node(s) — the ` +
-      `pre-existing lifecycle gap this test documents`,
-  ).toEqual(0);
+    consoleLines.filter((line) => line.startsWith('pageerror:')),
+    `no error may surface across the resume (${consoleLines.slice(-4).join(' | ')})`,
+  ).toEqual([]);
 });
 
 /**
