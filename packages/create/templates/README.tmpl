@@ -52,7 +52,7 @@ convention:
 | Option                | Convention                                                                                                                                                      |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | design tokens         | `app/styles/theme.css` (the @theme role sheet)                                                                                                                  |
-| app shell             | `app/islands/app-shell.tsx` (the shared site chrome every page renders inside)                                                                                  |
+| layout                | `app/layout.tsx` (the shared site chrome every page renders inside)                                                                                             |
 | document head content | `app/head.tsx` (meta tags, preloads, inline CSS)                                                                                                                |
 | site title            | the `name` field of `package.json`                                                                                                                              |
 | static-shape recipes  | `app/styles/recipes.css` (zero-interaction badge/callout/card/tabs shapes as plain HTML+CSS — the @openelement/ui components retired to these recipes in #1557) |
@@ -70,16 +70,15 @@ accepted-key list. `vite.config.ts` stays Vite-only: `plugins: [...openElement()
   array them in `static styles`, sharing `site-chrome.css`/`badges.css`).
 - `app/islands/` — client islands, the only code that ships JavaScript. Each
   island declares its hydration strategy (`idle`, `load`, `visible`,
-  client-only) through `defineIslandConfig`. The directory also hosts
-  `app-shell.tsx` — not an island itself, but the auto-registered application
-  shell (see below).
-- `app/islands/app-shell.tsx` — the site chrome every page renders inside:
-  the header, the `main` content region, and the footer live here exactly
-  once instead of being copied onto each page. The build registers the shell
-  automatically and projects each page's render into its default slot, so a
-  page module carries only its own content. The shell is a convention: delete
-  the file and pages still render (carrying their own chrome again), or opt
-  out explicitly with `appShell: false` in `openelement.config.ts`.
+  client-only) through `defineIslandConfig`.
+- `app/layout.tsx` — the auto-registered layout, not an island itself: the
+  site chrome every page renders inside. The header, the `main` content
+  region, and the footer live here exactly once instead of being copied onto
+  each page. The build registers the layout automatically and projects each
+  page's render into its default slot, so a page module carries only its own
+  content. The layout is a convention: delete the file and pages still render
+  (carrying their own chrome again), or opt out explicitly with `layout: false`
+  in `openelement.config.ts`.
 - `app/styles/theme.css` — the @theme role sheet: Tailwind-ON roles, the starter palette aliases, dark and forced-colors pairs. Dev serves it directly; the build compiles it through the router's Tailwind preset.
   Dark values ride `prefers-color-scheme`; no theme runtime.
 - `app/styles/recipes.css` — documented plain HTML+CSS recipes for the
@@ -117,7 +116,7 @@ Vite+ build — there is no direct `vite` devDependency to pin.
 ## Styling ownership
 
 Global design tokens and the document baseline (`body`, `::selection`) live
-in `app/styles/theme.css`. The app shell owns the shared chrome sheet
+in `app/styles/theme.css`. The layout owns the shared chrome sheet
 (`app/components/site-chrome.css`), arrayed in its `static styles`. Pages use
 light roots and own their rules in `static styles`, arrayed from imported
 `.css` files (#1558 — the one style authoring form): the server inlines each

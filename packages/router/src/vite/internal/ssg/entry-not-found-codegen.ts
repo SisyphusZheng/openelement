@@ -79,7 +79,7 @@ export function renderNotFoundRoute(
     lines.push(`    __content = await ${renderer.varName}.default.wrap(__content, c)`);
   }
   lines.push(
-    `    const content = __renderAppShell(__content, ${quoteGeneratedJavaScriptValue(
+    `    const content = __renderLayout(__content, ${quoteGeneratedJavaScriptValue(
       route.path,
     )}, { routeMeta: __routeMetaValue })`,
   );

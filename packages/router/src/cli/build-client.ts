@@ -248,8 +248,8 @@ export function findReachableIslandTags(
     recordSourceFile(resolve(root, routesDir, route.filePath));
   }
 
-  const shellConfigs = [ctx.phase3.appShell, ...Object.values(ctx.phase3.layouts ?? {})];
-  for (const shell of shellConfigs) {
+  const layoutConfigs = [ctx.phase3.layout, ...Object.values(ctx.phase3.layouts ?? {})];
+  for (const shell of layoutConfigs) {
     if (!shell || typeof shell !== 'object') continue;
     const shellFile = resolveConfiguredSource(root, shell.import);
     if (shellFile) recordSourceFile(shellFile);

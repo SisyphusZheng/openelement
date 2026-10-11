@@ -124,7 +124,7 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   lines.push('    for (const renderer of __matchingRenderers(routePath)) {');
   lines.push('      content = await renderer.wrap(content, __rendererContext(routePath, params));');
   lines.push('    }');
-  lines.push('    content = __renderAppShell(content, routePath, { locale, routeMeta });');
+  lines.push('    content = __renderLayout(content, routePath, { locale, routeMeta });');
   lines.push(
     '    const renderTimeMs = typeof performance !== "undefined" ? performance.now() - startTime : 0;',
   );
@@ -203,7 +203,7 @@ export function renderSsgSection(desc: EntryDescriptor): string {
     '        const __errorPageContext = { data: undefined, actionData: undefined, params, request: options.request, locale, route: loadContext.route, meta: routeMeta };',
   );
   lines.push(
-    '        const errorContent = __renderAppShell(__ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath }), routePath, { locale, routeMeta });',
+    '        const errorContent = __renderLayout(__ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath }), routePath, { locale, routeMeta });',
   );
   lines.push(`        ${documentResolutionSetupLine('page', '__errorPageContext')}`);
   // Per-property og dedup on the boundary re-render: the fresh __doc above

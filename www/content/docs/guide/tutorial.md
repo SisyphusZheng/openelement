@@ -118,7 +118,7 @@ curl -s http://localhost:5173/hello | grep -o 'Hello from a page'
 Hello from a page
 ```
 
-The heading was in the HTML the server sent — it is not injected by script. The only client module this page loads is the starter's own `app-shell`; the route itself adds no island.
+The heading was in the HTML the server sent — it is not injected by script. The only client module this page loads is the starter's own `app-layout`; the route itself adds no island.
 
 ## Step 3: Add your first island
 

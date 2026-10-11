@@ -11,7 +11,7 @@
  *     their sheet `theme.css` instead and reach it through `tailwind.theme`,
  *     which replaces this convention for them: dev serves the compiled theme
  *     sheet and links it, the build emits it as the linked bundle asset)
- *   - app shell:     `app/islands/app-shell.tsx` (auto-registered, deletable)
+ *   - layout:        `app/layout.tsx` (auto-registered, deletable)
  *   - site title:    the `name` field of `package.json`
  *   - document head: `app/head.tsx` (structural head content, see below)
  *
@@ -21,14 +21,14 @@
  *
  * ## `dirs` — where the conventions resolve
  *
- * `dirs` moves the framework's source roots. The tokens.css and app-shell.tsx
+ * `dirs` moves the framework's source roots. The tokens.css and layout.tsx
  * conventions FOLLOW the move: they resolve under the SHARED base directory of
  * the three configured roots — their longest common leading path — so
  *
  *   dirs: { routes: 'src/routes', islands: 'src/islands', components: 'src/components' }
  *
  * resolves the conventions as `src/styles/tokens.css` and
- * `src/islands/app-shell.tsx` (and, for a site that keeps one, `src/data/...`).
+ * `src/layout.tsx` (and, for a site that keeps one, `src/data/...`).
  * A partial override that leaves the three roots without a shared leading
  * segment (`dirs: { routes: 'src/pages' }` against the default `app/islands`
  * and `app/components`) moves only the overridden root and leaves the
@@ -70,7 +70,7 @@ export const CONVENTION_ISLANDS_DIR = 'app/islands';
 export const CONVENTION_COMPONENTS_DIR = 'app/components';
 
 /**
- * Default convention base: the directory the tokens/app-shell/data conventions
+ * Default convention base: the directory the tokens/layout/data conventions
  * resolve under when `dirs` is omitted (or has no shared leading segment).
  */
 export const CONVENTION_BASE_DIR = 'app';
@@ -78,8 +78,8 @@ export const CONVENTION_BASE_DIR = 'app';
 /** Convention-relative suffix of the design-token stylesheet. */
 export const CONVENTION_STYLES_SUFFIX = 'styles/tokens.css';
 
-/** Convention-relative suffix of the auto-registered application shell. */
-export const CONVENTION_APP_SHELL_SUFFIX = 'islands/app-shell.tsx';
+/** Convention-relative suffix of the auto-registered layout. */
+export const CONVENTION_LAYOUT_SUFFIX = 'layout.tsx';
 
 /** Convention-relative suffix of the structural document-head module. */
 export const CONVENTION_HEAD_SUFFIX = 'head.tsx';
@@ -87,14 +87,26 @@ export const CONVENTION_HEAD_SUFFIX = 'head.tsx';
 /** Convention path for the design-token stylesheet. */
 export const CONVENTION_TOKENS_PATH = `${CONVENTION_BASE_DIR}/${CONVENTION_STYLES_SUFFIX}`;
 
-/** Convention path for the auto-registered application shell. */
-export const CONVENTION_APP_SHELL_PATH = `${CONVENTION_BASE_DIR}/${CONVENTION_APP_SHELL_SUFFIX}`;
+/** Convention path for the auto-registered layout. */
+export const CONVENTION_LAYOUT_PATH = `${CONVENTION_BASE_DIR}/${CONVENTION_LAYOUT_SUFFIX}`;
 
 /** Convention path for the structural document-head module (`app/head.tsx`). */
 export const CONVENTION_HEAD_PATH = `${CONVENTION_BASE_DIR}/${CONVENTION_HEAD_SUFFIX}`;
 
-/** The tag name the convention shell is registered under. */
-export const CONVENTION_APP_SHELL_TAG = 'app-shell';
+/** The tag name the convention layout is registered under. */
+export const CONVENTION_LAYOUT_TAG = 'app-layout';
+
+/**
+ * Pre-rename `app-shell` convention names (alpha15 R batch 3 transitional
+ * aliases; batch 4 removes). Prefer the `CONVENTION_LAYOUT_*` canonical
+ * names in new code.
+ */
+/** Pre-rename convention suffix. @deprecated Use CONVENTION_LAYOUT_SUFFIX (`layout.tsx`). */
+export const CONVENTION_APP_SHELL_SUFFIX = CONVENTION_LAYOUT_SUFFIX;
+/** Pre-rename convention path. @deprecated Use CONVENTION_LAYOUT_PATH (`app/layout.tsx`). */
+export const CONVENTION_APP_SHELL_PATH = CONVENTION_LAYOUT_PATH;
+/** Pre-rename convention tag. @deprecated Use CONVENTION_LAYOUT_TAG (`app-layout`). */
+export const CONVENTION_APP_SHELL_TAG = CONVENTION_LAYOUT_TAG;
 
 /** The site-title convention source (the package.json `name` field). */
 export const CONVENTION_PACKAGE_JSON = 'package.json';
@@ -165,14 +177,14 @@ export interface OpenElementBuildConfig {
 export interface OpenElementUserConfig {
   /** Page renderer. Omit to keep the compiled native renderer. */
   renderer?: 'native' | 'lit';
-  /** Source roots; moves the tokens/app-shell/head conventions with them. */
+  /** Source roots; moves the tokens/layout/head conventions with them. */
   dirs?: OpenElementDirsConfig;
   /**
-   * Application shell. `false` opts out of the `app-shell.tsx` convention; an
+   * Layout. `false` opts out of the `layout.tsx` convention; an
    * object registers the named module. `tagName` is derived from the import's
    * basename, so it is not part of the surface.
    */
-  appShell?:
+  layout?:
     | false
     | {
         import: string;
@@ -239,7 +251,7 @@ export function defineConfig(config: OpenElementUserConfig): OpenElementUserConf
 export const OPEN_ELEMENT_CONFIG_KEYS: readonly string[] = [
   'renderer',
   'dirs',
-  'appShell',
+  'layout',
   'packageIslands',
   'head',
   'styles',
@@ -290,8 +302,13 @@ export const OPEN_ELEMENT_HEAD_STRING_KEYS: readonly string[] = [
 /** Accepted keys inside `dirs`. */
 export const OPEN_ELEMENT_DIRS_KEYS: readonly string[] = ['routes', 'islands', 'components'];
 
-/** Accepted keys inside `appShell`. */
-export const OPEN_ELEMENT_APP_SHELL_KEYS: readonly string[] = ['import', 'props'];
+/** Accepted keys inside `layout`. */
+export const OPEN_ELEMENT_LAYOUT_KEYS: readonly string[] = ['import', 'props'];
+/**
+ * Pre-rename accepted-keys list (alpha15 R batch 3 transitional alias; batch 4 removes).
+ * @deprecated Use OPEN_ELEMENT_LAYOUT_KEYS.
+ */
+export const OPEN_ELEMENT_APP_SHELL_KEYS: readonly string[] = OPEN_ELEMENT_LAYOUT_KEYS;
 
 /** Accepted keys inside `styles`. */
 export const OPEN_ELEMENT_STYLES_KEYS: readonly string[] = ['tokens'];
@@ -386,7 +403,7 @@ export function assertValidUserConfig(value: unknown): asserts value is OpenElem
   const {
     renderer,
     dirs,
-    appShell,
+    layout,
     packageIslands,
     head,
     styles,
@@ -409,12 +426,12 @@ export function assertValidUserConfig(value: unknown): asserts value is OpenElem
     }
   }
 
-  if (appShell !== undefined && appShell !== false) {
-    if (!isPlainObject(appShell)) throw typeError('appShell', 'false or an object', appShell);
-    assertKnownKeys(appShell, 'appShell', OPEN_ELEMENT_APP_SHELL_KEYS);
-    assertStringKey('appShell.import', appShell.import);
-    if (appShell.props !== undefined && !isPlainObject(appShell.props)) {
-      throw typeError('appShell.props', 'an object', appShell.props);
+  if (layout !== undefined && layout !== false) {
+    if (!isPlainObject(layout)) throw typeError('layout', 'false or an object', layout);
+    assertKnownKeys(layout, 'layout', OPEN_ELEMENT_LAYOUT_KEYS);
+    assertStringKey('layout.import', layout.import);
+    if (layout.props !== undefined && !isPlainObject(layout.props)) {
+      throw typeError('layout.props', 'an object', layout.props);
     }
   }
 
@@ -549,7 +566,7 @@ export function frameworkOptionsConflict(): OpenElementError {
   );
 }
 
-/** Derive the shell tag name from its module basename (`app-shell.tsx` -> `app-shell`). */
+/** Derive the layout tag name from its module basename (`open-layout.tsx` -> `open-layout`). */
 export function tagNameFromModule(importPath: string): string {
   const base = importPath.split('/').pop() ?? importPath;
   const withoutExtension = base.replace(/\.(tsx|ts|jsx|js)$/u, '');
@@ -604,9 +621,17 @@ export function conventionTokensPath(base: string): string {
   return `${base}/${CONVENTION_STYLES_SUFFIX}`;
 }
 
-/** The app-shell convention path for a resolved `dirs` block. */
+/** The layout convention path for a resolved `dirs` block. */
+export function conventionLayoutPath(base: string): string {
+  return `${base}/${CONVENTION_LAYOUT_SUFFIX}`;
+}
+
+/**
+ * Pre-rename layout convention path helper (alpha15 R batch 3 transitional alias; batch 4 removes).
+ * @deprecated Use conventionLayoutPath.
+ */
 export function conventionAppShellPath(base: string): string {
-  return `${base}/${CONVENTION_APP_SHELL_SUFFIX}`;
+  return conventionLayoutPath(base);
 }
 
 /** The structural document-head convention path for a resolved `dirs` block. */

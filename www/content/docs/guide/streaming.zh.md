@@ -77,7 +77,7 @@ export default class ArticlePage extends OpenElement {
 - 路由描述符不得携带自定义 `props` 投影器或依赖请求的 head；`renderIntent` 只能包含字面量的 `mode` 与 `stream` 赋值。
 - 只接受原生编译页面；`defineLitPage` 会被拒绝。
 
-有两个项目级约束容易漏掉。流式渲染要求应用壳在**整个项目范围内关闭**（`openElement({ appShell: false })`，且不得有 `layouts`）：流式文档是分片冲刷的，无法被壳包裹，因此单个路由写 `route: { layout: false }` 并不能满足这道门禁。并且 loader 仍然只返回**一个对象**——没有第二个 loader，也没有新的数据形状。
+有两个项目级约束容易漏掉。流式渲染要求应用壳在**整个项目范围内关闭**（`openElement({ layout: false })`，且不得有 `layouts`）：流式文档是分片冲刷的，无法被壳包裹，因此单个路由写 `route: { layout: false }` 并不能满足这道门禁。并且 loader 仍然只返回**一个对象**——没有第二个 loader，也没有新的数据形状。
 
 ## 前置门禁决定一切 HTTP 结果
 

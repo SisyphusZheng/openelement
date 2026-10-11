@@ -90,19 +90,19 @@ export function renderEntry(desc: EntryDescriptor): string {
   for (const island of desc.islands) {
     islandLookup[island.tagName] = island.modulePath;
   }
-  // --- App-shell imports + explicit registration ---
-  // Compiled shell modules do not self-register: the entry imports the
+  // --- Layout imports + explicit registration ---
+  // Compiled layout modules do not self-register: the entry imports the
   // module namespace and registers the default-exported compiled class under
-  // the configured shell tag. renderDsd fails closed on a tag mismatch.
+  // the configured layout tag. renderDsd fails closed on a tag mismatch.
   // Deduped by importPath — one module maps to one compiled class and tag.
-  const appShellModules = new Map<string, string>();
-  const collectShellModule = (shell: typeof desc.appShell.default) => {
-    if (shell && !appShellModules.has(shell.importPath)) {
-      appShellModules.set(shell.importPath, shell.tagName);
+  const layoutModules = new Map<string, string>();
+  const collectLayoutModule = (shell: typeof desc.layout.default) => {
+    if (shell && !layoutModules.has(shell.importPath)) {
+      layoutModules.set(shell.importPath, shell.tagName);
     }
   };
-  collectShellModule(desc.appShell.default);
-  for (const shell of Object.values(desc.appShell.layouts)) collectShellModule(shell);
+  collectLayoutModule(desc.layout.default);
+  for (const shell of Object.values(desc.layout.layouts)) collectLayoutModule(shell);
 
   lines.push(`// Known islands (determined at build time by scanning islandsDir)`);
   lines.push(`const __islandMap = ${quoteGeneratedJavaScriptValue(islandLookup, 2)}`);
@@ -132,15 +132,15 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push('');
 
   // Element owns document and compiled-render semantics; this entry wires them.
-  const appShellModuleList = [...appShellModules].map(([importPath, tagName], index) => ({
+  const layoutModuleList = [...layoutModules].map(([importPath, tagName], index) => ({
     importPath,
     tagName,
-    varName: `__shell_${index}`,
+    varName: `__layout_${index}`,
   }));
-  for (const shellModule of appShellModuleList) {
+  for (const layoutModule of layoutModuleList) {
     lines.push(
-      `import * as ${shellModule.varName} from ${quoteGeneratedJavaScriptValue(
-        shellModule.importPath,
+      `import * as ${layoutModule.varName} from ${quoteGeneratedJavaScriptValue(
+        layoutModule.importPath,
       )};`,
     );
   }
@@ -239,14 +239,14 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push('// the request-scope accessor, the handler exports, the SSR registry');
   lines.push('// guard, and the page-render bindings; the entry keeps the route');
   lines.push('// wiring below.');
-  // Nav data is not part of the 1.0 surface: the app-shell layout props keep
+  // Nav data is not part of the 1.0 surface: the layout props keep
   // their contract with empty defaults. Locales, by contrast, are a project
   // declaration (`openElement({ i18n })`) — the entry carries them so
-  // path-derived locale resolution and shell href localization agree with
+  // path-derived locale resolution and layout href localization agree with
   // the pages the build emits (see expandI18nLocales).
   lines.push('const __app = createGeneratedApp({');
   lines.push('  islands: __islandMap,');
-  lines.push(`  appShellPlan: ${quoteGeneratedJavaScriptValue(desc.appShell, 2)},`);
+  lines.push(`  layoutPlan: ${quoteGeneratedJavaScriptValue(desc.layout, 2)},`);
   lines.push(`  locales: ${quoteGeneratedJavaScriptValue(desc.i18n?.locales ?? [])},`);
   lines.push('  navSections: [],');
   lines.push('  headerNav: [],');
@@ -291,8 +291,8 @@ export function renderEntry(desc: EntryDescriptor): string {
     lines.push('  pageProps: __pageProps,');
     lines.push('  pageErrorProps: __pageErrorProps,');
     lines.push('  statusHtml: __statusHtml,');
-    lines.push('  resolveAppShell: __resolveAppShell,');
-    lines.push('  renderAppShell: __renderAppShell,');
+    lines.push('  resolveLayout: __resolveLayout,');
+    lines.push('  renderLayout: __renderLayout,');
   }
   lines.push('  pageHandlers: __pageHandlers,');
   if (desc.apiRoutes.length > 0) {
@@ -338,12 +338,12 @@ export function renderEntry(desc: EntryDescriptor): string {
         `try { __registerSsrComponent(${tagNameExpr}, ${route.varName}.default); } catch (err) { console.error('[ssg] Failed to register route custom element ${tagNameExpr}:', err); throw err; }`,
       );
     }
-    for (const shellModule of appShellModuleList) {
+    for (const layoutModule of layoutModuleList) {
       lines.push(
         `try { __registerSsrComponent(${quoteGeneratedJavaScriptValue(
-          shellModule.tagName,
-        )}, ${shellModule.varName}.default); } catch (err) { console.error('[ssg] Failed to register app shell custom element ${quoteGeneratedJavaScriptValue(
-          shellModule.tagName,
+          layoutModule.tagName,
+        )}, ${layoutModule.varName}.default); } catch (err) { console.error('[ssg] Failed to register layout custom element ${quoteGeneratedJavaScriptValue(
+          layoutModule.tagName,
         )}:', err); throw err; }`,
       );
     }

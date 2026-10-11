@@ -37,8 +37,8 @@ export default defineConfig({
     openElement({
       routesDir: 'app/routes',
       islandsDir: 'app/islands',
-      // No app shell: the fixture isolates the ui primitives.
-      appShell: false,
+      // No layout: the fixture isolates the ui primitives.
+      layout: false,
       packageIslands: ['@openelement/ui'],
       head: {
         title: 'ui dogfood fixture',

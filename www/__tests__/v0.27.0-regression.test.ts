@@ -42,15 +42,15 @@ test('v0.44 regression: compiled reading shell and page rail are present in guid
 
 test('v0.27.0 regression: open-layout has DSD template', () => {
   const html = readPage(DOCS_PAGE);
-  // The light-root app shell and static article chain must be expanded, while
+  // The light-root layout and static article chain must be expanded, while
   // admitted shadow-root islands retain native DSD. Article-embedded components
   // (open-code-block inside the article's Trusted HTML) stay SSR-inert on
-  // purpose: trusted content is opaque to nested composition, so only shell
+  // purpose: trusted content is opaque to nested composition, so only layout
   // admitted islands compose server-side. The inert host must not gain a
   // server DSD template from an opaque string.
   const count = (html.match(/shadowrootmode="open"/g) || []).length;
   expect(count >= 1, `Expected >= 1 DSD template in docs page, got ${count}`).toBeTruthy();
-  expect(html, 'App shell host must be present').toContain('<open-layout');
+  expect(html, 'Layout host must be present').toContain('<open-layout');
   expect(html, 'Compiled light roots must be expanded').toContain('data-oe-light');
   expect(html, 'Admitted shadow islands must keep native DSD').toContain(
     '<open-theme-toggle><template shadowrootmode="open"',

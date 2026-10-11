@@ -46,7 +46,7 @@ test.describe('hydration timing', () => {
     await expect(counter).toBeVisible();
     await page.evaluate(() => {
       // Island hosts are light-DOM descendants of the page element, which
-      // itself sits in the app-shell's light DOM (slotted content), so the
+      // itself sits in the layout's light DOM (slotted content), so the
       // direct document query finds the host; the descent only crosses open
       // shadow roots to be robust against either tree the framework renders
       // (#562).

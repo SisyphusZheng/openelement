@@ -55,7 +55,7 @@ function buildDescriptor(
     allowHeadExtrasScripts: state.allowHeadExtrasValue,
     html: state.resolvedOptions.html,
     upgradeStrategy: state.resolvedOptions.island?.upgradeStrategy || 'idle',
-    appShell: state.resolvedOptions.appShell,
+    layout: state.resolvedOptions.layout,
     layouts: state.resolvedOptions.layouts,
     // #1411: the default-CORS production advisory belongs to a production
     // build. Repeating it on every dev first run trained users to ignore it,
@@ -249,11 +249,11 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
             knownTags.add(fileToTagName(route.filePath));
             if (route.tagName) knownTags.add(route.tagName);
           }
-          const shellConfigs = [
-            state.resolvedOptions.appShell,
+          const layoutConfigs = [
+            state.resolvedOptions.layout,
             ...Object.values(state.resolvedOptions.layouts ?? {}),
           ];
-          for (const shell of shellConfigs) {
+          for (const shell of layoutConfigs) {
             if (shell && typeof shell === 'object' && shell.tagName) {
               knownTags.add(shell.tagName);
             }

@@ -217,7 +217,7 @@ describe('request-time parity: dev (hono) vs build (Nitro)', () => {
 
   // #943 amendment: the private,no-cache relaxation applies ONLY to a
   // successful 200 GET. notFound()/redirect()/a throw out of render()
-  // (inside __renderAppShell) must keep the no-store baseline — the
+  // (inside __renderLayout) must keep the no-store baseline — the
   // override used to be emitted before the render, leaking onto every
   // error/redirect response.
   test('GET /unstable → notFound() during render: 404 keeps no-store', async () => {

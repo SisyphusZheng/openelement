@@ -52,7 +52,7 @@ test('OpenElementBuildContext populatePhase3 sets phase3 invariants', () => {
     speculation: { prerender: ['/guide/*'] },
     headExtras: '<meta name="theme-color" content="#000">',
     allowHeadExtrasScripts: true,
-    appShell: 'default' as const,
+    layout: 'default' as const,
     layouts: { docs: 'default' as const },
   };
   const config = { root: '/project', base: '/base/', command: 'build' as const };
@@ -78,7 +78,7 @@ test('OpenElementBuildContext populatePhase3 sets phase3 invariants', () => {
   expect(ctx.phase3.speculation).toEqual({ prerender: ['/guide/*'] });
   expect(ctx.phase3.headExtras).toEqual('<meta name="theme-color" content="#000">');
   expect(ctx.phase3.allowHeadExtrasScripts).toEqual(true);
-  expect(ctx.phase3.appShell).toEqual('default');
+  expect(ctx.phase3.layout).toEqual('default');
   expect(ctx.phase3.layouts).toEqual({ docs: 'default' });
   expect(ctx.phase3.ssrNoExternal.length).toEqual(2);
 });

@@ -229,7 +229,7 @@ test.describe('Performance', () => {
     await page.waitForLoadState('networkidle');
     await page.waitForFunction(() => {
       const layout = document.querySelector('open-layout');
-      // The compiled app shell is a light-root static artifact. It is usable
+      // The compiled layout is a light-root static artifact. It is usable
       // before upgrade when its provenance marker and main landmark exist.
       return layout?.hasAttribute('data-oe-light') && !!layout.querySelector('main');
     });

@@ -18,7 +18,7 @@ import { headerNav, navSections } from './app/data/_generated-nav-data.ts';
 export default defineConfig({
   // The framework's documented defaults, stated explicitly: the Site pins its
   // source roots so a future default change cannot silently move them. The
-  // tokens/app-shell/head conventions resolve under the shared base of the
+  // tokens/layout/head conventions resolve under the shared base of the
   // three roots, which is `app` — where app/head.tsx lives.
   dirs: {
     routes: 'app/routes',
@@ -39,13 +39,13 @@ export default defineConfig({
     // Prism runtime).
     scripts: [{ src: '/theme-init.js' }],
   },
-  // The shell's tag name (`open-layout`) is derived from the import's basename.
-  appShell: {
+  // The layout's tag name (`open-layout`) is derived from the import's basename.
+  layout: {
     import: './app/islands/open-layout.tsx',
     props: {
       footerText: 'Built with OpenElement — Web Components-native application framework',
-      // Router 1.0 keeps the app-shell nav contract in the consumer: the Site
-      // projects its route-meta nav tree into the shell (Nav items are
+      // Router 1.0 keeps the layout nav contract in the consumer: the Site
+      // projects its route-meta nav tree into the layout (Nav items are
       // static; the router injects currentPath/locale per route).
       navItems: navSections,
       headerNav,

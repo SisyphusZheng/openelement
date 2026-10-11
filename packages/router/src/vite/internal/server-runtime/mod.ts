@@ -10,7 +10,7 @@
  * the page-render bindings), the WinterCG request scope and the built-in
  * middleware, the response/header channel, its commitment gate, the CSP
  * auto-nonce, the page SSR renderer seam, the page descriptor/props
- * projection, the app-shell composition, the status-page/locale resolution,
+ * projection, the layout composition, the status-page/locale resolution,
  * the action protocol, and the streaming pump (request scope, deferred-field
  * front gate, bounded queue, timeout/cancellation, Part backfill frames, and
  * the browser bootstrap string) — live in the modules re-exported here,
@@ -18,7 +18,7 @@
  * The bundler inlines the import into
  * every generated entry (dev, SSG prerender, Nitro production). The modules
  * never import the Element runtime barrel: the entry injects its Element
- * functions and its serialized build data (admitted tag list, shell plan) at
+ * functions and its serialized build data (admitted tag list, layout plan) at
  * binding time, keeping the LIT entry's graph kernel-free (#1339). The only
  * Element edges are the kernel-free `/authoring` leaf's protocol/policy
  * constants (the action fetch header, the problem+json media type, the
@@ -96,12 +96,20 @@ export type {
   ProjectedChildren,
   TrustedHtmlValue,
 } from './renderer-runtime.ts';
-export { createAppShellRuntime, createStatusHtml, localizeShellHref } from './document-runtime.ts';
-export type {
-  AppShellRuntime,
-  AppShellRuntimeDeps,
-  StatusHtmlRenderer,
-} from './document-runtime.ts';
+export { createLayoutRuntime, createStatusHtml, localizeLayoutHref } from './document-runtime.ts';
+export type { LayoutRuntime, LayoutRuntimeDeps, StatusHtmlRenderer } from './document-runtime.ts';
+/**
+ * Pre-rename server-runtime names (alpha15 R batch 3 transitional aliases;
+ * batch 4 removes). Prefer the `Layout` canonical names in new code.
+ */
+/** Pre-rename runtime creator. @deprecated Use createLayoutRuntime. */
+export { createLayoutRuntime as createAppShellRuntime } from './document-runtime.ts';
+/** Pre-rename href localizer. @deprecated Use localizeLayoutHref. */
+export { localizeLayoutHref as localizeShellHref } from './document-runtime.ts';
+/** Pre-rename runtime type. @deprecated Use LayoutRuntime. */
+export type { LayoutRuntime as AppShellRuntime } from './document-runtime.ts';
+/** Pre-rename runtime deps type. @deprecated Use LayoutRuntimeDeps. */
+export type { LayoutRuntimeDeps as AppShellRuntimeDeps } from './document-runtime.ts';
 export {
   createDeferredPageShell,
   createStreamBody,

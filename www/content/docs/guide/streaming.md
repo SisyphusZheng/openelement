@@ -77,7 +77,7 @@ The declaration is deliberately literal. The build rejects anything it cannot re
 - The route descriptor may not carry a custom `props` projector or a request-dependent head, and `renderIntent` must contain only the literal `mode` and `stream` assignments.
 - Only native compiled pages are admitted; `defineLitPage` is rejected.
 
-Two project-level constraints are easy to miss. Streaming requires the app shell to be **off for the whole project** (`openElement({ appShell: false })`, no `layouts`): a streamed document is flushed in parts and cannot be wrapped by a shell, so a per-route `route: { layout: false }` does not satisfy the gate. And the loader still returns **one object** — no second loader, no new data shape.
+Two project-level constraints are easy to miss. Streaming requires the layout to be **off for the whole project** (`openElement({ layout: false })`, no `layouts`): a streamed document is flushed in parts and cannot be wrapped by a layout, so a per-route `route: { layout: false }` does not satisfy the gate. And the loader still returns **one object** — no second loader, no new data shape.
 
 ## The front gate decides everything HTTP
 

@@ -129,8 +129,8 @@ class Phase3Meta {
   /** Whether headExtras scripts were produced by structured injection APIs. */
   allowHeadExtrasScripts: boolean = false;
 
-  /** Application shell rendered around routes. */
-  appShell: FrameworkOptions['appShell'] = undefined;
+  /** Layout rendered around routes. */
+  layout: FrameworkOptions['layout'] = undefined;
 
   /** Named route layouts selected by route meta. */
   layouts: FrameworkOptions['layouts'] = undefined;
@@ -283,7 +283,7 @@ export class OpenElementBuildContext {
     this.phase3.headExtras = options.headExtras || '';
     this.phase3.manifestBudget = options.build?.manifestBudget;
     this.phase3.allowHeadExtrasScripts = options.allowHeadExtrasScripts || false;
-    this.phase3.appShell = options.appShell;
+    this.phase3.layout = options.layout;
     this.phase3.layouts = options.layouts;
   }
 

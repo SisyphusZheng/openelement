@@ -150,6 +150,13 @@ export class FElement extends FNodeBase {
     return this.attributes.has(name) ? this.attributes.get(name)! : null;
   }
 
+  getAttributeNames(): string[] {
+    // Platform API mirror (L3 fake-alignment precedent): the compiled
+    // hydration walk calls Element.getAttributeNames and fails closed when
+    // the DOM has no such method (claim.ts two-way comparison).
+    return [...this.attributes.keys()];
+  }
+
   addEventListener(type: string, listener: EventListener): void {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
     this.listeners.get(type)!.add(listener);

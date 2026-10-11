@@ -4,8 +4,8 @@
  * prerenders the route (see ./../routes/404.tsx) to dist/404.html instead.
  * The path-derived tag is 'el-404'. Light root: the page owns its rules via
  * `static styles` (the imported .css sheets), inlined into SSR as
- * @scope(el-404). Like every page it renders inside the app shell
- * (app/islands/app-shell.tsx), which owns the header and footer.
+ * @scope(el-404). Like every page it renders inside the layout
+ * (app/layout.tsx), which owns the header and footer.
  */
 import { element, OpenElement } from "@openelement/element";
 import notFoundPageStyles from "./page-404.css";

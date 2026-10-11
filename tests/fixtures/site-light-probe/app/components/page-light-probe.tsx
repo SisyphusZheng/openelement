@@ -9,7 +9,7 @@
 // the client (only islands are), so a pre-upgrade click landing in a
 // shadow-mode page would key its replay queue to the never-hydrating page
 // host and be lost; in light DOM the queue keys to the island host itself.
-// The fixture has no app shell, so the page renders directly into <body>.
+// The fixture has no layout, so the page renders directly into <body>.
 
 import { element, OpenElement } from '@openelement/element';
 

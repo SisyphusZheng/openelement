@@ -152,7 +152,7 @@ export default defineConfig({
   plugins: [
     openElement({
       routesDir: 'app/routes',
-      appShell: false,
+      layout: false,
       head: { title: 'packed serve proof' },
     }),
   ],

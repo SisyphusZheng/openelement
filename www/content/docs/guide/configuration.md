@@ -38,11 +38,11 @@ The optional, near-empty config file: `export default defineConfig({ ... })` fro
 | --- | --- |
 | `dirs` | routes `app/routes`, islands `app/islands`, components `app/components` |
 | design tokens | `<shared base>/styles/tokens.css` (inlined into every document `<head>`) |
-| app shell | `<shared base>/islands/app-shell.tsx` (auto-registered; deleting the file is supported) |
+| layout | `<shared base>/layout.tsx` (auto-registered; deleting the file is supported) |
 | document head content | `<shared base>/head.tsx` |
 | site title | the `name` field of `package.json` |
 
-The shared base is the three roots' longest common directory: `dirs: { routes: 'src/routes', islands: 'src/islands', components: 'src/components' }` moves the tokens file to `src/styles/tokens.css`, the shell to `src/islands/app-shell.tsx` and the head module to `src/head.tsx`. A partial `dirs` has no shared segment left (`src/pages` against the default `app/*`), so it moves only what it names and the conventions stay at `app`.
+The shared base is the three roots' longest common directory: `dirs: { routes: 'src/routes', islands: 'src/islands', components: 'src/components' }` moves the tokens file to `src/styles/tokens.css`, the layout to `src/layout.tsx` and the head module to `src/head.tsx`. A partial `dirs` has no shared segment left (`src/pages` against the default `app/*`), so it moves only what it names and the conventions stay at `app`.
 
 ### tokens.css or theme.css
 
@@ -57,7 +57,7 @@ Accepted keys — anything else fails the build with this list:
 
 - `renderer` — `'native'` (default, the compiled Part Program serializer) or `'lit'`.
 - `dirs` — `{ routes, islands, components }`.
-- `appShell` — `false` to opt out, or `{ import, props }`. The tag name is derived from the import's basename, so it is not configurable.
+- `layout` — `false` to opt out, or `{ import, props }`. The tag name is derived from the import's basename, so it is not configurable.
 - `packageIslands` — extra package names whose island modules the build admits, e.g. `['@openelement/ui']`. The loader folds the list into the SSR externalization list (a listed package is bundled, not imported at run time), which is why there is no `ssr.noExternal` key.
 - `head` — the structured document-head channel: `title`, `description`, `lang`, `favicon`, `ogImage`, `stylesheets: string[]` and `scripts: { src, defer?, crossOrigin?, integrity? }[]`. Scripts and stylesheets serialize through the framework's own link/script writer, so a config entry and an inline `inject` entry emit identical bytes. `inject` itself — the framework's raw-HTML channel — deliberately has no home here.
 - `styles` — `{ tokens }` to point the token convention at another file.
@@ -220,7 +220,7 @@ Custom renderer output stays within the same first-party trust boundary.
 
 ## middleware.use
 
-`middleware.use` registers fetch middleware with the WinterCG shape `(request, next) => Promise<Response>` — no HTTP-framework dialect. The chain is composed around the generated handler in onion order (`use[0]` is outermost: first to see the request, last to see the response), outside the built-in `requestId`/`logger`/`cors`/`securityHeaders`/`csp` middleware. Middleware semantics are request-time only: a static GET/HEAD is served straight from the built artifacts (`tryStatic`) and never passes through the `middleware.use` chain or the built-in middleware, so do not rely on middleware to guard prerendered pages. On the request-time dispatch path (dynamic routes, POSTs, and non-static fallbacks) the same chain runs in the dev server, the `start` CLI, the e2e fixture server, and the Nitro production entry (locked by the request-time parity contract test). A middleware may short-circuit by returning a `Response` without calling `next()`. Each entry is a **module path** (resolved like `appShell.import`): the module default-exports the middleware, and the generated server entry imports it — so middleware may close over module scope and import local helpers and third-party packages. Route-scoped `_middleware.ts` files use the same WinterCG shape: a root or nested `_middleware.ts` default-exports `(request, next) => Promise<Response>`, applied to its route subtree.
+`middleware.use` registers fetch middleware with the WinterCG shape `(request, next) => Promise<Response>` — no HTTP-framework dialect. The chain is composed around the generated handler in onion order (`use[0]` is outermost: first to see the request, last to see the response), outside the built-in `requestId`/`logger`/`cors`/`securityHeaders`/`csp` middleware. Middleware semantics are request-time only: a static GET/HEAD is served straight from the built artifacts (`tryStatic`) and never passes through the `middleware.use` chain or the built-in middleware, so do not rely on middleware to guard prerendered pages. On the request-time dispatch path (dynamic routes, POSTs, and non-static fallbacks) the same chain runs in the dev server, the `start` CLI, the e2e fixture server, and the Nitro production entry (locked by the request-time parity contract test). A middleware may short-circuit by returning a `Response` without calling `next()`. Each entry is a **module path** (resolved like `layout.import`): the module default-exports the middleware, and the generated server entry imports it — so middleware may close over module scope and import local helpers and third-party packages. Route-scoped `_middleware.ts` files use the same WinterCG shape: a root or nested `_middleware.ts` default-exports `(request, next) => Promise<Response>`, applied to its route subtree.
 
 ### vite.config.ts — middleware.use
 

@@ -38,7 +38,7 @@ export type ProjectedChildren = ReadonlyMap<string, TrustedHtmlValue>;
 /**
  * The generated entry's `__ssr` binding: render one registered host tag to
  * HTML. `depth` bounds nested island expansion; `projectedChildren` claims
- * external content (the app-shell slot). Fails closed per the forks below.
+ * external content (the layout slot). Fails closed per the forks below.
  */
 export type PageSsrRenderer = (
   tag: string,
@@ -129,7 +129,7 @@ export function createLitPageRenderer(deps: LitPageRendererDeps): PageSsrRendere
   const { renderLitPageToHtml } = deps;
   // depth/projectedChildren/sourceInfo are accepted for call-site compatibility
   // and deliberately ignored: nested composition is lit-ssr's job (no adapter
-  // code), there is no app-shell slot claim on this path (nothing to project),
+  // code), there is no layout slot claim on this path (nothing to project),
   // and lit-ssr carries no route/source diagnostics channel — so sourceInfo
   // would have nowhere to go. If lit-ssr ever gains one, thread it here; until
   // then the drop is explicit, not an oversight (H2余).

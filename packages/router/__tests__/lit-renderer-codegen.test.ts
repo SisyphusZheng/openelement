@@ -20,8 +20,8 @@ const litRoutes: RouteEntry[] = [
   { path: '/notes', filePath: 'notes.ts', type: 'page', varName: 'pageNotes', definePage: true },
 ];
 
-test('lit renderer: descriptor forks imports and rejects a compiled appShell', () => {
-  const desc = buildEntryDescriptor(litRoutes, { renderer: 'lit', appShell: false });
+test('lit renderer: descriptor forks imports and rejects a compiled layout', () => {
+  const desc = buildEntryDescriptor(litRoutes, { renderer: 'lit', layout: false });
   expect(desc.renderer).toEqual('lit');
   // The lit server entry never imports the runtime barrel at all; the pure
   // HTML utilities arrive through the kernel-free @openelement/element/html
@@ -37,10 +37,10 @@ test('lit renderer: descriptor forks imports and rejects a compiled appShell', (
     () =>
       buildEntryDescriptor(litRoutes, {
         renderer: 'lit',
-        appShell: { tagName: 'app-shell', import: './shell.ts' },
+        layout: { tagName: 'app-layout', import: './shell.ts' },
       }),
     Error,
-    "renderer: 'lit' does not support a compiled appShell",
+    "renderer: 'lit' does not support a compiled layout",
   );
 });
 
@@ -53,7 +53,7 @@ test('lit renderer: native descriptor shape is unchanged (renderer absent)', () 
 
 test('lit renderer: entry forks tag resolution and page render (no page-data side channel)', () => {
   const litEntry = renderEntry(
-    buildEntryDescriptor(litRoutes, { renderer: 'lit', appShell: false, ssg: true }),
+    buildEntryDescriptor(litRoutes, { renderer: 'lit', layout: false, ssg: true }),
   );
   // First import installs the lit DOM shim before any route module evaluates.
   expect(litEntry.startsWith("import '@lit-labs/ssr/lib/install-global-dom-shim.js';")).toEqual(

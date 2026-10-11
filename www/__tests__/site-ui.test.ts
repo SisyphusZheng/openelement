@@ -31,7 +31,7 @@ for (const [tagName, path] of siteModules) {
   });
 }
 
-test('open-layout is an SSR-only compiled app-shell island (hydrate: none)', async () => {
+test('open-layout is an SSR-only compiled layout island (hydrate: none)', async () => {
   const url = new URL('../app/islands/open-layout.tsx', import.meta.url);
   const source = await readFile(url, 'utf8');
   expect(source).toContain("defineIslandConfig({ hydrate: 'none', ssr: true })");

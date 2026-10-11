@@ -253,23 +253,33 @@ export interface DocumentConfig {
   allowHeadExtrasScripts: boolean;
 }
 
-/** The app shell module a build resolves: tag, import path, and serialized props. */
-export interface AppShellDecl {
+/** The layout module a build resolves: tag, import path, and serialized props. */
+export interface LayoutDecl {
   tagName: string;
   importPath: string;
   props: Record<string, unknown>;
 }
 
-/** The resolved shell for one plan slot: disabled (false) or a full declaration. */
-export type ResolvedAppShell = false | AppShellDecl;
+/** The resolved layout for one plan slot: disabled (false) or a full declaration. */
+export type ResolvedLayout = false | LayoutDecl;
 
-/** The resolved app shells a build ships: the default shell plus named layouts. */
-export interface AppShellPlan {
-  default: ResolvedAppShell;
-  layouts: Record<string, ResolvedAppShell>;
+/** The resolved layouts a build ships: the default layout plus named layouts. */
+export interface LayoutPlan {
+  default: ResolvedLayout;
+  layouts: Record<string, ResolvedLayout>;
 }
+/**
+ * Pre-rename layout plan types (alpha15 R batch 3 transitional aliases; batch 4 removes).
+ * Prefer the `Layout` canonical names in new code.
+ */
+/** Pre-rename layout declaration. @deprecated Use LayoutDecl. */
+export type AppShellDecl = LayoutDecl;
+/** Pre-rename resolved layout. @deprecated Use ResolvedLayout. */
+export type ResolvedAppShell = ResolvedLayout;
+/** Pre-rename layout plan. @deprecated Use LayoutPlan. */
+export type AppShellPlan = LayoutPlan;
 
-/** The full build-time description of one generated entry: routes, islands, renderers, middleware, document, and app-shell plans. */
+/** The full build-time description of one generated entry: routes, islands, renderers, middleware, document, and layout plans. */
 export interface EntryDescriptor {
   isSSG: boolean;
   /**
@@ -305,7 +315,7 @@ export interface EntryDescriptor {
   renderers: RendererDecl[];
   middlewareScopes: MiddlewareScopeDecl[];
   document: DocumentConfig;
-  appShell: AppShellPlan;
+  layout: LayoutPlan;
   upgradeStrategy?: HydrationStrategy;
   /**
    * Declared project locales. Absent for a single-locale site: the generated

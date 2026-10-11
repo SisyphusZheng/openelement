@@ -162,8 +162,8 @@ async function handler(timeoutMs?: number, streamManifest?: StreamRouteManifest)
     const __pageErrorProps = () => ({});
     const __statusHtml = (title, text) => '<h1>' + escapeHtml(title) + '</h1><p>' + escapeHtml(text) + '</p>';
     const __clientScriptDescriptors = () => [{ src: '/client.js', type: 'module' }];
-    const __resolveAppShell = () => deps.resolvedAppShell ?? false;
-    const __renderAppShell = html => html;
+    const __resolveLayout = () => deps.resolvedLayout ?? false;
+    const __renderLayout = html => html;
     const __ssr = () => '<p>error</p>';
     ${lines.join('\n').replaceAll('import.meta.env.PROD', 'false')}
     return __pageHandlers['/'].GET[0];
@@ -206,7 +206,7 @@ async function handler(timeoutMs?: number, streamManifest?: StreamRouteManifest)
     createActionBodyLimit,
     maxActionBodyBytes: MAX_ACTION_BODY_BYTES,
     ACTION_FETCH_HEADER,
-    resolvedAppShell: undefined as unknown,
+    resolvedLayout: undefined as unknown,
   };
   const generated = new Function('deps', source)(deps) as (
     request: Request,
@@ -222,8 +222,8 @@ async function handler(timeoutMs?: number, streamManifest?: StreamRouteManifest)
   return {
     fetch,
     routeModule,
-    setResolvedAppShell: (shell: unknown) => {
-      deps.resolvedAppShell = shell;
+    setResolvedLayout: (shell: unknown) => {
+      deps.resolvedLayout = shell;
     },
   };
 }
@@ -317,19 +317,19 @@ test('the real channel merge keeps protocol headers and the streamed body', asyn
   expect(frames.join('')).toContain('part&quot;:0');
 });
 
-test('the generated GET refuses a resolved app shell with route-level guidance', async () => {
+test('the generated GET refuses a resolved layout with route-level guidance', async () => {
   // Descriptors built outside buildEntryDescriptor (or reaching the runtime by
   // another path) still hit the generated route guard. It is the route-level
   // counterpart of the build gate and must name the same project-wide fix
   // rather than a route-local one that cannot work.
-  const { fetch, routeModule, setResolvedAppShell } = await handler();
-  setResolvedAppShell({ tagName: 'open-layout' });
+  const { fetch, routeModule, setResolvedLayout } = await handler();
+  setResolvedLayout({ tagName: 'open-layout' });
   routeModule.loader = () => ({ first: Promise.resolve('a'), second: Promise.resolve('b') });
   const response = await fetch(new Request('https://example.test/'));
   expect(response.status).toEqual(500);
   const body = await response.text();
-  expect(body).toContain('resolved a compiled app shell');
-  expect(body).toContain('appShell: false');
+  expect(body).toContain('resolved a compiled layout');
+  expect(body).toContain('layout: false');
   expect(body).toContain('leave streaming off');
 });
 

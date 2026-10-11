@@ -11,10 +11,10 @@
  * entry expands through the islands' own compiled classes.
  *
  * The site chrome (header, main region, footer) is NOT here: every page
- * renders inside the auto-registered app shell
- * (app/islands/app-shell.tsx), which owns that markup exactly once. The
+ * renders inside the auto-registered layout
+ * (app/layout.tsx), which owns that markup exactly once. The
  * compiled grammar lowers one root per render, so the page returns a single
- * content wrapper and the shell's <slot> carries it.
+ * content wrapper and the layout's <slot> carries it.
  *
  * The badge spans name each section's client cost: static sections ship
  * markup only; island sections hydrate a compiled island (see the island
