@@ -88,6 +88,14 @@ export interface CompileElementResult {
    * plugin fails at import resolution, never by silently inlining.
    */
   styleRequests?: readonly string[];
+  /**
+   * The component's statically admitted class tokens (alpha15 S lane): every
+   * whitespace-separated token of a compile-time `class` value the lowering
+   * admitted. Opaque strings — the compiler attaches no Tailwind meaning to
+   * them; the host build forwards them to the official Tailwind compiler as
+   * explicit candidates and emits the generated CSS as an external asset.
+   */
+  classCandidates?: readonly string[];
 }
 
 /**
@@ -167,10 +175,12 @@ export function compileElementProgram(
     observedJson,
   });
   const { styleRequests } = analyzed;
+  const classCandidates = [...lowering.classCandidates];
   return {
     code,
     map,
     program,
     ...(styleRequests.length === 0 ? {} : { styleRequests }),
+    ...(classCandidates.length === 0 ? {} : { classCandidates }),
   };
 }

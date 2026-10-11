@@ -43,6 +43,7 @@ import { diagnosticPluginError } from './semantic-core/diagnostics/index.ts';
 import { typeCheckEmittedModule } from './semantic-core/type-check.ts';
 import { compiledArtifactStyleRequests } from './compiled-artifact-style-requests.ts';
 import { registerStyleRequest, styleRequestFile, styleRequestModuleId } from './style-requests.ts';
+import { registerClassCandidates } from './tailwind-candidates.ts';
 
 /** The authored substring every compiled element module contains (`@element(`), used as the cheap prefilter. */
 export const COMPILED_ELEMENT_MARKER = '@element(';
@@ -211,6 +212,14 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
               file: styleRequestFile(id, specifier),
             });
           }
+        }
+        // The compiled component's statically admitted class tokens (alpha15 S
+        // lane) travel through the candidate registry: the host build hands
+        // them to the OFFICIAL Tailwind compiler as explicit candidates and
+        // emits the generated CSS as an external stylesheet asset. The
+        // compiler attaches no Tailwind semantics to them (opaque strings).
+        if (compiled?.classCandidates !== undefined) {
+          registerClassCandidates(id, compiled.classCandidates);
         }
         // The edge registration above is the whole job for an adopted
         // artifact: it ships as its own emitted module, nothing to compile or

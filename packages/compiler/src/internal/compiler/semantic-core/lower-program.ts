@@ -221,6 +221,16 @@ export class Lowering {
   readonly synthesizedFields: CompiledField[] = [];
   /** True when the authored module binds the canonical `computed` import. */
   readonly sourceBindsComputed: boolean;
+  /**
+   * The component's statically admitted class tokens (alpha15 S lane): every
+   * whitespace-separated token of every compile-time `class` value the
+   * lowering admits — static literals, primitive-literal attributes, both
+   * branches of an admitted conditional class, and `each` item-template
+   * literals. The compiler collects them as OPAQUE STRINGS: it never
+   * interprets Tailwind's class grammar, and the build layer hands the list
+   * to the official Tailwind compiler as explicit candidates.
+   */
+  readonly classCandidates = new Set<string>();
   private readonly plainFieldNames: Set<string>;
   private readonly computedFieldNames: Set<string>;
   private readonly sf: ts.SourceFile;
@@ -249,6 +259,19 @@ export class Lowering {
 
   fail(node: ts.Node, code: string, message: string): never {
     throw new CompiledElementError([diagnosticAt(this.sf, node, code, message)]);
+  }
+
+  /**
+   * Record one compile-time class value's whitespace-separated tokens as
+   * Tailwind candidates (alpha15 S lane). The values are provably finite at
+   * compile time — the compiler's grammar admits no other shape — so the
+   * tokens are FACTS, not guesses: no runtime class interpolation ever
+   * contributes, and the compiler attaches no Tailwind semantics to them.
+   */
+  private collectClassCandidates(value: string): void {
+    for (const token of value.split(/\s+/)) {
+      if (token !== '') this.classCandidates.add(token);
+    }
   }
 
   private addSource(id: string, kind: ProgramSourceRecord['kind'], node: ts.Node): void {
@@ -470,6 +493,7 @@ export class Lowering {
       }
       if (ts.isStringLiteral(init)) {
         attrs.push([name, init.text]);
+        if (name === 'class') this.collectClassCandidates(init.text);
         continue;
       }
       if (!ts.isJsxExpression(init) || !init.expression) {
@@ -550,6 +574,7 @@ export class Lowering {
       }
       if (literal === false || literal === null) continue;
       attrs.push([name, literal === true ? '' : (text ?? '')]);
+      if (name === 'class' && literal !== true && text !== null) this.collectClassCandidates(text);
     }
 
     const hasHtmlSink = this.parts.some(
@@ -768,6 +793,10 @@ export class Lowering {
           "conditional class branches must be string literals: class={this.<cond> ? 'a' : 'b'}",
         );
       }
+      // Both branches are compile-time literals: the compiler's own grammar
+      // makes the candidate set provably finite, so both ride the Tailwind
+      // candidates (alpha15 S lane) exactly like a static class attribute.
+      this.collectClassCandidates(value.text);
     }
     const { deps, bodyText } = validateComputedExpressionBody(
       expr,
@@ -1133,6 +1162,7 @@ export class Lowering {
       }
       if (ts.isStringLiteral(prop.initializer)) {
         attrs.push([name, prop.initializer.text]);
+        if (name === 'class') this.collectClassCandidates(prop.initializer.text);
         continue;
       }
       if (!ts.isJsxExpression(prop.initializer) || !prop.initializer.expression) {
@@ -1191,6 +1221,7 @@ export class Lowering {
       }
       if (literal === false || literal === null) continue;
       attrs.push([name, literal === true ? '' : (text ?? '')]);
+      if (name === 'class' && literal !== true && text !== null) this.collectClassCandidates(text);
     }
     const children: ProgramTreeNode[] = [];
     const rawChildren = ts.isJsxElement(element) ? [...element.children] : [];

@@ -1,0 +1,155 @@
+/**
+ * packages/compiler/__tests__/tailwind-candidates.test.ts — the statically
+ * admitted class-candidate channel (alpha15 S lane).
+ *
+ * The compiler is the ONE place a component's class values are provably
+ * finite: the lowering admits static literals, primitive-literal attributes,
+ * both branches of an admitted conditional class, and `each` item-template
+ * literals. Those tokens travel to the build layer as OPAQUE STRINGS — the
+ * compiler attaches no Tailwind semantics to them (no class grammar, no
+ * utility knowledge, no runtime interpolation). This suite pins:
+ *
+ *   - what the lowering admits (every compile-time class value contributes);
+ *   - what it does NOT admit (a `class={this.<field>}` binding is a runtime
+ *     value — no guessing, no partial credit);
+ *   - the registry's contract (per-module lookup, the build's union set,
+ *     query-suffix-insensitive keys, clear);
+ *   - the compiled-element transform as the registry's one writer.
+ */
+
+import { beforeEach, describe, expect, test } from 'vitest';
+import { compileElementProgram } from '../src/internal/compiler/semantic-core/compile.ts';
+import { compiledElementPlugin } from '../src/internal/compiler/plugin.ts';
+import {
+  allClassCandidates,
+  classCandidatesForModule,
+  clearClassCandidates,
+  hasClassCandidates,
+} from '../src/internal/compiler/tailwind-candidates.ts';
+
+const MODULE_ID = '/proj/app/components/oe-card.tsx';
+
+/** One compiled component whose render body is the given JSX expression. */
+function authoredSource(renderBody: string): string {
+  return [
+    "import { element, OpenElement, property } from '@openelement/element';",
+    "@element('oe-card', { root: 'shadow-open' })",
+    'export class OeCard extends OpenElement {',
+    "  @property({ reflect: false }) kind = 'a';",
+    '  render() {',
+    `    return (${renderBody});`,
+    '  }',
+    '}',
+  ].join('\n');
+}
+
+const candidatesOf = (renderBody: string): readonly string[] =>
+  compileElementProgram(authoredSource(renderBody), MODULE_ID).classCandidates ?? [];
+
+const transformOf = (): ((code: string, id: string) => unknown) => {
+  const plugin = compiledElementPlugin();
+  const transform = plugin.transform as (this: unknown, code: string, id: string) => unknown;
+  return (code: string, id: string): unknown => transform.call({}, code, id);
+};
+
+beforeEach(() => {
+  clearClassCandidates();
+});
+
+describe('the lowering admits compile-time class values', () => {
+  test('a static class literal contributes every whitespace-separated token', () => {
+    expect(
+      candidatesOf(
+        `<article class="rounded-xl border bg-white p-6 shadow-lg"><h2 class="text-xl font-semibold">hi</h2></article>`,
+      ),
+    ).toEqual(['rounded-xl', 'border', 'bg-white', 'p-6', 'shadow-lg', 'text-xl', 'font-semibold']);
+  });
+
+  test('`className` is the same attribute and contributes identically', () => {
+    expect(candidatesOf(`<div className="grid gap-4">x</div>`)).toEqual(['grid', 'gap-4']);
+  });
+
+  test('a class on a custom-element host contributes (the host lives in this shadow tree)', () => {
+    expect(candidatesOf(`<div><oe-badge class="px-2 text-sm">x</oe-badge></div>`)).toEqual([
+      'px-2',
+      'text-sm',
+    ]);
+  });
+
+  test('both branches of an admitted conditional class contribute', () => {
+    expect(
+      candidatesOf(
+        `<div class={this.kind === 'a' ? 'bg-primary text-white' : 'bg-muted text-black'}>x</div>`,
+      ),
+    ).toEqual(['bg-primary', 'text-white', 'bg-muted', 'text-black']);
+  });
+
+  test('each item-template class literals contribute (a compile-time branch)', () => {
+    const source = [
+      "import { element, OpenElement, property } from '@openelement/element';",
+      "@element('oe-list', { root: 'shadow-open' })",
+      'export class OeList extends OpenElement {',
+      '  @property({ reflect: false }) items: Array<{ id: string }> = [];',
+      '  render() {',
+      '    return (',
+      '      <ul>',
+      '        {this.items.map((item) => (',
+      '          <li key={item.id} class="py-1 font-mono">{item.id}</li>',
+      '        ))}',
+      '      </ul>',
+      '    );',
+      '  }',
+      '}',
+    ].join('\n');
+    expect(compileElementProgram(source, MODULE_ID).classCandidates).toEqual(['py-1', 'font-mono']);
+  });
+
+  test('a module with no class attribute contributes no candidates', () => {
+    expect(
+      compileElementProgram(authoredSource(`<main><h1>plain</h1></main>`), MODULE_ID)
+        .classCandidates,
+    ).toBeUndefined();
+  });
+});
+
+describe('runtime class values are never guessed', () => {
+  test('a class bound to a property contributes nothing', () => {
+    // The binding's runtime value is unknowable at compile time; completeness
+    // for such bindings rides the author's explicit declaration through
+    // Tailwind's own `@source` mechanisms.
+    expect(candidatesOf(`<div class={this.kind}>x</div>`)).toEqual([]);
+  });
+
+  test('candidates from other elements in the same module are still admitted', () => {
+    expect(candidatesOf(`<div class={this.kind}><span class="truncate">x</span></div>`)).toEqual([
+      'truncate',
+    ]);
+  });
+});
+
+describe('the candidate registry', () => {
+  test('the compiled-element transform registers per module, query-insensitively', () => {
+    const transform = transformOf();
+    transform(authoredSource(`<div class="p-4">x</div>`), MODULE_ID);
+    expect(classCandidatesForModule(MODULE_ID)).toEqual(['p-4']);
+    // A dev-time cache-busted id answers identically (query stripped).
+    expect(classCandidatesForModule(`${MODULE_ID}?t=1700000000000`)).toEqual(['p-4']);
+    expect(hasClassCandidates()).toEqual(true);
+    expect(allClassCandidates()).toEqual(['p-4']);
+  });
+
+  test('the union set is first-seen ordered and deduplicated across modules', () => {
+    const transform = transformOf();
+    transform(authoredSource(`<div class="p-4 flex">x</div>`), '/proj/a.tsx');
+    transform(authoredSource(`<div class="flex gap-2">x</div>`), '/proj/b.tsx');
+    expect(allClassCandidates()).toEqual(['p-4', 'flex', 'gap-2']);
+  });
+
+  test('clear drops the whole registry (a build owns its bookkeeping)', () => {
+    transformOf()(authoredSource(`<div class="p-4">x</div>`), MODULE_ID);
+    clearClassCandidates();
+    expect(classCandidatesForModule(MODULE_ID)).toEqual([]);
+    expect(hasClassCandidates()).toEqual(false);
+    expect(allClassCandidates()).toEqual([]);
+  });
+});

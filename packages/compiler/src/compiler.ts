@@ -46,6 +46,17 @@ export {
   styleRequestFile,
   styleRequestModuleId,
 } from './internal/compiler/style-requests.ts';
+// The statically admitted class-candidate channel (alpha15 S lane): opaque
+// class tokens travel from the compiled-element transform to the host build,
+// which forwards them to the official Tailwind compiler as explicit
+// candidates. The compiler never interprets Tailwind's class grammar.
+export {
+  allClassCandidates,
+  classCandidatesForModule,
+  clearClassCandidates,
+  hasClassCandidates,
+  registerClassCandidates,
+} from './internal/compiler/tailwind-candidates.ts';
 export {
   type EmittedModuleDiagnostic,
   type EmittedModuleTypeCheckOptions,
