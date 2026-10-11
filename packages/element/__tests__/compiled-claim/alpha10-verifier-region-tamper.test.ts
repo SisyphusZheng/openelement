@@ -9,7 +9,7 @@
 
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
-import { PartProgramClaimError } from '../../src/internal/compiled/runtime.ts';
+import { PartProgramHydrationError } from '../../src/internal/compiled/runtime.ts';
 import { parseHtml, TestDocument, TestElement } from '../compiled-runtime/test-dom.ts';
 import {
   claimExisting,
@@ -44,7 +44,7 @@ test('alpha10-verifier parity: claim fails closed when a static attr is REMOVED 
   span.removeAttribute('title'); // tamper: deletion, not value rewrite
   const error = assertThrowsIncludes(
     () => claimExisting(program, whenHost(), root as unknown as Node),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(error.message).toContain('template[1].branch[0]');
 });
@@ -65,7 +65,7 @@ test('alpha10-verifier parity: claim fails closed when an unexpected attr is INJ
   li.setAttribute('data-injected', 'evil'); // tamper: injection, not rewrite
   const error = assertThrowsIncludes(
     () => claimExisting(program, eachHost(), root as unknown as Node),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(error.message).toContain('template[1].item');
 });

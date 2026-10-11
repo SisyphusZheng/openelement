@@ -1,16 +1,16 @@
 /**
- * when/each Region machinery of the compiled Part Program runtime: keyed
+ * when/each Block machinery of the compiled Part Program runtime: keyed
  * list reconciliation with LIS moves, when-branch swapping, and the
- * per-item value/attribute slot projections. The Region builders re-enter
+ * per-item value/attribute slot projections. The Block builders re-enter
  * the template walk in fresh-dom.ts (mountNodes), while fresh-dom's Part
  * dispatch calls back into buildWhen/buildEach — a function-level ESM cycle
  * between hoisted declarations with no top-level evaluation, which is safe.
  */
 
-// Canonical each-Region item-key derivation (#1374) — single source shared
+// Canonical each-Block item-key derivation (#1374) — single source shared
 // with the server serializer; do not reintroduce a private copy.
 import { eachItemKey } from '../each-key.ts';
-// Canonical when-Region condition evaluation (#1372) — single source shared
+// Canonical when-Block condition evaluation (#1372) — single source shared
 // with the server serializer; do not reintroduce a private comparison.
 import { conditionHolds } from '../condition-holds.ts';
 import {
@@ -43,19 +43,19 @@ import {
 import { mountNodes } from './fresh-dom.ts';
 
 /**
- * A list Region's authored name: the compiler's Region identity is a numeric
+ * A list Block's authored name: the compiler's Block identity is a numeric
  * part index, which an author cannot map back to source. The signal name is
- * the authored `this.<property>` the Region renders.
+ * the authored `this.<property>` the Block renders.
  */
 function regionName(part: ProgramEachPart | ProgramWhenPart): string {
   return `this.${part.signal}`;
 }
 
 /**
- * A list Region's signal must hold an array at every write. Naming the
+ * A list Block's signal must hold an array at every write. Naming the
  * authored property and the received value is what makes the failure
  * actionable; the compiler cannot reject it because the property type is an
- * authoring decision, and the Region is re-read on every signal write.
+ * authoring decision, and the Block is re-read on every signal write.
  *
  * The strip seam (#1546) sits before the template: in a production client
  * build {@linkcode RUNTIME_MESSAGES_ENABLED} is a literal `false`, so the
@@ -67,19 +67,19 @@ export function expectsArrayMessage(where: string, part: ProgramEachPart, value:
   if (!RUNTIME_MESSAGES_ENABLED) return `${where}: ${RuntimeErrorCode.LIST_VALUE_NOT_ARRAY}`;
   const received = value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
   return (
-    `${where}: the list Region over ${regionName(part)} expects an array, got ` +
+    `${where}: the list Block over ${regionName(part)} expects an array, got ` +
     `${received} — it renders ${regionName(part)}.map(...), so initialize that property to [] ` +
     `instead of null/undefined.`
   );
 }
 
-/** Two items in one list Region derived the same item key (#1546 seam: see expectsArrayMessage). */
+/** Two items in one list Block derived the same item key (#1546 seam: see expectsArrayMessage). */
 function duplicateKeyMessage(ctx: MountContext, part: ProgramEachPart, key: string): string {
   if (!RUNTIME_MESSAGES_ENABLED) {
     return `${origin(ctx)}: ${EachKeyErrorCode.DUPLICATE_KEY}`;
   }
   return (
-    `${origin(ctx)}: duplicate key in the list Region over ${regionName(part)} — two items ` +
+    `${origin(ctx)}: duplicate key in the list Block over ${regionName(part)} — two items ` +
     `share ${JSON.stringify(part.key)} = ${key}. A key is the item's DOM identity and must be ` +
     `unique within one list; give each item a unique ${part.key}.`
   );
@@ -97,13 +97,6 @@ export interface WhenBlock {
   item: unknown;
   itemPart?: ProgramEachPart;
 }
-
-/**
- * Transitional alias of {@linkcode WhenBlock} (alpha15 R batch 1). Batch-2
- * files (`claim.ts`, `regions-seam.ts`) still reference this name; batch 2
- * moves them and removes the alias.
- */
-export type WhenRegion = WhenBlock;
 
 export interface ItemValueSlot {
   text?: Text;
@@ -156,13 +149,6 @@ export interface EachBlock {
   item: unknown;
 }
 
-/**
- * Transitional alias of {@linkcode EachBlock} (alpha15 R batch 1). Batch-2
- * files (`claim.ts`, `regions-seam.ts`) still reference this name; batch 2
- * moves them and removes the alias.
- */
-export type EachRegion = EachBlock;
-
 export function whenActive(part: ProgramWhenPart, value: unknown): boolean {
   // Canonical condition evaluation (#1372) — shared with the server
   // serializer; do not reintroduce a private comparison.
@@ -171,7 +157,7 @@ export function whenActive(part: ProgramWhenPart, value: unknown): boolean {
 
 export function buildItem(
   ctx: MountContext,
-  regionScope: LifetimeScope,
+  blockScope: LifetimeScope,
   doc: Document,
   part: ProgramEachPart,
   item: unknown,
@@ -183,7 +169,7 @@ export function buildItem(
   itemBox: ItemBox;
   scope: LifetimeScope;
 } {
-  const scope = regionScope.child();
+  const scope = blockScope.child();
   const valueSlots: ItemValueSlot[] = [];
   const attrSlots: ItemAttrSlot[] = [];
   // The mutable item holder every per-item listener reads at dispatch time:
@@ -268,7 +254,7 @@ export function buildWhen(
   const anchor = doc.createComment(partAnchorMarker(part.index));
   const end = doc.createComment(partAnchorEndMarker(part.index));
   const current = whenActive(part, signalOf(ctx, part.signal).value);
-  const region: WhenRegion = {
+  const block: WhenBlock = {
     ctx,
     part,
     scope,
@@ -280,10 +266,10 @@ export function buildWhen(
     item,
     itemPart,
   };
-  scope.addRangeCleanup(() => removeNodes(region.nodes));
-  region.nodes = mountNodes(
+  scope.addRangeCleanup(() => removeNodes(block.nodes));
+  block.nodes = mountNodes(
     ctx,
-    region.branchScope,
+    block.branchScope,
     doc,
     current ? part.on : part.off,
     item,
@@ -295,52 +281,52 @@ export function buildWhen(
     ctx,
     scope,
     part.signal,
-    guardedUpdate(ctx, (value) => updateWhen(region, value)),
+    guardedUpdate(ctx, (value) => updateWhen(block, value)),
   );
-  return [anchor, ...region.nodes, end];
+  return [anchor, ...block.nodes, end];
 }
 
-export function updateWhen(region: WhenRegion, value: unknown): void {
-  if (region.scope.disposed) return;
-  const next = whenActive(region.part, value);
-  if (next === region.current) return;
-  const parent = region.end.parentNode;
-  // A detached anchor/end pair means the Region's owning boundary is gone;
+export function updateWhen(block: WhenBlock, value: unknown): void {
+  if (block.scope.disposed) return;
+  const next = whenActive(block.part, value);
+  if (next === block.current) return;
+  const parent = block.end.parentNode;
+  // A detached anchor/end pair means the Block's owning boundary is gone;
   // updates stop rather than rebuilding outside the owned range.
-  if (!parent || region.anchor.parentNode !== parent) return;
+  if (!parent || block.anchor.parentNode !== parent) return;
   try {
-    region.branchScope.dispose(true);
+    block.branchScope.dispose(true);
   } finally {
-    removeNodes(region.nodes);
+    removeNodes(block.nodes);
   }
-  const branchScope = region.scope.child();
+  const branchScope = block.scope.child();
   let nodes: Node[];
   try {
     nodes = mountNodes(
-      region.ctx,
+      block.ctx,
       branchScope,
-      region.end.ownerDocument,
-      next ? region.part.on : region.part.off,
-      region.item,
-      region.itemPart,
+      block.end.ownerDocument,
+      next ? block.part.on : block.part.off,
+      block.item,
+      block.itemPart,
       undefined,
       parent,
     );
-    insertNodesBefore(parent, nodes, region.end);
+    insertNodesBefore(parent, nodes, block.end);
   } catch (error) {
     try {
       branchScope.dispose();
     } catch {
       // Preserve the branch construction error.
     }
-    region.branchScope = branchScope;
-    region.nodes = [];
-    region.current = next;
+    block.branchScope = branchScope;
+    block.nodes = [];
+    block.current = next;
     throw error;
   }
-  region.branchScope = branchScope;
-  region.nodes = nodes;
-  region.current = next;
+  block.branchScope = branchScope;
+  block.nodes = nodes;
+  block.current = next;
 }
 
 export function buildEach(
@@ -353,7 +339,7 @@ export function buildEach(
   const scope = parentScope.child();
   const anchor = doc.createComment(partAnchorMarker(part.index));
   const end = doc.createComment(partAnchorEndMarker(part.index));
-  const region: EachRegion = {
+  const block: EachBlock = {
     ctx,
     part,
     scope,
@@ -364,7 +350,7 @@ export function buildEach(
     item: NO_ITEM,
   };
   scope.addRangeCleanup(() => {
-    for (const entry of region.entries) removeNodes(entry.nodes);
+    for (const entry of block.entries) removeNodes(entry.nodes);
   });
   const value = signalOf(ctx, part.signal).value;
   if (!Array.isArray(value)) {
@@ -388,15 +374,15 @@ export function buildEach(
       itemBox: entry.itemBox,
       item: value[index],
     };
-    region.entries.push(stored);
-    region.byKey.set(key, stored);
+    block.entries.push(stored);
+    block.byKey.set(key, stored);
     nodes.push(...entry.nodes);
   }
   subscribeWrites(
     ctx,
     scope,
     part.signal,
-    guardedUpdate(ctx, (next) => updateEach(region, next)),
+    guardedUpdate(ctx, (next) => updateEach(block, next)),
   );
   return [anchor, ...nodes, end];
 }
@@ -418,8 +404,8 @@ function insertItemValue(
   entry: EachEntry,
   slotIndex: number,
   text: Text,
-  regionParent: Node,
-  regionReference: Node,
+  blockParent: Node,
+  blockReference: Node,
 ): void {
   const slot = entry.valueSlots[slotIndex];
   const parent = slot.parent;
@@ -434,8 +420,8 @@ function insertItemValue(
     }
   }
   if (!reference && slot.before?.parentNode === parent) reference = slot.before;
-  if (!reference && parent === regionParent && regionReference.parentNode === parent) {
-    reference = regionReference;
+  if (!reference && parent === blockParent && blockReference.parentNode === parent) {
+    reference = blockReference;
   }
   if (reference) parent.insertBefore(text, reference);
   else parent.appendChild(text);
@@ -456,15 +442,15 @@ function removeItemValue(entry: EachEntry, slot: ItemValueSlot, text: Text): voi
 function updateItemValues(
   entry: EachEntry,
   projection: { values: string[]; attrs: Array<string | null> },
-  regionParent: Node,
-  resolveRegionReference: () => Node,
+  blockParent: Node,
+  resolveBlockReference: () => Node,
 ): void {
-  // The fallback insertion reference is a scan over the Region's later
+  // The fallback insertion reference is a scan over the Block's later
   // entries. It is only reachable when a slot that currently has no text must
   // gain one, so resolve it once, on demand (#1416) — an update that only
   // rewrites or removes existing text never pays for the scan.
-  let regionReference: Node | undefined;
-  const regionReferenceForInsert = (): Node => (regionReference ??= resolveRegionReference());
+  let blockReference: Node | undefined;
+  const blockReferenceForInsert = (): Node => (blockReference ??= resolveBlockReference());
   for (const [index, slot] of entry.valueSlots.entries()) {
     const next = projection.values[index];
     if (next.length === 0) {
@@ -475,7 +461,7 @@ function updateItemValues(
       if (slot.text.data !== next) slot.text.data = next;
       continue;
     }
-    const parent = slot.parent ?? regionParent;
+    const parent = slot.parent ?? blockParent;
     slot.parent = parent;
     const document = parent.ownerDocument;
     if (!document) {
@@ -486,7 +472,7 @@ function updateItemValues(
     }
     const text = document.createTextNode(next);
     slot.text = text;
-    insertItemValue(entry, index, text, regionParent, regionReferenceForInsert());
+    insertItemValue(entry, index, text, blockParent, blockReferenceForInsert());
   }
   for (const [index, slot] of entry.attrSlots.entries()) {
     const next = projection.attrs[index];
@@ -507,16 +493,16 @@ function disposeEntry(entry: EachEntry): void {
 }
 
 function moveEntries(
-  region: EachRegion,
+  block: EachBlock,
   parent: Node,
   entries: EachEntry[],
   previousPositions: Map<EachEntry, number>,
   mounted: Set<EachEntry>,
 ): void {
-  // A physically ordered suffix already touches the Region end anchor.
+  // A physically ordered suffix already touches the Block end anchor.
   // Leave it in place and keep the LIS work confined to the changed prefix.
   let limit = entries.length;
-  let reference: Node = region.end;
+  let reference: Node = block.end;
   while (limit > 0) {
     const nodes = entries[limit - 1].nodes;
     let next = reference;
@@ -583,21 +569,21 @@ function moveEntries(
   }
 }
 
-export function updateEach(region: EachRegion, value: unknown): void {
-  if (region.scope.disposed) return;
+export function updateEach(block: EachBlock, value: unknown): void {
+  if (block.scope.disposed) return;
   if (!Array.isArray(value)) {
     fail(
       RuntimeErrorCode.LIST_VALUE_NOT_ARRAY,
-      expectsArrayMessage(origin(region.ctx), region.part, value),
+      expectsArrayMessage(origin(block.ctx), block.part, value),
     );
   }
-  const parent = region.end.parentNode;
-  // A detached anchor/end pair means the Region's owning boundary is gone;
+  const parent = block.end.parentNode;
+  // A detached anchor/end pair means the Block's owning boundary is gone;
   // updates stop rather than rebuilding outside the owned range.
-  if (!parent || region.anchor.parentNode !== parent) return;
-  const previousPositions = new Map(region.entries.map((entry, index) => [entry, index]));
+  if (!parent || block.anchor.parentNode !== parent) return;
+  const previousPositions = new Map(block.entries.map((entry, index) => [entry, index]));
   const mounted = new Set(
-    region.entries.filter((entry) => entry.nodes.some((node) => node.parentNode === parent)),
+    block.entries.filter((entry) => entry.nodes.some((node) => node.parentNode === parent)),
   );
 
   const descriptors: Array<{
@@ -609,19 +595,19 @@ export function updateEach(region: EachRegion, value: unknown): void {
   const seen = new Set<string>();
   for (let index = 0; index < value.length; index++) {
     const item = value[index];
-    const key = eachItemKey(region.part, item);
+    const key = eachItemKey(block.part, item);
     if (seen.has(key)) {
-      fail(EachKeyErrorCode.DUPLICATE_KEY, duplicateKeyMessage(region.ctx, region.part, key));
+      fail(EachKeyErrorCode.DUPLICATE_KEY, duplicateKeyMessage(block.ctx, block.part, key));
     }
     seen.add(key);
-    descriptors.push({ key, item, existing: region.byKey.get(key) });
+    descriptors.push({ key, item, existing: block.byKey.get(key) });
   }
   for (const descriptor of descriptors) {
     const entry = descriptor.existing;
     if (!entry || entry.item === descriptor.item) continue;
     descriptor.projection = {
       values: entry.valueSlots.map((slot) =>
-        displayValue(itemValue(region.part, descriptor.item, slot.field)),
+        displayValue(itemValue(block.part, descriptor.item, slot.field)),
       ),
       attrs: entry.attrSlots.map((slot) => itemAttrValue(descriptor.item, slot.field)),
     };
@@ -637,10 +623,10 @@ export function updateEach(region: EachRegion, value: unknown): void {
     for (const descriptor of descriptors) {
       if (descriptor.existing) continue;
       const built = buildItem(
-        region.ctx,
-        region.scope,
-        region.end.ownerDocument,
-        region.part,
+        block.ctx,
+        block.scope,
+        block.end.ownerDocument,
+        block.part,
         descriptor.item,
         parent,
       );
@@ -654,7 +640,7 @@ export function updateEach(region: EachRegion, value: unknown): void {
     throw error;
   }
 
-  for (const entry of region.entries) {
+  for (const entry of block.entries) {
     if (seen.has(entry.key)) continue;
     disposeEntry(entry);
   }
@@ -673,14 +659,14 @@ export function updateEach(region: EachRegion, value: unknown): void {
         const nextNode = nextEntries[nextIndex].nodes.find((node) => node.parentNode === parent);
         if (nextNode) return nextNode;
       }
-      return region.end;
+      return block.end;
     });
     entry.item = descriptor.item;
     // Keyed reuse replaced the item without rebuilding DOM: refresh the box
     // the entry's per-item listeners dispatch with (#1556 IR v2).
     entry.itemBox.item = descriptor.item;
   }
-  region.entries = nextEntries;
-  region.byKey = new Map(nextEntries.map((entry) => [entry.key, entry]));
-  moveEntries(region, parent, nextEntries, previousPositions, mounted);
+  block.entries = nextEntries;
+  block.byKey = new Map(nextEntries.map((entry) => [entry.key, entry]));
+  moveEntries(block, parent, nextEntries, previousPositions, mounted);
 }

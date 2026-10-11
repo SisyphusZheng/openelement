@@ -289,7 +289,7 @@ test('pack surface: a declared bin whose target is missing from the archive fail
 });
 
 test('pack surface: module-scope seam installs are found, deferred ones are not', () => {
-  const offending = ['installClaimExecutor(claimExistingDom);', 'installSeamThing(other);'];
+  const offending = ['installHydrationExecutor(hydrateExistingDom);', 'installSeamThing(other);'];
   for (const line of offending) {
     const found = findModuleScopeSeamInstalls(line);
     expect(found.length, `must fail: ${line}`).toEqual(1);
@@ -297,14 +297,14 @@ test('pack surface: module-scope seam installs are found, deferred ones are not'
 
   const accepted = [
     // Inside a function or a block: not an import-time install.
-    'function wire() {\n  installClaimExecutor(claimExistingDom);\n}',
-    'if (ready) {\n  installClaimExecutor(claimExistingDom);\n}',
+    'function wire() {\n  installHydrationExecutor(hydrateExistingDom);\n}',
+    'if (ready) {\n  installHydrationExecutor(hydrateExistingDom);\n}',
     // An indented call is not a module-scope statement head.
-    '  installClaimExecutor(claimExistingDom);',
+    '  installHydrationExecutor(hydrateExistingDom);',
     // A factory call is not an install: it has no seam naming convention, and
     // Router's pure reachability imports must stay unflagged (#1425 scope).
     'createIslandScheduler({ log, win, doc });',
-    'export { installClaimExecutor } from "./claim-seam.js";',
+    'export { installHydrationExecutor } from "./claim-seam.js";',
   ];
   for (const source of accepted) {
     expect(findModuleScopeSeamInstalls(source), `must pass: ${JSON.stringify(source)}`).toEqual([]);
@@ -321,7 +321,7 @@ test('pack surface: an undeclared seam install fails, a declared one passes', ()
       ['package/package.json', JSON.stringify(manifest('@openelement/element', { sideEffects }))],
       ['package/README.md', ''],
       ['package/src/index.js', "import './internal/compiled/runtime/claim-install.js';"],
-      [`package/${INSTALLER_PATH}`, 'installClaimExecutor(claimExistingDom);'],
+      [`package/${INSTALLER_PATH}`, 'installHydrationExecutor(hydrateExistingDom);'],
     ]);
   // Only the seam rule's findings: a fixture whose sideEffects differs from
   // packedMetadata() also trips the parity rule, which is not under test here.

@@ -22,7 +22,10 @@
  */
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
-import { claimExistingDom, PartProgramClaimError } from '../../src/internal/compiled/runtime.ts';
+import {
+  hydrateExistingDom,
+  PartProgramHydrationError,
+} from '../../src/internal/compiled/runtime.ts';
 // The kernel resolves the claim executor through the seam (#1416); this file
 // installs it exactly as the default '@openelement/element' entry does.
 import '../../src/internal/compiled/runtime/claim-install.ts';
@@ -146,7 +149,7 @@ test('successful claim retires the DSD style node and keeps the shared adopted s
     },
     { styles: sheet },
   );
-  const html = renderDsd(tag, { componentClass: ctor }).html;
+  const html = renderDsd(tag, { componentClass: ctor });
   // The first-paint channel is untouched: the serializer still emits the
   // marked node, so never-upgrade pages keep their styles.
   expect(html).toContain(`<style ${DSD_STYLE_MARKER}>`);
@@ -174,7 +177,7 @@ test('claim cleanup keeps theme sheets adopted', () => {
     const sheet = new StyleSheet();
     sheet.replaceSync(`${tag} p { color: red; }`);
     const ctor = defineCompiled(handoffSpec(tag), {}, { styles: sheet });
-    const el = mountDsd(renderDsd(tag, { componentClass: ctor }).html);
+    const el = mountDsd(renderDsd(tag, { componentClass: ctor }));
     const root = styleRootOf(el.shadowRoot);
     expect(hasMarkedStyleNode(root)).toBe(false);
     expect(root.adoptedStyleSheets.includes(themeSheet), 'theme sheet survives claim cleanup').toBe(
@@ -215,7 +218,7 @@ test('disconnect withdraws only this instance adoption; reconnect re-adopts with
   const sheet = new StyleSheet();
   sheet.replaceSync(`${tag} p { color: red; }`);
   const ctor = defineCompiled(handoffSpec(tag), {}, { styles: sheet });
-  const html = renderDsd(tag, { componentClass: ctor }).html;
+  const html = renderDsd(tag, { componentClass: ctor });
   // Two instances share one sheet object (one module-level adapter export).
   const foreign = new StyleSheet();
   foreign.replaceSync('foreign { color: blue; }');
@@ -357,7 +360,7 @@ test('failed claim keeps the DSD style node (recovery-pending and never-upgrade 
   let mismatchPresence: boolean | undefined;
   assertThrowsIncludes(
     () =>
-      claimExistingDom(
+      hydrateExistingDom(
         WIRE_CLAIM_PROGRAM,
         { signals: { title: value }, handlers: {}, refs: { hero: () => {} } },
         root,
@@ -368,7 +371,7 @@ test('failed claim keeps the DSD style node (recovery-pending and never-upgrade 
           },
         },
       ),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(mismatchPresence, 'at the mismatch the node is still in place').toBe(true);
   expect(hasMarkedStyleNode(root), 'a failed claim keeps first-paint styling').toBe(true);
@@ -380,7 +383,7 @@ test('owning recovery: the node survives the rebuild and retires when the recove
   const p = root.childNodes[1] as TestElement;
   (p.childNodes[1] as { data: string }).data = 'drifted';
   const mismatchPresences: boolean[] = [];
-  const claimed = claimExistingDom(
+  const claimed = hydrateExistingDom(
     WIRE_CLAIM_PROGRAM,
     { signals: { title: value }, handlers: {}, refs: { hero: () => {} } },
     root,

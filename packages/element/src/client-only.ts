@@ -2,19 +2,19 @@
  * Client-only entry of @openelement/element (#1416).
  *
  * Byte-identical public surface to the default entry (`index.ts`), minus the
- * compiled claim executor: a bundle built from this entry carries no
- * claim-time validation, no recovery builders, and no structure walker at
+ * compiled hydration executor: a bundle built from this entry carries no
+ * hydration-time validation, no recovery builders, and no structure walker at
  * all. For a page where no island can hydrate server DOM, that is ~9 KB of
  * bundle that could never have run — measured on the upstream
  * js-framework-benchmark keyed-table harness
  * (77,639 B full graph → 68,203 B from this entry).
  *
- * The when/each Region builders stay installed (#1548): a client-only island
- * still builds fresh Regions from client state (`{cond}` branches,
+ * The when/each Block builders stay installed (#1548): a client-only island
+ * still builds fresh Blocks from client state (`{cond}` branches,
  * `list.map(...)`), so this entry imports `regions-install.ts` while skipping
- * the claim. For apps whose programs carry no Region Parts at all, the
+ * the hydration. For apps whose programs carry no Block Parts at all, the
  * `./no-regions` and `./base` entries (#1548) drop the builders
- * axis the same way this entry drops the claim axis.
+ * axis the same way this entry drops the hydration axis.
  *
  * Use it when — and only when — every island the page can upgrade is
  * client-only (`ssr: false, dsd: false`, i.e. `hydrate: 'only'`). The

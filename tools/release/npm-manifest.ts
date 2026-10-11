@@ -78,12 +78,12 @@ const ENGINES: Record<string, Record<string, string>> = {
  * it scaffolds on import — so that module stays flagged.
  *
  * `@openelement/element` cannot be a flat `false` (#1425). The default entry
- * installs the compiled claim executor through an import-time seam: the entry
+ * installs the compiled hydration executor through an import-time seam: the entry
  * performs `import './internal/compiled/runtime/claim-install.js'` and that
- * module calls `installClaimExecutor(...)` at module scope. A bundler that
+ * module calls `installHydrationExecutor(...)` at module scope. A bundler that
  * reads `sideEffects: false` removes BOTH halves — the bare import inside the
  * entry (an unused statement in a side-effect-free module) and the installer
- * body (a side-effect-free module with no used exports) — so the claim
+ * body (a side-effect-free module with no used exports) — so the hydration
  * executor is missing at runtime and every island that must adopt
  * server-rendered DOM throws instead of hydrating. Declaring an array is not
  * enough to name one side of that edge: the importer and installer entries
@@ -91,9 +91,9 @@ const ENGINES: Record<string, Record<string, string>> = {
  * (tools/release#consumer:packaged leg 6), which fails 3/3 browsers when
  * either entry is removed from this list.
  *
- * #1548 adds the regions axis to the same contract: the default entry and
- * `./client-only` also import `regions-install.js` (`installRegionBuilders(...)`
- * at module scope), so the when/each Region builders ship on those entries and
+ * #1548 adds the blocks axis to the same contract: the default entry and
+ * `./client-only` also import `regions-install.js` (`installBlockBuilders(...)`
+ * at module scope), so the when/each Block builders ship on those entries and
  * are droppable on `./no-regions` and `./base`. The flagged set is therefore
  * the three importing entries plus both installers; the source-side mirror
  * lives in packages/element/package.json `sideEffects` and the walker shared

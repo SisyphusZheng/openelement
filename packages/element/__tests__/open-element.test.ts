@@ -171,7 +171,7 @@ test('compiled program claims serialized DSD and calls onDsdHydrated', () => {
   (ctor.prototype as Record<string, unknown>).onDsdHydrated = function () {
     dsd++;
   };
-  const html = renderDsd(tag, { componentClass: ctor }).html;
+  const html = renderDsd(tag, { componentClass: ctor });
   expect(html).toContain('<template shadowrootmode="open">');
   let claimedP: unknown;
   const el = mountSerialized(dom, html, (host) => {

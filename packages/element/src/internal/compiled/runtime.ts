@@ -2,14 +2,14 @@
  * @openelement/element — compiled Part Program runtime facade.
  *
  * A Part Program v1 is executed by three entry points — `serializeToHtml`,
- * `createFreshDom`, and `claimExistingDom` — which share the same
- * tree/Part/Region semantics. Each now lives in its own single-duty module
- * under `runtime/` (program-kernel, fresh-dom, regions, parts, claim,
- * claim-recovery, pre-upgrade-events); this module stays the stable import
- * surface for the kernel, the claim seam, the facade, and the tests, and
+ * `createFreshDom`, and `hydrateExistingDom` — which share the same
+ * tree/Part/Block semantics. Each now lives in its own single-duty module
+ * under `runtime/` (program-kernel, fresh-dom, blocks, parts, hydration,
+ * hydration-recovery, pre-upgrade-events); this module stays the stable import
+ * surface for the kernel, the hydration seam, the facade, and the tests, and
  * hosts the seed serializer's seams over the shared tree-walking kernel.
  * The browser path never performs selector or marker discovery: markers are
- * emitted and claimed only at compiler-owned dynamic anchors, while fixed
+ * emitted and hydrated only at compiler-owned dynamic anchors, while fixed
  * Parts resolve their compiler-owned paths once. Part `location` records are
  * the auditable identity of those same addresses; the validator proves they
  * agree with `path` before any mode runs.
@@ -19,7 +19,7 @@
 // truth, shared with the server serializer and the serialization kernel.
 import { escapeAttr } from '../core/html-escape.ts';
 import { trustedHtmlValue } from '../core/security.ts';
-// Canonical when-Region condition evaluation (#1372) — single source shared
+// Canonical when-Block condition evaluation (#1372) — single source shared
 // with the server serializer; do not reintroduce a private comparison.
 import { conditionHolds } from './condition-holds.ts';
 // Canonical attr/class/style value coercions — single source of truth,
@@ -52,19 +52,19 @@ import {
   itemValue,
 } from './runtime/program-kernel.ts';
 import { createFreshDom } from './runtime/fresh-dom.ts';
-// Region Parts surface through the builders seam (#1548): the seed
-// serializer's array admission needs the regions message builder only, and a
-// regions-free graph (an app whose Part Programs carry no when/each Parts)
-// keeps the regions module out entirely.
-import { regionBuildersOrFail } from './runtime/regions-seam.ts';
+// Block Parts surface through the builders seam (#1548): the seed
+// serializer's array admission needs the blocks message builder only, and a
+// blocks-free graph (an app whose Part Programs carry no when/each Parts)
+// keeps the blocks module out entirely.
+import { blockBuildersOrFail } from './runtime/regions-seam.ts';
 import {
-  claimExistingDom,
-  type ClaimOwner,
-  type ClaimRecoveryMode,
-  type CompiledClaimOptions,
-  PartProgramClaimError,
-  type RegionClaimOwner,
-  type RootClaimOwner,
+  hydrateExistingDom,
+  type HydrationOwner,
+  type HydrationRecoveryMode,
+  type CompiledHydrationOptions,
+  PartProgramHydrationError,
+  type BlockHydrationOwner,
+  type RootHydrationOwner,
 } from './runtime/claim.ts';
 import {
   acceptPendingIslandEvent,
@@ -78,26 +78,26 @@ import {
 } from './runtime/pre-upgrade-events.ts';
 
 export type {
-  ClaimOwner,
-  ClaimRecoveryMode,
-  CompiledClaimOptions,
+  HydrationOwner,
+  HydrationRecoveryMode,
+  CompiledHydrationOptions,
   CompiledEventHandler,
   CompiledProgramInstance,
   CompiledRefHandler,
   CompiledRuntimeHost,
   PreUpgradeEvent,
   PreUpgradeEventCapture,
-  RegionClaimOwner,
-  RootClaimOwner,
+  BlockHydrationOwner,
+  RootHydrationOwner,
 };
 export {
   acceptPendingIslandEvent,
   capturePreUpgradeEvents,
-  claimExistingDom,
+  hydrateExistingDom,
   createFreshDom,
   markPreUpgradeIslandSettled,
   MAX_PRE_UPGRADE_CAPTURED_EVENTS,
-  PartProgramClaimError,
+  PartProgramHydrationError,
   releasePreUpgradeEvents,
   replayPreUpgradeEvents,
 };
@@ -108,7 +108,7 @@ export {
  * The seed serializer's seams over the shared tree-walking kernel
  * (serializer/serialize-program.ts): signal reads through the host's signal
  * record, sink values merged into one attribute per name with quoted boolean
- * presence, and no Region item admission beyond the array check.
+ * presence, and no Block item admission beyond the array check.
  */
 function seedSerializerSeams(
   program: RuntimeProgramIR,
@@ -181,11 +181,11 @@ function seedSerializerSeams(
     itemTextValue: (part, node, item) => displayValue(itemValue(part, item, node.field)),
     textPartValue: displayValue,
     whenHolds: (part, value) => conditionHolds(part.test, value),
-    regionItems: (part, value) => {
+    blockItems: (part, value) => {
       if (!Array.isArray(value)) {
         fail(
           RuntimeErrorCode.LIST_VALUE_NOT_ARRAY,
-          regionBuildersOrFail().expectsArrayMessage(where, part, value),
+          blockBuildersOrFail().expectsArrayMessage(where, part, value),
         );
       }
       return value;

@@ -20,7 +20,7 @@
  */
 import { expect, test } from 'vitest';
 import {
-  claimExistingDom,
+  hydrateExistingDom,
   createFreshDom,
   serializeToHtml,
 } from '../../src/internal/compiled/runtime.ts';
@@ -188,7 +188,7 @@ test('#1416: claim carries item identity through to the first update', () => {
   const html = serializeToHtml(PROGRAM, host);
   const claimDoc = new TestDocument();
   const claimRoot = parseHtml(claimDoc, html);
-  const claimed = claimExistingDom(PROGRAM, host, node(claimRoot));
+  const claimed = hydrateExistingDom(PROGRAM, host, node(claimRoot));
   const list = listOf(claimRoot);
   expect(textOf(list, 1)).toEqual('alpha');
 

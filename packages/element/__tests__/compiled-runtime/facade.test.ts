@@ -140,7 +140,7 @@ test('facade: claim from serialized HTML preserves node identity', () => {
   const serialized = renderDsd('oe-program-counter', {
     componentClass: ProgramCounter as unknown as CustomElementConstructor,
     props: { count: 3 },
-  }).html;
+  });
   expect(serialized).toContain('<oe-program-counter count="3" data-oe-light>');
 
   let claimedDiv: unknown;
@@ -167,7 +167,7 @@ test('facade: claim from serialized HTML preserves node identity', () => {
 test('facade: pre-upgrade capture replays one click after claim', () => {
   const serialized = renderDsd('oe-program-counter', {
     componentClass: ProgramCounter as unknown as CustomElementConstructor,
-  }).html;
+  });
 
   // The generated client entry installs capture on an owning root before
   // upgrade; a click inside the serialized-but-not-yet-claimed subtree is
@@ -272,7 +272,7 @@ test('facade: renderDsd serializes shadow programs per the program root kind', (
   const html = renderDsd('oe-facade-shadow', {
     componentClass: ShadowElement as unknown as CustomElementConstructor,
     props: { label: 'live' },
-  }).html;
+  });
   expect(html).toEqual(
     '<oe-facade-shadow label="live"><template shadowrootmode="open">' +
       '<span><!--oe:p0-->live</span>' +

@@ -10,7 +10,7 @@ test('generated SSR delegates admitted nested composition to Element', () => {
   const ssr = createNativePageRenderer({
     renderDsd: (tag, options) => {
       calls.push({ tag, options });
-      return { html: '<' + tag + '></' + tag + '>' };
+      return '<' + tag + '></' + tag + '>';
     },
     customElements: { get: (tag) => ({ tag }) },
     ssrRenderableTags: admitted,

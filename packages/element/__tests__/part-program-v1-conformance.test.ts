@@ -354,8 +354,8 @@ interface ProgramInstance {
 interface ProgramRuntime {
   createFreshDom(program: unknown, host: unknown, root: FElement): ProgramInstance;
   serializeToHtml(program: unknown, host: unknown): string;
-  claimExistingDom(program: unknown, host: unknown, root: FElement): ProgramInstance;
-  PartProgramClaimError: new (path: string, message: string) => Error;
+  hydrateExistingDom(program: unknown, host: unknown, root: FElement): ProgramInstance;
+  PartProgramHydrationError: new (path: string, message: string) => Error;
 }
 
 const PROGRAM_URL = new URL(
@@ -511,7 +511,7 @@ describe('compiled part program v1 - one program, three execution modes', () => 
     input.simulateUserInput('typed by user');
     const counters = { subs: 0 };
     const { host, count } = makeHost(counters);
-    runtime.claimExistingDom(program, host, claimRoot);
+    runtime.hydrateExistingDom(program, host, claimRoot);
 
     // no allocation, no live-value overwrite, structure equivalent
     expect(claimDoc.counts.elements).toEqual(0);
@@ -625,8 +625,8 @@ describe('compiled part program v1 - one program, three execution modes', () => 
     const counters = { subs: 0 };
     const { host } = makeHost(counters);
     const error = assertThrowsIncludes(
-      () => runtime.claimExistingDom(program, host, claimRoot),
-      runtime.PartProgramClaimError,
+      () => runtime.hydrateExistingDom(program, host, claimRoot),
+      runtime.PartProgramHydrationError,
     );
     expect(error.message).toContain('template[0].children[0].children[0]');
   });
@@ -677,7 +677,7 @@ describe('compiled part program v1 - one program, three execution modes', () => 
         diagnostic,
       );
       assertThrowsIncludes(
-        () => runtime.claimExistingDom(invalid, host, claimRoot),
+        () => runtime.hydrateExistingDom(invalid, host, claimRoot),
         Error,
         diagnostic,
       );

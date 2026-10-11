@@ -4,7 +4,7 @@ import {
   type CompiledRuntimeHost,
   createFreshDom,
 } from '../runtime.ts';
-import { claimExecutor } from './claim-seam.ts';
+import { hydrationExecutor } from './claim-seam.ts';
 import { streamHostState } from '../stream-state.ts';
 import { CompiledErrorBoundary, type CompiledErrorBoundaryOptions } from './error-boundary.ts';
 import { CompiledContextService } from './context.ts';
@@ -315,7 +315,7 @@ export class CompiledElementKernel {
     root: CompiledStyleRoot,
     styleCount: number,
   ): CompiledProgramInstance {
-    const executor = claimExecutor();
+    const executor = hydrationExecutor();
     if (!executor) {
       fail(
         KernelErrorCode.CLAIM_EXECUTOR_MISSING,

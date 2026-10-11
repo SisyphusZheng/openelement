@@ -149,16 +149,17 @@ test('a nested throwing child renders the boundary fallback branch in the serial
   ]);
 
   withRegistry(registry, () => {
-    const output = renderDsd(boundaryTag, {
+    const html = renderDsd(boundaryTag, {
       componentClass: boundary,
       ssrRenderableTags: [childTag],
     });
-    expect(output.html).toContain('ssr boundary fallback');
+    expect(html).toContain('ssr boundary fallback');
     expect(
-      output.html.includes(childTag),
+      html.includes(childTag),
       'the failed subtree is not serialized beside the fallback',
     ).toEqual(false);
-    expect(output.metrics.hasError, 'the render output reports the capture').toEqual(true);
+    // R.0-3 deleted the RenderOutput shell (and its metrics): the capture is
+    // observable through the fallback branch bytes above, not a flag.
   });
 });
 
@@ -204,12 +205,12 @@ test('a nested failure surfaces at the nearest boundary through a non-boundary m
   ]);
 
   withRegistry(registry, () => {
-    const output = renderDsd(boundaryTag, {
+    const html = renderDsd(boundaryTag, {
       componentClass: boundary,
       ssrRenderableTags: [middleTag, childTag],
     });
-    expect(output.html).toContain('ssr boundary fallback');
-    expect(output.html.includes(childTag)).toEqual(false);
+    expect(html).toContain('ssr boundary fallback');
+    expect(html.includes(childTag)).toEqual(false);
   });
 });
 
@@ -298,9 +299,8 @@ test('a clean boundary render is unchanged by the capture path (no capture, no o
   ]);
   const boundary = compiledClass(program, { isErrorBoundary: true });
   withRegistry(new Map([[boundaryTag, boundary]]), () => {
-    const output = renderDsd(boundaryTag, { componentClass: boundary });
-    expect(output.html).toContain('happy path');
-    expect(output.html).not.toContain('fallback');
-    expect(output.metrics.hasError).toEqual(false);
+    const html = renderDsd(boundaryTag, { componentClass: boundary });
+    expect(html).toContain('happy path');
+    expect(html).not.toContain('fallback');
   });
 });

@@ -239,7 +239,7 @@ function mountSsr(tag: string): { host: FacadeElement; button: AnyElement } {
   // markup, but a plain element (its chunk has not arrived yet).
   const serialized = renderDsd(tag, {
     componentClass: dom.registry.get(tag) as CustomElementConstructor,
-  }).html;
+  });
   const host = new FacadeElement(tag, dom.document);
   const match = /<button type="button"><!--oe:p0-->(.*?)<\/button>/.exec(serialized);
   const button = new FacadeElement('button', dom.document);
