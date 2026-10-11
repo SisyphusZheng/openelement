@@ -267,7 +267,7 @@ export interface FrameworkOptions {
       };
   /** Request-time middleware switches, composed outside the framework handler. */
   middleware?: {
-    /** Enable the built-in CORS middleware. */
+    /** Built-in CORS middleware. Default-ON; pass `false` to disable. */
     cors?: boolean;
     /**
      * Static CORS allowlist data, serialized into the generated entry as JSON.
@@ -283,11 +283,11 @@ export interface FrameworkOptions {
      * with `corsOrigin`.
      */
     corsOriginModule?: string;
-    /** Emit and honor a per-request id header. */
+    /** Emit and honor a per-request id header. Default-ON; pass `false` to disable. */
     requestId?: boolean;
-    /** Log each request through the built-in logger. */
+    /** Log each request through the built-in logger. Default-ON; pass `false` to disable. */
     logger?: boolean;
-    /** Attach the built-in security response headers. */
+    /** Attach the built-in security response headers. Default-ON; pass `false` to disable. */
     securityHeaders?: boolean;
     /** Content-Security-Policy emission: the policy string, nonce generation, and report-only mode. */
     csp?: {

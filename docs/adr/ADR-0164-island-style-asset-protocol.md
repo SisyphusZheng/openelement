@@ -1,7 +1,7 @@
 # ADR-0164: Island style asset protocol — extracted sheets, dual adapters, three-owner seam split
 
-- Status: PROPOSED (Lane 1 of #1553 — decision record + capability spike;
-  production lanes implement toward this shape)
+- Status: ACCEPTED (implemented in production: extracted sheets flow through
+  the style-asset pipeline, e.g. `packages/router/src/vite/internal/style-assets.ts`)
 - Decided: 2026-10-07 (owner design session; implementation contract recorded
   in the #1553 comments of 2026-10-06)
 - Origin: issue #1553, riding the #1543 island-CSS seam
