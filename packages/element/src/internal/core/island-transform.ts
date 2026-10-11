@@ -27,10 +27,17 @@ export function transformIslandSource(
   if (!normalizedPath.startsWith('/')) {
     normalizedPath = '/' + normalizedPath;
   }
-  const normalizedIslandsDir = normalizeSeparators(islandsDir);
+  const normalizedIslandsDir = normalizeSeparators(islandsDir).replace(/^\/+|\/+$/g, '');
 
-  // Only transform files in the islands directory
-  if (!normalizedPath.includes(`/${normalizedIslandsDir}/`)) {
+  // Only transform files in the islands directory. The needle is
+  // segment-anchored on both sides (`app/islands-backup` never matches) and
+  // anchored on its LAST occurrence: an outer same-named directory (nested
+  // checkouts, fixtures) must not hijack the admission or the tag derivation
+  // — the innermost islands root wins. (Layout-convention admission is the R
+  // lane's job, not this gate's.)
+  const needle = `/${normalizedIslandsDir}/`;
+  const anchor = normalizedIslandsDir === '' ? -1 : normalizedPath.lastIndexOf(needle);
+  if (anchor === -1) {
     return { code: source, islands: [] };
   }
 
@@ -38,7 +45,7 @@ export function transformIslandSource(
   // scanner. This keeps route and island tag-name derivation consistent and
   // safely handles edge cases such as top-level numeric file names.
   const relativePath =
-    normalizedPath.split(`/${normalizedIslandsDir}/`)[1] ?? normalizedPath.split('/').pop()!;
+    normalizedPath.slice(anchor + needle.length) || normalizedPath.split('/').pop()!;
   const tagName = pathToTagName(relativePath);
 
   // Files that do not yield a valid name are skipped silently.
