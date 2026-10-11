@@ -197,7 +197,9 @@ test('KR-2: repeated navigations all define every load-strategy island tag', asy
   await installRecorder(page);
 
   const failures: string[] = [];
+  let navigations = 0;
   for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    navigations++;
     await page.goto('/combobox', { waitUntil: 'load' });
     let missing: string[] = [];
     try {
@@ -221,6 +223,10 @@ test('KR-2: repeated navigations all define every load-strategy island tag', asy
     );
   }
 
+  // The sustained gate is only evidence when every attempt actually ran: a
+  // pass must never be vacuous (`failures` is trivially empty if the loop
+  // did not execute).
+  expect(navigations, 'every KR2_ATTEMPTS navigation must run').toBe(ATTEMPTS);
   expect(
     failures,
     `${failures.length}/${ATTEMPTS} attempts never defined an island tag:\n\n${failures.join('\n\n')}\n\nentry chunk shape:\n  ${ordering.join('\n  ')}`,
@@ -554,6 +560,117 @@ test('Q1-C: one light instance disconnecting leaves the other styled', async ({ 
     observed!.nodesAfterLastDisconnect,
     `cleanup must leave no owned node (sheet slots: ${observed!.sharedSheetCount})`,
   ).toEqual(0);
+});
+
+/**
+ * Q1-D (P0-A, real-engine resume reconciliation): a signal written while the
+ * island is disconnected reaches no subscription, so the resume must reconcile
+ * the runtime's own DOM to the current value instead of re-verifying it as an
+ * SSR artifact (which failed closed with `part text drift`) and instead of
+ * leaving the stale value in place. `<decoupled-view>` renders a text Part
+ * bound to its `marker` property, so the text node itself carries the proof.
+ *
+ * The binding is driven before the move (live update), a value is written
+ * while the element is detached, and the reconnected instance must show the
+ * current value — then be driven again, so "bindings restored" is not claimed
+ * from a static snapshot alone.
+ */
+test('Q1-D: a resumed island reconciles a value written while disconnected', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error') errors.push(message.text());
+  });
+
+  await page.goto('/decoupled?marker=first', { waitUntil: 'load' });
+  await page.waitForFunction(
+    () =>
+      customElements.get('decoupled-view') !== undefined &&
+      document.querySelector('decoupled-page')?.shadowRoot?.querySelector('decoupled-view') !==
+        null,
+    undefined,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  // Driven BEFORE the transition: a live attribute write must reach the DOM
+  // (this also proves the island activated before the move). The attribute is
+  // the island's canonical input channel: the facade's compiled property is
+  // attribute-backed and re-seeds from its attribute at connect.
+  await page.evaluate(() => {
+    const frame = document.querySelector('decoupled-page')?.shadowRoot;
+    const view = frame?.querySelector('decoupled-view');
+    if (view) view.setAttribute('marker', 'content element: driven');
+  });
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('decoupled-page')
+        ?.shadowRoot?.querySelector('decoupled-view')
+        ?.querySelector('#decoupled-content')?.textContent === 'content element: driven',
+    undefined,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  const moved = await page.evaluate(() => {
+    const frame = document.querySelector('decoupled-page')?.shadowRoot;
+    const view = frame?.querySelector('decoupled-view');
+    if (!frame || !view) return null;
+    (globalThis as { __q1dView?: unknown }).__q1dView = view;
+    view.remove();
+    // Detached: the write reaches the signal but no subscription, so the
+    // runtime's own DOM keeps the disconnect-time render until the resume.
+    view.setAttribute('marker', 'content element: while-away');
+    return true;
+  });
+  expect(moved, 'the fixture must expose the decoupled island').toBe(true);
+
+  const reconnected = await page.evaluate(() => {
+    const frame = document.querySelector('decoupled-page')?.shadowRoot;
+    const view = (globalThis as { __q1dView?: HTMLElement }).__q1dView;
+    if (!frame || !view) return null;
+    frame.appendChild(view);
+    return true;
+  });
+  expect(reconnected).toBe(true);
+
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('decoupled-page')
+        ?.shadowRoot?.querySelector('decoupled-view')
+        ?.querySelector('#decoupled-content')?.textContent === 'content element: while-away',
+    undefined,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  const state = await page.evaluate(() => {
+    const frame = document.querySelector('decoupled-page')?.shadowRoot;
+    const view = frame?.querySelector('decoupled-view') as HTMLElement | null;
+    return {
+      identity: (globalThis as { __q1dView?: unknown }).__q1dView === view,
+      text: view?.querySelector('#decoupled-content')?.textContent ?? null,
+    };
+  });
+  expect(state.identity, 'the reconnect resumes the same instance').toBe(true);
+  expect(state.text).toBe('content element: while-away');
+
+  // Driven AFTER the transition: the resumed binding must keep working.
+  await page.evaluate(() => {
+    const frame = document.querySelector('decoupled-page')?.shadowRoot;
+    const view = frame?.querySelector('decoupled-view');
+    if (view) view.setAttribute('marker', 'content element: after');
+  });
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('decoupled-page')
+        ?.shadowRoot?.querySelector('decoupled-view')
+        ?.querySelector('#decoupled-content')?.textContent === 'content element: after',
+    undefined,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  expect(errors, `no error may surface across the resume (${errors.join(' | ')})`).toEqual([]);
 });
 
 /**
