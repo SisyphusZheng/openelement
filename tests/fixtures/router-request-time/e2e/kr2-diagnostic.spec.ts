@@ -112,18 +112,17 @@ async function gatherFailureEvidence(page: Page): Promise<string> {
       .getEntriesByType('resource')
       .filter((entry) => entry.name.includes('/client/'))
       .map((entry) => ({
+        url: entry.name,
         file: entry.name.split('/').pop() as string,
         start: Math.round(entry.startTime),
         end: Math.round(entry.responseEnd),
       }));
     // Post-mortem only: the race is already lost, so re-reading the same module
     // cannot mask anything. It separates "never evaluates" from "read too early".
-    const readNamespace = async (file: string | undefined) => {
-      if (file === undefined) return 'resource never requested';
+    const readNamespace = async (url: string | undefined) => {
+      if (url === undefined) return 'resource never requested';
       try {
-        const namespace = (await import(
-          /* @vite-ignore */ new URL(file, document.baseURI).href
-        )) as Record<string, unknown>;
+        const namespace = (await import(/* @vite-ignore */ url)) as Record<string, unknown>;
         return `resolved, default=${typeof namespace.default}`;
       } catch (error) {
         return `rejected: ${String((error as Error)?.message ?? error)}`;
@@ -139,8 +138,8 @@ async function gatherFailureEvidence(page: Page): Promise<string> {
       record,
       resources,
       stillMissing: tags.filter((tag) => customElements.get(tag) === undefined),
-      wrapperRead: await readNamespace(wrapper?.file),
-      islandChunkRead: await readNamespace(islandChunk?.file),
+      wrapperRead: await readNamespace(wrapper?.url),
+      islandChunkRead: await readNamespace(islandChunk?.url),
     };
   }, ISLAND_TAGS);
 
