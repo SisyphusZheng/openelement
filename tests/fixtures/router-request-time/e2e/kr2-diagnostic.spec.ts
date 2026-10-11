@@ -1,0 +1,353 @@
+/**
+ * KR-2 stage isolation: the island-load race on WebKit.
+ *
+ * Procedure: the same navigation the failing spec performs, repeated — each
+ * attempt is one `goto` followed by a bounded gate requiring every
+ * load-strategy island tag to define, with no retry inside an attempt. The
+ * race needs a warm worker: 25 single-navigation runs in fresh browsers were
+ * green, while the spec's own nine-navigation sequence fails one to three
+ * tests per run.
+ *
+ * Observation is passive. `customElements.define`, `fetch` and the two failure
+ * channels are recorded from an init script; nothing sleeps, nothing is
+ * retried, and the loader's read path is untouched, so the race keeps its own
+ * scheduling. A failed attempt reports which stage it reached:
+ *
+ *   module request/loading      a resource entry is missing or its response
+ *                               never completed
+ *   style asset top-level await  the style asset's response lands after the
+ *                               loader's read — the export binds behind it
+ *   export lookup               the loader's own rejection names the tag and
+ *                               its check (`typeof n != 'function'`)
+ *   custom element registration `customElements.get(tag)` after the gate
+ *
+ * The static half asserts the entry chunk's shape: `export{` sits after the
+ * chunk's `await fetch(...)`, and the class the wrapper re-exports as
+ * `default` is assigned behind that await — the window the race rides on.
+ */
+
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import process from 'node:process';
+import { expect, test, type Page } from '@playwright/test';
+
+/** Every island the /combobox page activates on load. */
+const ISLAND_TAGS = ['decoupled-view', 'live-counter', 'zag-combobox-light', 'zag-combobox'];
+
+/**
+ * Bounded gate. The healthy define latency on this fixture is tens of
+ * milliseconds; five seconds is two orders of magnitude above it, so a tag that
+ * misses the gate never defined on this page.
+ */
+const GATE_TIMEOUT_MS = 5_000;
+
+/** Navigations per run; the failing spec's own suite performs nine. */
+const ATTEMPTS = Number(process.env.KR2_ATTEMPTS ?? 10);
+
+interface Kr2Record {
+  defines: Array<{ tag: string; at: number }>;
+  rejects: Array<{ message: string; at: number }>;
+  errors: Array<{ message: string; at: number }>;
+  cssFetches: Array<{ url: string; at: number }>;
+}
+
+/** The entry chunks' static shape: where the export binds relative to the TLA. */
+function chunkOrderingEvidence(): string[] {
+  const dir = join(import.meta.dirname!, '..', 'dist', 'client', 'islands');
+  const lines: string[] = [];
+  for (const name of readdirSync(dir)
+    .filter((entry) => entry.startsWith('island-'))
+    .sort()) {
+    const text = readFileSync(join(dir, name), 'utf8');
+    const awaited = text.indexOf('await fetch(');
+    const exported = text.indexOf('export{');
+    lines.push(
+      `${name}: await fetch at ${awaited}, export{ at ${exported} — ` +
+        `${exported > awaited ? 'export binds behind the style await' : 'export binds before the await'}`,
+    );
+  }
+  return lines;
+}
+
+async function installRecorder(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const record = { defines: [], rejects: [], errors: [], cssFetches: [] } as Kr2Record;
+    (globalThis as unknown as { __kr2: Kr2Record }).__kr2 = record;
+    const define = customElements.define.bind(customElements);
+    customElements.define = ((
+      name: string,
+      ctor: CustomElementConstructor,
+      options?: ElementDefinitionOptions,
+    ) => {
+      record.defines.push({ tag: name, at: Math.round(performance.now()) });
+      return define(name, ctor, options);
+    }) as typeof customElements.define;
+    addEventListener('unhandledrejection', (event) => {
+      const reason = (event as PromiseRejectionEvent).reason as { message?: string } | undefined;
+      record.rejects.push({
+        message: String(reason?.message ?? reason),
+        at: Math.round(performance.now()),
+      });
+    });
+    addEventListener('error', (event) => {
+      record.errors.push({
+        message: (event as ErrorEvent).message,
+        at: Math.round(performance.now()),
+      });
+    });
+    const originalFetch = globalThis.fetch.bind(globalThis);
+    globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('.css')) record.cssFetches.push({ url, at: Math.round(performance.now()) });
+      return originalFetch(input, init);
+    }) as typeof fetch;
+  });
+}
+
+/** Stage evidence for one failed attempt; observation only, after the loss. */
+async function gatherFailureEvidence(page: Page): Promise<string> {
+  const evidence = await page.evaluate(async (tags: string[]) => {
+    const record = (globalThis as unknown as { __kr2: Kr2Record }).__kr2;
+    const resources = performance
+      .getEntriesByType('resource')
+      .filter((entry) => entry.name.includes('/client/'))
+      .map((entry) => ({
+        file: entry.name.split('/').pop() as string,
+        start: Math.round(entry.startTime),
+        end: Math.round(entry.responseEnd),
+      }));
+    // Post-mortem only: the race is already lost, so re-reading the same module
+    // cannot mask anything. It separates "never evaluates" from "read too early".
+    const readNamespace = async (file: string | undefined) => {
+      if (file === undefined) return 'resource never requested';
+      try {
+        const namespace = (await import(
+          /* @vite-ignore */ new URL(file, document.baseURI).href
+        )) as Record<string, unknown>;
+        return `resolved, default=${typeof namespace.default}`;
+      } catch (error) {
+        return `rejected: ${String((error as Error)?.message ?? error)}`;
+      }
+    };
+    const wrapper = resources.find(
+      (entry) => entry.file.startsWith('zag-combobox-') && entry.file.endsWith('.js'),
+    );
+    const islandChunk = resources.find(
+      (entry) => entry.file.startsWith('island-zag-combobox-') && entry.file.endsWith('.js'),
+    );
+    return {
+      record,
+      resources,
+      stillMissing: tags.filter((tag) => customElements.get(tag) === undefined),
+      wrapperRead: await readNamespace(wrapper?.file),
+      islandChunkRead: await readNamespace(islandChunk?.file),
+    };
+  }, ISLAND_TAGS);
+
+  const styleAsset = evidence.resources.find((entry) => entry.file.endsWith('.css'));
+  const firstReject = evidence.record.rejects[0];
+  const firstDefine = evidence.record.defines[0];
+  return [
+    `never defined: ${evidence.stillMissing.join(', ')}`,
+    `first loader rejection: ${
+      firstReject ? `${firstReject.message} @${firstReject.at}ms` : '(none recorded)'
+    }`,
+    `uncaught errors: ${evidence.record.errors.length}`,
+    `define calls: ${
+      evidence.record.defines.map((entry) => `${entry.tag}@${entry.at}ms`).join(', ') || '(none)'
+    }`,
+    `style asset fetch: ${
+      styleAsset
+        ? `start ${styleAsset.start}ms, responseEnd ${styleAsset.end}ms`
+        : '(never requested)'
+    }`,
+    `readBeforeStyleSettled: ${
+      firstReject !== undefined && styleAsset !== undefined
+        ? `${firstReject.at < styleAsset.end ? 'yes' : 'no'} (reject ${firstReject.at}ms vs style responseEnd ${styleAsset.end}ms)`
+        : 'unknown (no rejection or no style request)'
+    }`,
+    `post-mortem wrapper read: ${evidence.wrapperRead}`,
+    `post-mortem island chunk read: ${evidence.islandChunkRead}`,
+    `module timeline: ${evidence.resources
+      .map((entry) => `${entry.file}[${entry.start}..${entry.end}]`)
+      .join(' ')}`,
+    `first define before first rejection: ${
+      firstDefine !== undefined && firstReject !== undefined
+        ? firstDefine.at < firstReject.at
+        : 'n/a'
+    }`,
+  ].join('\n    ');
+}
+
+test('KR-2: repeated navigations all define every load-strategy island tag', async ({ page }) => {
+  // The static precondition the race rides on: the entry chunk's export binds
+  // behind its style await, so a read inside that window sees `undefined`.
+  const ordering = chunkOrderingEvidence();
+  expect(
+    ordering.every((line) => line.includes('export binds behind the style await')),
+    `entry chunk shape changed; the TLA window the race rides on is gone:\n  ${ordering.join('\n  ')}`,
+  ).toBe(true);
+
+  await installRecorder(page);
+
+  const failures: string[] = [];
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    await page.goto('/combobox', { waitUntil: 'load' });
+    let missing: string[] = [];
+    try {
+      await page.waitForFunction(
+        (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+        ISLAND_TAGS,
+        { timeout: GATE_TIMEOUT_MS },
+      );
+    } catch {
+      missing = await page.evaluate(
+        (tags: string[]) => tags.filter((tag) => customElements.get(tag) === undefined),
+        ISLAND_TAGS,
+      );
+    }
+    if (missing.length === 0) continue;
+    failures.push(`attempt ${attempt}:\n    ${await gatherFailureEvidence(page)}`);
+  }
+
+  expect(
+    failures,
+    `${failures.length}/${ATTEMPTS} attempts never defined an island tag:\n\n${failures.join('\n\n')}\n\nentry chunk shape:\n  ${ordering.join('\n  ')}`,
+  ).toEqual([]);
+});
+
+/**
+ * Controlled trigger for the same failure mode. The chunk's export binding is
+ * created behind `await fetch(styleAsset)` and `await sheet.replace(...)`, so
+ * holding the style asset open widens exactly the window the loader must not
+ * read inside. The delay is test-side and the only perturbation: the product's
+ * scheduling, read path and gates are untouched, and the unperturbed procedure
+ * above stays the baseline.
+ *
+ * A correct loader must define every tag regardless of how long the style asset
+ * takes — the gate is deliberately above the injected delay. A loader that
+ * reads the entry namespace inside the window never defines the tag at all,
+ * which is the original failure observed in the field.
+ */
+test('KR-2 controlled trigger: a held style asset must not cost the island its definition', async ({
+  page,
+}) => {
+  const styleDelayMs = Number(process.env.KR2_STYLE_DELAY_MS ?? 1_500);
+  await installRecorder(page);
+  await page.route('**/*.css', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, styleDelayMs));
+    await route.continue();
+  });
+
+  await page.goto('/combobox', { waitUntil: 'load' });
+  let missing: string[] = [];
+  try {
+    await page.waitForFunction(
+      (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+      ISLAND_TAGS,
+      { timeout: GATE_TIMEOUT_MS },
+    );
+  } catch {
+    missing = await page.evaluate(
+      (tags: string[]) => tags.filter((tag) => customElements.get(tag) === undefined),
+      ISLAND_TAGS,
+    );
+  }
+
+  const detail =
+    missing.length === 0
+      ? 'every tag defined'
+      : `held style asset (${styleDelayMs}ms) left tags undefined:\n    ${await gatherFailureEvidence(page)}`;
+  expect(missing, detail).toEqual([]);
+});
+
+/**
+ * Mechanism probe, no fixture or product files: the shipped graph's exact
+ * shape, built from two blob modules in the page.
+ *
+ *   B  — an async module whose exported binding is assigned behind a top-level
+ *        await (the island chunk: `await fetch(styleAsset)` before the class).
+ *   A  — a pure re-export facade over B (the wrapper chunk: `import … from
+ *        './island-…'` plus `export { … as default }`).
+ *
+ * B is started and observed inside its await, then A is imported. A dynamic
+ * import of A must resolve only after B's evaluation completes, so `default`
+ * must be a function. This test pins the engine differential as a platform
+ * fact — WebKit resolves A early and the read lands inside B's window — because
+ * that is the read the generated loader performs, and the only shape that turns
+ * a held style asset into a never-defined tag. It is a characterization of the
+ * engine, not of our code: a fix has to make the loader (or the emitted module
+ * shape) survive the early resolution, it cannot rely on the engine changing.
+ */
+test('KR-2 engine characterization: resolving a re-export facade while its async dependency is held', async ({
+  page,
+  browserName,
+}) => {
+  await page.goto('/combobox');
+  const probe = await page.evaluate(async () => {
+    const holdMs = 400;
+    const bUrl = URL.createObjectURL(
+      new Blob(
+        [
+          `
+          globalThis.__kr2ProbeEntered = true;
+          await new Promise((resolve) => setTimeout(resolve, ${holdMs}));
+          var exported = class { static probe = 'B'; };
+          export { exported as default };
+          `,
+        ],
+        { type: 'text/javascript' },
+      ),
+    );
+    const aUrl = URL.createObjectURL(
+      new Blob(
+        [
+          `
+          import reexported from ${JSON.stringify(bUrl)};
+          export { reexported as default };
+          `,
+        ],
+        { type: 'text/javascript' },
+      ),
+    );
+
+    const bPromise = import(bUrl);
+    // Bounded setup poll: module evaluation is a task, so a microtask spin
+    // never lets it run. One macrotask turn per step, deadline-bounded.
+    const deadline = performance.now() + 2_000;
+    while (
+      (globalThis as { __kr2ProbeEntered?: boolean }).__kr2ProbeEntered !== true &&
+      performance.now() < deadline
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const enteredHold = (globalThis as { __kr2ProbeEntered?: boolean }).__kr2ProbeEntered === true;
+
+    const startedAt = performance.now();
+    const facade = (await import(aUrl)) as Record<string, unknown>;
+    const facadeReturnedAfterMs = Math.round(performance.now() - startedAt);
+    const readInsideWindow = typeof facade.default;
+
+    await bPromise;
+    const readAfterEvaluation = typeof facade.default;
+
+    return { enteredHold, holdMs, facadeReturnedAfterMs, readInsideWindow, readAfterEvaluation };
+  });
+
+  const detail =
+    `facade import() returned after ${probe.facadeReturnedAfterMs}ms ` +
+    `(dependency held ${probe.holdMs}ms) and read default=${probe.readInsideWindow}; ` +
+    `after the dependency completed, default=${probe.readAfterEvaluation}.`;
+
+  expect(probe.enteredHold, `probe setup failed: B never entered its await. ${detail}`).toBe(true);
+  if (browserName === 'webkit') {
+    // The recorded defect: the read happens inside the async module's window.
+    expect(probe.readInsideWindow, detail).toEqual('undefined');
+    expect(probe.facadeReturnedAfterMs, detail).toBeLessThan(probe.holdMs / 2);
+  } else {
+    expect(probe.readInsideWindow, detail).toEqual('function');
+  }
+  // Every engine agrees the binding is correct once the dependency completes:
+  // the module is fine, only the moment it is observed differs.
+  expect(probe.readAfterEvaluation, detail).toEqual('function');
+});
