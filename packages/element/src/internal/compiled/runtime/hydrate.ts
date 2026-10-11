@@ -30,6 +30,7 @@ import type {
   MountContext,
 } from './program-kernel.ts';
 import {
+  commitResumeTextPlan,
   createContext,
   displayValue,
   fail,
@@ -44,6 +45,7 @@ import {
   itemValue,
   NO_ITEM,
   removeNodes,
+  resumeTextPlan,
   signalOf,
   subscribeWrites,
 } from './program-kernel.ts';
@@ -455,31 +457,46 @@ export function hydrateNodes(
         // the disconnect-time render. The node after the anchor is this Part's
         // value node whenever it is a text node — except when it is exactly the
         // static text node that follows the anchor in a `{value} suffix`
-        // template. Reconciliation preserves the node (and its identity) for a
-        // non-empty value and retires/creates it on the empty transitions.
+        // template. When the stale value is itself equal to that suffix, data
+        // alone cannot tell the two nodes apart; a second identical text node
+        // immediately after the candidate is what proves the candidate is still
+        // the Part's own node (the suffix is the second one).
         const candidate: Node | undefined = parent.childNodes[cursor];
         const nextTemplateNode = nodes[index + 1];
-        const staticSuffix =
-          nextTemplateNode?.k === 'text' &&
+        const staticValue = nextTemplateNode?.k === 'text' ? nextTemplateNode.value : undefined;
+        const following: Node | undefined = parent.childNodes[cursor + 1];
+        const candidateIsStatic =
+          staticValue !== undefined &&
           candidate !== undefined &&
           isText(candidate) &&
-          candidate.data === nextTemplateNode.value;
-        if (candidate !== undefined && isText(candidate) && !staticSuffix) {
+          candidate.data === staticValue &&
+          !(following !== undefined && isText(following) && following.data === staticValue);
+        // Every mutation is planned, not applied: the scan must validate the
+        // complete owned structure first, so a resume that fails later leaves
+        // the disconnect-time render untouched (staged-scan discipline).
+        const plan = resumeTextPlan(ctx);
+        if (candidate !== undefined && isText(candidate) && !candidateIsStatic) {
           if (expected.length === 0) {
-            // Removing the owned node pulls the following nodes into this DOM
-            // index, so the cursor stays put.
-            parent.removeChild(candidate);
+            // The retirement waits for the commit; the node stays in place for
+            // the scan, so the cursor steps past it (the same position the
+            // following nodes hold once the plan applies).
+            plan.removals.push({ parent, node: candidate });
+            cursor++;
           } else {
             cursor++;
-            if (candidate.data !== expected) candidate.data = expected;
+            if (candidate.data !== expected) plan.writes.push({ node: candidate, value: expected });
             text = candidate;
           }
         } else if (expected.length > 0) {
-          // The value arrived while the element was disconnected: the owned
-          // node is created at the anchor and the cursor steps past it.
+          // The value arrived while the element was disconnected: the node is
+          // created detached (no DOM change) and inserted once the scan has
+          // validated the structure, at the position the scan would have read.
           text = anchor.ownerDocument.createTextNode(expected);
-          parent.insertBefore(text, anchor.nextSibling);
-          cursor++;
+          plan.insertions.push({
+            parent,
+            before: parent.childNodes[cursor] ?? null,
+            node: text,
+          });
         }
       } else if (expected.length > 0) {
         const next = at(cursor++);
@@ -870,6 +887,10 @@ export function hydrateExistingDom(
       if (stream && stream.ranges.size !== unresolved.size) {
         hydrateFailure('template', 'pending Part has no owned range', { kind: 'root', root });
       }
+      // The scan validated the complete owned structure: the resume's planned
+      // value-node reconciles are committed now, so a failed resume never left
+      // the root half-reconciled.
+      commitResumeTextPlan(ctx);
       for (const deferred of pending) {
         subscribeWrites(ctx, deferred.scope, deferred.signal, deferred.fn);
       }

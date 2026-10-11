@@ -25,7 +25,7 @@ import { expect, test } from 'vitest';
 import '../../src/internal/compiled/runtime/hydrate-install.ts';
 import { CompiledElementKernel } from '../../src/internal/compiled/runtime/kernel.ts';
 import { signal } from '../../src/internal/signal/framework.ts';
-import { TestDocument, type TestElement, toHtml } from './test-dom.ts';
+import { TestDocument, type TestElement, type TestText, toHtml } from './test-dom.ts';
 import { testProgram } from './test-program.ts';
 
 const TEXT_PROGRAM = testProgram({
@@ -165,6 +165,111 @@ test('resume reconciles a text Part across the empty-value transitions', () => {
   expect(() => kernel.connect()).not.toThrow();
   expect(toHtml(div)).toEqual('<div><!--oe:p0-->9 items</div>');
   expect(div.childNodes[2]).toBe(suffix);
+  kernel.dispose();
+});
+
+/**
+ * K-Final-1: the ownership rule for the Part's own value node must survive the
+ * collision where the stale dynamic value is exactly the static suffix text.
+ * The fresh render holds two distinct text nodes with identical data; a resume
+ * that mistakes the first for the suffix leaves the stale node behind (an
+ * element-level `unexpected trailing nodes` failure, or a duplicated suffix at
+ * a root whose trailing count is waived).
+ */
+test('K-Final-1: a value equal to the static suffix keeps its own node across the resume', () => {
+  const document = new TestDocument();
+  const element = host(document, 'oe-resume-suffix');
+  const count = signal<unknown>(' items');
+  const kernel = new CompiledElementKernel(element as unknown as HTMLElement, SUFFIX_PROGRAM, {
+    signals: { count },
+    handlers: {},
+    rootMode: 'light',
+  });
+
+  kernel.connect();
+  const div = element.childNodes[0] as TestElement;
+  expect(div.childNodes.length, 'dynamic value + static suffix are two nodes').toBe(3);
+  const anchor = div.childNodes[0];
+  const valueNode = div.childNodes[1] as TestText;
+  const suffix = div.childNodes[2] as TestText;
+  expect(valueNode.data).toBe(' items');
+  expect(suffix.data).toBe(' items');
+  expect(valueNode === suffix, 'the two nodes are distinct').toBe(false);
+
+  kernel.disconnect();
+  count.value = 7;
+  expect(
+    () => kernel.connect(),
+    'the colliding stale value must not be read as the suffix',
+  ).not.toThrow();
+  expect(toHtml(div)).toEqual('<div><!--oe:p0-->7 items</div>');
+  expect(div.childNodes.length).toBe(3);
+  expect(div.childNodes[0], 'the anchor is untouched').toBe(anchor);
+  expect(div.childNodes[1], 'the Part reconciles its own node in place').toBe(valueNode);
+  expect(div.childNodes[2], 'the static suffix keeps its identity').toBe(suffix);
+  expect(valueNode.data).toBe('7');
+
+  count.value = 'x';
+  expect(toHtml(div), 'the resumed subscription stays live').toEqual(
+    '<div><!--oe:p0-->x items</div>',
+  );
+  kernel.dispose();
+});
+
+test('K-Final-1: an unchanged colliding value resumes without duplicating the suffix', () => {
+  const document = new TestDocument();
+  const element = host(document, 'oe-resume-suffix');
+  const count = signal<unknown>(' items');
+  const kernel = new CompiledElementKernel(element as unknown as HTMLElement, SUFFIX_PROGRAM, {
+    signals: { count },
+    handlers: {},
+    rootMode: 'light',
+  });
+
+  kernel.connect();
+  const div = element.childNodes[0] as TestElement;
+  const valueNode = div.childNodes[1];
+  const suffix = div.childNodes[2];
+
+  kernel.disconnect();
+  expect(() => kernel.connect(), 'no value changed: the resume must be a no-op').not.toThrow();
+  expect(toHtml(div)).toEqual('<div><!--oe:p0--> items items</div>');
+  expect(div.childNodes.length).toBe(3);
+  expect(div.childNodes[1], 'the value node is not re-created').toBe(valueNode);
+  expect(div.childNodes[2], 'the suffix node is not re-created').toBe(suffix);
+  kernel.dispose();
+});
+
+test('K-Final-1: the empty transitions stay correct across a colliding value', () => {
+  const document = new TestDocument();
+  const element = host(document, 'oe-resume-suffix');
+  const count = signal<unknown>(' items');
+  const kernel = new CompiledElementKernel(element as unknown as HTMLElement, SUFFIX_PROGRAM, {
+    signals: { count },
+    handlers: {},
+    rootMode: 'light',
+  });
+
+  kernel.connect();
+  const div = element.childNodes[0] as TestElement;
+  const suffix = div.childNodes[2];
+
+  // Colliding value -> empty: only the Part's own node retires.
+  kernel.disconnect();
+  count.value = '';
+  expect(() => kernel.connect()).not.toThrow();
+  expect(toHtml(div)).toEqual('<div><!--oe:p0--> items</div>');
+  expect(div.childNodes.length).toBe(2);
+  expect(div.childNodes[1], 'the suffix survives the empty transition').toBe(suffix);
+
+  // Empty -> colliding value: the value node is re-created before the suffix.
+  kernel.disconnect();
+  count.value = ' items';
+  expect(() => kernel.connect()).not.toThrow();
+  expect(toHtml(div)).toEqual('<div><!--oe:p0--> items items</div>');
+  expect(div.childNodes.length).toBe(3);
+  expect(div.childNodes[2], 'the suffix keeps its identity').toBe(suffix);
+  expect(div.childNodes[1] === suffix).toBe(false);
   kernel.dispose();
 });
 
