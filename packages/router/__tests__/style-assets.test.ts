@@ -5,7 +5,8 @@
  * Unit coverage of the router-side seam: the fail-closed intercept of a
  * compiled module's authored `.css` edges, the client build's `.css` emission
  * (content-hashed file name, verbatim file bytes, emission records), the
- * sheet adapter forms (fetch + TLA today; the native form behind the recorded
+ * sheet adapter forms (fetch today — synchronous sheet, asynchronous readiness
+ * recorded under the protocol key; the native form behind the recorded
  * capability verdict), the SSR half reading the same authored file, and the
  * dev inline adapter. The real-build consumer form — island JS without
  * component CSS text, the emitted asset, the manifest styles field,
@@ -24,6 +25,7 @@ import {
 } from '@openelement/compiler';
 import { assertRejectsIncludes, assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
 import { OpenElementError } from '@openelement/element';
+import { STYLE_SHEET_READY } from '@openelement/protocol/style-sheet';
 import { ClientBuildErrorCode } from '../src/internal/error-codes.ts';
 import {
   type StyleAssetRecord,
@@ -194,19 +196,32 @@ test('identical sheet bytes deduplicate into one emission (multi-island reuse)',
   expect(secondUrl).toEqual(firstUrl);
 });
 
-test('the fetch adapter exports the sheet, TLA-guarded, with no document.head', () => {
+test('the fetch adapter exports the sheet synchronously and records readiness', () => {
   const adapter = fetchSheetAdapterModule('ref-1');
   expect(adapter).toContain('import.meta.ROLLUP_FILE_URL_ref-1');
-  expect(adapter).toContain('await fetch(sheetUrl)');
-  expect(adapter).toContain('await sheet.replace(await response.text())');
+  // The sheet exists synchronously: the compiled class binds it in `static
+  // styles`, so the class export must not sit behind the asset's evaluation
+  // (the WebKit overlapping-evaluation race, KR-2).
+  expect(adapter).not.toContain('await fetch(sheetUrl)');
+  expect(adapter).not.toContain('await sheet.replace(');
+  expect(adapter.indexOf('const sheet = new CSSStyleSheet();')).toBeLessThan(
+    adapter.indexOf('const ready = fetch(sheetUrl)'),
+  );
+  expect(adapter).toContain('.then((css) => sheet.replace(css));');
   expect(adapter).toContain('export default sheet;');
+  // Readiness rides the protocol's one canonical key, and the stored promise
+  // keeps its rejected state: the catch only prevents an unhandled rejection
+  // before a root consumes it.
+  expect(adapter).toContain(`sheet['${STYLE_SHEET_READY}'] = ready;`);
+  expect(adapter).toContain('void ready.catch(() => {});');
   // No document-head sink of any kind: the adapter's only CSS channel is the
   // constructable sheet it exports.
   expect(adapter).not.toContain('appendChild');
   expect(adapter).not.toContain("createElement('style')");
   expect(adapter).not.toContain('createElement("style")');
-  // Fail-closed failure mode: a non-ok response throws, so the importing
-  // island module never evaluates against an empty sheet (ADR-0164 App. D).
+  // Fail-closed failure mode: a non-ok response and a failed replace both reject
+  // the readiness promise the runtime gates on (ADR-0164 App. D).
+  expect(adapter).toContain('if (!response.ok)');
   expect(adapter).toContain('throw new Error');
 });
 

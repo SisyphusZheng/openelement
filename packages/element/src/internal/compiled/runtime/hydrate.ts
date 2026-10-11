@@ -615,6 +615,14 @@ export interface CompiledHydrationOptions {
    * first-paint styling by construction.
    */
   expectStaticStyle?: boolean;
+  /**
+   * Aggregate readiness of the component's replacing style sheets, when any is
+   * still filling: a generated client adapter creates its sheet synchronously
+   * and installs the rules later. The fallback node retires only once these
+   * sheets are installed, so a sheet that is still loading never leaves the
+   * shadow tree without styling. Absent means every sheet is already usable.
+   */
+  staticStyleReady?: Promise<unknown>;
   /** Default is `throw`; `owning` enables one bounded recovery attempt. */
   recovery?: HydrationRecoveryMode;
   /** Observe the exact structured mismatch before optional recovery. */
@@ -798,8 +806,25 @@ export function hydrateExistingDom(
       replayPreUpgradeEvents(root, capturedEvents);
       // Part binding completed: the DSD style node's double application
       // retires (no-op when the hydration ran from cursor 0). On the recovery
-      // path this is "recovery completed" from the scenario table.
-      if (cursorStart === 1) removeHydratedStaticStyle(root);
+      // path this is "recovery completed" from the scenario table. A sheet that
+      // is still filling keeps the fallback — it is the only styling channel
+      // until the replacement is installed on this root, and the style scope
+      // reports the failure if it never arrives.
+      if (cursorStart === 1) {
+        const ready = options.staticStyleReady;
+        if (ready === undefined) removeHydratedStaticStyle(root);
+        else
+          void ready.then(
+            () => {
+              // The root may have been detached (or replaced) while the sheet
+              // was loading; an obsolete connection never mutates the DOM.
+              if (root.isConnected) removeHydratedStaticStyle(root);
+            },
+            () => {
+              /* The owning style scope reports the failure; keep the fallback. */
+            },
+          );
+      }
       const hydrated = instance(ctx);
       if (!stream || stream.ranges.size === 0) return hydrated;
       let disposed = false;

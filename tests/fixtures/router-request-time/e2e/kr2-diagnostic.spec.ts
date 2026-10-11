@@ -273,6 +273,85 @@ test('KR-2 controlled trigger: a held style asset must not cost the island its d
 });
 
 /**
+ * Post-fix contract for the late-style handoff, on the real module graph. The
+ * style asset is held open, so the islands must define *before* the sheet
+ * settles and the two ownership paths are observable in the window:
+ *
+ *   shadow — the DSD `<style data-oe-static-styles>` fallback is the styling
+ *            channel until the replacing sheet is installed, so it must still
+ *            be there while the asset is held and gone once it landed;
+ *   light  — the owned head node is rewritten when the sheet lands, so the
+ *            component ends up styled even though it activated unstyled.
+ */
+test('KR-2 post-fix: held styles still define every island, keep the SSR fallback, and land late', async ({
+  page,
+}) => {
+  const styleDelayMs = Number(process.env.KR2_STYLE_DELAY_MS ?? 1_500);
+  await installRecorder(page);
+  await page.route('**/*.css', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, styleDelayMs));
+    await route.continue();
+  });
+
+  await page.goto('/combobox', { waitUntil: 'load' });
+  // The gate must pass while the sheet is still held: registration no longer
+  // waits for the style asset.
+  await page.waitForFunction(
+    (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+    ISLAND_TAGS,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  // One in-page pass: read the state while the sheet is still held, then wait
+  // (bounded) for the sheet to land and both channels to settle — the light
+  // owner rewrites its node, hydration retires the shadow fallback only now.
+  const observed = await page.evaluate(async () => {
+    const read = () => {
+      const frame = document.querySelector('combobox-page')?.shadowRoot;
+      const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
+      const first = host?.shadowRoot?.firstChild;
+      const head = document.querySelector('style[data-open-element-compiled-style]');
+      const headText = head?.textContent ?? '';
+      return {
+        fallback:
+          !!first &&
+          first.nodeType === 1 &&
+          (first as Element).hasAttribute('data-oe-static-styles'),
+        // The owned light node is the only channel the light island has; its
+        // content is engine-independent evidence of the late refresh.
+        lightRules: headText.includes('zag-combobox-input'),
+        headChars: headText.length,
+      };
+    };
+    const held = read();
+    const deadline = performance.now() + 10_000;
+    for (;;) {
+      const state = read();
+      if (!state.fallback && state.lightRules) {
+        return { held, settled: { ...state, timedOut: false } };
+      }
+      if (performance.now() > deadline) return { held, settled: { ...state, timedOut: true } };
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  });
+
+  expect(
+    observed.held.fallback,
+    `the shadow fallback must survive until its replacement is installed ` +
+      `(light rules while held: ${observed.held.lightRules}, head chars: ${observed.held.headChars})`,
+  ).toBe(true);
+  expect(
+    observed.settled.timedOut,
+    `the replacement never landed: fallback=${observed.settled.fallback}, ` +
+      `light rules=${observed.settled.lightRules}, head chars=${observed.settled.headChars}`,
+  ).toBe(false);
+  expect(observed.settled.fallback, 'the fallback retires once the sheet is installed').toBe(false);
+  expect(observed.settled.lightRules, 'the light owner rewrites its node with the late rules').toBe(
+    true,
+  );
+});
+
+/**
  * Mechanism probe, no fixture or product files: the shipped graph's exact
  * shape, built from two blob modules in the page.
  *

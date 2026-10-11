@@ -230,6 +230,8 @@ export const StyleErrorCode = {
   ADOPTED_STYLES_UNSUPPORTED: 'OE_STYLES_ADOPTED_SHEETS_UNSUPPORTED',
   /** A light-DOM style sink needs an owner document with a usable head. */
   LIGHT_SINK_WITHOUT_DOCUMENT: 'OE_STYLES_LIGHT_SINK_WITHOUT_DOCUMENT',
+  /** A generated sheet adapter could not fill its sheet (request or replace failed). */
+  SHEET_LOAD_FAILED: 'OE_STYLES_SHEET_LOAD_FAILED',
 } as const;
 
 /**

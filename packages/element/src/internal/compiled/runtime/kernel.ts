@@ -13,6 +13,7 @@ import { LifetimeScope } from '../lifetime-scope.ts';
 import {
   type CompiledStyleRoot,
   CompiledStyleScope,
+  staticStyleReadiness,
   themeManager,
 } from '../../../open-element-styles.ts';
 import type { StyleSheetLike } from '@openelement/protocol/style-sheet';
@@ -338,6 +339,7 @@ export class CompiledElementKernel {
       root,
       {
         expectStaticStyle: styleCount > 0,
+        staticStyleReady: staticStyleReadiness(this.#options.styles),
         streamParts: stream?.parts,
         pendingParts: stream ? [...stream.pending] : undefined,
         recovery: stream ? 'owning' : 'throw',
