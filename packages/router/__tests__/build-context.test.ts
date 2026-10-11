@@ -45,7 +45,6 @@ test('OpenElementBuildContext populatePhase3 sets phase3 invariants', () => {
     build: { outDir: 'custom-dist' },
     routesDir: 'src/routes',
     islandsDir: 'src/islands',
-    componentsDir: 'src/components',
     middleware: { cors: true },
     html: { lang: 'zh', title: 'Test' },
     island: { upgradeStrategy: 'load' as const },
@@ -72,7 +71,6 @@ test('OpenElementBuildContext populatePhase3 sets phase3 invariants', () => {
   expect(ctx.phase3.base).toEqual('/base/');
   expect(ctx.phase3.routesDir).toEqual('src/routes');
   expect(ctx.phase3.islandsDir).toEqual('src/islands');
-  expect(ctx.phase3.componentsDir).toEqual('src/components');
   expect(ctx.phase3.middleware).toEqual({ cors: true });
   expect(ctx.phase3.html).toEqual({ lang: 'zh', title: 'Test' });
   expect(ctx.phase3.upgradeStrategy).toEqual('load');

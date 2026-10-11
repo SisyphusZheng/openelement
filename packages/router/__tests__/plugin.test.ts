@@ -155,13 +155,6 @@ test('openPlugin: respects custom islandsDir', async () => {
   expect(code).toContain('/src/widgets/my-counter.ts');
 });
 
-test('openPlugin: accepts default and custom componentsDir', () => {
-  // componentsDir is only consumed by the build closeBundle phase; here we can
-  // only assert both forms construct a valid pipeline.
-  expect(createOpenPlugin({}).length).toEqual(9);
-  expect(createOpenPlugin({ componentsDir: 'src/ui' }).length).toEqual(9);
-});
-
 // ─── Upgrade Strategy ─────────────────────────────────────────
 
 test('openPlugin: island.upgradeStrategy flows into the SSR admission plan', async () => {
@@ -374,12 +367,6 @@ test('openPlugin: dev server plugin is @hono/vite-dev-server', () => {
 
 test('openPlugin: SSG mode (default) includes @hono/vite-dev-server (9 plugins)', () => {
   const plugins = createOpenPlugin({});
-  expect(plugins.length).toEqual(9);
-  expect(plugins.find((p) => p.name === '@hono/vite-dev-server')).toEqual(expect.anything());
-});
-
-test('openPlugin: explicit SSG mode includes @hono/vite-dev-server', () => {
-  const plugins = createOpenPlugin({ mode: 'ssg' });
   expect(plugins.length).toEqual(9);
   expect(plugins.find((p) => p.name === '@hono/vite-dev-server')).toEqual(expect.anything());
 });

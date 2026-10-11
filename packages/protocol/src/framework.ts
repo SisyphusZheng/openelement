@@ -158,7 +158,7 @@ export interface RouteEntry {
 export type Middleware = (request: Request, next: () => Promise<Response>) => Promise<Response>;
 
 /**
- * The adapter-facing framework options: where routes, islands and components
+ * The adapter-facing framework options: where routes and islands
  * live, which renderer serializes pages, the application shell and layout
  * declarations, the document `<html>`/head injection channels, and the
  * request-time middleware switches.
@@ -182,16 +182,12 @@ export interface FrameworkOptions {
   routesDir?: string;
   /** Directory island modules are discovered in. Defaults to `app/islands`. */
   islandsDir?: string;
-  /** Directory non-route components live in. Defaults to `app/components`. */
-  componentsDir?: string;
   /** Extra package names whose island modules the build admits, e.g. `['@openelement/ui']`. */
   packageIslands?: string[];
   /** Application shell declaration; `false` disables the shell, `'default'` uses the built-in one. */
   appShell?: AppShellConfig;
   /** Per-layout shell declarations keyed by layout name. */
   layouts?: LayoutsConfig;
-  /** Build mode. 'ssg' (default) generates static HTML. */
-  mode?: 'ssg';
   /** @dangerous injected as-is, only use with controlled content */
   headExtras?: string;
   /** Document `<html>` attributes: the `lang` the document declares and the default `<title>`. */

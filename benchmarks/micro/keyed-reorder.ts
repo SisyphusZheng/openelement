@@ -135,7 +135,8 @@ if (import.meta.main) {
       node: process.version,
       os: process.platform,
       arch: process.arch,
-      logicalCores: navigator.hardwareConcurrency,
+      // ponytail: evidence metadata only; 0 means "unavailable", not "zero cores".
+      logicalCores: globalThis.navigator?.hardwareConcurrency ?? 0,
       dom: 'counting fake DOM; no browser layout or paint',
     },
     sampleCount,

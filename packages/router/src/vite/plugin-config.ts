@@ -33,7 +33,6 @@ import {
 } from './internal/ssg/critical-assets.ts';
 import {
   CHUNK_SIZE_WARNING_LIMIT_KB,
-  DEFAULT_COMPONENTS_DIR,
   DEFAULT_ISLANDS_DIR,
   DEFAULT_ROUTES_DIR,
 } from './internal/paths.ts';
@@ -288,7 +287,6 @@ export function createOpenPluginState(
     ...options,
     routesDir: options.routesDir || DEFAULT_ROUTES_DIR,
     islandsDir: options.islandsDir || DEFAULT_ISLANDS_DIR,
-    componentsDir: options.componentsDir || DEFAULT_COMPONENTS_DIR,
     headExtras: headExtrasValue,
     allowHeadExtrasScripts: allowHeadExtrasValue,
   };

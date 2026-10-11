@@ -6,7 +6,7 @@ order: 70
 
 ## openPipeline()
 
-The lean Vite plugin entry, configured in `vite.config.ts`: `openPipeline({ mode, routes: { dir }, island: { dir, upgradeStrategy }, output: { outDir }, viewTransition, headExtras })`. Defaults: routes `app/routes`, islands `app/islands`, components `app/components`, `viewTransition` on. `headExtras` is developer-trusted input passed through verbatim at the `trustedHtml` trust level — the framework does not sanitize it. `<script>` tags are rejected outright (use `inject.scripts` for scripts), and `<style>` blocks must not carry executable CSS; anything else, including `base` and `meta http-equiv`, is the fragment author's responsibility.
+The lean Vite plugin entry, configured in `vite.config.ts`: `openPipeline({ routes: { dir }, island: { dir, upgradeStrategy }, output: { outDir }, viewTransition, headExtras })`. Defaults: routes `app/routes`, islands `app/islands`, `viewTransition` on. `headExtras` is developer-trusted input passed through verbatim at the `trustedHtml` trust level — the framework does not sanitize it. `<script>` tags are rejected outright (use `inject.scripts` for scripts), and `<style>` blocks must not carry executable CSS; anything else, including `base` and `meta http-equiv`, is the fragment author's responsibility.
 
 ### vite.config.ts
 
@@ -17,7 +17,6 @@ import { openPipeline } from '@openelement/router/vite';
 export default defineConfig({
   plugins: [
     openPipeline({
-      mode: 'ssg', // default
       routes: { dir: 'app/routes' },
       island: { dir: 'app/islands', upgradeStrategy: 'visible' },
       output: { outDir: 'dist' },

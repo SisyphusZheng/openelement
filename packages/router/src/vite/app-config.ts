@@ -475,7 +475,6 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
   if (overrides.dirs !== undefined) {
     options.routesDir = dirs.routes;
     options.islandsDir = dirs.islands;
-    options.componentsDir = dirs.components;
   }
   if (appShell !== undefined) options.appShell = appShell;
   if (overrides.i18n !== undefined) {
