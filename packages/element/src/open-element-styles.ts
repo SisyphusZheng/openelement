@@ -121,8 +121,26 @@ export class CompiledStyleScope {
       this.#observeSheetReadiness(styles, generation);
       return;
     }
-    this.#writeLightStyle(root);
+    // A sheet that is still filling must not be read: `replace()` settling puts
+    // the sheet in a state where reading `cssRules` throws on engines that
+    // refuse it (Firefox: "Can't access rules of still-loading style sheet")
+    // while Chromium and WebKit answer an empty list — and either way the
+    // snapshot would be wrong. The owned node is created now; its text is
+    // written by the readiness continuation below, or immediately when every
+    // sheet it snapshots is already usable.
+    this.#writeLightStyle(root, this.#sheetsUsable());
     this.#observeSheetReadiness(styles, generation);
+  }
+
+  /**
+   * True when no sheet the owned node snapshots — the component's own styles
+   * and the registered global styles — is still filling.
+   */
+  #sheetsUsable(): boolean {
+    return (
+      pendingSheetReadiness(this.#styles).length === 0 &&
+      pendingSheetReadiness(themeManager.getStyles()).length === 0
+    );
   }
 
   /**
@@ -162,8 +180,13 @@ export class CompiledStyleScope {
     );
   }
 
-  /** Write the owned light-DOM style node for the current connection. */
-  #writeLightStyle(root: HTMLElement): void {
+  /**
+   * Write the owned light-DOM style node for the current connection. With
+   * `ready: false` the node is created and owned but its text snapshot waits
+   * for the readiness continuation — see the connect() call site for why the
+   * read must not happen while a sheet fills.
+   */
+  #writeLightStyle(root: HTMLElement, ready = true): void {
     const document = root.ownerDocument;
     const parent = document?.head ?? document?.documentElement;
     if (!document?.createElement || !parent) {
@@ -174,16 +197,18 @@ export class CompiledStyleScope {
     }
     const style = this.#lightStyle ?? document.createElement('style');
     style.setAttribute('data-open-element-compiled-style', '');
-    const globalStyles = themeManager.getStyles();
-    const componentStyles = this.#styles.filter((sheet) => !globalStyles.includes(sheet));
-    const globalCss = styleText(globalStyles);
-    const componentCss = styleText(componentStyles);
-    style.textContent = [
-      globalCss,
-      componentCss ? scopeCompiledLightCss(root.tagName.toLowerCase(), componentCss) : '',
-    ]
-      .filter(Boolean)
-      .join('\n');
+    if (ready) {
+      const globalStyles = themeManager.getStyles();
+      const componentStyles = this.#styles.filter((sheet) => !globalStyles.includes(sheet));
+      const globalCss = styleText(globalStyles);
+      const componentCss = styleText(componentStyles);
+      style.textContent = [
+        globalCss,
+        componentCss ? scopeCompiledLightCss(root.tagName.toLowerCase(), componentCss) : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+    }
     if (style.parentNode !== parent) parent.appendChild(style);
     this.#lightStyle = style;
   }
