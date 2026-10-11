@@ -22,7 +22,7 @@
  * app without them costs the bundle bytes the axis exists to save; scanning
  * "no blocks" onto an app WITH them breaks every when/each Part at runtime
  * (the element runtime fails closed with
- * `OE_RUNTIME_REGION_BUILDERS_MISSING`). So every inconclusive answer — an
+ * `OE_RUNTIME_BLOCK_BUILDERS_MISSING`). So every inconclusive answer — an
  * island specifier that resolves nowhere, a module that fails to compile, a
  * walk that outgrows its visit budget — resolves to "might use blocks", and
  * the caller keeps a builders-carrying entry. The scan only ever saves bytes;
