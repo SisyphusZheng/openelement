@@ -29,7 +29,7 @@
     "src/logger.ts",
     "src/build-utils.ts",
     "src/css-modules.d.ts",
-    "src/no-regions.ts",
+    "src/no-blocks.ts",
     "src/base.ts"
   ]
 }

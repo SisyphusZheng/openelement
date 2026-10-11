@@ -235,9 +235,9 @@ export function decorateHeaderNav(
 
 /**
  * Flatten the generated navSections tree into a single keyed row list for the
- * compiled each-Region: one heading row per section, one link row per item.
- * The compiler grammar does not admit nested list Regions, so section
- * grouping is carried by row.kind and rendered through one flat Region on
+ * compiled each-Block: one heading row per section, one link row per item.
+ * The compiler grammar does not admit nested list Blocks, so section
+ * grouping is carried by row.kind and rendered through one flat Block on
  * both the desktop sidebar and the mobile disclosure panel.
  */
 export function buildSidebarRows(

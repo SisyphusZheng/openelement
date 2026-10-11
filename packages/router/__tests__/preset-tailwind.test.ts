@@ -301,7 +301,7 @@ const DSD_PAGE = [
 ].join('');
 
 test('the default keeps DSD templates untouched: head link only', () => {
-  // The compiled-claim walk (element claim.ts) requires the shadow root's
+  // The compiled-hydration walk (element claim.ts) requires the shadow root's
   // children to equal the Part Program's own nodes, so the default must not
   // inject anything into a shadow template.
   for (const out of [
@@ -329,7 +329,7 @@ test('links land in head and as the last child of every DSD template when opted 
   expect(
     out.match(/<link rel="stylesheet" href="\/assets\/open-tailwind.css" \/>/g)?.length,
   ).toEqual(3);
-  // Trailing position: the compiled-claim walk (element claim.ts) visits the
+  // Trailing position: the compiled-hydration walk (element claim.ts) visits the
   // shadow template's children exactly as the Part Program lists them, so a
   // leading link is structural drift — the link rides at each template's end.
   expect(out).toEqual(

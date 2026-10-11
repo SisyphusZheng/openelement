@@ -1,15 +1,15 @@
 /**
  * Shared execution core of the compiled Part Program runtime: the mount
  * context, the host contracts, the signal subscription plumbing, and the
- * node/value helpers every executor — fresh DOM creation, existing-DOM claim,
+ * node/value helpers every executor — fresh DOM creation, existing-DOM hydration,
  * seed serialization — rides on. This module imports no sibling: parts,
- * fresh-dom, regions, claim, and pre-upgrade-events all draw their shared
+ * fresh-dom, blocks, claim, and pre-upgrade-events all draw their shared
  * machinery from here.
  */
 
 import type { SignalLike, Unsubscribe } from '@openelement/protocol/signal';
 import type {
-  PartProgramV1,
+  PartProgramV2,
   ProgramEachPart,
   ProgramTreeNode,
 } from '@openelement/protocol/part-program';
@@ -25,7 +25,7 @@ import type { RuntimeProgramIR } from '../runtime-program.ts';
 import { LifetimeScope } from '../lifetime-scope.ts';
 
 export type ProgramFixedPart = Extract<
-  PartProgramV1['parts'][number],
+  PartProgramV2['parts'][number],
   { k: 'attr' | 'prop' | 'bool' | 'class' | 'style' | 'html' | 'event' | 'ref' }
 >;
 
@@ -38,12 +38,12 @@ export interface CompiledRuntimeHost {
   handlers: Record<string, CompiledEventHandler>;
   refs?: Record<string, CompiledRefHandler>;
   /**
-   * Update-phase error sink (#1375): when a signal-driven Region update
+   * Update-phase error sink (#1375): when a signal-driven Block update
    * (when/each) throws after activation, the runtime reports the error here
    * instead of letting it escape into the signal writer's stack, and leaves
    * the subscription live so a later write can retry. No rollback is
    * attempted — DOM mutation is not transactional — but the guarded failure
-   * modes leave the Region's owned DOM either untouched (each pre-validates
+   * modes leave the Block's owned DOM either untouched (each pre-validates
    * the whole array before mutating) or explicitly emptied (when disposes the
    * old branch before rebuilding), never a half-committed mix. The compiled
    * kernel routes this into the element's CompiledErrorBoundary: the nearest
@@ -92,7 +92,7 @@ export function createContext(
  * tag an author can actually find. The wire Part Program deliberately omits
  * the compile-time `sourceMap` (browser payload discipline — see
  * semantic-core/compile.ts), so a runtime failure names the file and the
- * authored property or Region rather than a line; line/column live on the
+ * authored property or Block rather than a line; line/column live on the
  * compile-time OEC diagnostics, which run before a program can ship. These
  * strings ride the client bundle, so each one stays as short as it can while
  * still naming the cause and the fix.
@@ -158,7 +158,7 @@ export function subscribeWrites(
 }
 
 /**
- * Wrap one Region's update callback with the update-phase isolation contract
+ * Wrap one Block's update callback with the update-phase isolation contract
  * (#1375): a throw is reported to the host's update-error sink (the kernel's
  * CompiledErrorBoundary) and not rethrown, so the failing write never escapes
  * into the signal writer's stack and the subscription stays live for the
@@ -178,7 +178,7 @@ export function guardedUpdate(
   };
 }
 
-export function isFixedPart(part: PartProgramV1['parts'][number]): part is ProgramFixedPart {
+export function isFixedPart(part: PartProgramV2['parts'][number]): part is ProgramFixedPart {
   return (
     part.k === 'attr' ||
     part.k === 'prop' ||
@@ -228,7 +228,7 @@ export function itemValue(part: ProgramEachPart, item: unknown, field?: string):
 }
 
 /**
- * Item fields referenced by an each Region's template (ival + iattr slots):
+ * Item fields referenced by an each Block's template (ival + iattr slots):
  * the one required-field set both the claim validator and the server each
  * serializer admit records against, so the two paths cannot disagree on
  * which fields a record must carry.

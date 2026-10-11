@@ -43,7 +43,7 @@ export default class OpenReadingShell extends OpenElement {
   breadcrumb = computed(() => this.metadata?.breadcrumb ?? '');
   @property({ reflect: false, attribute: false })
   breadcrumbHref = computed(() => this.metadata?.breadcrumbHref ?? '');
-  // Region branches must be fully static (OEC9012), so both breadcrumb forms
+  // Block branches must be fully static (OEC9012), so both breadcrumb forms
   // stay in the tree and toggle through `hidden` like the pager links below.
   @property({ reflect: false, attribute: false })
   hideBreadcrumbLink = computed(() => !this.metadata?.breadcrumbHref);

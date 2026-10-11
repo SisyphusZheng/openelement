@@ -131,7 +131,7 @@ test('#1416: a same-reference item is not re-read, a new item still is', () => {
   );
 
   // Third generation, this time starting from an empty slot: the lazy
-  // region-reference path must still produce a correctly ordered text node
+  // block-reference path must still produce a correctly ordered text node
   // after a remove-then-add cycle on the same entry.
   items.value = [{ id: 'a', text: '', cls: 'three' }];
   expect(toHtml(root)).toEqual(

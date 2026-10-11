@@ -16,7 +16,7 @@
  *
  * Deleted-internals coverage (VNode renderer, binding descriptors, hydration
  * markers, keyed-For reconciliation, renderToDom) is owned by the
- * compiled-runtime/, compiled-server/, and compiled-claim/ suites; the public
+ * compiled-runtime/, compiled-server/, and compiled-hydration/ suites; the public
  * end-to-end proofs live in compiled-runtime/facade.test.ts.
  *
  * The DOM harness (compiled-runtime/facade-dom.ts) installs browser globals
@@ -36,7 +36,7 @@ import { testProgram, type TestProgramSpec } from './compiled-runtime/test-progr
 const dom = installFacadeDom();
 
 const { OpenElement } = await import('@openelement/element');
-const { renderDsd } = await import('@openelement/element');
+const { renderToString } = await import('@openelement/element');
 const { StyleSheet } = await import('@openelement/element');
 const { OpenElementError } = await import('../src/internal/core/errors.ts');
 
@@ -171,7 +171,7 @@ test('compiled program claims serialized DSD and calls onDsdHydrated', () => {
   (ctor.prototype as Record<string, unknown>).onDsdHydrated = function () {
     dsd++;
   };
-  const html = renderDsd(tag, { componentClass: ctor });
+  const html = renderToString(tag, { componentClass: ctor });
   expect(html).toContain('<template shadowrootmode="open">');
   let claimedP: unknown;
   const el = mountSerialized(dom, html, (host) => {

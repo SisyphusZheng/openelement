@@ -41,11 +41,11 @@ test('open-layout is an SSR-only compiled layout island (hydrate: none)', async 
     staticSidecars: ISLAND_SIDECARS,
   });
   expect(result.program.tag).toEqual('open-layout');
-  // Regions: header nav (desktop + mobile panel), sidebar rows (desktop +
+  // Blocks: header nav (desktop + mobile panel), sidebar rows (desktop +
   // mobile disclosure panel) and the four footer link columns.
-  expect(result.program.regions.length).toEqual(8);
+  expect(result.program.blocks.length).toEqual(8);
   // Injected shell props plus the derived chrome state as computed signal
-  // properties (the list-Region grammar requires `.map()` over
+  // properties (the list-Block grammar requires `.map()` over
   // `this.<property>`, so the derived sidebar rows / footer columns are
   // compiled computed fields rather than render locals or accessors).
   expect(result.program.metadata.properties.map((property) => property.name)).toEqual([
@@ -113,7 +113,7 @@ test('open-search keeps its view compiler-owned and its browser state external',
   // The view is property-driven (C-5): the shell passes the page-locale chrome
   // copy as attributes (searchChromeStrings), while the empty/error message
   // and the hit list are compiled properties the controller writes; hits
-  // render through one list Region with container-delegated click dismissal.
+  // render through one list Block with container-delegated click dismissal.
   expect(result.program.metadata.properties.map((property) => property.name)).toEqual([
     'locale',
     'triggerLabel',

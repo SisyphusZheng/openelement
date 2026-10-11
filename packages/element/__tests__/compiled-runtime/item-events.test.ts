@@ -1,6 +1,6 @@
 /**
  * Per-item event bindings (#1556 IR v2): ItemEventBinding entries on an each
- * Region attach a listener to every item — root-targeted by default, or a
+ * Block attach a listener to every item — root-targeted by default, or a
  * structural `selector` match inside the item — and dispatch the named host
  * handler with (event, item). The listener reads the item from the entry's
  * live box, so keyed reuse (same key, new item object) keeps dispatch

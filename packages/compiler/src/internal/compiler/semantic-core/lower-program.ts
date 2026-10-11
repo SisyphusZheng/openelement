@@ -1,7 +1,7 @@
 /**
  * JSX → Part Program lowering for the compiled grammar (#1473 split): the
  * {@link Lowering} walk turns
- * the analyzed render() tree into fixed Parts, Regions, locations and source
+ * the analyzed render() tree into fixed Parts, Blocks, locations and source
  * records with stable compiler-owned paths.
  */
 
@@ -130,7 +130,7 @@ function isIdentifier(value: string): boolean {
 }
 
 /**
- * Token→operator map for when-Region conditions (#1372). Only strict
+ * Token→operator map for when-Block conditions (#1372). Only strict
  * equality tokens are admitted; `==`/`!=` fail closed with OEC9013 so the
  * coercion difference cannot ride in unnoticed.
  */
@@ -481,7 +481,7 @@ export class Lowering {
       }
       const expr = unwrapExpression(init.expression);
       if (/^on[A-Z]/.test(name)) {
-        if (staticOnly) this.fail(prop, 'OEC9012', 'Region branches must be fully static');
+        if (staticOnly) this.fail(prop, 'OEC9012', 'Block branches must be fully static');
         this.lowerEvent(name, expr, path, prop, elementId);
         continue;
       }
@@ -489,14 +489,14 @@ export class Lowering {
         if (isCustomHost) {
           this.fail(prop, 'OEC9017', `custom-element host <${tag}> may not carry a ref`);
         }
-        if (staticOnly) this.fail(prop, 'OEC9012', 'Region branches must be fully static');
+        if (staticOnly) this.fail(prop, 'OEC9012', 'Block branches must be fully static');
         const ref = this.fieldAccess(expr);
         if (!ref) this.fail(prop, 'OEC9011', 'ref must reference this.<field>');
         this.addPart({ k: 'ref', ref, path }, path, prop, elementId);
         continue;
       }
       // Inline conditional class (#1556): admitted on intrinsic elements in
-      // the dynamic grammar. Region branches keep their fully-static rule and
+      // the dynamic grammar. Block branches keep their fully-static rule and
       // custom-element hosts keep today's diagnostics — both fall through to
       // the unchanged admission below, so fail-closed is untouched.
       if (name === 'class' && !staticOnly && !isCustomHost && ts.isConditionalExpression(expr)) {
@@ -505,7 +505,7 @@ export class Lowering {
       }
       const field = this.fieldAccess(expr);
       if (field) {
-        if (staticOnly) this.fail(prop, 'OEC9012', 'Region branches must be fully static');
+        if (staticOnly) this.fail(prop, 'OEC9012', 'Block branches must be fully static');
         // Security sinks are classified before host lowering: an innerHTML sink
         // is the same TrustedHtml boundary on an intrinsic element and on a
         // custom-element host, so the custom-host prop lowering below must not
@@ -889,7 +889,7 @@ export class Lowering {
     const expr = unwrapExpression(child.expression);
     const field = this.fieldAccess(expr);
     if (field) {
-      if (staticOnly) this.fail(child, 'OEC9012', 'Region branches must be fully static');
+      if (staticOnly) this.fail(child, 'OEC9012', 'Block branches must be fully static');
       const index = this.addPart({ k: 'text', signal: field }, path, child);
       return { k: 'part', id: `p${index}`, index };
     }
@@ -904,7 +904,7 @@ export class Lowering {
     }
     if (ts.isConditionalExpression(expr)) {
       if (staticOnly) {
-        this.fail(child, 'OEC9012', 'nested Regions are outside the compiler grammar');
+        this.fail(child, 'OEC9012', 'nested Blocks are outside the compiler grammar');
       }
       const test = this.parseCondition(expr.condition, child);
       const on = this.lowerStaticBranch(expr.whenTrue, child);
@@ -918,7 +918,7 @@ export class Lowering {
     }
     if (ts.isCallExpression(expr)) {
       if (staticOnly) {
-        this.fail(child, 'OEC9012', 'nested Regions are outside the compiler grammar');
+        this.fail(child, 'OEC9012', 'nested Blocks are outside the compiler grammar');
       }
       return this.lowerEach(expr, child, path);
     }
@@ -959,7 +959,7 @@ export class Lowering {
     this.fail(
       near,
       'OEC9013',
-      'conditional Regions support this.<property> compared with a numeric literal (>, >=, <, <=), ' +
+      'conditional Blocks support this.<property> compared with a numeric literal (>, >=, <, <=), ' +
         'a number/string/boolean equality (===, !==), or a bare this.<property> (optionally negated) truthiness test',
     );
   }
@@ -979,7 +979,7 @@ export class Lowering {
     if (ts.isJsxSelfClosingElement(branch)) {
       return this.lowerElement(branch.tagName, branch.attributes, [], [], branch, true);
     }
-    this.fail(near, 'OEC9012', 'conditional Region branches must be single static JSX elements');
+    this.fail(near, 'OEC9012', 'conditional Block branches must be single static JSX elements');
   }
 
   private lowerEach(expr: ts.CallExpression, near: ts.Node, path: number[]): ProgramTreeNode {
@@ -989,34 +989,34 @@ export class Lowering {
       callee.name.text !== 'map' ||
       expr.arguments.length !== 1
     ) {
-      this.fail(near, 'OEC9013', 'list Regions support exactly this.<property>.map(...)');
+      this.fail(near, 'OEC9013', 'list Blocks support exactly this.<property>.map(...)');
     }
     const signal = this.fieldAccess(callee.expression);
-    if (!signal) this.fail(near, 'OEC9013', 'list Regions must map over this.<property>');
+    if (!signal) this.fail(near, 'OEC9013', 'list Blocks must map over this.<property>');
     const arrow = expr.arguments[0];
     if (
       !ts.isArrowFunction(arrow) ||
       arrow.parameters.length !== 1 ||
       !ts.isIdentifier(arrow.parameters[0].name)
     ) {
-      this.fail(near, 'OEC9013', 'list Region mapper must be a single-parameter arrow function');
+      this.fail(near, 'OEC9013', 'list Block mapper must be a single-parameter arrow function');
     }
     if (ts.isBlock(arrow.body)) {
-      this.fail(near, 'OEC9013', 'list Region mapper must return one JSX element');
+      this.fail(near, 'OEC9013', 'list Block mapper must return one JSX element');
     }
     const body = unwrapExpression(arrow.body);
     if (!ts.isJsxElement(body) && !ts.isJsxSelfClosingElement(body)) {
-      this.fail(near, 'OEC9013', 'list Region mapper must return one JSX element');
+      this.fail(near, 'OEC9013', 'list Block mapper must return one JSX element');
     }
     const param = arrow.parameters[0].name.text;
     const attributes = ts.isJsxElement(body) ? body.openingElement.attributes : body.attributes;
     let key: string | null = null;
     for (const prop of attributes.properties) {
       if (!ts.isJsxAttribute(prop)) {
-        this.fail(prop, 'OEC9011', 'list Region items do not support spread attributes');
+        this.fail(prop, 'OEC9011', 'list Block items do not support spread attributes');
       }
       if (prop.name.getText(this.sf) !== 'key') continue;
-      if (key !== null) this.fail(prop, 'OEC9014', 'list Region items may declare key only once');
+      if (key !== null) this.fail(prop, 'OEC9014', 'list Block items may declare key only once');
       if (
         !prop.initializer ||
         !ts.isJsxExpression(prop.initializer) ||
@@ -1036,7 +1036,7 @@ export class Lowering {
         this.fail(prop, 'OEC9014', `key must reference ${param}.<field>`);
       }
     }
-    if (!key) this.fail(body, 'OEC9014', 'list Region items require key={<item>.<field>}');
+    if (!key) this.fail(body, 'OEC9014', 'list Block items require key={<item>.<field>}');
 
     const itemFields: string[] = [];
     // Per-item event bindings (#1556 IR v2): `on<event>={this.<method>}` (or a
@@ -1051,7 +1051,7 @@ export class Lowering {
       this.fail(
         body,
         'OEC9013',
-        'list Region items must bind at least one {<item>.<field>} value or attribute slot',
+        'list Block items must bind at least one {<item>.<field>} value or attribute slot',
       );
     }
     const index = this.addPart(
@@ -1059,7 +1059,7 @@ export class Lowering {
         k: 'each',
         signal: signal!,
         key: key!,
-        // Single-field templates keep the Region-level field restatement;
+        // Single-field templates keep the Block-level field restatement;
         // multi-field templates omit it — every ival/iattrs slot owns its own.
         ...(uniqueFields.length === 1 ? { field: uniqueFields[0] } : {}),
         item: [item],
@@ -1091,7 +1091,7 @@ export class Lowering {
     // them verbatim and the client instantiates them per item.
     const isCustomHost = /^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(tag);
     if (!/^[a-z][a-z0-9]*$/.test(tag) && !isCustomHost) {
-      this.fail(tagName, 'OEC9010', 'list Region item must be an intrinsic lowercase element');
+      this.fail(tagName, 'OEC9010', 'list Block item must be an intrinsic lowercase element');
     }
     const itemTagReason = forbiddenSinkReason('tag', tag);
     if (itemTagReason !== null) this.fail(tagName, 'OEC9010', itemTagReason);
@@ -1106,7 +1106,7 @@ export class Lowering {
       const name = this.normalizeAttributeName(prop.name.getText(this.sf));
       if (name === 'key') {
         if (!allowKey) {
-          this.fail(prop, 'OEC9011', 'key is only supported on the list Region item root');
+          this.fail(prop, 'OEC9011', 'key is only supported on the list Block item root');
         }
         continue;
       }
@@ -1151,7 +1151,7 @@ export class Lowering {
           this.fail(
             prop,
             'OEC9012',
-            'event handlers are only supported on list Region item templates',
+            'event handlers are only supported on list Block item templates',
           );
         }
         const action = this.eventAction(unwrapExpression(prop.initializer.expression), prop);

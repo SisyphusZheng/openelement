@@ -2,7 +2,7 @@
  * @openelement/router/server-runtime — the page SSR renderer seam.
  *
  * `__ssr` renders one registered page/island host to HTML. The native fork
- * routes through Element's compiled serializer (`renderDsd`, which fails
+ * routes through Element's compiled serializer (`renderToString`, which fails
  * closed for unregistered or uncompiled classes); the lit fork (#1339)
  * routes through @lit-labs/ssr (`renderLitPageToHtml`). The fork point is the
  * renderer adapter (renderer-adapter.ts): each adapter picks which factory
@@ -50,8 +50,8 @@ export type PageSsrRenderer = (
 
 /** The subset of the Element serializer the native renderer needs. */
 export interface NativePageRendererDeps {
-  /** Element's sync compiled serializer (`renderDsd`, returning HTML directly). */
-  renderDsd: (
+  /** Element's sync compiled serializer (`renderToString`, returning HTML directly). */
+  renderToString: (
     tag: string,
     options: {
       componentClass?: unknown;
@@ -75,7 +75,7 @@ export interface NativePageRendererDeps {
  * admission plan).
  */
 export function createNativePageRenderer(deps: NativePageRendererDeps): PageSsrRenderer {
-  const { renderDsd, customElements, ssrRenderableTags } = deps;
+  const { renderToString, customElements, ssrRenderableTags } = deps;
   return (tag, props = {}, sourceInfo = {}, __depth = 0, projectedChildren): string => {
     // Validate tag name - must be a valid Custom Element (contains hyphen)
     if (!tag || !tag.includes('-')) {
@@ -101,7 +101,7 @@ export function createNativePageRenderer(deps: NativePageRendererDeps): PageSsrR
           '> is not registered in the SSR registry. Generated entries register every admitted route/island class explicitly; an unknown OpenElement host cannot be server-rendered (client-only and foreign tags pass through per the admission plan).',
       );
     }
-    return renderDsd(tag, {
+    return renderToString(tag, {
       componentClass: Cls,
       props,
       sourceInfo,

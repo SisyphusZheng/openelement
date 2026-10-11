@@ -25,7 +25,7 @@
  * recovers exactly those edges (compiled-artifact-style-requests.ts) so the
  * packed and workspace-source forms of one package admit identically.
  *
- * Internal Part Program v1 pipeline: not part of the public adapter API.
+ * Internal Part Program v2 pipeline: not part of the public adapter API.
  */
 
 import type { Plugin } from 'vite';

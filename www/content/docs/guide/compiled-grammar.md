@@ -6,7 +6,7 @@ order: 15
 section: 'Core'
 ---
 
-The compiler lowers every `@element` module into a Part Program — a serializable artifact the server serializer, a fresh mount, and the existing-DOM claim all replay identically. That three-way identity is what the grammar buys, and it is why the grammar is closed: a construct the compiler cannot lower fails the build with an `OEC9xxx` diagnostic instead of shipping a runtime interpreter. This page is the cheat sheet — the laws in one table, then each law with a working example and the shape that fails.
+The compiler lowers every `@element` module into a Part Program — a serializable artifact the server serializer, a fresh mount, and the existing-DOM hydration all replay identically. That three-way identity is what the grammar buys, and it is why the grammar is closed: a construct the compiler cannot lower fails the build with an `OEC9xxx` diagnostic instead of shipping a runtime interpreter. This page is the cheat sheet — the laws in one table, then each law with a working example and the shape that fails.
 
 ## The laws
 
@@ -332,7 +332,7 @@ render() { return <p>{this.name.trim()}</p>; }
 
 ## Branches are fully static
 
-A conditional lowers to a `when` Region, so each branch must be exactly one static JSX element (optionally with its own Parts). A branch whose shape depends on runtime data — a ternary that lands on a non-element expression, a nested ternary — cannot be represented, and the fix is a `computed(...)` boolean that the branch tests.
+A conditional lowers to a `when` Block, so each branch must be exactly one static JSX element (optionally with its own Parts). A branch whose shape depends on runtime data — a ternary that lands on a non-element expression, a nested ternary — cannot be represented, and the fix is a `computed(...)` boolean that the branch tests.
 
 ```tsx
 import { element, OpenElement, property } from '@openelement/element';
@@ -351,7 +351,7 @@ export class MyStatus extends OpenElement {
 ```text
 // rejected: a branch must be one static JSX element — OEC9012
 render() { return <div>{this.ready ? <b>{this.label}</b> : <i>Waiting</i>}</div>; }
-// and a text-only ternary is not a Region at all:
+// and a text-only ternary is not a Block at all:
 render() { return <div>{this.ready ? 'yes' : 'no'}</div>; }
 ```
 

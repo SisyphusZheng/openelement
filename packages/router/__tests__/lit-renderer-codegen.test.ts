@@ -48,7 +48,7 @@ test('lit renderer: native descriptor shape is unchanged (renderer absent)', () 
   const desc = buildEntryDescriptor(litRoutes);
   expect('renderer' in desc).toEqual(false);
   const elementImport = desc.imports.find((imp) => imp.from === '@openelement/element');
-  expect(elementImport?.names.includes('renderDsd')).toEqual(true);
+  expect(elementImport?.names.includes('renderToString')).toEqual(true);
 });
 
 test('lit renderer: entry forks tag resolution and page render (no page-data side channel)', () => {
@@ -77,14 +77,14 @@ test('lit renderer: entry forks tag resolution and page render (no page-data sid
   expect(litEntry.includes('data-open-element-page-data')).toEqual(false);
   // The compiled serializer / Part Program kernel is never referenced — the
   // typed renderer modules carry no Element edge of their own.
-  expect(litEntry.includes('renderDsd')).toEqual(false);
+  expect(litEntry.includes('renderToString')).toEqual(false);
   expect(litEntry.includes('__partProgram')).toEqual(false);
 
   // Loader/action protocol stays: the lit entry keeps the shared machinery.
   expect(litEntry).toContain('__runActionProtocol');
 
   const nativeEntry = renderEntry(buildEntryDescriptor(litRoutes, { ssg: true }));
-  expect(nativeEntry).toContain('renderDsd');
+  expect(nativeEntry).toContain('renderToString');
   expect(nativeEntry.includes('__litPageDataScript')).toEqual(false);
 });
 

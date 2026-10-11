@@ -209,7 +209,7 @@ test('#1556: the inline conditional class fails closed outside its admitted shap
     expectCompilerFailure(component(fields, render), code, fragment);
   }
 
-  // Region branches stay fully static: the conditional class keeps today's
+  // Block branches stay fully static: the conditional class keeps today's
   // generic unsupported-expression diagnostic there (OEC9012 territory is
   // reserved for dynamic branch content, unchanged from before #1556).
   expectCompilerFailure(

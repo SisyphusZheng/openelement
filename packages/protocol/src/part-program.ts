@@ -1,8 +1,8 @@
 /**
- * @openelement/element — serializable Part Program v1 protocol.
+ * @openelement/element — serializable Part Program v2 protocol.
  *
  * The canonical exchange artifact shared by the compiler semantic core, the
- * server serializer, fresh DOM creation, and existing-DOM claim. Its only
+ * server serializer, fresh DOM creation, and existing-DOM hydration. Its only
  * imports are the import-free, host-free canonical owners — VOID_TAGS,
  * forbidden sinks, and the error contract (#1386 item 3); all three are
  * import-free, so the artifact keeps its freedom from runtime/host edges. The
@@ -264,7 +264,7 @@ export interface ProgramCondition {
 }
 
 /**
- * Operator/literal compatibility for when-Region tests (issue #1372). Both
+ * Operator/literal compatibility for when-Block tests (issue #1372). Both
  * wire validators (this module and the server serializer's shared validator)
  * close the space through this one predicate:
  * - ordering operators require a finite numeric literal;
@@ -301,8 +301,8 @@ export interface ProgramWhenPart {
 }
 
 /**
- * An event binding scoped to each item of an `each` region. The runtime
- * attaches this listener to every item root node created by the region,
+ * An event binding scoped to each item of an `each` block. The runtime
+ * attaches this listener to every item root node created by the block,
  * making per-item handlers (onClick={this.select(row.id)}) expressible
  * without fixed-path event parts.
  */
@@ -420,21 +420,13 @@ export interface CompiledElementMetadata {
 }
 
 /** The one deterministic program consumed by all execution modes. */
-export interface PartProgramV1 {
+export interface PartProgramV2 {
   version: typeof PART_PROGRAM_VERSION;
   tag: string;
   root: ProgramRoot;
   template: ProgramTreeNode[];
   parts: ProgramPart[];
   blocks: ProgramBlockRecord[];
-  /**
-   * Transitional mirror of {@linkcode PartProgramV1.blocks} (alpha15 R batch 1).
-   * Batch-4 readers (`islandsMightUseRegions`) still read this key; the emitter
-   * always writes both keys with identical content and the validator rejects a
-   * divergent mirror. Batch 4 removes this key once every reader moves to
-   * `blocks`.
-   */
-  regions: ProgramBlockRecord[];
   dependencies: ProgramDependencyRecord[];
   locations: ProgramLocationRecord[];
   /**
@@ -447,8 +439,8 @@ export interface PartProgramV1 {
   metadata: CompiledElementMetadata;
 }
 
-/** The serializable Part Program v1: one compiled component as data. */
-export type PartProgram = PartProgramV1;
+/** The serializable Part Program v2: one compiled component as data. */
+export type PartProgram = PartProgramV2;
 
 /** Anchor marker payloads shared by seed runtime consumers. */
 export function partAnchorMarker(index: number): string {
@@ -462,7 +454,7 @@ export function partAnchorEndMarker(index: number): string {
 
 /**
  * The one `<style>` element the server serializer emits as the first DSD
- * template child when the class carries static styles (renderDsd
+ * template child when the class carries static styles (renderToString
  * parity — pages never upgrade, so their styles must ship in the payload).
  * The claim path skips exactly this marked node; a marked node on a
  * style-less class is claim drift and fails closed.
@@ -489,7 +481,7 @@ function fail(reason: string): never {
   raiseFrameworkError(
     'validation',
     ProgramErrorCode.INVALID_PROGRAM,
-    `[compiled-program] invalid Part Program v1: ${reason}`,
+    `[compiled-program] invalid Part Program v2: ${reason}`,
   );
 }
 
@@ -504,7 +496,7 @@ function validateKeys(
 ): void {
   const keys = new Set(allowed);
   for (const key of Object.keys(value)) {
-    if (!keys.has(key)) fail(`${where}.${key} is not part of Part Program v1`);
+    if (!keys.has(key)) fail(`${where}.${key} is not part of Part Program v2`);
   }
 }
 
@@ -745,7 +737,7 @@ function validateItemValueFields(
 ): void {
   nodes.forEach((node, position) => {
     if (node.k === 'ival') {
-      // A Region-level `field` restatement (single-field templates) constrains
+      // A Block-level `field` restatement (single-field templates) constrains
       // every slot; multi-field templates omit it and slots own their fields.
       if (field !== undefined && node.field !== field) {
         fail(`${where}[${position}] must use item field ${field}`);
@@ -839,7 +831,7 @@ function hasSignal(
   );
 }
 
-function isRegion(part: ProgramPart): part is ProgramWhenPart | ProgramEachPart {
+function isBlock(part: ProgramPart): part is ProgramWhenPart | ProgramEachPart {
   return part.k === 'when' || part.k === 'each';
 }
 
@@ -877,7 +869,7 @@ function validateEventAction(value: unknown, where: string): void {
 }
 
 /**
- * Validate an unknown value as a Part Program v1. The validator is intentionally
+ * Validate an unknown value as a Part Program v2. The validator is intentionally
  * strict: unknown instruction kinds, missing ownership records and unsafe paths
  * fail before a runtime can guess at their meaning.
  */
@@ -892,7 +884,6 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
       'template',
       'parts',
       'blocks',
-      'regions',
       'dependencies',
       'locations',
       'sourceMap',
@@ -900,7 +891,11 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
     ],
     'program',
   );
-  if (raw.version !== PART_PROGRAM_VERSION) fail('version must be 2');
+  if (raw.version !== PART_PROGRAM_VERSION) {
+    fail(
+      `version must be ${PART_PROGRAM_VERSION} (got ${JSON.stringify(raw.version)}): regenerate the program with the current compiler; v1 artifacts are refused, never coerced`,
+    );
+  }
   if (typeof raw.tag !== 'string' || !/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(raw.tag)) {
     fail('tag must be a custom-element tag name');
   }
@@ -1199,15 +1194,15 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
 
   for (const [index, id] of anchorIds) {
     const part = parts[index];
-    if (!part || (!isRegion(part) && part.k !== 'text')) {
-      fail(`anchor ${id} must reference a text or Region part`);
+    if (!part || (!isBlock(part) && part.k !== 'text')) {
+      fail(`anchor ${id} must reference a text or Block part`);
     }
     if ((anchorPartCounts.get(index) ?? 0) !== 1) {
       fail(`part ${index} must have exactly one anchor`);
     }
   }
   for (const part of parts) {
-    if (isRegion(part) || part.k === 'text') {
+    if (isBlock(part) || part.k === 'text') {
       if (!anchorIds.has(part.index)) fail(`part ${part.index} is missing its template anchor`);
     } else if (anchorIds.has(part.index)) {
       fail(`fixed part ${part.index} may not have a template anchor`);
@@ -1216,8 +1211,8 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
 
   if (!Array.isArray(raw.blocks)) fail('blocks must be an array');
   const blocks = raw.blocks as ProgramBlockRecord[];
-  const regionParts = parts.filter(isRegion);
-  if (blocks.length !== regionParts.length) {
+  const blockParts = parts.filter(isBlock);
+  if (blocks.length !== blockParts.length) {
     fail('blocks must describe every Block part exactly once');
   }
   blocks.forEach((block, position) => {
@@ -1231,7 +1226,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
     if (
       !isRecord(block) ||
       block.id !== `r${block.index}` ||
-      block.index !== regionParts[position].index ||
+      block.index !== blockParts[position].index ||
       (block.kind !== 'when' && block.kind !== 'each') ||
       block.anchor !== `p${block.index}` ||
       block.end !== `p${block.index}:end` ||
@@ -1239,22 +1234,16 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
     ) {
       fail(`blocks[${position}] has an invalid Block record`);
     }
-    if (block.kind !== regionParts[position].k) {
+    if (block.kind !== blockParts[position].k) {
       fail(`blocks[${position}] kind mismatches its part`);
     }
   });
-  // Transitional `regions` mirror (alpha15 R batch 1): batch-4 readers still
-  // read it, so a present mirror must equal `blocks`; absence is tolerated so
-  // blocks-only programs keep validating after batch 4 drops the mirror.
-  if (raw.regions !== undefined && JSON.stringify(raw.regions) !== JSON.stringify(raw.blocks)) {
-    fail('regions mirror must equal blocks');
-  }
 
   if (!Array.isArray(raw.dependencies)) fail('dependencies must be an array');
   const dependencies = raw.dependencies as ProgramDependencyRecord[];
   const dependencyOwners = new Set<string>();
   const expectedDependencyOwners = new Set(
-    parts.filter(hasSignal).map((part) => `${isRegion(part) ? 'region' : 'part'}:${part.index}`),
+    parts.filter(hasSignal).map((part) => `${isBlock(part) ? 'region' : 'part'}:${part.index}`),
   );
   for (const [position, dependency] of dependencies.entries()) {
     if (!isRecord(dependency) || !isIdentifier(dependency.signal) || !isRecord(dependency.owner)) {
@@ -1272,7 +1261,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
     if (
       !owner ||
       !hasSignal(owner) ||
-      (isRegion(owner) ? 'region' : 'part') !== dependency.owner.kind
+      (isBlock(owner) ? 'region' : 'part') !== dependency.owner.kind
     ) {
       fail(`dependencies[${position}] points at a non-signal owner`);
     }
@@ -1318,7 +1307,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
       const part = Number.isInteger(location.part) ? parts[location.part] : undefined;
       if (
         !part ||
-        (!isRegion(part) && part.k !== 'text') ||
+        (!isBlock(part) && part.k !== 'text') ||
         location.id !== `p${location.part}` ||
         !samePath(location.path, part.location.path)
       ) {
@@ -1328,7 +1317,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
       const part = Number.isInteger(location.part) ? parts[location.part] : undefined;
       if (
         !part ||
-        isRegion(part) ||
+        isBlock(part) ||
         part.k === 'text' ||
         location.id !== `p${location.part}` ||
         !elementIds.has(location.node) ||

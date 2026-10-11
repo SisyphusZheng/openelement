@@ -4,7 +4,7 @@ import { expect, test } from 'vitest';
 import { assertRejectsIncludes, assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
 import { dirname, join } from 'node:path';
 import ts from 'typescript';
-import { createDeferredDsdExecutor } from '@openelement/element';
+import { createStreamShellExecutor } from '@openelement/element';
 import { compileElementProgram } from '@openelement/compiler';
 import { buildEntryDescriptor } from '../src/vite/internal/ssg/entry-descriptor.ts';
 import { renderEntry } from '../src/vite/internal/ssg/entry-orchestrator.ts';
@@ -51,7 +51,7 @@ test('stream manifest binds two loader fields to independent compiled Part owner
   await fixture(async (dir) => {
     const routes = await scanRoutes(dir, '', { root: dirname(dir) });
     const manifest = routes[0].streamManifest!;
-    expect(manifest.program.version).toEqual(1);
+    expect(manifest.program.version).toEqual(2);
     expect(manifest.program.tag).toEqual('stream-page');
     expect(manifest.program.sha256.length).toEqual(64);
     expect(manifest.fields.map((entry) => entry.field)).toEqual(['first', 'second']);
@@ -108,7 +108,7 @@ test('stream manifest binds two loader fields to independent compiled Part owner
     });
     await assertRejectsIncludes(
       () =>
-        createDeferredDsdExecutor({
+        createStreamShellExecutor({
           componentClass: ChangedPage as unknown as CustomElementConstructor,
           manifest,
           instanceId: 'changed-runtime-program',
@@ -125,16 +125,16 @@ test('stream manifest binds two loader fields to independent compiled Part owner
     expect(code).toContain(manifest.program.sha256);
     // ADR-0160 Amendment 1: the deferred-shell gate is the typed runtime
     // module — the entry imports the factory, binds it to the serialized
-    // manifests + createDeferredDsdExecutor import, and keeps the call site;
+    // manifests + createStreamShellExecutor import, and keeps the call site;
     // the gate's fail-closed contract is pinned by the behavior tests in
     // server-runtime-stream-runtime.test.ts instead of emitted text.
     expect(code).toContain(
-      "import { createDeferredPageShell as __createDeferredPageShellGate } from '@openelement/router/server-runtime'",
+      "import { createStreamPageShell as __createStreamPageShellGate } from '@openelement/router/server-runtime'",
     );
     expect(code).toContain(
-      'const __createDeferredPageShell = __createDeferredPageShellGate({ streamManifests: __streamManifests, createDeferredDsdExecutor });',
+      'const __createStreamPageShell = __createStreamPageShellGate({ streamManifests: __streamManifests, createStreamShellExecutor });',
     );
-    expect(code).toContain('await __createDeferredPageShell(');
+    expect(code).toContain('await __createStreamPageShell(');
     expect(code).toContain('"location":"p1"');
     expect(renderEntry(buildEntryDescriptor(routes))).toContain('export const __streamManifests =');
   });
@@ -153,7 +153,7 @@ test('ordinary routes do not gain stream metadata', async () => {
   );
 });
 
-test('bounded when/each Regions own their deferred field independently', async () => {
+test('bounded when/each Blocks own their deferred field independently', async () => {
   const whenPage = page.replace(
     '<h1>{this.first}</h1>',
     '{this.first ? <h1>on</h1> : <h1>off</h1>}',
@@ -698,7 +698,7 @@ test('generated entry rejects opaque stream descriptors before serving GET', asy
             openElementPage: {
               renderIntent: { mode: 'dynamic', stream: { defer: ['first', 'second'] } },
             },
-            __partProgram: { version: 1, tag: 'stream-page' },
+            __partProgram: { version: 2, tag: 'stream-page' },
           },
         };
         const error = assertThrowsIncludes(
@@ -725,7 +725,7 @@ test('generated entry rejects opaque stream descriptors before serving GET', asy
         openElementPage: {
           renderIntent: { stream: { defer: ['first', 'second'] } },
         },
-        __partProgram: { version: 1, tag: 'stream-page' },
+        __partProgram: { version: 2, tag: 'stream-page' },
       },
     };
     mod.__assertStreamRoute(pageModule, '/', 'index.tsx', routes[0].streamManifest);

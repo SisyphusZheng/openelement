@@ -7,7 +7,7 @@
 
 import type { CompatibilityClassification, HydrationStrategy } from './framework.ts';
 import type { RenderError, SsrAdmissionDecision } from './render.ts';
-import type { PartProgramV1 } from './part-program.ts';
+import type { PartProgramV2 } from './part-program.ts';
 
 /** Build-only route projection bound to a specific compiled page program. */
 export interface StreamRouteManifest {
@@ -21,8 +21,8 @@ export interface StreamRouteManifest {
       location: string;
       // The program source map's record origin, projected from the Part Program
       // IR (protocol-owned): the compiler's CompileElementResult.program IS a
-      // PartProgramV1, so the projection reads the contract type directly.
-      source: PartProgramV1['sourceMap']['records'][number]['source'];
+      // PartProgramV2, so the projection reads the contract type directly.
+      source: PartProgramV2['sourceMap']['records'][number]['source'];
     }>;
   }>;
 }
@@ -284,7 +284,7 @@ export interface EntryDescriptor {
   isSSG: boolean;
   /**
    * Page renderer selection (#1339). Absent/'native' keeps the
-   * compiled renderDsd page path byte-identical; 'lit' forks page tag
+   * compiled renderToString page path byte-identical; 'lit' forks page tag
    * resolution, page SSR and the client entry onto @lit-labs/ssr.
    * Loader/action/protocol codegen never forks.
    */

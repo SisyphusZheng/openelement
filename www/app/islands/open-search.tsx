@@ -48,7 +48,7 @@ export default class OpenSearch extends OpenElement {
   hits: SearchHit[] = [];
   // Skeleton shows only over an empty result area (first search / index
   // load); the idle message hides while it is up. Both toggle through
-  // `hidden` — Region branches must stay static (OEC9012).
+  // `hidden` — Block branches must stay static (OEC9012).
   @property({ reflect: false, attribute: false })
   hideSkeleton = computed(() => !this.searching || this.hasHits);
   @property({ reflect: false, attribute: false })
@@ -113,7 +113,7 @@ export default class OpenSearch extends OpenElement {
                 results, aria-activedescendant across them. The static markup
                 carries only the chrome (ids, labels, classes); everything the
                 machine drives is applied at hydration and never SSR'd — the
-                Region branches below stay static (OEC9012). The visually
+                Block branches below stay static (OEC9012). The visually
                 hidden label names the listbox through the machine's
                 aria-labelledby wiring. */}
             <label id='open-search-results-label' class='results-label' for='open-search-input'>

@@ -312,7 +312,7 @@ export interface PagePropsContext<
 /**
  * Maps the request-scoped context onto the page's compiled properties.
  * Declared as part of the page descriptor; the generated server entry and the
- * SPA bootstrap call it per render and feed the result to renderDsd() props
+ * SPA bootstrap call it per render and feed the result to renderToString() props
  * (server) or pre-connect property sets (SPA).
  */
 export type PagePropsProjector<

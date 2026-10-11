@@ -3,7 +3,7 @@
  *
  * Before this change four conventions coexisted: OEC structured compiler
  * diagnostics, `OpenElementError` with codes, ~40 bare `Error`s carrying
- * `[compiled-runtime]` / `[compiled-claim]` string prefixes, and dedicated
+ * `[compiled-runtime]` / `[compiled-hydration]` string prefixes, and dedicated
  * exception classes. A consumer could not catch a failure by code without
  * importing every class and pattern-matching the rest.
  *
@@ -187,7 +187,7 @@ test('#1386: the runtime raisers report their code through the wire entries', as
   });
   const document = new TestDocument();
 
-  // A non-array list Region: both executors raise the same code for the same
+  // A non-array list Block: both executors raise the same code for the same
   // failing authoring decision.
   const notArray = { signals: { rows: signal<unknown>('nope') }, handlers: {} };
   for (const [label, run] of [
@@ -340,14 +340,14 @@ test('#1386: lifecycle raisers carry their own family codes', async () => {
  */
 test('M-E3: deferred FacadeErrorCode values are independent of PROGRAM_MISSING', () => {
   const codes = [
-    FacadeErrorCode.DEFERRED_PENDING_READ,
-    FacadeErrorCode.DEFERRED_VALUE_NOT_SERIALIZABLE,
-    FacadeErrorCode.DEFERRED_MANIFEST_MALFORMED,
-    FacadeErrorCode.DEFERRED_MANIFEST_MISMATCH,
-    FacadeErrorCode.DEFERRED_RESERVED_PROPERTY,
-    FacadeErrorCode.DEFERRED_BUDGET_EXCEEDED,
-    FacadeErrorCode.DEFERRED_FIELD_INVALID,
-    FacadeErrorCode.DEFERRED_UNKNOWN_FIELD,
+    FacadeErrorCode.STREAM_PENDING_READ,
+    FacadeErrorCode.STREAM_VALUE_NOT_SERIALIZABLE,
+    FacadeErrorCode.STREAM_MANIFEST_MALFORMED,
+    FacadeErrorCode.STREAM_MANIFEST_MISMATCH,
+    FacadeErrorCode.STREAM_RESERVED_PROPERTY,
+    FacadeErrorCode.STREAM_BUDGET_EXCEEDED,
+    FacadeErrorCode.STREAM_FIELD_INVALID,
+    FacadeErrorCode.STREAM_UNKNOWN_FIELD,
   ];
   for (const code of codes) {
     expect(typeof code).toEqual('string');

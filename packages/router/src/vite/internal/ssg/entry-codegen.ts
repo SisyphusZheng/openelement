@@ -65,7 +65,7 @@ interface RenderRouteHandlerOptions {
   renderers: RendererDecl[];
   docConfig: RouteHandlerDocConfig;
   isSSG: boolean;
-  /** Page renderer fork (#1339); absent/'native' keeps compiled renderDsd emission. */
+  /** Page renderer fork (#1339); absent/'native' keeps compiled renderToString emission. */
   renderer?: 'native' | 'lit';
 }
 
@@ -215,7 +215,7 @@ function renderRouteResponseAndCatch(lines: string[], ctx: RouteHandlerEmitConte
     lines.push(`    const __token = crypto.randomUUID();`);
     lines.push(`    const __instance = crypto.randomUUID();`);
     lines.push(
-      `    const __executor = await __createDeferredPageShell(${pathLiteral}, ${ctx.route.varName}, __pageProps(${ctx.route.varName}, __pageContext), __instance, __token);`,
+      `    const __executor = await __createStreamPageShell(${pathLiteral}, ${ctx.route.varName}, __pageProps(${ctx.route.varName}, __pageContext), __instance, __token);`,
     );
     lines.push(
       `    if (__resolveLayout(__routeMetaValue)) throw new Error('stream route ' + ${pathLiteral} + ' resolved a compiled layout, and a streamed document is flushed in parts so it cannot be wrapped: build the project with layout: false and no layouts entries, or leave streaming off for this route.');`,

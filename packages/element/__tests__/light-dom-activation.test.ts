@@ -10,7 +10,7 @@
  * clear-and-render fallback in the compiled architecture).
  *
  * Kernel-level coverage lives in compiled-runtime/kernel.test.ts and
- * compiled-claim/compiled-claim.test.ts; this file pins the PUBLIC facade
+ * compiled-hydration/compiled-hydration.test.ts; this file pins the PUBLIC facade
  * behavior for light-mode OpenElement hosts.
  *
  * The DOM harness (compiled-runtime/facade-dom.ts) installs browser globals
@@ -30,7 +30,7 @@ import { defineLightCounter, makeUniqueTag } from './compiled-runtime/light-coun
 
 const dom = installFacadeDom();
 
-const { OpenElement, renderDsd } = await import('@openelement/element');
+const { OpenElement, renderToString } = await import('@openelement/element');
 const { PartProgramHydrationError } = await import('../src/internal/compiled/runtime.ts');
 
 const uniqueTag = makeUniqueTag('light');
@@ -39,7 +39,7 @@ const lightCounterDeps = { OpenElement, testProgram, registry: dom.registry };
 test('light activation claims the serialized subtree in place (node identity kept)', () => {
   const tag = uniqueTag('claim');
   const ctor = defineLightCounter(lightCounterDeps, tag);
-  const html = renderDsd(tag, { componentClass: ctor, props: { count: 2 } });
+  const html = renderToString(tag, { componentClass: ctor, props: { count: 2 } });
   expect(html).toContain(`<${tag} count="2"`);
 
   let button: AnyElement | undefined;
@@ -101,7 +101,7 @@ test('light host without serialized content renders fresh (empty root)', () => {
 test('light reconnect re-activates in place without duplicate listeners', () => {
   const tag = uniqueTag('reconnect');
   const ctor = defineLightCounter(lightCounterDeps, tag);
-  const html = renderDsd(tag, { componentClass: ctor, props: { count: 1 } });
+  const html = renderToString(tag, { componentClass: ctor, props: { count: 1 } });
 
   let button: AnyElement | undefined;
   const el = mountSerialized(dom, html, (host) => {
@@ -168,7 +168,7 @@ test('nested light hosts claim in their own scopes', () => {
 
   // Serialize the inner host on its own, then nest it inside the outer
   // host's serialized content — the shape the server pipeline emits.
-  const innerHtml = renderDsd(innerTag, { componentClass: innerCtor });
+  const innerHtml = renderToString(innerTag, { componentClass: innerCtor });
   const outerHtml = `<${outerTag}><section>${innerHtml}</section></${outerTag}>`;
 
   let innerEm: unknown;

@@ -3,8 +3,8 @@
  *
  * The route projects locale and package records onto these plain properties;
  * this module contains only the compiler-owned element class and its static
- * render grammar. Package rows are a keyed list Region so server output,
- * browser creation and existing-DOM claim share one identity model.
+ * render grammar. Package rows are a keyed list Block so server output,
+ * browser creation and existing-DOM hydration share one identity model.
  */
 import { element, OpenElement, property } from '@openelement/element';
 import '#site-ui/open-reading-shell.tsx';
@@ -43,16 +43,16 @@ export interface ApiReferenceItem {
   signature: string;
   /**
    * The export's option-bag members as one display line (`name: type —
-   * description`, `; `-joined): a list Region item template admits
-   * `{item.<field>}` values and nested elements, not a nested Region, so the
+   * description`, `; `-joined): a list Block item template admits
+   * `{item.<field>}` values and nested elements, not a nested Block, so the
    * per-export table renders as text while the config section below renders as
-   * a real table (it is a top-level Region).
+   * a real table (it is a top-level Block).
    */
   options: string;
   source: string;
 }
 
-/** One row of the generated config-option table (an each Region item). */
+/** One row of the generated config-option table (an each Block item). */
 export interface ApiOptionRow {
   key: string;
   name: string;
@@ -324,7 +324,7 @@ export default class ReferencePage extends OpenElement {
             <span slot='copy'>{this.s4Copy}</span>
             <div class='registry' id='element-reference'>
               {this.elementEntries.map((element) => (
-                // Compiled list-Region grammar (OEC9013): item children are
+                // Compiled list-Block grammar (OEC9013): item children are
                 // static text, {element.<field>} values or intrinsic elements —
                 // no conditional JSX. Stable rows carry status:'' and the
                 // .chip:empty rule hides the stability chip.

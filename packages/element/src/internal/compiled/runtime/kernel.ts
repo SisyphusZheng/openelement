@@ -4,7 +4,7 @@ import {
   type CompiledRuntimeHost,
   createFreshDom,
 } from '../runtime.ts';
-import { hydrationExecutor } from './claim-seam.ts';
+import { hydrationExecutor } from './hydrate-seam.ts';
 import { streamHostState } from '../stream-state.ts';
 import { CompiledErrorBoundary, type CompiledErrorBoundaryOptions } from './error-boundary.ts';
 import { CompiledContextService } from './context.ts';
@@ -85,7 +85,7 @@ export type CompiledRootMode = 'light' | 'open' | 'closed';
  * OpenElement) — the same path the compiler-emitted lifecycle wrappers and
  * the facade property setter call. Structural, not imported: the kernel must
  * stay usable with host shapes that never carry the facade (the bare runtime
- * hosts of the region/kernel suites), where the optional call is simply
+ * hosts of the block/kernel suites), where the optional call is simply
  * absent and routing degrades to the element-local capture above.
  */
 interface ErrorRoutingHost {
@@ -209,7 +209,7 @@ export class CompiledElementKernel {
       const mode: CompiledActivationMode = hasContent ? 'claim' : 'fresh';
       if (!hasContent && root.childNodes.length > 0) clearFormattingWhitespace(root);
       // Update-phase failures (#1375) land in the same element-local boundary
-      // as connect failures: this element owns the Region subscriptions, so it
+      // as connect failures: this element owns the Block subscriptions, so it
       // is the nearest boundary for their update errors — when it IS a
       // boundary. When it is not (the common case: a plain element failing
       // inside a boundary's subtree), the failure additionally routes to the
@@ -305,7 +305,7 @@ export class CompiledElementKernel {
   /**
    * Claim the root's existing content through the executor seam (#1416). The
    * kernel never imports the claim implementation: the full entry installs it
-   * (claim-install.ts), the client-only entry does not. An uninstalled claim
+   * (hydrate-install.ts), the client-only entry does not. An uninstalled claim
    * is fail-closed — a connected element that finds content in its root has
    * server-rendered (or light-mode) DOM that only the full entry can hydrate,
    * so this throws instead of building a second tree beside it.
@@ -319,7 +319,7 @@ export class CompiledElementKernel {
     if (!executor) {
       fail(
         KernelErrorCode.CLAIM_EXECUTOR_MISSING,
-        '[compiled-kernel] existing DOM in the resolved root needs the claim executor: ' +
+        '[compiled-kernel] existing DOM in the resolved root needs the hydration executor: ' +
           "the element was connected from the '@openelement/element/client-only' entry, " +
           "which omits it. Import '@openelement/element' for any element that can " +
           'hydrate server-rendered content.',
@@ -329,7 +329,7 @@ export class CompiledElementKernel {
     if (this.#element.hasAttribute('data-oe-stream-request') && !stream) {
       fail(
         ClaimErrorCode.STRUCTURE_MISMATCH,
-        '[compiled-claim] streamed host has no matching typed seed for its Part Program.',
+        '[compiled-hydration] streamed host has no matching typed seed for its Part Program.',
       );
     }
     return executor(

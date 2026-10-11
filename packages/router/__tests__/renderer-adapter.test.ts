@@ -60,9 +60,17 @@ const routes: RouteEntry[] = [
 // cross-mode invariant holds). Diffing the dumped entries across the rename
 // shows exactly those identifier lines and nothing else. Client bytes are
 // untouched.
+// Server pins moved once more for the alpha15 R batch 4 routing renames:
+// `renderDsd` became `renderToString` (+5 bytes × 2 native server lines: the
+// element import and the pageRuntime field), while
+// `createDeferredDsdExecutor` became the byte-neutral
+// `createStreamShellExecutor` (25→25) and the stream-gated
+// `createDeferredPageShell`→`createStreamPageShell` (-1) does not appear in
+// this stream-less probe. Native server only: 15990→16000, native/lit delta
+// 113→103 (lit carries no native serializer import). Client bytes untouched.
 const expected = {
   native: {
-    server: [15990, '471d03f8fbc170a5ce6cb344aadc864dc00e46b5338004c732a618d22e19aa46'],
+    server: [16000, '8c2342e32fc169960f94deaaf3b1bd4c7badd6417cef578270eacd5a11207b66'],
     client: [2004, 'dbd5414e1f2a392a26e98cdce1a2b7c2dc69d4305228c6b7d199b4af6ce00d6f'],
   },
   lit: {
@@ -76,7 +84,7 @@ test('internal Native/Lit selection preserves the generated server/client bytes'
     const adapter = selectRendererAdapter(mode);
     expect(adapter.mode).toEqual(mode);
     expect(adapter.supportsCompiledStream).toEqual(mode === 'native');
-    expect(adapter.hydration).toEqual(mode === 'native' ? 'compiled-claim' : 'lit-adoption');
+    expect(adapter.hydration).toEqual(mode === 'native' ? 'compiled-hydration' : 'lit-adoption');
     const descriptor = buildEntryDescriptor(routes, { renderer: mode });
     const server = renderEntry(descriptor);
     const client = generateClientEntry(

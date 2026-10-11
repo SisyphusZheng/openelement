@@ -4,11 +4,11 @@ import { localizeLayoutHref } from '../src/vite/internal/server-runtime/document
 
 test('generated SSR delegates admitted nested composition to Element', () => {
   const admitted = ['open-page-rail', 'open-article-view', 'open-reading-shell'];
-  // The typed page renderer is the shipped __ssr binding; a probe renderDsd
+  // The typed page renderer is the shipped __ssr binding; a probe renderToString
   // records the options the compiled serializer receives.
   const calls: Array<{ tag: string; options: Record<string, unknown> }> = [];
   const ssr = createNativePageRenderer({
-    renderDsd: (tag, options) => {
+    renderToString: (tag, options) => {
       calls.push({ tag, options });
       return '<' + tag + '></' + tag + '>';
     },

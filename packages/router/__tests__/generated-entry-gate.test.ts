@@ -221,7 +221,7 @@ test('gate: retired helper emissions never reappear in generated entries', () =>
     'const __maxActionBodyBytes =',
     'const __actionBodyLimit = __createActionBodyLimit(',
     // the deferred-shell gate (Amendment 1 — the typed stream-runtime factory)
-    'async function __createDeferredPageShell(',
+    'async function __createStreamPageShell(',
   ];
   for (const { label, code } of generatedEntries()) {
     for (const head of retiredHeads) {

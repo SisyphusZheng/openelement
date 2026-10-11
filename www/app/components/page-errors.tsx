@@ -4,8 +4,8 @@
  *
  * The route projects the generated error-code inventory onto these plain
  * properties; this module contains only the compiler-owned element class and
- * its static render grammar. Code rows are a keyed list Region so server
- * output, browser creation and existing-DOM claim share one identity model.
+ * its static render grammar. Code rows are a keyed list Block so server
+ * output, browser creation and existing-DOM hydration share one identity model.
  */
 import { element, OpenElement, property } from '@openelement/element';
 import '#site-ui/open-reading-shell.tsx';

@@ -201,9 +201,9 @@ function projectReferenceEntries(labels: {
   requiredLabel: string;
   optionalLabel: string;
 }): ApiReferenceItem[] {
-  // A list Region item template admits `{item.<field>}` values and nested
-  // elements, not a nested Region, so an export's options render as one line
-  // while the config section below renders as a real table (top-level Region).
+  // A list Block item template admits `{item.<field>}` values and nested
+  // elements, not a nested Block, so an export's options render as one line
+  // while the config section below renders as a real table (top-level Block).
   const optionLine = (
     options: readonly {
       name: string;

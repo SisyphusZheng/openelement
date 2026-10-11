@@ -1,7 +1,7 @@
 /**
  * @openelement/element — compiled Part Program runtime facade.
  *
- * A Part Program v1 is executed by three entry points — `serializeToHtml`,
+ * A Part Program v2 is executed by three entry points — `serializeToHtml`,
  * `createFreshDom`, and `hydrateExistingDom` — which share the same
  * tree/Part/Block semantics. Each now lives in its own single-duty module
  * under `runtime/` (program-kernel, fresh-dom, blocks, parts, hydration,
@@ -38,7 +38,7 @@ import {
   type SerializeProgramSeams,
   serializeProgramTemplate,
 } from './serializer/serialize-program.ts';
-import type { PartProgramV1 } from '@openelement/protocol/part-program';
+import type { PartProgramV2 } from '@openelement/protocol/part-program';
 import { normalizePartProgram, type RuntimeProgramIR } from './runtime-program.ts';
 import { frameworkError, ProgramErrorCode, RuntimeErrorCode } from '@openelement/protocol/errors';
 import {
@@ -56,7 +56,7 @@ import { createFreshDom } from './runtime/fresh-dom.ts';
 // serializer's array admission needs the blocks message builder only, and a
 // blocks-free graph (an app whose Part Programs carry no when/each Parts)
 // keeps the blocks module out entirely.
-import { blockBuildersOrFail } from './runtime/regions-seam.ts';
+import { blockBuildersOrFail } from './runtime/blocks-seam.ts';
 import {
   hydrateExistingDom,
   type HydrationOwner,
@@ -65,7 +65,7 @@ import {
   PartProgramHydrationError,
   type BlockHydrationOwner,
   type RootHydrationOwner,
-} from './runtime/claim.ts';
+} from './runtime/hydrate.ts';
 import {
   acceptPendingIslandEvent,
   capturePreUpgradeEvents,
@@ -196,7 +196,7 @@ function seedSerializerSeams(
 }
 
 /** Seed serialization: the same program renders deterministic HTML. */
-export function serializeToHtml(program: PartProgramV1, host: CompiledRuntimeHost): string {
+export function serializeToHtml(program: PartProgramV2, host: CompiledRuntimeHost): string {
   const ir = normalizePartProgram(program);
   return serializeProgramTemplate(ir, seedSerializerSeams(ir, host));
 }

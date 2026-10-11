@@ -82,7 +82,7 @@ export function buildEntryDescriptor(
     islandFiles?: string[];
     /**
      * Page renderer (#1339). 'native' (default) renders pages via
-     * renderDsd; 'lit' renders LitElement pages via @openelement/router/lit-ssr.
+     * renderToString; 'lit' renders LitElement pages via @openelement/router/lit-ssr.
      * Explicit config only — never inferred from route sources.
      */
     renderer?: 'native' | 'lit';
@@ -212,11 +212,11 @@ export function buildEntryDescriptor(
       });
       // The deferred-shell gate (Amendment 1): the typed runtime
       // factory the entry binds to its serialized stream manifests and its
-      // createDeferredDsdExecutor import; the handlers keep the call site.
+      // createStreamShellExecutor import; the handlers keep the call site.
       imports.push({
         from: '@openelement/router/server-runtime',
-        names: ['createDeferredPageShell'],
-        alias: '__createDeferredPageShellGate',
+        names: ['createStreamPageShell'],
+        alias: '__createStreamPageShellGate',
       });
     }
     // The page-render seam: page tag resolution and the

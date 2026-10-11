@@ -1,7 +1,7 @@
 /**
  * Shared validation and host access for the compiled server and hydration modes.
  *
- * This module deliberately consumes the unified Part Program v1 shape defined
+ * This module deliberately consumes the unified Part Program v2 shape defined
  * in `../../protocol/part-program.ts`. It owns no DOM discovery and performs no rendering
  * fallback: malformed programs and unsafe values are rejected before either
  * execution mode can produce or attach to output. The server/hydration grammar is
@@ -12,7 +12,7 @@
 
 import {
   conditionLiteralAllowed,
-  type PartProgramV1,
+  type PartProgramV2,
   type ProgramPart,
   type ProgramTreeNode,
 } from '@openelement/protocol/part-program';
@@ -230,7 +230,7 @@ function validatePart(part: ProgramPart, index: number): void {
 }
 
 function resolveTemplateNode(
-  program: PartProgramV1,
+  program: PartProgramV2,
   path: number[],
   where: string,
 ): ProgramTreeNode {
@@ -248,7 +248,7 @@ function resolveTemplateNode(
   return node;
 }
 
-function validateLocations(program: PartProgramV1): void {
+function validateLocations(program: PartProgramV2): void {
   const anchorCounts = new Map<number, number>();
   const walkAnchors = (nodes: ProgramTreeNode[], path: string): void => {
     nodes.forEach((node, index) => {

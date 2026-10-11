@@ -3,7 +3,7 @@
  *
  * Types for the compiled server-render contract: the render error shape shared
  * with the error protocol, and the SSR admission decision recorded by the
- * adapter's island scanner. `renderDsd()` returns the serialized DSD `html`
+ * adapter's island scanner. `renderToString()` returns the serialized DSD `html`
  * directly as a string (alpha15 R.0-3: the `{ html, errors, metrics,
  * hydrationHints }` shell is deleted; the two hardcoded-zero metrics that
  * motivated M-E5 go away with it).

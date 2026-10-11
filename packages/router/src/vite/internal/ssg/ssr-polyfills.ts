@@ -37,7 +37,7 @@ if (typeof globalThis.CSSStyleSheet === 'undefined') {
  * At build time this ships as the Rollup output banner (build-ssg.ts); in
  * dev the virtual SSR entry imports it as its first module (plugin.ts), which
  * ESM evaluates before all other imports. Uses Map-backed define()/get();
- * renderDsdByName() looks up components via customElements.get(tagName).
+ * renderToStringByName() looks up components via customElements.get(tagName).
  */
 export function generateCustomElementsPolyfill(): string {
   return `\

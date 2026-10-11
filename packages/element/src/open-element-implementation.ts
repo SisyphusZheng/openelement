@@ -7,7 +7,7 @@
  * @openelement/compiler `open:compiled-element` transform), which emits a
  * decorator-free class carrying the compiled statics this facade consumes:
  *
- *   - `static __partProgram`        — the validated Part Program v1 artifact
+ *   - `static __partProgram`        — the validated Part Program v2 artifact
  *   - `static __compiledProperties` — JSON property records
  *     ({ name, attribute, type, converter, reflect, default })
  *   - `static __elementMetadata`    — element metadata (tag, cem, ...)
@@ -26,7 +26,7 @@
  * OpenElementError (code `OE_PROGRAM_MISSING`).
  *
  * Lifecycle:
- *   Server: renderDsd() -> serializeCompiledProgram() -> deterministic HTML
+ *   Server: renderToString() -> serializeCompiledProgram() -> deterministic HTML
  *   Client (SSR DOM present): connectedCallback -> kernel.connect() claims
  *     the existing tree (mode 'claim') -> pre-upgrade replay -> onDsdHydrated()
  *   Client (no SSR DOM): connectedCallback -> kernel.connect() creates fresh
@@ -210,7 +210,7 @@ export class OpenElement extends OpenElementConfiguration {
    * at compile time (P2: pay at compile time, minimal runtime delta), and the
    * runtime adds the two points compilation cannot see: synchronous
    * signal-graph evaluation at a property write (facade-host.ts) and the
-   * kernel's Region-update isolation (kernel.ts onUpdateError).
+   * kernel's Block-update isolation (kernel.ts onUpdateError).
    *
    * The climb starts at `this` (a boundary class may capture its own
    * author-code errors), then walks `parentElement`, crossing shadow
@@ -223,7 +223,7 @@ export class OpenElement extends OpenElementConfiguration {
    * Capture goes through the boundary's own `_errors.catchError(error, this)`
    * so publication rides the existing service options: a compiled boundary
    * subclass's kernel wires `onError` → `_publishErrorState()` → the
-   * `hasError` property write, so the fallback Region flips exactly as an
+   * `hasError` property write, so the fallback Block flips exactly as an
    * application `catchError()` call would. The captured `source` is `this`
    * (the failing element), so `retry()` re-activates the right host.
    *
@@ -402,7 +402,7 @@ export class OpenElement extends OpenElementConfiguration {
    *
    * Subclasses override this instead of relying on fragile
    * `super.connectedCallback()` call order. At this point the program's DOM
-   * is claimed and Parts/Regions are live.
+   * is claimed and Parts/Blocks are live.
    *
    * No-op by default.
    */

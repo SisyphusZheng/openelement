@@ -37,7 +37,7 @@ export function createCompilerHooks(
   // The shape excludes the program sourceMap: source offsets shift on ANY
   // edit (including behavior-only method-body edits), so comparing them
   // would force a full reload for every keystroke instead of only for
-  // template/Part/Region shape changes.
+  // template/Part/Block shape changes.
   const compiledProgramShapes = new Map<string, string>();
 
   const programShape = (program: unknown): string => {
@@ -128,7 +128,7 @@ export function createCompilerHooks(
         const previousShape = compiledProgramShapes.get(hmr.file);
         compiledProgramShapes.set(hmr.file, nextShape);
         if (previousShape !== undefined && previousShape !== nextShape) {
-          // A changed static tree or Part/Region instruction cannot be safely
+          // A changed static tree or Part/Block instruction cannot be safely
           // patched in place. Full reload is the bounded fail-closed path;
           // same-program method/initializer edits retain the element module's
           // live state through ordinary Vite HMR.
