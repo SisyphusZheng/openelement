@@ -9,6 +9,7 @@ adapt, scaffold, build, and distribute those products.
 - [Rendering and claim](./rendering-and-claim.md)
 - [Router and server runtime](./router-and-server-runtime.md)
 - [Packages and distribution](./packages-and-distribution.md)
+- [Seams registry](./seams.md)
 - [Security and release engineering](./security-and-release-engineering.md)
 
 Active ADRs retain decisions that still constrain the implementation. Retired
