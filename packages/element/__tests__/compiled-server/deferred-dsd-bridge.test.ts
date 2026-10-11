@@ -166,7 +166,8 @@ test('deferred host owns stream identity and typed pending/resolved seed', async
   expect(bridge.seed.count).toEqual({ state: 'resolved', type: 'number', value: 7 });
   expect(bridge.resolvedValue('title', '<safe>')).toEqual('<safe>');
   expect(bridge.resolvedValue('title', null)).toEqual(null);
-  expect(bridge.serializeResolved('title', null)).toEqual(['null']);
+  // M-E1: null text renders as empty (displayValue null→''), on every path.
+  expect(bridge.serializeResolved('title', null)).toEqual(['']);
 });
 
 test('deferred seed distinguishes absent default, explicit null, and pending', async () => {

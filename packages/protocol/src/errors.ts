@@ -310,6 +310,22 @@ export const FacadeErrorCode = {
   STREAM_TYPE_MISMATCH: 'OE_STREAM_TYPE_MISMATCH',
   /** An `HTMLElement` member was reached during SSR, where no DOM exists. */
   SSR_DOM_ACCESS_UNSUPPORTED: 'SSR_DOM_ACCESS_UNSUPPORTED',
+  /** A deferred shell read a pending property before it resolved. */
+  DEFERRED_PENDING_READ: 'OE_DEFERRED_PENDING_READ',
+  /** A deferred seed value is not JSON-safe (cyclic, bigint, or class instance). */
+  DEFERRED_VALUE_NOT_SERIALIZABLE: 'OE_DEFERRED_VALUE_NOT_SERIALIZABLE',
+  /** A deferred route manifest is malformed. */
+  DEFERRED_MANIFEST_MALFORMED: 'OE_DEFERRED_MANIFEST_MALFORMED',
+  /** A deferred route manifest does not match the compiled program. */
+  DEFERRED_MANIFEST_MISMATCH: 'OE_DEFERRED_MANIFEST_MISMATCH',
+  /** A reserved property name cannot enter a deferred seed. */
+  DEFERRED_RESERVED_PROPERTY: 'OE_DEFERRED_RESERVED_PROPERTY',
+  /** A deferred manifest or seed exceeds its bounded budget. */
+  DEFERRED_BUDGET_EXCEEDED: 'OE_DEFERRED_BUDGET_EXCEEDED',
+  /** A deferred field or Part owner is invalid or not deferrable. */
+  DEFERRED_FIELD_INVALID: 'OE_DEFERRED_FIELD_INVALID',
+  /** An unknown deferred field was resolved or serialized. */
+  DEFERRED_UNKNOWN_FIELD: 'OE_DEFERRED_UNKNOWN_FIELD',
 } as const;
 
 /**

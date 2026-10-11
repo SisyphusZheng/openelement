@@ -333,3 +333,25 @@ test('#1386: lifecycle raisers carry their own family codes', async () => {
   expect(typeof StyleErrorCode.LIGHT_SINK_WITHOUT_DOCUMENT).toEqual('string');
   expect(typeof FacadeErrorCode.PROGRAM_MISSING).toEqual('string');
 });
+
+/**
+ * M-E3: deferred failures carry their own FacadeErrorCode values — budget,
+ * JSON-safety, and unknown-field conditions never impersonate PROGRAM_MISSING.
+ */
+test('M-E3: deferred FacadeErrorCode values are independent of PROGRAM_MISSING', () => {
+  const codes = [
+    FacadeErrorCode.DEFERRED_PENDING_READ,
+    FacadeErrorCode.DEFERRED_VALUE_NOT_SERIALIZABLE,
+    FacadeErrorCode.DEFERRED_MANIFEST_MALFORMED,
+    FacadeErrorCode.DEFERRED_MANIFEST_MISMATCH,
+    FacadeErrorCode.DEFERRED_RESERVED_PROPERTY,
+    FacadeErrorCode.DEFERRED_BUDGET_EXCEEDED,
+    FacadeErrorCode.DEFERRED_FIELD_INVALID,
+    FacadeErrorCode.DEFERRED_UNKNOWN_FIELD,
+  ];
+  for (const code of codes) {
+    expect(typeof code).toEqual('string');
+    expect(code).not.toEqual(FacadeErrorCode.PROGRAM_MISSING);
+  }
+  expect(new Set(codes).size).toEqual(codes.length);
+});

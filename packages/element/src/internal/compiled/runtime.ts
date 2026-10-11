@@ -25,7 +25,13 @@ import { conditionHolds } from './condition-holds.ts';
 // Canonical attr/class/style value coercions — single source of truth,
 // shared with the server serializer (server/shared.ts) so all three
 // execution modes stay byte-identical; do not reintroduce private copies.
-import { attributeValueOf, classValueOf, styleValueOf } from './server/shared.ts';
+import {
+  attributeValueOf,
+  classValueOf,
+  CompiledProgramValidationError,
+  styleValueOf,
+} from './server/shared.ts';
+import { formatError } from '../core/errors.ts';
 // The ONE tree-walking serializer (issue #1469): both the
 // seed and the server serializer delegate their walk to this kernel.
 import {
@@ -34,7 +40,7 @@ import {
 } from './serializer/serialize-program.ts';
 import type { PartProgramV1 } from '@openelement/protocol/part-program';
 import { normalizePartProgram, type RuntimeProgramIR } from './runtime-program.ts';
-import { RuntimeErrorCode } from '@openelement/protocol/errors';
+import { frameworkError, ProgramErrorCode, RuntimeErrorCode } from '@openelement/protocol/errors';
 import {
   type CompiledEventHandler,
   type CompiledProgramInstance,
@@ -136,18 +142,43 @@ function seedSerializerSeams(
       const serialized = styleValueOf(value);
       return serialized ? { name: 'style', value: serialized, bare: false } : null;
     },
-    propEmission: (_node, part, value) => {
-      const serialized = attributeValueOf(value);
-      return {
-        attribute: serialized === null ? null : { name: part.name, value: serialized, bare: false },
-        property: value,
-      };
+    propEmission: (node, part, value, path) => {
+      // R.0-4: JSON-in-attribute is the single contract (server pin
+      // compiled-server.test.ts:353-381); the seed path regresses to it.
+      let serialized: string;
+      if (node.tag.includes('-') && typeof value !== 'string') {
+        try {
+          const encoded = JSON.stringify(value);
+          if (encoded === undefined) {
+            throw frameworkError(
+              ProgramErrorCode.NOT_SERIALIZABLE,
+              'value has no JSON representation',
+              { phase: 'validation' },
+            );
+          }
+          serialized = encoded;
+        } catch (error) {
+          throw new CompiledProgramValidationError(
+            `template[${path.join('][')}].${part.name}`,
+            `custom-element property value must be JSON-serializable (${formatError(error)})`,
+          );
+        }
+      } else {
+        const coerced = attributeValueOf(value);
+        // Non-custom tags keep String() semantics; null/undefined omit like
+        // attribute emission. Custom-tag strings fall through here too.
+        if (coerced === null) {
+          return { attribute: null, property: value };
+        }
+        serialized = coerced;
+      }
+      return { attribute: { name: part.name, value: serialized, bare: false }, property: value };
     },
     itemAttributeEmission: (item, name, field) => {
       const value = itemAttrValue(item, field);
       return value === null ? null : { name, value, bare: false };
     },
-    itemTextValue: (part, _node, item) => displayValue(itemValue(part, item)),
+    itemTextValue: (part, node, item) => displayValue(itemValue(part, item, node.field)),
     textPartValue: displayValue,
     whenHolds: (part, value) => conditionHolds(part.test, value),
     regionItems: (part, value) => {
