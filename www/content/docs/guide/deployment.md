@@ -100,6 +100,12 @@ test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
 echo 'artifact answers: static 200, action 422'
 ```
 
+## Artifact compatibility
+
+Generated modules carry two version stamps in their header banner: the Part Program format version and the generated-module ABI version. A runtime refuses an artifact whose version it does not implement — validation fails closed with an expected-vs-actual diagnostic (`version must be 2 (got 1) … v1 artifacts are refused, never coerced`) rather than reading the artifact under the wrong grammar.
+
+Deploy one build. The version check catches an artifact compiled against a different format version than the runtime executing it, but it cannot tell two builds of the *same* version apart: mixing browser assets from one build with a request-time server entry from another is neither supported nor detected. Regenerate the whole output (`pnpm build`) and ship `dist/` as one unit.
+
 ## See also
 
 - [Build and configuration](/guide/configuration) — the build, routes and middleware options that shape the output.
