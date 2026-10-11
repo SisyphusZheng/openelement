@@ -53,10 +53,19 @@ import {
   resolveAppConfig,
 } from '../vite/app-config.ts';
 
-const root = process.cwd();
-const distDir = join(root, DEFAULT_OUT_DIR);
-const serverEntry = join(distDir, 'server', 'index.js');
-const hostname = process.env['OPEN_ELEMENT_HOST'] ?? '0.0.0.0';
+// Resolved per-invocation, never snapshotted at module load (M-R5): a
+// module-level `process.cwd()` goes stale when the CLI is reused
+// programmatically (imported and called after chdir). Pure CLI runs are
+// unaffected — main() runs once — but laziness costs nothing here.
+function resolveServePaths(): { root: string; distDir: string; serverEntry: string } {
+  const root = process.cwd();
+  const distDir = join(root, DEFAULT_OUT_DIR);
+  return { root, distDir, serverEntry: join(distDir, 'server', 'index.js') };
+}
+
+function resolveHostname(): string {
+  return process.env['OPEN_ELEMENT_HOST'] ?? '0.0.0.0';
+}
 
 /**
  * #1411: `cli/start` is the third reader of `openelement.config.ts`. It reads
@@ -66,6 +75,7 @@ const hostname = process.env['OPEN_ELEMENT_HOST'] ?? '0.0.0.0';
  * document (head, shells, middleware) from the build-time resolution.
  */
 async function loadProductionConfig(mode: ServeMode): Promise<void> {
+  const { root } = resolveServePaths();
   const configFile = detectAppConfigFile(root);
   if (configFile === null) return;
   try {
@@ -95,6 +105,7 @@ async function main(argv: string[]): Promise<void> {
   }
   cliDebug = parsed.debug;
 
+  const { distDir } = resolveServePaths();
   if (!existsSync(distDir)) {
     console.error(
       `[openElement ${parsed.mode}] ${DEFAULT_OUT_DIR}/ not found. Run \`pnpm build\` first.`,
@@ -251,6 +262,7 @@ function parsePreviewFlags(rest: string[]): PreviewListen {
 }
 
 async function runPreview(rest: string[]): Promise<void> {
+  const { distDir, serverEntry } = resolveServePaths();
   if (existsSync(serverEntry)) {
     console.error(
       `[openElement preview] This project has request-time routes (${DEFAULT_OUT_DIR}/server).\n` +
@@ -308,6 +320,8 @@ async function runPreview(rest: string[]): Promise<void> {
 }
 
 async function runStart(): Promise<void> {
+  const { distDir, serverEntry } = resolveServePaths();
+  const hostname = resolveHostname();
   const rawPort = process.env['OPEN_ELEMENT_PORT'] ?? process.env['PORT'] ?? '4173';
   const port = parsePortValue(rawPort, 'OPEN_ELEMENT_PORT / PORT', 'start');
 

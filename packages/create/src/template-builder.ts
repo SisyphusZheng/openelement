@@ -62,7 +62,15 @@ export function assertUnifiedProductVersions(versions: ProductVersions): Product
   return versions;
 }
 
-// [sourceTemplate, targetRelativePath] pairs. The starter manifest is stored
+// [sourceTemplate, targetRelativePath] pairs — the SINGLE source for the
+// starter file mapping (M-C2). The cli.test.ts toolchain gate consumes this
+// exact list instead of keeping its own 28-pair copy, so adding a template
+// file cannot pass the scaffold and fail the gate (or vice versa).
+// The app-shell entry key (`app/islands/app-shell.tsx.tmpl`) is owned by the
+// R layout batch (app-shell → layout rename); this lane must not rename keys,
+// only de-duplicate the mechanism.
+//
+// The starter manifest is stored
 // as package.json.tmpl so the templates/ directory never looks like a nested
 // package root to npm tooling; pnpm scripts and the @openelement/* dependency
 // ranges (caret over the generated-from release — owner ruling 2026-10-09;
@@ -71,7 +79,7 @@ export function assertUnifiedProductVersions(versions: ProductVersions): Product
 // One template: the showcase starter, Tailwind-ON (the owner's single-default
 // ruling — one default, no variant pair, no flag; the demo pages and islands
 // from #1530 ride on top of the Tailwind role sheet).
-const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
+export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   // npm tarballs omit dotfiles even when a directory is included. Keep the
   // template non-hidden and write the expected dotfile into generated apps.
   ['gitignore.tmpl', '.gitignore'],

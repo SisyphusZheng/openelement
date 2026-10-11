@@ -22,6 +22,7 @@ import {
   assertUnifiedProductVersions,
   buildTemplates,
   resolveVersions,
+  TEMPLATE_FILES,
   validateProjectName,
 } from '../src/template-builder.ts';
 
@@ -520,36 +521,7 @@ const repoVpBin = join(packageDir, '..', '..', 'node_modules', '.bin', 'vp');
 const vpAvailable = existsSync(repoVpBin);
 
 /** [template payload, logical scaffold path] — the template-builder mapping. */
-const TMPL_TO_LOGICAL: Array<[string, string]> = [
-  ['gitignore.tmpl', '.gitignore'],
-  ['README.tmpl', 'README.md'],
-  ['package.json.tmpl', 'package.json'],
-  ['pnpm-workspace.yaml.tmpl', 'pnpm-workspace.yaml'],
-  ['tsconfig.json.tmpl', 'tsconfig.json'],
-  ['vite.config.ts.tmpl', 'vite.config.ts'],
-  ['openelement.config.ts.tmpl', 'openelement.config.ts'],
-  ['app/head.tsx.tmpl', 'app/head.tsx'],
-  ['app/styles/theme.css', 'app/styles/theme.css'],
-  ['app/styles/recipes.css', 'app/styles/recipes.css'],
-  ['app/components/site-chrome.css', 'app/components/site-chrome.css'],
-  ['app/components/badges.css', 'app/components/badges.css'],
-  ['app/components/page-home.css', 'app/components/page-home.css'],
-  ['app/components/page-about.css', 'app/components/page-about.css'],
-  ['app/components/page-404.css', 'app/components/page-404.css'],
-  ['app/components/page-home.tsx.tmpl', 'app/components/page-home.tsx'],
-  ['app/components/page-about.tsx.tmpl', 'app/components/page-about.tsx'],
-  ['app/components/page-404.tsx.tmpl', 'app/components/page-404.tsx'],
-  ['app/routes/index.tsx.tmpl', 'app/routes/index.tsx'],
-  ['app/routes/about.tsx.tmpl', 'app/routes/about.tsx'],
-  ['app/routes/404.tsx.tmpl', 'app/routes/404.tsx'],
-  ['app/routes/api/ping.ts.tmpl', 'app/routes/api/ping.ts'],
-  ['app/islands/app-shell.tsx.tmpl', 'app/islands/app-shell.tsx'],
-  ['app/islands/my-counter.tsx.tmpl', 'app/islands/my-counter.tsx'],
-  ['app/islands/my-counter.css', 'app/islands/my-counter.css'],
-  ['app/islands/live-timer.tsx.tmpl', 'app/islands/live-timer.tsx'],
-  ['app/islands/live-timer.css', 'app/islands/live-timer.css'],
-  ['public/openelement-mark.svg', 'public/openelement-mark.svg'],
-];
+const TMPL_TO_LOGICAL: ReadonlyArray<readonly [string, string]> = TEMPLATE_FILES;
 
 test.skipIf(!vpAvailable)(
   'the template payload passes the vp toolchain it ships to (fmt + lint on logical copies)',

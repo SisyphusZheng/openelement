@@ -195,6 +195,20 @@ export async function dispatchRequest(
   const { distDir, serverMod, env, onHandlerError } = options;
   const url = new URL(request.url);
 
+  // Malformed-% parity (M-R7): the static layer answers a malformed
+  // percent-encoding with 400 (tryStatic below), while route params
+  // deliberately preserve the raw value for in-app/SPA matching (pinned by
+  // client-router and admission-parity tests — match() cannot answer HTTP
+  // statuses). At this HTTP edge the two must agree, so a malformed pathname
+  // is a 400 before the admitted/static split — including admitted
+  // request-time paths, which otherwise reached the server with raw params.
+  try {
+    decodeURIComponent(url.pathname);
+  } catch (err) {
+    if (isMalformedUrlError(err)) return new Response('Bad Request', { status: 400 });
+    throw err;
+  }
+
   const invokeServer = async (): Promise<Response> => {
     try {
       return await serverMod!.default!({ req: request, env });

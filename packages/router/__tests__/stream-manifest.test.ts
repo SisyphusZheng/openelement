@@ -729,13 +729,27 @@ test('generated entry rejects opaque stream descriptors before serving GET', asy
       },
     };
     mod.__assertStreamRoute(pageModule, '/', 'index.tsx', routes[0].streamManifest);
+    // M-R4: the defer list is a SET — the same fields in authored-vs-program
+    // order must not trip STREAM_DECLARATION_MISMATCH (key-order drift used
+    // to false-positive here). A genuinely different set still throws.
+    mod.__assertStreamRoute(
+      {
+        default: {
+          ...pageModule.default,
+          openElementPage: { renderIntent: { stream: { defer: ['second', 'first'] } } },
+        },
+      },
+      '/',
+      'index.tsx',
+      routes[0].streamManifest,
+    );
     assertThrowsIncludes(
       () =>
         mod.__assertStreamRoute(
           {
             default: {
               ...pageModule.default,
-              openElementPage: { renderIntent: { stream: { defer: ['second', 'first'] } } },
+              openElementPage: { renderIntent: { stream: { defer: ['first', 'third'] } } },
             },
           },
           '/',

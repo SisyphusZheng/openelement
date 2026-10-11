@@ -68,6 +68,38 @@ test('dispatchRequest shares mutating and styled-fallback production semantics (
   }
 });
 
+test('dispatchRequest answers malformed percent-encoding with 400 on every path (M-R7)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'oe-'));
+  let serverCalls = 0;
+  try {
+    await writeFile(join(root, 'index.html'), '<h1>static home</h1>');
+    const serverMod = {
+      // '/item/%zz' is admitted: without the edge check it would reach the
+      // server with raw params. Parity demands the same 400 the static
+      // layer answers for non-admitted paths.
+      isRequestTimePath: (pathname: string) => pathname === '/item/%zz',
+      default: () => {
+        serverCalls++;
+        return Promise.resolve(new Response('request-time'));
+      },
+    };
+    const admitted = await dispatchRequest(new Request('http://example.test/item/%zz'), {
+      distDir: root,
+      serverMod,
+    });
+    expect(admitted.status).toEqual(400);
+    expect(await admitted.text()).toEqual('Bad Request');
+    const staticSide = await dispatchRequest(new Request('http://example.test/%zz'), {
+      distDir: root,
+      serverMod,
+    });
+    expect(staticSide.status).toEqual(400);
+    expect(serverCalls).toEqual(0);
+  } finally {
+    await rm(root, { recursive: true });
+  }
+});
+
 test('contentTypeFor uses the maintained mime database (#732)', () => {
   expect(contentTypeFor('/d/index.html')).toEqual('text/html; charset=UTF-8');
   expect(contentTypeFor('/d/app.js')).toEqual('text/javascript; charset=UTF-8');
