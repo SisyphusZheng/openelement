@@ -7,12 +7,13 @@
  */
 
 import type { ComponentLayer, HydrationStrategy } from './framework.ts';
+import type { ErrorPhase } from './errors.ts';
 
 /** One render failure record the SSR pipeline reports. */
 export interface RenderError {
   code: string;
   severity: 'error' | 'warning';
-  phase: string;
+  phase: ErrorPhase;
   tagName: string;
   message: string;
   recoverable: boolean;

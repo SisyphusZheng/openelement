@@ -127,8 +127,12 @@ export interface LitPageRendererDeps {
  */
 export function createLitPageRenderer(deps: LitPageRendererDeps): PageSsrRenderer {
   const { renderLitPageToHtml } = deps;
-  // depth/projectedChildren are accepted for call-site compatibility and
-  // deliberately ignored: nested composition is lit-ssr's job, no adapter code.
+  // depth/projectedChildren/sourceInfo are accepted for call-site compatibility
+  // and deliberately ignored: nested composition is lit-ssr's job (no adapter
+  // code), there is no app-shell slot claim on this path (nothing to project),
+  // and lit-ssr carries no route/source diagnostics channel — so sourceInfo
+  // would have nowhere to go. If lit-ssr ever gains one, thread it here; until
+  // then the drop is explicit, not an oversight (H2余).
   return (tag, props = {}) => renderLitPageToHtml({ tag, props }).html;
 }
 

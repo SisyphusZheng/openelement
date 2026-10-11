@@ -42,7 +42,7 @@ export interface SsgRenderOptions {
   middleware?: {
     csp?: { policy?: string; reportOnly?: boolean; nonce?: boolean };
   };
-  upgradeStrategy?: string;
+  upgradeStrategy?: HydrationStrategy;
   viewTransition?: boolean;
   speculation?: boolean | Record<string, unknown>;
   islandTagNames?: string[];
@@ -86,11 +86,23 @@ export interface SsgRenderSummary {
 
 // ─── Entry generator types ───────────────────────────────────
 
-/** Client island entry shape passed to entry generator. */
-export interface ClientIslandEntry {
+/**
+ * Shared island module identity (CL-3 convergence: one base, three shapes). Every island record names the same module the same way — the tag
+ * it registers as, the module path that owns it, and whether that module is
+ * a package (CEM-derived named export) rather than a local file (default
+ * export) — so a rename of the identity touches one declaration, not three.
+ * The delivery-strategy fields intentionally stay per-shape (`strategy` on
+ * the client entry vs `hydrate` on the build decls): they are different
+ * stages' vocabularies, not one field spelled two ways.
+ */
+export interface IslandModuleIdentity {
   tagName: string;
   modulePath: string;
   isPackage?: boolean;
+}
+
+/** Client island entry shape passed to entry generator. */
+export interface ClientIslandEntry extends IslandModuleIdentity {
   /**
    * Optional named export to register as the custom element constructor.
    * When set (package islands whose chunk dropped `export default` per #638),
@@ -171,10 +183,7 @@ export interface PageRouteDecl {
 }
 
 /** One island the build admits: tag, module path, and delivery facts. */
-export interface IslandDecl {
-  tagName: string;
-  modulePath: string;
-  isPackage?: boolean;
+export interface IslandDecl extends IslandModuleIdentity {
   /**
    * Optional named export to register as the custom element constructor.
    * Set for package islands from the manifest declaration's `className`
@@ -350,7 +359,7 @@ export interface RouteInfoEntry {
   isDynamic: boolean;
   paramNames: string[];
   /** Rendering mode declared via renderIntent.mode ("static" when unset; the "auto" alias is rejected, #609). */
-  rendering?: string;
+  rendering?: 'static' | 'dynamic';
   /** True when the route module exports an action (request-time form POST). */
   hasAction?: boolean;
   streamManifest?: StreamRouteManifest;
@@ -433,10 +442,7 @@ export interface BuildRouteInput {
 }
 
 /** A single island input to the build pipeline. */
-export interface BuildIslandInput {
-  tagName: string;
-  modulePath: string;
-  isPackage?: boolean;
+export interface BuildIslandInput extends IslandModuleIdentity {
   hydrate?: IslandDeliveryStrategy;
   ssr?: boolean;
   dsd?: boolean;

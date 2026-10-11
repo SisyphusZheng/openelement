@@ -7,6 +7,7 @@ export * from './framework.js';
 export * from './island-admission.js';
 export * from './island.js';
 export * from './manifest.js';
+export * from './module-descriptors.js';
 export * from './module-vocabulary.js';
 export * from './part-program.js';
 export * from './policy.js';
