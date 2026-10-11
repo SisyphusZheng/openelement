@@ -50,7 +50,7 @@ import {
 import { escapeAttr } from '../../core/html-escape.ts';
 // Canonical each-Region item-key derivation (#1374): single source shared
 // with the runtime executors; do not reintroduce a private copy.
-import { itemTemplateFields } from '../runtime/program-kernel.ts';
+import { displayValue, itemTemplateFields, itemValue } from '../runtime/program-kernel.ts';
 // The one facade-domain root-mode union, owned by the runtime kernel and
 // re-exported below for the server options surface.
 import type { CompiledRootMode } from '../runtime/kernel.ts';
@@ -353,17 +353,8 @@ function serializerSeams(
       const value = serializeItemAttribute((item as Record<string, unknown>)[field]);
       return value === null ? null : { name, value, bare: value === '' };
     },
-    itemTextValue: (part, node, item) => {
-      const field = node.field ?? part.field;
-      if (field === undefined) {
-        throw new CompiledProgramValidationError(
-          `parts[${part.index}].item`,
-          'item value slot needs a field',
-        );
-      }
-      return String((item as Record<string, unknown>)[field]);
-    },
-    textPartValue: (value) => String(value),
+    itemTextValue: (part, node, item) => displayValue(itemValue(part, item, node.field)),
+    textPartValue: displayValue,
     whenHolds: (part, value) => whenIsActive(part, value),
     regionItems: (part, value) => itemsFor(part, value),
     escapeAttr,

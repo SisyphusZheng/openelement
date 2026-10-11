@@ -27,6 +27,9 @@
     "src/authoring.ts",
     "src/html.ts",
     "src/logger.ts",
-    "src/build-utils.ts"
+    "src/build-utils.ts",
+    "src/css-modules.d.ts",
+    "src/no-regions.ts",
+    "src/base.ts"
   ]
 }

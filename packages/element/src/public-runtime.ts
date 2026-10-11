@@ -254,7 +254,7 @@ function seedCompiledProperties(
         get value(): never {
           throw new OpenElementError(
             `[openElement] pending property "${record.name}" was read while creating a deferred shell.`,
-            { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+            { code: FacadeErrorCode.DEFERRED_PENDING_READ, phase: 'ssr' },
           );
         },
         subscribe: () => () => {},
@@ -335,7 +335,7 @@ function jsonSeed(value: unknown, field: string): unknown {
   const reject = (): never => {
     throw new OpenElementError(
       `[openElement] deferred property "${field}" is not a JSON-safe typed value.`,
-      { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+      { code: FacadeErrorCode.DEFERRED_VALUE_NOT_SERIALIZABLE, phase: 'ssr' },
     );
   };
   const seen = new Set<object>();
@@ -389,7 +389,7 @@ export async function createDeferredDsdExecutor(
     typeof options.manifest.program.sha256 !== 'string'
   ) {
     throw new OpenElementError('[openElement] deferred route manifest is malformed.', {
-      code: FacadeErrorCode.PROGRAM_MISSING,
+      code: FacadeErrorCode.DEFERRED_MANIFEST_MALFORMED,
       phase: 'ssr',
     });
   }
@@ -407,7 +407,7 @@ export async function createDeferredDsdExecutor(
   ) {
     throw new OpenElementError(
       `[openElement] deferred route manifest does not match compiled program <${program.tag}>.`,
-      { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+      { code: FacadeErrorCode.DEFERRED_MANIFEST_MISMATCH, phase: 'ssr' },
     );
   }
   const properties = Array.isArray(ctor.__compiledProperties)
@@ -421,7 +421,7 @@ export async function createDeferredDsdExecutor(
   ) {
     throw new OpenElementError(
       '[openElement] reserved compiled property name cannot enter a deferred seed.',
-      { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+      { code: FacadeErrorCode.DEFERRED_RESERVED_PROPERTY, phase: 'ssr' },
     );
   }
   // Same bounded budget the build manifest scan and the runtime/browser
@@ -438,7 +438,7 @@ export async function createDeferredDsdExecutor(
         `deferred budget: ${manifest.fields.length} fields (max ${STREAM_MAX_FIELDS}), ` +
         `${manifestOwnerTotal} Part owners (max ${STREAM_MAX_OWNERS}). Defer fewer fields, reduce ` +
         'the deferred sinks per field, or split the page.',
-      { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+      { code: FacadeErrorCode.DEFERRED_BUDGET_EXCEEDED, phase: 'ssr' },
     );
   }
   const propertyNames = new Set(properties.map((record) => record.name));
@@ -454,14 +454,14 @@ export async function createDeferredDsdExecutor(
     ) {
       throw new OpenElementError(
         `[openElement] invalid deferred field "${field.field}" in route manifest.`,
-        { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+        { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
       );
     }
     const record = properties.find((property) => property.name === field.field)!;
     if (record.computed || record.attribute !== null || record.reflect) {
       throw new OpenElementError(
         `[openElement] deferred property "${field.field}" must be writable and nonreflecting.`,
-        { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+        { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
       );
     }
     pending.add(field.field);
@@ -477,7 +477,7 @@ export async function createDeferredDsdExecutor(
       ) {
         throw new OpenElementError(
           `[openElement] deferred field "${field.field}" has an invalid Part owner ${owner.index}.`,
-          { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+          { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
         );
       }
       selectedParts.push(owner.index);
@@ -485,7 +485,7 @@ export async function createDeferredDsdExecutor(
     if (field.owners.length === 0) {
       throw new OpenElementError(
         `[openElement] deferred field "${field.field}" has no Part owners.`,
-        { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+        { code: FacadeErrorCode.DEFERRED_FIELD_INVALID, phase: 'ssr' },
       );
     }
   }
@@ -519,7 +519,7 @@ export async function createDeferredDsdExecutor(
         Object.keys(seed).length
       } properties; the browser seed contract accepts at most ${STREAM_MAX_SEED_PROPERTIES}. ` +
         'Trim the component property surface or the seed is silently rejected at hydration.',
-      { code: FacadeErrorCode.PROGRAM_MISSING, phase: 'ssr' },
+      { code: FacadeErrorCode.DEFERRED_BUDGET_EXCEEDED, phase: 'ssr' },
     );
   }
   if (options.documentToken) {
@@ -562,7 +562,7 @@ export async function createDeferredDsdExecutor(
       const record = deferredProperties.get(field);
       if (!record) {
         throw new OpenElementError(`[openElement] unknown deferred field "${field}".`, {
-          code: FacadeErrorCode.PROGRAM_MISSING,
+          code: FacadeErrorCode.DEFERRED_UNKNOWN_FIELD,
           phase: 'ssr',
         });
       }
@@ -572,7 +572,7 @@ export async function createDeferredDsdExecutor(
       const entry = manifest.fields.find((candidate) => candidate.field === field);
       if (!entry) {
         throw new OpenElementError(`[openElement] unknown deferred field "${field}".`, {
-          code: FacadeErrorCode.PROGRAM_MISSING,
+          code: FacadeErrorCode.DEFERRED_UNKNOWN_FIELD,
           phase: 'ssr',
         });
       }
