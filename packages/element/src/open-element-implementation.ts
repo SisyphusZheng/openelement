@@ -358,8 +358,18 @@ export class OpenElement extends OpenElementConfiguration {
       this.#streamUnsubscribe = stream?.listen((part, field, outcome) => {
         if (outcome !== 'content') return;
         const seed = stream.properties[field];
+        if (!seed || seed.state !== 'resolved') return;
         const property = state.properties.find((item) => item.name === field);
-        if (!seed || seed.state !== 'resolved' || property?.type !== seed.type) return;
+        if (property?.type !== seed.type) {
+          // Late-frame type drift fails exactly like the connect-time seed
+          // check above (STREAM_TYPE_MISMATCH): the stream runtime reports a
+          // throwing listener loudly, so this frame is diagnosed instead of
+          // silently dropped while the signal keeps a stale value.
+          throw new OpenElementError(
+            `[openElement] streamed property "${field}" has a mismatched type.`,
+            { code: FacadeErrorCode.STREAM_TYPE_MISMATCH, phase: 'csr' },
+          );
+        }
         state.signals[field].value = seed.value;
         kernel.resolveStreamPart(part);
       });

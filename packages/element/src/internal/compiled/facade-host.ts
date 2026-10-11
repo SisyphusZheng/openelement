@@ -127,6 +127,31 @@ function ownDataValue(element: object, name: string): { found: boolean; value?: 
 }
 
 /**
+ * Key-order-insensitive structural serialization: JSON.stringify is
+ * key-order-sensitive, so a pre-upgrade value that merely restates the
+ * compiled default with reordered keys would compare unequal and clobber the
+ * SSR attribute promotion. Object keys sort recursively; every other value
+ * renders exactly as JSON.stringify renders it (including toJSON and the
+ * undefined/function/symbol elisions).
+ */
+function canonicalJson(value: unknown): string | undefined {
+  if (value !== null && typeof value === 'object') {
+    const toJson = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJson === 'function') return canonicalJson((toJson as () => unknown).call(value));
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => canonicalJson(item) ?? 'null').join(',')}]`;
+    }
+    const entries: string[] = [];
+    for (const key of Object.keys(value).sort()) {
+      const rendered = canonicalJson((value as Record<string, unknown>)[key]);
+      if (rendered !== undefined) entries.push(`${JSON.stringify(key)}:${rendered}`);
+    }
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) as string | undefined;
+}
+
+/**
  * Whether an own data property value merely restates the compiled default
  * (the generated field initializer's contract, see reconcileOwnProperties)
  * rather than carrying a real pre-upgrade assignment. Arrays/objects compare
@@ -137,7 +162,7 @@ function restatesDefault(record: CompiledPropertyMetadata, value: unknown): bool
   const fallback = record.default;
   if (value === fallback) return true;
   if (Array.isArray(fallback) || (typeof fallback === 'object' && fallback !== null)) {
-    return JSON.stringify(value) === JSON.stringify(fallback);
+    return canonicalJson(value) === canonicalJson(fallback);
   }
   return false;
 }

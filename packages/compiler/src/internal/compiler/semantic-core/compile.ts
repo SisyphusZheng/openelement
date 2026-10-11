@@ -107,7 +107,11 @@ export function compileElementProgram(
   const sf = parsed.sourceFile;
   const syntaxDiagnostics = parsed.syntaxDiagnostics;
   if (syntaxDiagnostics.length > 0) {
-    throw new CompiledElementError([parseDiagnostic(sf, syntaxDiagnostics[0])]);
+    // Loud about all of them: the error carries every ordered syntax
+    // diagnostic (count included), not just the first.
+    throw new CompiledElementError(
+      syntaxDiagnostics.map((diagnostic) => parseDiagnostic(sf, diagnostic)),
+    );
   }
 
   // The explicit annotation keeps the never-return narrowing TS grants

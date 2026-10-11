@@ -179,6 +179,16 @@ function claimElementAttributes(
       if (dynamic.has(name)) continue;
       if (!actualNames.includes(name)) claimFailure(path, `missing attribute "${name}"`, owner);
     }
+  } else {
+    // No attribute-name inspection API: the reverse direction of the
+    // dual-compare cannot run, so this range is unverifiable — fail the claim
+    // (bounded recovery rebuilds exactly this range) instead of silently
+    // waving an unchecked element through.
+    claimFailure(
+      path,
+      'cannot verify attributes: Element.getAttributeNames is unavailable in this DOM',
+      owner,
+    );
   }
 }
 

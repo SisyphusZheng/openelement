@@ -156,6 +156,9 @@ class FElement extends FNodeBase {
   getAttribute(name: string): string | null {
     return this.attributes.has(name) ? this.attributes.get(name)! : null;
   }
+  getAttributeNames(): string[] {
+    return [...this.attributes.keys()];
+  }
   addEventListener(type: string, listener: FListener): void {
     if (!this.listeners.has(type)) this.listeners.set(type, new Set());
     this.listeners.get(type)!.add(listener);

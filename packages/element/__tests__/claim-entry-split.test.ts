@@ -62,6 +62,7 @@ const DOM_SHIM = `
         child.parentNode = null; return child;
       },
       setAttribute() {}, removeAttribute() {}, getAttribute() { return null; },
+      getAttributeNames() { return []; },
       hasAttribute() { return false; }, addEventListener() {}, removeEventListener() {},
       querySelector() { return null; }, querySelectorAll() { return []; },
     };

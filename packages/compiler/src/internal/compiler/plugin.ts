@@ -228,7 +228,8 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
             // location the build overlay underlines.
             this.error({
               id,
-              loc: { file: id, line: first.line - 1, column: first.character - 1 },
+              // 1-based, the same base diagnosticPluginError reports — one loc shape.
+              loc: { file: id, line: first.line, column: first.character },
               message:
                 `[open:compiled-element] the compiler emitted a module that does not ` +
                 `type-check (${diagnostics.length} diagnostic(s); TS${first.code}: ` +

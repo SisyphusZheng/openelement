@@ -162,6 +162,12 @@ export interface ModuleIntrinsicBindings {
     module: string | readonly string[],
     imported: string,
   ): boolean;
+  /**
+   * True when the module binds the name itself (top-level local declaration
+   * or any import): such a spelling never refers to a platform global. Same
+   * top-level-only shadowing discipline the intrinsic resolution uses.
+   */
+  hasModuleScopeBinding(localName: string): boolean;
 }
 
 /**
@@ -391,6 +397,9 @@ export function createModuleIntrinsicBindings(
         !bindings[0].typeOnly
       );
     },
+    hasModuleScopeBinding(localName) {
+      return locals.has(localName) || imports.has(localName);
+    },
   };
 }
 
@@ -403,6 +412,36 @@ function stringArgument(call: ts.CallExpression, index = 0): string | undefined 
   return argument && (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument))
     ? argument.text
     : undefined;
+}
+
+/**
+ * Whether a `.define(...)` callee object is the platform CustomElementRegistry:
+ * a bare module-unbound `customElements` global, or the registry reached
+ * through an unambiguous unbound global qualifier
+ * (`window.`/`globalThis.`/`self.`). Raw text matching misfires both ways — a
+ * module-scope `customElements` binding (import or local) is a shadow, not the
+ * registry, while a qualified global spelling is the registry and must count.
+ */
+function isCustomElementsRegistry(
+  object: ts.Expression,
+  imports: ModuleIntrinsicBindings,
+): boolean {
+  if (ts.isIdentifier(object)) {
+    return object.text === 'customElements' && !imports.hasModuleScopeBinding(object.text);
+  }
+  if (
+    ts.isPropertyAccessExpression(object) &&
+    object.name.text === 'customElements' &&
+    ts.isIdentifier(object.expression) &&
+    !imports.hasModuleScopeBinding(object.expression.text)
+  ) {
+    return (
+      object.expression.text === 'window' ||
+      object.expression.text === 'globalThis' ||
+      object.expression.text === 'self'
+    );
+  }
+  return false;
 }
 
 /**
@@ -586,8 +625,8 @@ export function analyzeModuleSemantics(
         }
       } else if (
         ts.isPropertyAccessExpression(expression) &&
-        expression.expression.getText(sourceFile) === 'customElements' &&
-        expression.name.text === 'define'
+        expression.name.text === 'define' &&
+        isCustomElementsRegistry(expression.expression, imports)
       ) {
         const tag = stringArgument(node);
         if (tag && isCustomElementTag(tag)) defined.add(tag);

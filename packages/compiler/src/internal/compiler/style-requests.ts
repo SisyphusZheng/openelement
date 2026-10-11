@@ -82,10 +82,18 @@ export function styleRequestModuleId(importerId: string, specifier: string): str
 /**
  * The sheet file's absolute path for one authored edge: the importing
  * module's directory joined with the authored specifier. Relative specifiers
- * only (the compiler refuses bare ones), so the join is total.
+ * only (the compiler refuses bare ones), so the join is total. Parent
+ * segments (`../theme.css`) resolve lexically against the directory — the key
+ * must be the path the bundler's resolver lands on, never a verbatim `..`
+ * id no lookup can match.
  */
 export function styleRequestFile(importerId: string, specifier: string): string {
   const clean = cleanImporterId(importerId);
-  const directory = clean.slice(0, clean.lastIndexOf('/'));
-  return `${directory}/${specifier.replace(/^\.\//, '')}`;
+  const segments = clean.slice(0, clean.lastIndexOf('/')).split('/');
+  for (const segment of specifier.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') segments.pop();
+    else segments.push(segment);
+  }
+  return segments.join('/');
 }
