@@ -10,6 +10,7 @@ import { CompiledElementError, sourceRange } from './compiler-diagnostics.ts';
 import { type AnalyzedModule } from './analyze-module.ts';
 import type { Lowering } from './lower-program.ts';
 import {
+  PART_PROGRAM_VERSION,
   type CompiledElementMetadata,
   type PartProgramV1,
   type ProgramElementNode,
@@ -129,12 +130,15 @@ export function buildPartProgram(input: EmitProgramInput): EmitProgramResult {
     ...lowering.sourceRecords,
   ];
   const program: PartProgramV1 = {
-    version: 1,
+    version: PART_PROGRAM_VERSION,
     tag,
     root: { id: 'root', kind: rootKind, nodes: [root.id] },
     template: [root],
     parts: lowering.parts,
-    regions: lowering.regions,
+    blocks: lowering.blocks,
+    // Transitional `regions` mirror (alpha15 R batch 1): batch-4 readers still
+    // read this key — always the identical array; the validator rejects drift.
+    regions: lowering.blocks,
     dependencies: lowering.dependencies,
     locations: lowering.locations,
     sourceMap: { version: 1, file: fileName, records: sourceRecords },

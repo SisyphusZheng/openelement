@@ -85,7 +85,7 @@ function duplicateKeyMessage(ctx: MountContext, part: ProgramEachPart, key: stri
   );
 }
 
-export interface WhenRegion {
+export interface WhenBlock {
   ctx: MountContext;
   part: ProgramWhenPart;
   scope: LifetimeScope;
@@ -97,6 +97,13 @@ export interface WhenRegion {
   item: unknown;
   itemPart?: ProgramEachPart;
 }
+
+/**
+ * Transitional alias of {@linkcode WhenBlock} (alpha15 R batch 1). Batch-2
+ * files (`claim.ts`, `regions-seam.ts`) still reference this name; batch 2
+ * moves them and removes the alias.
+ */
+export type WhenRegion = WhenBlock;
 
 export interface ItemValueSlot {
   text?: Text;
@@ -138,7 +145,7 @@ export interface EachEntry {
   itemBox: ItemBox;
 }
 
-export interface EachRegion {
+export interface EachBlock {
   ctx: MountContext;
   part: ProgramEachPart;
   scope: LifetimeScope;
@@ -148,6 +155,13 @@ export interface EachRegion {
   byKey: Map<string, EachEntry>;
   item: unknown;
 }
+
+/**
+ * Transitional alias of {@linkcode EachBlock} (alpha15 R batch 1). Batch-2
+ * files (`claim.ts`, `regions-seam.ts`) still reference this name; batch 2
+ * moves them and removes the alias.
+ */
+export type EachRegion = EachBlock;
 
 export function whenActive(part: ProgramWhenPart, value: unknown): boolean {
   // Canonical condition evaluation (#1372) — shared with the server

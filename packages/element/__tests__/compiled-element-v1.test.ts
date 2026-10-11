@@ -192,7 +192,7 @@ describe('compiled-element v1 - fixture transforms through the Vite hook', () =>
 
   test('program carries static structure plus typed Part/Region instructions', () => {
     const program = JSON.parse(programLiteral(emitted!));
-    expect(program.version).toEqual(1);
+    expect(program.version).toEqual(2);
     const kinds = program.parts.map((p: { k: string }) => p.k).sort();
     expect(kinds).toEqual(['each', 'event', 'prop', 'text', 'when']);
     // instruction count = typed parts; static structure lives in the template
@@ -640,7 +640,7 @@ test('compiled-element alpha.1 - canonical program records and decorator lowerin
   const end = emitted.indexOf(';', start);
   const program = JSON.parse(emitted.slice(start + marker.length, end));
 
-  expect(program.version).toEqual(1);
+  expect(program.version).toEqual(2);
   expect(program.root).toEqual({ id: 'root', kind: 'light', nodes: ['e0'] });
   expect(program.parts.map((part: { k: string }) => part.k)).toEqual(['bool', 'event', 'text']);
   expect(program.parts[0].location).toEqual({
@@ -735,11 +735,11 @@ test('compiled-element alpha.1 - program validation fails closed on unsafe ident
     'must use item field',
   );
 
-  const mismatchedRegionSource = structuredClone(program) as {
-    regions: Array<{ source: string }>;
+  const mismatchedBlockSource = structuredClone(program) as {
+    blocks: Array<{ source: string }>;
   };
-  mismatchedRegionSource.regions[0].source = 'p0';
-  assertThrowsIncludes(() => validatePartProgram(mismatchedRegionSource), Error, 'regions[0]');
+  mismatchedBlockSource.blocks[0].source = 'p0';
+  assertThrowsIncludes(() => validatePartProgram(mismatchedBlockSource), Error, 'blocks[0]');
 
   const unknownPart = structuredClone(program) as { parts: Array<{ k: string }> };
   unknownPart.parts[0].k = 'future';

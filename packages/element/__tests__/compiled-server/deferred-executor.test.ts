@@ -6,6 +6,7 @@ import {
   serializeCompiledProgram,
 } from '../../src/internal/compiled/server/index.ts';
 import type { PartProgramV1 } from '@openelement/protocol/part-program';
+import { PART_PROGRAM_VERSION } from '@openelement/protocol/part-program';
 import { testProgram } from '../compiled-runtime/test-program.ts';
 
 const program = testProgram({
@@ -73,7 +74,7 @@ const resolvedHost = {
   },
 };
 function owner(p: PartProgramV1 = program, instanceId = 'instance-1'): DeferredServerOwner {
-  return { program: p, version: 1, instanceId };
+  return { program: p, version: PART_PROGRAM_VERSION, instanceId };
 }
 
 test('deferred server mode reads only fast signals and preserves regular SSR bytes', () => {
@@ -198,18 +199,18 @@ test('deferred executor rejects unknown, duplicate, ineligible and foreign owner
   assertThrowsIncludes(
     () =>
       createDeferredServerExecutor(program, resolvedHost, {
-        owner: { ...identity, version: 2 },
+        owner: { ...identity, version: 99 },
         pendingParts: [0],
       }),
     Error,
     'version',
   );
   const wrongVersion = structuredClone(program);
-  (wrongVersion as { version: number }).version = 2;
+  (wrongVersion as { version: number }).version = 99;
   assertThrowsIncludes(
     () =>
       createDeferredServerExecutor(wrongVersion, resolvedHost, {
-        owner: { program: wrongVersion, version: 2, instanceId: 'instance-1' },
+        owner: { program: wrongVersion, version: 99, instanceId: 'instance-1' },
         pendingParts: [0],
       }),
     Error,

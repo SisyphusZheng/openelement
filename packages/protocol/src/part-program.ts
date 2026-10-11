@@ -18,8 +18,8 @@ import { VOID_TAGS } from './void-tags.ts';
 
 export { VOID_TAGS };
 
-/** The Part Program IR version this package defines (currently v1). */
-export const PART_PROGRAM_VERSION = 1 as const;
+/** The Part Program IR version this package defines (currently v2). */
+export const PART_PROGRAM_VERSION = 2 as const;
 
 /**
  * Version of the compiled-module ABI: the statics a generated module carries
@@ -352,8 +352,8 @@ export type ProgramPart =
   | ProgramWhenPart
   | ProgramEachPart;
 
-/** One region the program tracks: the boundaries of a dynamic subtree. */
-export interface ProgramRegionRecord {
+/** One block the program tracks: the boundaries of a dynamic subtree. */
+export interface ProgramBlockRecord {
   id: string;
   index: number;
   kind: 'when' | 'each';
@@ -426,7 +426,15 @@ export interface PartProgramV1 {
   root: ProgramRoot;
   template: ProgramTreeNode[];
   parts: ProgramPart[];
-  regions: ProgramRegionRecord[];
+  blocks: ProgramBlockRecord[];
+  /**
+   * Transitional mirror of {@linkcode PartProgramV1.blocks} (alpha15 R batch 1).
+   * Batch-4 readers (`islandsMightUseRegions`) still read this key; the emitter
+   * always writes both keys with identical content and the validator rejects a
+   * divergent mirror. Batch 4 removes this key once every reader moves to
+   * `blocks`.
+   */
+  regions: ProgramBlockRecord[];
   dependencies: ProgramDependencyRecord[];
   locations: ProgramLocationRecord[];
   /**
@@ -883,6 +891,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
       'root',
       'template',
       'parts',
+      'blocks',
       'regions',
       'dependencies',
       'locations',
@@ -891,7 +900,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
     ],
     'program',
   );
-  if (raw.version !== PART_PROGRAM_VERSION) fail('version must be 1');
+  if (raw.version !== PART_PROGRAM_VERSION) fail('version must be 2');
   if (typeof raw.tag !== 'string' || !/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(raw.tag)) {
     fail('tag must be a custom-element tag name');
   }
@@ -1205,35 +1214,41 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
     }
   }
 
-  if (!Array.isArray(raw.regions)) fail('regions must be an array');
-  const regions = raw.regions as ProgramRegionRecord[];
+  if (!Array.isArray(raw.blocks)) fail('blocks must be an array');
+  const blocks = raw.blocks as ProgramBlockRecord[];
   const regionParts = parts.filter(isRegion);
-  if (regions.length !== regionParts.length) {
-    fail('regions must describe every Region part exactly once');
+  if (blocks.length !== regionParts.length) {
+    fail('blocks must describe every Block part exactly once');
   }
-  regions.forEach((region, position) => {
-    if (isRecord(region)) {
+  blocks.forEach((block, position) => {
+    if (isRecord(block)) {
       validateKeys(
-        region,
+        block,
         ['id', 'index', 'kind', 'anchor', 'end', 'source'],
-        `regions[${position}]`,
+        `blocks[${position}]`,
       );
     }
     if (
-      !isRecord(region) ||
-      region.id !== `r${region.index}` ||
-      region.index !== regionParts[position].index ||
-      (region.kind !== 'when' && region.kind !== 'each') ||
-      region.anchor !== `p${region.index}` ||
-      region.end !== `p${region.index}:end` ||
-      region.source !== `p${region.index}`
+      !isRecord(block) ||
+      block.id !== `r${block.index}` ||
+      block.index !== regionParts[position].index ||
+      (block.kind !== 'when' && block.kind !== 'each') ||
+      block.anchor !== `p${block.index}` ||
+      block.end !== `p${block.index}:end` ||
+      block.source !== `p${block.index}`
     ) {
-      fail(`regions[${position}] has an invalid Region record`);
+      fail(`blocks[${position}] has an invalid Block record`);
     }
-    if (region.kind !== regionParts[position].k) {
-      fail(`regions[${position}] kind mismatches its part`);
+    if (block.kind !== regionParts[position].k) {
+      fail(`blocks[${position}] kind mismatches its part`);
     }
   });
+  // Transitional `regions` mirror (alpha15 R batch 1): batch-4 readers still
+  // read it, so a present mirror must equal `blocks`; absence is tolerated so
+  // blocks-only programs keep validating after batch 4 drops the mirror.
+  if (raw.regions !== undefined && JSON.stringify(raw.regions) !== JSON.stringify(raw.blocks)) {
+    fail('regions mirror must equal blocks');
+  }
 
   if (!Array.isArray(raw.dependencies)) fail('dependencies must be an array');
   const dependencies = raw.dependencies as ProgramDependencyRecord[];
@@ -1560,7 +1575,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
       'root',
       ...metadataProperties.map((property) => `property:${property.name}`),
       ...locations.map((location) => location.id),
-      ...regions.map((region) => region.id),
+      ...blocks.map((block) => block.id),
     ]);
     for (const sourceId of expectedSourceIds) {
       if (!sourceIds.has(sourceId)) fail(`sourceMap is missing record ${sourceId}`);

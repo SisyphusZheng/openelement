@@ -26,7 +26,7 @@ import {
   type ProgramLocation,
   type ProgramLocationRecord,
   type ProgramPart,
-  type ProgramRegionRecord,
+  type ProgramBlockRecord,
   type ProgramSourceRecord,
   type ProgramTreeNode,
   type PropertyValueType,
@@ -202,7 +202,7 @@ function hasMeaningfulJsxChild(sf: ts.SourceFile, child: ts.JsxChild): boolean {
 
 export class Lowering {
   readonly parts: ProgramPart[] = [];
-  readonly regions: ProgramRegionRecord[] = [];
+  readonly blocks: ProgramBlockRecord[] = [];
   readonly dependencies: ProgramDependencyRecord[] = [];
   readonly locations: ProgramLocationRecord[] = [];
   readonly sourceRecords: ProgramSourceRecord[] = [];
@@ -310,7 +310,7 @@ export class Lowering {
     const sourceKind = part.k === 'when' || part.k === 'each' ? 'region' : 'part';
     this.addSource(`p${index}`, sourceKind, node);
     if (part.k === 'when' || part.k === 'each') {
-      this.regions.push({
+      this.blocks.push({
         id: `r${index}`,
         index,
         kind: part.k,

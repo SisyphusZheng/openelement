@@ -161,7 +161,7 @@ test('deferred host owns stream identity and typed pending/resolved seed', async
   });
   expect(bridge.shell).toContain('data-oe-stream-request="request-1"');
   expect(bridge.shell).toContain('data-oe-stream-instance="instance-1"');
-  expect(bridge.shell).toContain('data-oe-stream-program="1:');
+  expect(bridge.shell).toContain('data-oe-stream-program="2:');
   expect(bridge.seed.title).toEqual({ state: 'pending', type: 'string' });
   expect(bridge.seed.count).toEqual({ state: 'resolved', type: 'number', value: 7 });
   expect(bridge.resolvedValue('title', '<safe>')).toEqual('<safe>');

@@ -678,7 +678,9 @@ export function defineIslandConfig(config: IslandConfig): IslandConfig {
     throw authoringError(
       IslandErrorCode.DESCRIPTOR_SHAPE,
       `${ERROR_PREFIX} defineIslandConfig() dsd must be a boolean. ` +
-        'Write dsd: true to emit Declarative Shadow DOM markup, or dsd: false to omit it.',
+        'Write dsd: true to keep this island in the client entry, or dsd: false to leave it out. ' +
+        'This flag only feeds the client-entry predicate — it never adds or omits DSD markup. ' +
+        "To omit DSD markup, declare the component light-DOM via @element(tag, { root: 'light' }).",
     );
   }
   if (config.hydrate !== undefined && !HYDRATION_STRATEGY_SET.has(config.hydrate)) {
