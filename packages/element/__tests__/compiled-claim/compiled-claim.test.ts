@@ -2,8 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
 import {
-  claimExistingDom as claimExistingDomCanonical,
-  PartProgramClaimError,
+  hydrateExistingDom as hydrateExistingDomCanonical,
+  PartProgramHydrationError,
 } from '../../src/internal/compiled/runtime.ts';
 import { serializeProgramContent } from '../../src/internal/compiled/server/index.ts';
 import { trustedHtml } from '../../src/internal/core/security.ts';
@@ -22,12 +22,12 @@ interface WirePreUpgradeEventCapture {
 
 interface WireClaimOptions {
   recovery?: 'throw' | 'owning';
-  onMismatch?: (error: PartProgramClaimError) => void;
+  onMismatch?: (error: PartProgramHydrationError) => void;
   preUpgradeEvents?: readonly unknown[] | WirePreUpgradeEventCapture;
   expectStaticStyle?: boolean;
 }
 
-const claimExistingDom = claimExistingDomCanonical as unknown as (
+const hydrateExistingDom = hydrateExistingDomCanonical as unknown as (
   program: unknown,
   host: unknown,
   root: Node,
@@ -376,7 +376,7 @@ test('alpha.3 claim preserves identity, live state, and one pre-upgrade event re
 
   const capture = capturePreUpgradeEvents(dom.root as unknown as EventTarget, ['click']);
   dom.button.dispatchEvent(new TestEvent('click'));
-  const instance = claimExistingDom(program, host, dom.root as unknown as Node, {
+  const instance = hydrateExistingDom(program, host, dom.root as unknown as Node, {
     preUpgradeEvents: capture,
   });
 
@@ -453,7 +453,7 @@ test('alpha.3 claim resolves fixed sinks across expanded dynamic anchors', () =>
   root.appendChild(section);
   const controls = makeHost(doc.counters);
 
-  const instance = claimExistingDom(program, controls.host, root as unknown as Node);
+  const instance = hydrateExistingDom(program, controls.host, root as unknown as Node);
   expect(section.childNodes[1] as TestElement).toBe(input);
   expect(input.value).toEqual('typed before claim');
   controls.label.value = 'after claim';
@@ -489,8 +489,8 @@ test('alpha.3 claim stages validation before resources and reports a structured 
   const counters = doc.counters;
   const { host } = makeHost(counters);
   const error = assertThrowsIncludes(
-    () => claimExistingDom(program, host, dom.root as unknown as Node),
-    PartProgramClaimError,
+    () => hydrateExistingDom(program, host, dom.root as unknown as Node),
+    PartProgramHydrationError,
   );
   expect(error.code).toEqual('OPEN_ELEMENT_COMPILED_CLAIM_MISMATCH');
   expect(error.message).toContain('template[0].children[0].children[0]');
@@ -511,10 +511,10 @@ test('alpha.3 failed claim stops a live pre-upgrade capture', async () => {
 
   assertThrowsIncludes(
     () =>
-      claimExistingDom(program, host, dom.root as unknown as Node, {
+      hydrateExistingDom(program, host, dom.root as unknown as Node, {
         preUpgradeEvents: capture,
       }),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   dom.button.dispatchEvent(new TestEvent('click'));
   expect(capture.events.length).toEqual(0);
@@ -522,7 +522,7 @@ test('alpha.3 failed claim stops a live pre-upgrade capture', async () => {
   const invalidCapture = capturePreUpgradeEvents(dom.root as unknown as EventTarget, ['click']);
   assertThrowsIncludes(
     () =>
-      claimExistingDom({ version: 99 }, host, dom.root as unknown as Node, {
+      hydrateExistingDom({ version: 99 }, host, dom.root as unknown as Node, {
         preUpgradeEvents: invalidCapture,
       }),
     Error,
@@ -639,13 +639,13 @@ test('alpha.3 owning recovery replaces only a bounded Region range', async () =>
   (dom.parity.childNodes[0] as TestText).data = 'drifted';
   const counters = doc.counters;
   const { host, count } = makeHost(counters);
-  const mismatches: PartProgramClaimError[] = [];
-  claimExistingDom(program, host, dom.root as unknown as Node, {
+  const mismatches: PartProgramHydrationError[] = [];
+  hydrateExistingDom(program, host, dom.root as unknown as Node, {
     recovery: 'owning',
     onMismatch: (error) => mismatches.push(error),
   });
   expect(mismatches.length).toEqual(1);
-  expect(mismatches[0].ownerKind).toEqual('region');
+  expect(mismatches[0].ownerKind).toEqual('block');
   expect(dom.input).toBe(surroundingInput);
   expect(dom.ul).toBe(surroundingList);
   const replacementParity = dom.div.childNodes[4] as TestElement;
@@ -662,7 +662,7 @@ test('alpha.3 detached Region anchors stop updates at the owning boundary', asyn
   const doc = new TestDocument();
   const dom = makeSsrDom(doc);
   const { host, count, items } = makeHost(doc.counters);
-  const instance = claimExistingDom(program, host, dom.root as unknown as Node);
+  const instance = hydrateExistingDom(program, host, dom.root as unknown as Node);
 
   const whenAnchor = dom.div.childNodes[3];
   dom.div.removeChild(whenAnchor);
@@ -690,8 +690,8 @@ test('alpha.3 owning recovery can replace only the root owner after root drift',
   const oldDiv = dom.div;
   dom.div.setAttribute('class', 'drifted');
   const { host, count } = makeHost(doc.counters);
-  const mismatches: PartProgramClaimError[] = [];
-  const instance = claimExistingDom(program, host, dom.root as unknown as Node, {
+  const mismatches: PartProgramHydrationError[] = [];
+  const instance = hydrateExistingDom(program, host, dom.root as unknown as Node, {
     recovery: 'owning',
     onMismatch: (error) => mismatches.push(error),
   });
@@ -730,10 +730,10 @@ test('alpha.3 claim rejects duplicate keyed Region data before attaching', async
     { id: 'a', text: 'again' },
   ];
   const error = assertThrowsIncludes(
-    () => claimExistingDom(program, host, dom.root as unknown as Node),
-    PartProgramClaimError,
+    () => hydrateExistingDom(program, host, dom.root as unknown as Node),
+    PartProgramHydrationError,
   );
-  expect(error.ownerKind).toEqual('region');
+  expect(error.ownerKind).toEqual('block');
   expect(error.message).toContain('duplicate key');
   expect(counters.subscriptions).toEqual(0);
   expect(counters.listenerAdds).toEqual(0);
@@ -749,10 +749,10 @@ test('alpha.3 claim rejects inherited keyed Region fields before attaching', asy
   controls.items.value = [inherited];
 
   const error = assertThrowsIncludes(
-    () => claimExistingDom(program, controls.host, dom.root as unknown as Node),
-    PartProgramClaimError,
+    () => hydrateExistingDom(program, controls.host, dom.root as unknown as Node),
+    PartProgramHydrationError,
   );
-  expect(error.ownerKind).toEqual('region');
+  expect(error.ownerKind).toEqual('block');
   expect(error.message).toContain('item needs');
   expect(counters.subscriptions).toEqual(0);
   expect(counters.listenerAdds).toEqual(0);
@@ -763,7 +763,7 @@ test('alpha.3 keyed Region moves, reuses, updates, and removes only owned entrie
   const doc = new TestDocument();
   const dom = makeSsrDom(doc);
   const { host, items } = makeHost(doc.counters);
-  const instance = claimExistingDom(program, host, dom.root as unknown as Node);
+  const instance = hydrateExistingDom(program, host, dom.root as unknown as Node);
   const initialA = dom.items[0];
   const initialB = dom.items[1];
 
@@ -825,7 +825,11 @@ test('alpha.3 claim preserves nested custom-element node identity without enteri
   foreign.appendChild(doc.createTextNode('foreign'));
   shell.appendChild(foreign);
   root.appendChild(shell);
-  const claimed = claimExistingDom(program, { signals: {}, handlers: {} }, root as unknown as Node);
+  const claimed = hydrateExistingDom(
+    program,
+    { signals: {}, handlers: {} },
+    root as unknown as Node,
+  );
   expect(root.childNodes[0]).toBe(shell);
   expect(shell.childNodes[0]).toBe(foreign);
   claimed.dispose();
@@ -857,7 +861,11 @@ test('claim leaves an independently SSG-expanded empty custom host to its own pr
   child.appendChild(heading);
   root.appendChild(child);
 
-  const claimed = claimExistingDom(program, { signals: {}, handlers: {} }, root as unknown as Node);
+  const claimed = hydrateExistingDom(
+    program,
+    { signals: {}, handlers: {} },
+    root as unknown as Node,
+  );
   expect(root.childNodes[0]).toBe(child);
   expect(child.childNodes[1]).toBe(heading);
   claimed.dispose();
@@ -886,7 +894,11 @@ test('claim preserves externally projected route content inside an empty slot', 
   main.appendChild(slot);
   root.appendChild(main);
 
-  const claimed = claimExistingDom(program, { signals: {}, handlers: {} }, root as unknown as Node);
+  const claimed = hydrateExistingDom(
+    program,
+    { signals: {}, handlers: {} },
+    root as unknown as Node,
+  );
   expect((main.childNodes[0] as TestElement).childNodes[0]).toBe(route);
   claimed.dispose();
 });
@@ -905,7 +917,7 @@ test('compiled claim requires TrustedHtml before accepting an opaque html Part',
   div.appendChild(strong);
   root.appendChild(div);
   const body = new TestSignal<unknown>(trustedHtml('<strong>safe</strong>'), doc.counters);
-  const claimed = claimExistingDom(
+  const claimed = hydrateExistingDom(
     program,
     { signals: { body }, handlers: {} },
     root as unknown as Node,
@@ -927,7 +939,7 @@ test('compiled claim requires TrustedHtml before accepting an opaque html Part',
   unsafeRoot.appendChild(element(unsafeDoc, 'div'));
   assertThrowsIncludes(
     () =>
-      claimExistingDom(
+      hydrateExistingDom(
         program,
         {
           signals: {

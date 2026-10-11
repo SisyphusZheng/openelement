@@ -240,8 +240,8 @@ test('#1386: the runtime raisers report their code through the wire entries', as
 });
 
 test('#1386: a claim mismatch is an OpenElementError with the released code', async () => {
-  const { PartProgramClaimError } = await import('../src/internal/compiled/runtime.ts');
-  const error = new PartProgramClaimError('template[0]', 'drifted', {
+  const { PartProgramHydrationError } = await import('../src/internal/compiled/runtime.ts');
+  const error = new PartProgramHydrationError('template[0]', 'drifted', {
     kind: 'root',
     root: {} as Node,
   });

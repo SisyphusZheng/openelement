@@ -1,9 +1,9 @@
 import { expect, test } from 'vitest';
 import { createDeferredServerExecutor } from '../../src/internal/compiled/server/index.ts';
 import {
-  claimExistingDom,
+  hydrateExistingDom,
   type CompiledRuntimeHost,
-  PartProgramClaimError,
+  PartProgramHydrationError,
 } from '../../src/internal/compiled/runtime.ts';
 import { signal } from '../../src/internal/signal/framework.ts';
 import { testProgram } from '../compiled-runtime/test-program.ts';
@@ -67,7 +67,7 @@ test('streamed text arriving before claim adopts the original node', () => {
   title.value = 'Early';
   const text = doc.createTextNode('Early');
   main.insertBefore(text, endMarker(main, 0) as never);
-  const instance = claimExistingDom(program, host, root as unknown as Node, {
+  const instance = hydrateExistingDom(program, host, root as unknown as Node, {
     streamParts: [0, 1],
     pendingParts: [1],
   });
@@ -81,7 +81,7 @@ test('streamed text arriving before claim adopts the original node', () => {
 test('pending text and Region adopt after claim without touching siblings', () => {
   const { doc, root, main, host, title, enabled } = setup();
   const staticNode = main.childNodes[0];
-  const instance = claimExistingDom(program, host, root as unknown as Node, {
+  const instance = hydrateExistingDom(program, host, root as unknown as Node, {
     streamParts: [0, 1],
     pendingParts: [0, 1],
   });
@@ -93,7 +93,7 @@ test('pending text and Region adopt after claim without touching siblings', () =
   expect(main.childNodes[2]).toBe(text);
   title.value = 'Changed';
   expect(text.data).toEqual('Changed');
-  expect(() => instance.resolveDeferred?.(0)).toThrow(PartProgramClaimError);
+  expect(() => instance.resolveDeferred?.(0)).toThrow(PartProgramHydrationError);
 
   enabled.value = true;
   const strong = doc.createElement('strong');
@@ -111,7 +111,7 @@ test('streamed Region drift recovers inside its anchors only when opted in', () 
   const { doc, root, main, host, enabled } = setup();
   const staticNode = main.childNodes[0];
   let mismatches = 0;
-  const instance = claimExistingDom(program, host, root as unknown as Node, {
+  const instance = hydrateExistingDom(program, host, root as unknown as Node, {
     streamParts: [0, 1],
     pendingParts: [0, 1],
     recovery: 'owning',

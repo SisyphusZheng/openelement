@@ -1,20 +1,20 @@
 /**
- * The Region builders seam (#1548).
+ * The Block builders seam (#1548).
  *
- * The compiled runtime must reach the when/each Region machinery without
+ * The compiled runtime must reach the when/each Block machinery without
  * static value imports of it, or every bundle that merely links the kernel —
- * including one for an app whose Part Programs carry no Region Parts —
- * carries the whole regions module. The seam mirrors the claim executor seam
+ * including one for an app whose Part Programs carry no Block Parts —
+ * carries the whole blocks module. The seam mirrors the hydration executor seam
  * (#1416): `regions.ts` stays the single definition and single
  * owner of the builders; this seam only decides where a given graph gets them
  * from:
  *
  * - the default `@openelement/element` entry and the `./client-only` entry
  *   import `runtime/regions-install.ts`, whose evaluation installs the
- *   builders (a client-only page still builds fresh when/each Regions from
+ *   builders (a client-only page still builds fresh when/each Blocks from
  *   client state, so `./client-only` keeps them);
  * - the `./no-regions` and `./base` entries do not, and a bundler then drops
- *   the regions cluster as unreferenced.
+ *   the blocks cluster as unreferenced.
  *
  * The builders are a module-level binding rather than a global: installation
  * is an ordinary module side effect, so it happens before any element can
@@ -25,15 +25,15 @@ import type { ProgramEachPart, ProgramWhenPart } from '@openelement/protocol/par
 import { OpenElementError, RuntimeErrorCode } from '@openelement/protocol/errors';
 import type { LifetimeScope } from '../lifetime-scope.ts';
 import type { MountContext } from './program-kernel.ts';
-import type { EachRegion, WhenRegion } from './regions.ts';
+import type { EachBlock, WhenBlock } from './regions.ts';
 
 /**
- * The when/each Region machinery's surface, local to this seam so neither the
+ * The when/each Block machinery's surface, local to this seam so neither the
  * callers nor this module need a value import of the implementation. The
- * region record/slot types ride as type-only imports (erased at emit), so
+ * block record/slot types ride as type-only imports (erased at emit), so
  * they create no module-graph edge.
  */
-export interface RegionBuilders {
+export interface BlockBuilders {
   buildWhen(
     ctx: MountContext,
     parentScope: LifetimeScope,
@@ -50,40 +50,40 @@ export interface RegionBuilders {
     part: ProgramEachPart,
     parent?: Node,
   ): Node[];
-  updateWhen(region: WhenRegion, value: unknown): void;
-  updateEach(region: EachRegion, value: unknown): void;
+  updateWhen(block: WhenBlock, value: unknown): void;
+  updateEach(block: EachBlock, value: unknown): void;
   whenActive(part: ProgramWhenPart, value: unknown): boolean;
   expectsArrayMessage(where: string, part: ProgramEachPart, value: unknown): string;
 }
 
-let installed: RegionBuilders | undefined;
+let installed: BlockBuilders | undefined;
 
-/** Install the one set of Region builders. Called by the installing entries' module. */
-export function installRegionBuilders(builders: RegionBuilders): void {
+/** Install the one set of Block builders. Called by the installing entries' module. */
+export function installBlockBuilders(builders: BlockBuilders): void {
   installed = builders;
 }
 
-/** The installed builders, or `undefined` on a regions-free graph. */
-export function regionBuilders(): RegionBuilders | undefined {
+/** The installed builders, or `undefined` on a blocks-free graph. */
+export function blockBuilders(): BlockBuilders | undefined {
   return installed;
 }
 
 /**
  * The installed builders, or a fail-closed error naming the entries that
- * install them. A regions-free graph reaching a when/each Part means the
+ * install them. A blocks-free graph reaching a when/each Part means the
  * bundle was built from an entry that omits the builders while the program —
- * or another compiled module in its graph — carries Region Parts: a build
+ * or another compiled module in its graph — carries Block Parts: a build
  * selection bug, never a silent mis-render (the #1416 asymmetry applied to
- * the regions axis).
+ * the blocks axis).
  */
-export function regionBuildersOrFail(): RegionBuilders {
+export function blockBuildersOrFail(): BlockBuilders {
   if (!installed) {
     throw new OpenElementError(
-      '[compiled-runtime] the program carries when/each Region Parts, but this entry does not ' +
-        "install the Region builders. Import '@openelement/element' (the default entry) or " +
+      '[compiled-runtime] the program carries when/each Block Parts, but this entry does not ' +
+        "install the Block builders. Import '@openelement/element' (the default entry) or " +
         "'@openelement/element/client-only' for any element whose Part Program uses " +
-        'conditional or list Regions.',
-      { code: RuntimeErrorCode.REGION_BUILDERS_MISSING, phase: 'render' },
+        'conditional or list Blocks.',
+      { code: RuntimeErrorCode.BLOCK_BUILDERS_MISSING, phase: 'render' },
     );
   }
   return installed;

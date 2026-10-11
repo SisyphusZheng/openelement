@@ -1,11 +1,11 @@
 /**
- * Bounded `owning` recovery for the existing-DOM claim: rebuilding exactly
- * the mismatching owner — one Region range between its anchors, one stream
+ * Bounded `owning` recovery for the existing-DOM hydration: rebuilding exactly
+ * the mismatching owner — one Block range between its anchors, one stream
  * Part's owned range, or the owning root's children. Nothing outside the
  * compiled location identity is searched or touched. Recovery re-enters the
- * claim scan (claimNodes, claimItemRecords, claimFailure in claim.ts) for
- * the retried range, while claimExistingDom calls back into
- * resolveStreamRange/recoverClaimOwner here — a function-level ESM cycle
+ * hydration scan (hydrateNodes, hydrateItemRecords, hydrateFailure in claim.ts) for
+ * the retried range, while hydrateExistingDom calls back into
+ * resolveStreamRange/recoverHydrationOwner here — a function-level ESM cycle
  * between hoisted declarations with no top-level evaluation, which is safe.
  */
 
@@ -28,19 +28,23 @@ import {
   signalOf,
   subscribeWrites,
 } from './program-kernel.ts';
-import { regionBuildersOrFail } from './regions-seam.ts';
+import { blockBuildersOrFail } from './regions-seam.ts';
 import {
-  claimFailure,
-  claimItemRecords,
-  claimNodes,
-  type CompiledClaimOptions,
+  hydrateFailure,
+  hydrateItemRecords,
+  hydrateNodes,
+  type CompiledHydrationOptions,
   type DeferredSubscription,
   isStaticStyleNode,
-  PartProgramClaimError,
-  type StreamClaimRange,
+  PartProgramHydrationError,
+  type StreamHydrationRange,
 } from './claim.ts';
 
-function recoverStreamRange(ctx: MountContext, range: StreamClaimRange, index: number): boolean {
+function recoverStreamRange(
+  ctx: MountContext,
+  range: StreamHydrationRange,
+  index: number,
+): boolean {
   const part = ctx.program.parts[index];
   const { parent, anchor, end } = range;
   const doc = parent.ownerDocument;
@@ -52,7 +56,7 @@ function recoverStreamRange(ctx: MountContext, range: StreamClaimRange, index: n
           return value ? [doc.createTextNode(value)] : [];
         })()
       : part.k === 'when' || part.k === 'each'
-        ? buildRecoveryRegionContent(ctx, doc, part)
+        ? buildRecoveryBlockContent(ctx, doc, part)
         : [];
   let cursor = anchor.nextSibling;
   while (cursor && cursor !== end) {
@@ -67,9 +71,9 @@ function recoverStreamRange(ctx: MountContext, range: StreamClaimRange, index: n
 
 export function resolveStreamRange(
   ctx: MountContext,
-  range: StreamClaimRange,
+  range: StreamHydrationRange,
   index: number,
-  options: CompiledClaimOptions,
+  options: CompiledHydrationOptions,
 ): void {
   let recovered = false;
   for (;;) {
@@ -78,12 +82,12 @@ export function resolveStreamRange(
     const start = children.indexOf(anchor);
     const finish = children.indexOf(end);
     if (start < 0 || finish <= start) {
-      claimFailure(range.path, 'stream Part anchors are detached or out of order', range.owner);
+      hydrateFailure(range.path, 'stream Part anchors are detached or out of order', range.owner);
     }
     const scope = range.scope.child();
     const subscriptions: DeferredSubscription[] = [];
     try {
-      const consumed = claimNodes(
+      const consumed = hydrateNodes(
         ctx,
         parent,
         start,
@@ -100,7 +104,7 @@ export function resolveStreamRange(
         { streamed: new Set([index]), pending: new Set(), ranges: new Map() },
       );
       if (consumed !== finish + 1) {
-        claimFailure(range.path, 'stream Part has unexpected trailing nodes', range.owner);
+        hydrateFailure(range.path, 'stream Part has unexpected trailing nodes', range.owner);
       }
       for (const deferred of subscriptions) {
         subscribeWrites(ctx, deferred.scope, deferred.signal, deferred.fn);
@@ -108,7 +112,7 @@ export function resolveStreamRange(
       return;
     } catch (error) {
       scope.dispose();
-      if (!(error instanceof PartProgramClaimError)) throw error;
+      if (!(error instanceof PartProgramHydrationError)) throw error;
       options.onMismatch?.(error);
       if (options.recovery !== 'owning' || recovered || !recoverStreamRange(ctx, range, index))
         throw error;
@@ -117,7 +121,7 @@ export function resolveStreamRange(
   }
 }
 
-/** Static recovery build: Region branches and item templates hold no anchors. */
+/** Static recovery build: Block branches and item templates hold no anchors. */
 function buildStaticRecoveryNodes(doc: Document, nodes: ProgramTreeNode[]): Node[] {
   const out: Node[] = [];
   for (const node of nodes) {
@@ -136,13 +140,13 @@ function buildStaticRecoveryNodes(doc: Document, nodes: ProgramTreeNode[]): Node
     }
     fail(
       ClaimErrorCode.DYNAMIC_NODE_IN_STATIC_REGION,
-      '[compiled-claim] recovery build met a dynamic node in a static Region',
+      '[compiled-hydration] recovery build met a dynamic node in a static Block',
     );
   }
   return out;
 }
 
-/** Recovery build of one each-Region item (static template, live item values). */
+/** Recovery build of one each-Block item (static template, live item values). */
 function buildRecoveryItemNodes(
   doc: Document,
   part: ProgramEachPart,
@@ -173,7 +177,7 @@ function buildRecoveryItemNodes(
       }
       fail(
         ClaimErrorCode.ITEM_TEMPLATE_ANCHOR,
-        '[compiled-claim] item templates may not contain Part anchors',
+        '[compiled-hydration] item templates may not contain Part anchors',
       );
     }
     return out;
@@ -181,17 +185,17 @@ function buildRecoveryItemNodes(
   return build(part.item);
 }
 
-/** Recovery build of one Region's current content (no subscriptions). */
-function buildRecoveryRegionContent(
+/** Recovery build of one Block's current content (no subscriptions). */
+function buildRecoveryBlockContent(
   ctx: MountContext,
   doc: Document,
   part: ProgramWhenPart | ProgramEachPart,
 ): Node[] {
   if (part.k === 'when') {
-    const active = regionBuildersOrFail().whenActive(part, signalOf(ctx, part.signal).value);
+    const active = blockBuildersOrFail().whenActive(part, signalOf(ctx, part.signal).value);
     return buildStaticRecoveryNodes(doc, active ? part.on : part.off);
   }
-  const items = claimItemRecords(part, signalOf(ctx, part.signal).value, `parts[${part.index}]`, {
+  const items = hydrateItemRecords(part, signalOf(ctx, part.signal).value, `parts[${part.index}]`, {
     kind: 'root',
     root: doc,
   });
@@ -220,7 +224,7 @@ function buildRecoveryTemplateNodes(
     if (node.k === 'ival') {
       fail(
         RuntimeErrorCode.ITEM_SLOT_OUTSIDE_REGION,
-        '[compiled-claim] item value slot outside an each Region',
+        '[compiled-hydration] item value slot outside an each Block',
       );
     }
     if (node.k === 'el') {
@@ -245,7 +249,7 @@ function buildRecoveryTemplateNodes(
     }
     if (part.k === 'when' || part.k === 'each') {
       out.push(doc.createComment(partAnchorMarker(part.index)));
-      out.push(...buildRecoveryRegionContent(ctx, doc, part));
+      out.push(...buildRecoveryBlockContent(ctx, doc, part));
       out.push(doc.createComment(partAnchorEndMarker(part.index)));
       continue;
     }
@@ -266,20 +270,23 @@ function removeAllChildren(parent: Node): void {
 }
 
 /**
- * Bounded `owning` recovery: replace only the mismatching owner — one Region
+ * Bounded `owning` recovery: replace only the mismatching owner — one Block
  * range between its anchors, or the owning root's children (the marked static
  * style node is preserved through the rebuild so the retried scan still
- * claims from rootOffset=1; it is removed only after the recovered claim
+ * claims from rootOffset=1; it is removed only after the recovered hydration
  * attaches — §5 "recovery completed"). Nothing outside the compiled
  * location identity is searched or touched.
  */
-export function recoverClaimOwner(error: PartProgramClaimError, ctx: MountContext): boolean {
-  if (error.owner.kind === 'region') {
+export function recoverHydrationOwner(
+  error: PartProgramHydrationError,
+  ctx: MountContext,
+): boolean {
+  if (error.owner.kind === 'block') {
     const { parent, anchor, end, part } = error.owner;
     if (anchor.parentNode !== parent || end.parentNode !== parent) return false;
     const doc = parent.ownerDocument;
     if (!doc) return false;
-    const replacement = buildRecoveryRegionContent(ctx, doc, part);
+    const replacement = buildRecoveryBlockContent(ctx, doc, part);
     let current = anchor.nextSibling;
     while (current && current !== end) {
       const next = current.nextSibling;

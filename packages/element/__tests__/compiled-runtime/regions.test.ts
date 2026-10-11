@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
 import {
-  claimExistingDom,
+  hydrateExistingDom,
   createFreshDom,
   serializeToHtml,
 } from '../../src/internal/compiled/runtime.ts';
@@ -148,7 +148,7 @@ test('item value slots create their text node when an item becomes non-empty', (
   const html = serializeToHtml(program, host);
   const claimDoc = new TestDocument();
   const claimRoot = parseHtml(claimDoc, html);
-  const claimed = claimExistingDom(program, host, node(claimRoot));
+  const claimed = hydrateExistingDom(program, host, node(claimRoot));
   expect(
     ((claimRoot.childNodes[0] as TestElement).childNodes[1] as TestElement).childNodes.length,
   ).toEqual(0);

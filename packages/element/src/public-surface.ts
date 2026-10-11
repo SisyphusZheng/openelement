@@ -3,9 +3,9 @@
  * entry of this package re-exports, spelled out exactly once (#1416).
  *
  * Two entries re-export this module and differ in exactly one thing: the
- * claim executor install. `index.ts` (the default `.` entry) installs it, so
+ * hydration executor install. `index.ts` (the default `.` entry) installs it, so
  * elements may hydrate server-rendered roots. `client-only.ts` does not, so a
- * bundle for a page where no island can hydrate server DOM carries no claim
+ * bundle for a page where no island can hydrate server DOM carries no hydration
  * machinery at all. Keeping the list here rather than in each entry is what
  * stops the two surfaces from drifting apart.
  *
@@ -26,7 +26,7 @@ export { collectPublicProps } from './public-runtime.ts';
 
 // renderDsd serializes a compiled class to deterministic HTML for generated
 // server entries; ensurePreHydrationClickCapture installs the pre-upgrade
-// capture that the compiled claim replays after upgrade (generated client
+// capture that the compiled hydration replays after upgrade (generated client
 // entries call it).
 export {
   createDeferredDsdExecutor,
@@ -41,7 +41,7 @@ export type {
 } from './public-runtime.ts';
 
 // Explicit type-only surface for build adapters (#488).
-export type { RenderOutput, SsrAdmissionDecision } from './public-runtime.ts';
+export type { SsrAdmissionDecision } from './public-runtime.ts';
 export { assertValidTagName } from './public-runtime.ts';
 
 // ─── Context (re-export from core) ───────────────────────

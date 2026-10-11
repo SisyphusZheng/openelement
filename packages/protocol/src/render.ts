@@ -2,8 +2,11 @@
  * ./render.ts — Render pipeline types.
  *
  * Types for the compiled server-render contract: the render error shape shared
- * with the error protocol, the public renderDsd output, and the SSR admission
- * decision recorded by the adapter's island scanner.
+ * with the error protocol, and the SSR admission decision recorded by the
+ * adapter's island scanner. `renderDsd()` returns the serialized DSD `html`
+ * directly as a string (alpha15 R.0-3: the `{ html, errors, metrics,
+ * hydrationHints }` shell is deleted; the two hardcoded-zero metrics that
+ * motivated M-E5 go away with it).
  */
 
 import type { ComponentLayer, HydrationStrategy } from './framework.ts';
@@ -24,29 +27,6 @@ export interface HydrationHint {
   tagName: string;
   layer: ComponentLayer;
   hydrate?: HydrationStrategy;
-}
-
-/**
- * The public result of one `renderDsd()` call: the serialized DSD `html`, the
- * render errors collected while composing it (empty on success), the render
- * metrics for the root component, and the hydration hints the client
- * scheduler reads to upgrade islands.
- */
-export interface RenderOutput {
-  html: string;
-  errors: RenderError[];
-  metrics: DsdRenderMetrics;
-  hydrationHints: HydrationHint[];
-}
-
-/** Per-render declarative-shadow-dom metrics the server records. */
-export interface DsdRenderMetrics {
-  tagName: string;
-  renderTimeMs: number;
-  templateSize: number;
-  layer: ComponentLayer;
-  hasError: boolean;
-  nestingDepth: number;
 }
 
 /**

@@ -9,7 +9,7 @@
 
 import { expect, test } from 'vitest';
 import {
-  claimExistingDom,
+  hydrateExistingDom,
   createFreshDom,
   serializeToHtml,
   type CompiledRuntimeHost,
@@ -172,7 +172,7 @@ test('claiming serialized DOM attaches the same per-item listeners', () => {
   const html = serializeToHtml(PROGRAM, state.host);
   const claimDoc = new TestDocument();
   const claimRoot = parseHtml(claimDoc, html);
-  const claimed = claimExistingDom(PROGRAM, state.host, asNode(claimRoot));
+  const claimed = hydrateExistingDom(PROGRAM, state.host, asNode(claimRoot));
   const list = listUnder(claimRoot);
   (list.childNodes[2] as TestElement).dispatch('click');
   expect(state.calls).toEqual([

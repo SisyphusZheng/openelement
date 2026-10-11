@@ -173,8 +173,7 @@ test('definePage() descriptor renders through the compiled serializer', () => {
 
   const out = renderDsd('rendered-page', { componentClass: Page });
 
-  expect(out.errors.length).toEqual(0);
-  expect(out.html.includes('Hello from definePage')).toEqual(true);
+  expect(out.includes('Hello from definePage')).toEqual(true);
 });
 
 test('definePage() requires the compiled class as its first argument', () => {

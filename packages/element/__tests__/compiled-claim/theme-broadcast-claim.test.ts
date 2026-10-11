@@ -11,7 +11,7 @@
  *
  * Production shape (docs pages, 2 of 8 local loads): `<open-layout>` claiming
  * `<open-theme-toggle>` / `<open-search>` failed with
- * `PartProgramClaimError … unexpected attribute "data-theme"`, the island
+ * `PartProgramHydrationError … unexpected attribute "data-theme"`, the island
  * loader's `log.warn` swallowed it, and the page kept its unhydrated layout.
  *
  * Fail-closed directions preserved below: a non-managed extra attribute, the
@@ -22,13 +22,16 @@ import { expect, test } from 'vitest';
 import { installFacadeDom } from '../compiled-runtime/facade-dom.ts';
 import { parseHtml } from '../compiled-runtime/test-dom.ts';
 import { testProgram } from '../compiled-runtime/test-program.ts';
-import { PartProgramClaimError, claimExistingDom } from '../../src/internal/compiled/runtime.ts';
+import {
+  PartProgramHydrationError,
+  hydrateExistingDom,
+} from '../../src/internal/compiled/runtime.ts';
 import { serializeProgramContent } from '../../src/internal/compiled/server/index.ts';
 import { OpenElementThemeManager, THEME_ATTRIBUTE } from '../../src/open-element-theme.ts';
 
 const dom = installFacadeDom();
 
-const wireClaim = claimExistingDom as unknown as (
+const wireClaim = hydrateExistingDom as unknown as (
   program: unknown,
   host: unknown,
   root: Node,
@@ -87,7 +90,7 @@ test('a non-managed extra attribute on the same host still fails closed', () => 
   const root = parseHtml(dom.document, parentHtml());
   const child = root.childNodes[0].childNodes[0] as HTMLElement;
   child.setAttribute('data-not-framework-managed', '1');
-  expect(() => wireClaim(parentProgram(), emptyHost(), root)).toThrow(PartProgramClaimError);
+  expect(() => wireClaim(parentProgram(), emptyHost(), root)).toThrow(PartProgramHydrationError);
 });
 
 test('the broadcast attribute on a non-custom element is still drift', () => {
@@ -112,7 +115,7 @@ test('the broadcast attribute on a non-custom element is still drift', () => {
   try {
     wireClaim(program, emptyHost(), root);
   } catch (error) {
-    message = (error as PartProgramClaimError).detail;
+    message = (error as PartProgramHydrationError).detail;
   }
   expect(message).toContain(`unexpected attribute "${THEME_ATTRIBUTE}"`);
 });
@@ -128,7 +131,7 @@ test('a declared broadcast value still drift-checks when the DOM disagrees', () 
   try {
     wireClaim(parentProgram([[THEME_ATTRIBUTE, 'light']]), emptyHost(), root);
   } catch (error) {
-    message = (error as PartProgramClaimError).detail;
+    message = (error as PartProgramHydrationError).detail;
   }
   expect(message).toContain(`attribute drift on "${THEME_ATTRIBUTE}"`);
 });

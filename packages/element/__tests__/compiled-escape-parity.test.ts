@@ -234,6 +234,26 @@ test('escape parity: non-string props on custom elements are JSON on both serial
 });
 
 /**
+ * Null-prop parity (M-E2, R.0-4 gap probe 2026-10-11): a null/undefined prop
+ * on a plain tag omits the attribute on BOTH serializers. The server path
+ * used to emit `name="null"`/`name="undefined"` via String() while the seed
+ * path omitted via attributeValueOf; the server regresses to the shared
+ * omission so one program renders one HTML.
+ */
+test('escape parity: nullish props on plain elements are omitted on both serializers', () => {
+  for (const value of [null, undefined]) {
+    const program = testProgram({
+      tag: 'oe-parent',
+      template: [{ k: 'el', tag: 'div', attrs: [], children: [] }],
+      parts: [{ k: 'prop', index: 0, signal: 'v', name: 'model', path: [0] }],
+    });
+    const runtime = serializeRuntime(program, hostWith(value) as unknown as RuntimeHost);
+    const server = serializeServer(program, hostWith(value));
+    expect(runtime, `serializers diverged for ${String(value)}`).toEqual(server);
+    expect(runtime, `nullish prop must omit for ${String(value)}`).toEqual('<div></div>');
+  }
+});
+/**
  * Single-walker boundary (issue #1469, ADR-0160 rule b): both execution
  * modules route serialization through the shared kernel and carry no private
  * template walk. The kernel is the only module that walks the template and

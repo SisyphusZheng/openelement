@@ -27,11 +27,10 @@ import {
 } from '@openelement/protocol/policy';
 import { signal } from './internal/signal/index.ts';
 import type { CompiledProgramHost } from './internal/compiled/server/index.ts';
-import type { RenderOutput } from '@openelement/protocol/render';
 import { type TrustedHtml, trustedHtmlValue } from './internal/core/security.ts';
 
 export { collectPublicProps } from './internal/core/props-utils.ts';
-export type { RenderOutput, SsrAdmissionDecision } from '@openelement/protocol/render';
+export type { SsrAdmissionDecision } from '@openelement/protocol/render';
 export { consumeContext, createContext, provideContext } from './internal/core/index.ts';
 export type { Context, RenderError } from './internal/core/index.ts';
 export { assertValidTagName, isValidTagName } from './internal/core/tag-utils.ts';
@@ -601,7 +600,7 @@ function renderDsdAtDepth(
   input: string | CustomElementConstructor,
   options: InternalRenderDsdOptions = {},
   depth = 0,
-): RenderOutput {
+): string {
   if (depth > MAX_COMPOSITION_DEPTH) {
     throw new OpenElementError(
       '[openElement] nested element expansion exceeded the depth bound; cyclic component composition is not renderable.',
@@ -717,7 +716,7 @@ function renderDsdAtDepth(
                   projectedChildren: nestedMode === 'light' ? nested.projectedChildren : undefined,
                 },
                 depth + 1,
-              ).html;
+              );
               if (nestedMode === 'light') return rendered;
               const closing = `</${nested.tag}>`;
               return nested.children === ''
@@ -733,45 +732,35 @@ function renderDsdAtDepth(
   // recursion inside renderNestedElement surfaces here at the nearest
   // boundary because non-boundary elements rethrow. The repair re-serializes
   // the same program with the `hasError` signal forced true: a compiled
-  // boundary's fallback is a `when` Region over that signal (the same
+  // boundary's fallback is a `when` Block over that signal (the same
   // dependency the client's publication flips), so the re-run takes the
   // fallback branch and never re-enters the failed subtree. The signals
   // record is per-call, so the override cannot leak into sibling renders;
   // an element without the declared property simply carries an unread
   // signal. P7 prior art: React SSR error boundaries substitute fallback
   // UI for a failed subtree; the compiled difference is that the branch is
-  // the program's own Region, not a second renderer.
+  // the program's own Block, not a second renderer.
   let html: string;
-  let captured = false;
   try {
     html = serializeOnce();
   } catch (error) {
     if (resolvedClass.isErrorBoundary !== true) throw error;
     signals.hasError = signal(true);
     html = serializeOnce();
-    captured = true;
   }
-
-  return {
-    html,
-    errors: [],
-    metrics: {
-      tagName: tag,
-      renderTimeMs: 0,
-      templateSize: html.length,
-      layer: mode === 'light' ? 'light-dom' : 'dsd-interactive',
-      hasError: captured,
-      nestingDepth: 0,
-    },
-    hydrationHints: [],
-  };
+  // Fail-closed boundary capture is observable through the branch taken, not
+  // through a metrics field (alpha15 R.0-3 deleted the RenderOutput shell and
+  // its hardcoded-zero metrics with it): a captured render carries the
+  // fallback branch bytes, an uncaught throw still propagates.
+  return html;
 }
 
-/** Server-render one compiled element through canonical Element composition. */
+/** Server-render one compiled element through canonical Element composition:
+ * returns the serialized DSD `html` string directly. */
 export function renderDsd(
   input: string | CustomElementConstructor,
   options: RenderDsdOptions = {},
-): RenderOutput {
+): string {
   const { projectedChildren, ...publicOptions } = options;
   const normalizedProjectedChildren = projectedChildren
     ? new Map(

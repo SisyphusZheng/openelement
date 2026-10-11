@@ -114,7 +114,7 @@ function connectFresh(tag: string): TrackedElement {
 function mountDsd(tag: string, beforeConnect?: (element: FacadeElement) => void): TrackedElement {
   const serialized = renderDsd(tag, {
     componentClass: dom.registry.get(tag) as CustomElementConstructor,
-  }).html;
+  });
   return mountSerialized(dom, serialized, beforeConnect) as unknown as TrackedElement;
 }
 
@@ -133,7 +133,7 @@ function captureListenerCount(target: AnyElement): number {
 function ssrMarkupHost(tag: string): FacadeElement {
   const serialized = renderDsd(tag, {
     componentClass: dom.registry.get(tag) as CustomElementConstructor,
-  }).html;
+  });
   const parsedHost = parseHtml(dom.document, serialized).childNodes[0] as FacadeElement;
   const host = new FacadeElement(tag, dom.document);
   for (const [name, value] of parsedHost.attributes) host.setAttribute(name, value);

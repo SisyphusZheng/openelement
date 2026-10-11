@@ -6,7 +6,7 @@
  * distinguishable tags (`<prefix>-when-sibling` / `<prefix>-each-sibling`).
  */
 import {
-  claimExistingDom,
+  hydrateExistingDom,
   createFreshDom,
   serializeToHtml,
 } from '../../src/internal/compiled/runtime.ts';
@@ -75,7 +75,7 @@ export const createFresh = createFreshDom as unknown as (
   host: unknown,
   root: Node,
 ) => { dispose(): void };
-export const claimExisting = claimExistingDom as unknown as (
+export const claimExisting = hydrateExistingDom as unknown as (
   program: unknown,
   host: unknown,
   root: Node,

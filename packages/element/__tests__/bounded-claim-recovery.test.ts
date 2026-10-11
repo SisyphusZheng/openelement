@@ -4,7 +4,7 @@
  * The kernel chose claim-vs-fresh purely on `root.childNodes.length > 0`, so a
  * compiled light-root element legitimately carrying a whitespace-only text
  * node — `<my-el>\n</my-el>`, the shape an HTML formatter or a parsed file
- * produces — threw `PartProgramClaimError` on upgrade. No compiled template
+ * produces — threw `PartProgramHydrationError` on upgrade. No compiled template
  * begins with a bare newline, so the claim walked into a mismatch that the
  * author could not see and could not fix: the node is invisible in the
  * rendered page.
@@ -36,7 +36,7 @@ import { defineLightCounter, makeUniqueTag } from './compiled-runtime/light-coun
 const dom = installFacadeDom();
 
 const { OpenElement, renderDsd } = await import('@openelement/element');
-const { PartProgramClaimError } = await import('../src/internal/compiled/runtime.ts');
+const { PartProgramHydrationError } = await import('../src/internal/compiled/runtime.ts');
 
 const uniqueTag = makeUniqueTag('bounded');
 const lightCounterDeps = { OpenElement, testProgram, registry: dom.registry };
@@ -92,10 +92,10 @@ test('#1381: an element in the light root still fails closed as a claim mismatch
     thrown = error;
   }
   expect(
-    thrown instanceof PartProgramClaimError,
+    thrown instanceof PartProgramHydrationError,
     'real content must still fail closed',
   ).toBeTruthy();
-  expect((thrown as Error).message).toContain('[compiled-claim]');
+  expect((thrown as Error).message).toContain('[compiled-hydration]');
 });
 
 test('#1381: a serializer anchor comment still fails closed', () => {
@@ -112,7 +112,7 @@ test('#1381: a serializer anchor comment still fails closed', () => {
   } catch (error) {
     thrown = error;
   }
-  expect(thrown instanceof PartProgramClaimError, 'an anchor comment is content').toBeTruthy();
+  expect(thrown instanceof PartProgramHydrationError, 'an anchor comment is content').toBeTruthy();
 });
 
 test('#1381: visible authored text still fails closed', () => {
@@ -128,7 +128,7 @@ test('#1381: visible authored text still fails closed', () => {
     thrown = error;
   }
   expect(
-    thrown instanceof PartProgramClaimError,
+    thrown instanceof PartProgramHydrationError,
     'visible text is content, not formatting',
   ).toBeTruthy();
 });
@@ -150,7 +150,7 @@ test('#1381: whitespace before real content does not rescue the claim', () => {
     thrown = error;
   }
   expect(
-    thrown instanceof PartProgramClaimError,
+    thrown instanceof PartProgramHydrationError,
     'whitespace must not mask real drift',
   ).toBeTruthy();
 });
@@ -158,7 +158,7 @@ test('#1381: whitespace before real content does not rescue the claim', () => {
 test('#1381: a serialized light host still claims in place (no regression)', () => {
   const tag = uniqueTag('ssr');
   const ctor = defineLightCounter(lightCounterDeps, tag);
-  const html = renderDsd(tag, { componentClass: ctor, props: { count: 3 } }).html;
+  const html = renderDsd(tag, { componentClass: ctor, props: { count: 3 } });
 
   let button: AnyElement | undefined;
   let countText: AnyElement | undefined;

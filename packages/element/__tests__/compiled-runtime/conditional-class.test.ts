@@ -93,7 +93,7 @@ test('#1556: the server serializer and the claim agree with fresh creation', () 
   const serialized = renderDsd('oe-conditional-class-e2e', {
     componentClass: ConditionalClassE2E as unknown as CustomElementConstructor,
     props: { flag: true },
-  }).html;
+  });
   expect(serialized).toContain('<main class="on">x</main>');
 
   let claimedMain: unknown;

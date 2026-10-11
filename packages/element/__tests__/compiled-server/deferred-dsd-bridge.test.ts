@@ -86,7 +86,7 @@ test('deferred DSD bridge shares renderDsd property seeding and Part serializati
   const rendered = renderDsd('oe-deferred-bridge', {
     componentClass: Page as unknown as CustomElementConstructor,
     props: { count: 'not-a-number' },
-  }).html;
+  });
   expect(rendered).toContain('<oe-deferred-bridge>');
   expect(rendered.includes('count=')).toEqual(false);
   expect(rendered).toContain(

@@ -246,7 +246,7 @@ test('alpha.3 server output escapes values, supports native DSD flags, and fails
       }),
     Error,
   );
-  expect(inheritedError.message).toContain('each Region item needs');
+  expect(inheritedError.message).toContain('each Block item needs');
 
   const unsafeProperty = structuredClone(PROGRAM);
   const propertyPart = unsafeProperty.parts[0];

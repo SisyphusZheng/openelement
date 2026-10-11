@@ -124,7 +124,7 @@ test('Element server owns nested composition, slots, DSD, and foreign passthroug
     const html = renderDsd('oe-guide-page', {
       componentClass: compiledClass(page),
       ssrRenderableTags: ['oe-reading-shell', 'oe-page-rail'],
-    }).html;
+    });
     expect((html.match(/<oe-reading-shell/g) ?? []).length).toEqual(1);
     expect((html.match(/<oe-page-rail/g) ?? []).length).toEqual(1);
     expect(html).toContain('<slot name="meta"><span slot="meta">Projected meta</span></slot>');
@@ -164,7 +164,7 @@ test('Trusted HTML remains opaque to nested component composition', () => {
       componentClass: compiledClass(parent),
       props: { body: trustedHtml('<oe-safe-child>opaque</oe-safe-child>') },
       ssrRenderableTags: ['oe-safe-child'],
-    }).html;
+    });
     expect(html).toContain('<oe-safe-child>opaque</oe-safe-child>');
     expect(html.includes('executed')).toEqual(false);
   });
@@ -205,7 +205,7 @@ test('nested compiled boolean host attributes preserve presence semantics', () =
     const html = renderDsd('oe-boolean-parent', {
       componentClass: compiledClass(parent),
       ssrRenderableTags: ['oe-boolean-child'],
-    }).html;
+    });
     expect(html).toContain('<oe-boolean-child active="" data-oe-light>');
   });
 });
@@ -241,10 +241,10 @@ test('renderDsd threads the compiled delegatesFocus static into the DSD template
   const plain = compiledClass(program);
   // The client kernel passes the static to attachShadow; the DSD template
   // must carry the matching marker or the claimed root loses delegation.
-  expect(renderDsd('oe-focusable', { componentClass: focusable }).html).toContain(
+  expect(renderDsd('oe-focusable', { componentClass: focusable })).toContain(
     '<template shadowrootmode="open" shadowrootdelegatesfocus>',
   );
-  expect(renderDsd('oe-focusable', { componentClass: plain }).html).toContain(
+  expect(renderDsd('oe-focusable', { componentClass: plain })).toContain(
     '<template shadowrootmode="open">',
   );
 });

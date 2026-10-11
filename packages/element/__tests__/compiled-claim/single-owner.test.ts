@@ -1,8 +1,8 @@
 /**
- * Single-owner assertion for the compiled claim executor (#1211).
+ * Single-owner assertion for the compiled hydration executor (#1211).
  *
- * Constitution 4.2: exactly one claim executor owns existing-DOM claim. This
- * test mechanically proves that `claimExistingDom` and `PartProgramClaimError`
+ * Constitution 4.2: exactly one hydration executor owns existing-DOM hydration. This
+ * test mechanically proves that `hydrateExistingDom` and `PartProgramHydrationError`
  * each have exactly one definition across packages/element/src — no parallel
  * or "backup" engine may exist.
  */
@@ -24,12 +24,12 @@ async function sourceFiles(dir: URL): Promise<URL[]> {
 
 const DEFINITION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   {
-    label: 'claimExistingDom function definition',
-    pattern: /export function claimExistingDom\(/g,
+    label: 'hydrateExistingDom function definition',
+    pattern: /export function hydrateExistingDom\(/g,
   },
   {
-    label: 'PartProgramClaimError class definition',
-    pattern: /class PartProgramClaimError extends /g,
+    label: 'PartProgramHydrationError class definition',
+    pattern: /class PartProgramHydrationError extends /g,
   },
   {
     label: 'pre-upgrade event capture definition',
@@ -37,7 +37,7 @@ const DEFINITION_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
   },
 ];
 
-test('exactly one canonical claim executor exists across packages/element/src', async () => {
+test('exactly one canonical hydration executor exists across packages/element/src', async () => {
   const files = await sourceFiles(SRC_ROOT);
   const sources = await Promise.all(
     files.map(async (file) => ({

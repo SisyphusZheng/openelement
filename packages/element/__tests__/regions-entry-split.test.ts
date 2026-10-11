@@ -13,7 +13,7 @@
  * What is pinned:
  *
  * 1. `./base` fails closed when a program with a when Region builds fresh —
- *    `OE_RUNTIME_REGION_BUILDERS_MISSING`, naming the entries that install.
+ *    `OE_RUNTIME_BLOCK_BUILDERS_MISSING`, naming the entries that install.
  * 2. `./no-regions` fails closed the same way (claim presence says nothing
  *    about regions).
  * 3. The default entry builds the same program's Region.
@@ -118,8 +118,8 @@ test('#1548: the base entry fails closed on a when Region (no builders installed
   const { code, out, err } = await runEsmSubprocess(probe(BASE_ENTRY_URL));
   expect(code, `probe should complete. stderr: ${err}`).toEqual(0);
   expect(out).toContain('ERR');
-  expect(out).toContain('OE_RUNTIME_REGION_BUILDERS_MISSING');
-  expect(out).toContain('does not install the Region builders');
+  expect(out).toContain('OE_RUNTIME_BLOCK_BUILDERS_MISSING');
+  expect(out).toContain('does not install the Block builders');
   expect(out).toContain("'@openelement/element'");
 });
 
@@ -127,7 +127,7 @@ test('#1548: the no-regions entry fails closed on a when Region (claim without r
   const { code, out, err } = await runEsmSubprocess(probe(NO_REGIONS_ENTRY_URL));
   expect(code, `probe should complete. stderr: ${err}`).toEqual(0);
   expect(out).toContain('ERR');
-  expect(out).toContain('OE_RUNTIME_REGION_BUILDERS_MISSING');
+  expect(out).toContain('OE_RUNTIME_BLOCK_BUILDERS_MISSING');
 });
 
 test('#1548: the default entry builds the same when Region', async () => {

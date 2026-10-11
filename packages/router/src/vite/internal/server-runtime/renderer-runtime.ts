@@ -50,7 +50,7 @@ export type PageSsrRenderer = (
 
 /** The subset of the Element serializer the native renderer needs. */
 export interface NativePageRendererDeps {
-  /** Element's sync compiled serializer (`renderDsd`). */
+  /** Element's sync compiled serializer (`renderDsd`, returning HTML directly). */
   renderDsd: (
     tag: string,
     options: {
@@ -60,7 +60,7 @@ export interface NativePageRendererDeps {
       ssrRenderableTags?: readonly string[];
       projectedChildren?: ProjectedChildren;
     },
-  ) => { html: string };
+  ) => string;
   /** The SSR registry (the runtime's `customElements` global). */
   customElements: { get(tag: string): unknown };
   /** Build-admitted nested compiled tags (serialized generated data). */
@@ -107,7 +107,7 @@ export function createNativePageRenderer(deps: NativePageRendererDeps): PageSsrR
       sourceInfo,
       ssrRenderableTags,
       projectedChildren,
-    }).html;
+    });
   };
 }
 

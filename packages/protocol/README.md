@@ -25,7 +25,7 @@ into the others' graphs.
 | `@openelement/protocol/part-program`   | Serializable Part Program v1: the compiled element's exchange artifact (template, parts, blocks, locations, source map, metadata) + validator. |
 | `@openelement/protocol/policy`         | Numeric build/runtime admission budgets (stream bounds, composition depth, action body limit, timeouts).                                     |
 | `@openelement/protocol/registry-markers` | SSR customElements registry marker contract (#965).                                                                                        |
-| `@openelement/protocol/render`         | Render pipeline types (`RenderOutput`, SSR admission decisions).                                                                             |
+| `@openelement/protocol/render`         | Render pipeline types (render errors, hydration hints, SSR admission decisions).                                                                                    |
 | `@openelement/protocol/runtime`        | Runtime adapter protocol.                                                                                                                    |
 | `@openelement/protocol/signal`         | Signal contracts (`Signal`, `ReadonlySignal`, brands).                                                                                       |
 | `@openelement/protocol/ssg`            | SSG engine contracts (route manifests, island declarations, stream route manifests).                                                        |

@@ -38,24 +38,24 @@ import type { RuntimeProgramIR } from '../runtime-program.ts';
 // OpenElementError carrying a code from the catalogue.
 import { frameworkError, ProgramErrorCode } from '@openelement/protocol/errors';
 // Streamed-frame admission policy (canonical lists live in the protocol
-// module): the deferred executor must refuse any pending Region whose
+// module): the deferred executor must refuse any pending Block whose
 // serialized frame the browser installer is contractually required to reject.
 import {
   STREAM_FRAME_FORBIDDEN_TAGS,
   unsafeStreamFrameAttribute,
 } from '@openelement/protocol/stream-frame-policy';
 // Canonical attribute-escape contract (issue #1220, L1): the server output is
-// the wire truth for claim parity, so both serializers share this one
+// the wire truth for hydration parity, so both serializers share this one
 // implementation (escapes & < > " ').
 import { escapeAttr } from '../../core/html-escape.ts';
-// Canonical each-Region item-key derivation (#1374): single source shared
+// Canonical each-Block item-key derivation (#1374): single source shared
 // with the runtime executors; do not reintroduce a private copy.
 import { displayValue, itemTemplateFields, itemValue } from '../runtime/program-kernel.ts';
 // The one facade-domain root-mode union, owned by the runtime kernel and
 // re-exported below for the server options surface.
 import type { CompiledRootMode } from '../runtime/kernel.ts';
 import { eachItemKey, EachKeyError } from '../each-key.ts';
-// Canonical when-Region condition evaluation (#1372): single source shared
+// Canonical when-Block condition evaluation (#1372): single source shared
 // with the runtime executors; do not reintroduce a private comparison.
 import { conditionHolds } from '../condition-holds.ts';
 // The ONE tree-walking serializer (issue #1469): the server
@@ -91,7 +91,7 @@ export interface CompiledNestedElement {
 
 // The serializer emits the component's static styles as the first child of
 // the DSD template (renderDsd parity): never-upgrading hosts (pages)
-// need their styles in the SSR payload. The claim path skips exactly this
+// need their styles in the SSR payload. The hydration path skips exactly this
 // marked element; the client style scope still adopts the live sheets.
 export { STATIC_STYLES_MARKER } from '@openelement/protocol/part-program';
 
@@ -212,14 +212,14 @@ function serializeDsdAttributes(options: CompiledDsdOptions | undefined): string
 
 function itemsFor(part: ProgramEachPart, value: unknown): Array<Record<string, unknown>> {
   if (part.key === undefined) {
-    throw new CompiledProgramValidationError(`parts[${part.index}]`, 'each Region needs key');
+    throw new CompiledProgramValidationError(`parts[${part.index}]`, 'each Block needs key');
   }
   const keyField = part.key;
   const requiredFields = itemTemplateFields(part.item);
   if (!Array.isArray(value)) {
     throw new CompiledProgramValidationError(
       `parts[${part.index}].signal`,
-      'each Region dependency must contain an array',
+      'each Block dependency must contain an array',
     );
   }
   const seen = new Set<string>();
@@ -228,20 +228,20 @@ function itemsFor(part: ProgramEachPart, value: unknown): Array<Record<string, u
     if (!isRecordValue(item)) {
       throw new CompiledProgramValidationError(
         `parts[${part.index}].signal[${ordinal}]`,
-        'each Region items must be records',
+        'each Block items must be records',
       );
     }
     if (!Object.prototype.hasOwnProperty.call(item, keyField)) {
       throw new CompiledProgramValidationError(
         `parts[${part.index}].signal[${ordinal}]`,
-        `each Region item needs ${JSON.stringify(keyField)}`,
+        `each Block item needs ${JSON.stringify(keyField)}`,
       );
     }
     for (const field of requiredFields) {
       if (!Object.prototype.hasOwnProperty.call(item, field)) {
         throw new CompiledProgramValidationError(
           `parts[${part.index}].signal[${ordinal}]`,
-          `each Region item needs ${JSON.stringify(field)}`,
+          `each Block item needs ${JSON.stringify(field)}`,
         );
       }
     }
@@ -258,7 +258,7 @@ function itemsFor(part: ProgramEachPart, value: unknown): Array<Record<string, u
         // executor produced it.
         throw new CompiledProgramValidationError(
           `parts[${part.index}].signal[${ordinal}]`,
-          `each Region ${error.reason}`,
+          `each Block ${error.reason}`,
           error.code,
         );
       }
@@ -267,7 +267,7 @@ function itemsFor(part: ProgramEachPart, value: unknown): Array<Record<string, u
     if (seen.has(key)) {
       throw new CompiledProgramValidationError(
         `parts[${part.index}].signal`,
-        `duplicate each Region key ${JSON.stringify(item[keyField])}`,
+        `duplicate each Block key ${JSON.stringify(item[keyField])}`,
       );
     }
     seen.add(key);
@@ -300,7 +300,7 @@ function serializeItemAttribute(value: unknown): string | null {
  * The server serializer's seams over the shared tree-walking kernel
  * (serializer/serialize-program.ts): signal reads through the shared host
  * access, sink evaluations appended after the static attributes with bare
- * boolean presence, and full Region item admission.
+ * boolean presence, and full Block item admission.
  */
 function serializerSeams(
   host: unknown,
@@ -345,7 +345,11 @@ function serializerSeams(
           );
         }
       } else {
-        serialized = String(value);
+        // R.0-4: null/undefined omit like the seed path (attributeValueOf),
+        // so both serializers agree on plain-tag props too.
+        const coerced = attributeValueOf(value);
+        if (coerced === null) return { attribute: null, property: value };
+        serialized = coerced;
       }
       return { attribute: { name: part.name, value: serialized, bare: false }, property: value };
     },
@@ -356,7 +360,7 @@ function serializerSeams(
     itemTextValue: (part, node, item) => displayValue(itemValue(part, item, node.field)),
     textPartValue: displayValue,
     whenHolds: (part, value) => whenIsActive(part, value),
-    regionItems: (part, value) => itemsFor(part, value),
+    blockItems: (part, value) => itemsFor(part, value),
     escapeAttr,
     trustedHtml: trustedHtmlValue,
     renderNestedElement: options.renderNestedElement,
@@ -457,7 +461,7 @@ export interface DeferredServerExecutor {
 const STREAM_FRAME_FORBIDDEN_TAG_SET: ReadonlySet<string> = new Set(STREAM_FRAME_FORBIDDEN_TAGS);
 
 /**
- * A pending Region whose range would carry a custom element, a slot, a
+ * A pending Block whose range would carry a custom element, a slot, a
  * stream-frame-forbidden tag, or an unsafe static attribute serializes into a
  * frame the browser installer rejects wholesale — the content would be lost.
  * Admission therefore enforces the same streamed-frame policy constants the
@@ -468,7 +472,7 @@ const STREAM_FRAME_FORBIDDEN_TAG_SET: ReadonlySet<string> = new Set(STREAM_FRAME
  * chains (anchorPathIsOpaque) with full source ownership knowledge, while
  * this check covers the shared policy over the program's static shape only.
  */
-function hasOpaqueRegionNode(nodes: readonly ProgramTreeNode[]): boolean {
+function hasOpaqueBlockNode(nodes: readonly ProgramTreeNode[]): boolean {
   return nodes.some(
     (node) =>
       node.k === 'el' &&
@@ -476,7 +480,7 @@ function hasOpaqueRegionNode(nodes: readonly ProgramTreeNode[]): boolean {
         node.tag === 'slot' ||
         STREAM_FRAME_FORBIDDEN_TAG_SET.has(node.tag) ||
         node.attrs.some(([name, value]) => unsafeStreamFrameAttribute(name, value)) ||
-        hasOpaqueRegionNode(node.children)),
+        hasOpaqueBlockNode(node.children)),
   );
 }
 
@@ -523,7 +527,7 @@ export function createDeferredServerExecutor(
     if (part.k !== 'text' && part.k !== 'when' && part.k !== 'each') {
       throw new CompiledProgramValidationError(
         `parts[${index}]`,
-        'only anchor-owned text and Region Parts may be pending',
+        'only anchor-owned text and Block Parts may be pending',
       );
     }
     if (
@@ -542,12 +546,12 @@ export function createDeferredServerExecutor(
       );
     }
     if (
-      (part.k === 'when' && (hasOpaqueRegionNode(part.on) || hasOpaqueRegionNode(part.off))) ||
-      (part.k === 'each' && hasOpaqueRegionNode(part.item))
+      (part.k === 'when' && (hasOpaqueBlockNode(part.on) || hasOpaqueBlockNode(part.off))) ||
+      (part.k === 'each' && hasOpaqueBlockNode(part.item))
     ) {
       throw new CompiledProgramValidationError(
         `parts[${index}]`,
-        'deferred Region contains an opaque nested element or slot',
+        'deferred Block contains an opaque nested element or slot',
       );
     }
     pending.add(index);

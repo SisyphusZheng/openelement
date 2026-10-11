@@ -42,7 +42,7 @@ import { compileElementProgram } from '../../packages/compiler/src/internal/comp
 // benchmark renders each-Regions, so this graph installs.
 import '../../packages/element/src/internal/compiled/runtime/regions-install.ts';
 import {
-  claimExistingDom,
+  hydrateExistingDom,
   createFreshDom,
 } from '../../packages/element/src/internal/compiled/runtime.ts';
 import { serializeCompiledProgram } from '../../packages/element/src/internal/compiled/server/index.ts';
@@ -358,7 +358,7 @@ export function runMicroSuite(options: MicroOptions = {}): MicroSuiteResult {
   const claimHost = makeTableHost(sharedRows.map((row) => ({ ...row })));
   const claim = {
     ...timed('claim-1k', 1, claimDoc, () => {
-      claimExistingDom(...runtimeArgs(tableProgram, claimHost, claimRoot));
+      hydrateExistingDom(...runtimeArgs(tableProgram, claimHost, claimRoot));
     }),
     claimToFreshRatio: 0,
   };

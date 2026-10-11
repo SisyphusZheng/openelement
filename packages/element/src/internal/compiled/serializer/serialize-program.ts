@@ -5,7 +5,7 @@
  * (`internal/compiled/runtime.ts`) delegate every walk to this module; neither
  * keeps a private walker.
  *
- * The kernel owns the whole walk: template/Part/Region traversal, anchor
+ * The kernel owns the whole walk: template/Part/Block traversal, anchor
  * markers, item and slot interpretation, escaping, and attribute assembly. It
  * is host-free by design (same base-of-graph discipline as
  * `stream-frame-policy.ts`): zero DOM, zero Router, no module
@@ -19,7 +19,7 @@
  *   after statics and emits boolean presence as a bare `name`),
  * - the trusted-HTML capability check, the nested-element render callback,
  *   the slot projection source, and the pending streamed-marker set,
- * - Region item admission (the server validates item records and keys; the
+ * - Block item admission (the server validates item records and keys; the
  *   seed path renders order-preserving without keying).
  *
  * Both callers inject the canonical shared helpers (`escapeAttr`,
@@ -73,7 +73,7 @@ export type ProgramAttributeSink =
   | ProgramClassPart
   | ProgramStylePart;
 
-/** Item context while serializing an each Region's item template. */
+/** Item context while serializing an each Block's item template. */
 interface ItemContext {
   readonly part: ProgramEachPart;
   readonly item: unknown;
@@ -123,10 +123,10 @@ export interface SerializeProgramSeams {
   itemTextValue(part: ProgramEachPart, node: ProgramItemValueNode, item: unknown): string;
   /** One text Part's raw text; the kernel escapes it. */
   textPartValue(value: unknown): string;
-  /** when-Region branch selection; the mode owns evaluation errors. */
+  /** when-Block branch selection; the mode owns evaluation errors. */
   whenHolds(part: ProgramWhenPart, value: unknown): boolean;
-  /** each-Region item admission; the mode owns array/record/key validation. */
-  regionItems(part: ProgramEachPart, value: unknown): readonly unknown[];
+  /** each-Block item admission; the mode owns array/record/key validation. */
+  blockItems(part: ProgramEachPart, value: unknown): readonly unknown[];
   /** Canonical attribute escape (#1220) — injected, never re-implemented. */
   escapeAttr(value: string): string;
   /** Trusted-HTML capability check; untrusted values fail closed here. */
@@ -269,7 +269,7 @@ function assembleElementAttributes(
     if (!item) {
       failUnreachable(
         RuntimeErrorCode.ITEM_SLOT_OUTSIDE_REGION,
-        '[compiled-serializer] item attribute slot outside an each Region',
+        '[compiled-serializer] item attribute slot outside an each Block',
       );
     }
     for (const [name, field] of node.iattrs) {
@@ -361,14 +361,14 @@ function serializeElement(
   return { html, slotName: slotNameOf(ctx, node, path, item, attributes) };
 }
 
-function regionItemsHtml(
+function blockItemsHtml(
   ctx: WalkContext,
   part: ProgramEachPart,
   value: unknown,
   anchorPath: readonly number[],
 ): string {
   return ctx.seams
-    .regionItems(part, value)
+    .blockItems(part, value)
     .map((item) => serializeNodes(ctx, part.item, anchorPath, { part, item }).html)
     .join('');
 }
@@ -406,7 +406,7 @@ function serializeNode(
     if (!item) {
       failUnreachable(
         RuntimeErrorCode.ITEM_SLOT_OUTSIDE_REGION,
-        '[compiled-serializer] item value slot outside an each Region',
+        '[compiled-serializer] item value slot outside an each Block',
       );
     }
     return {
@@ -435,7 +435,7 @@ function serializeNode(
   const end = `<!--${partAnchorEndMarker(part.index)}-->`;
   if (part.k === 'when') {
     const value = ctx.seams.signalValue(part.signal);
-    // Branch content keeps the anchor's canonical path prefix: Region
+    // Branch content keeps the anchor's canonical path prefix: Block
     // subtrees hold no value sinks (the validator rejects fixed paths
     // crossing or preceded by an anchor), and resetting to [] would collide
     // with template-level sink paths and emit their values here.
@@ -447,7 +447,7 @@ function serializeNode(
   }
   if (part.k === 'each') {
     return {
-      html: start + regionItemsHtml(ctx, part, ctx.seams.signalValue(part.signal), path) + end,
+      html: start + blockItemsHtml(ctx, part, ctx.seams.signalValue(part.signal), path) + end,
       slotName: '',
     };
   }
@@ -486,7 +486,7 @@ export function serializeProgramRange(
     const branch = seams.whenHolds(part, value) ? part.on : part.off;
     return serializeNodes(ctx, branch, part.location.path, undefined).html;
   }
-  if (part.k === 'each') return regionItemsHtml(ctx, part, value, part.location.path);
+  if (part.k === 'each') return blockItemsHtml(ctx, part, value, part.location.path);
   failUnreachable(
     RuntimeErrorCode.SERIALIZED_ANCHOR_MISSING,
     `[compiled-serializer] Part ${part.index} does not own a serializable range`,

@@ -1,10 +1,10 @@
 /**
  * Fresh browser DOM creation from a validated Part Program: the template
  * walk that mounts static nodes, item value/attribute slots, and one anchor
- * Part per index. The walk re-enters the Region builders for anchor Parts
- * through the regions seam (#1548) — buildWhen/buildEach are installed by the
+ * Part per index. The walk re-enters the Block builders for anchor Parts
+ * through the blocks seam (#1548) — buildWhen/buildEach are installed by the
  * importing entry (regions-install.ts), not statically imported here, so a
- * regions-free graph drops the whole regions module — while those builders
+ * blocks-free graph drops the whole blocks module — while those builders
  * call back into {@linkcode mountNodes} for nested item/branch templates — a
  * function-level cycle with no top-level evaluation, which is safe.
  */
@@ -33,7 +33,7 @@ import {
   removeNodes,
 } from './program-kernel.ts';
 import { attachFixedParts, buildTextPart } from './parts.ts';
-import { regionBuildersOrFail } from './regions-seam.ts';
+import { blockBuildersOrFail } from './regions-seam.ts';
 import type { ItemAttrSlot, ItemValueSlot } from './regions.ts';
 
 export function mountNodes(
@@ -58,13 +58,13 @@ export function mountNodes(
       if (item === NO_ITEM) {
         fail(
           RuntimeErrorCode.ITEM_SLOT_OUTSIDE_REGION,
-          '[compiled-runtime] item value slot outside an each Region',
+          '[compiled-runtime] item value slot outside an each Block',
         );
       }
       if (!itemPart) {
         fail(
           RuntimeErrorCode.ITEM_SLOT_WITHOUT_REGION,
-          '[compiled-runtime] item value slot has no item Region',
+          '[compiled-runtime] item value slot has no item Block',
         );
       }
       const value = displayValue(itemValue(itemPart, item, node.field));
@@ -84,7 +84,7 @@ export function mountNodes(
         if (item === NO_ITEM || !itemPart) {
           fail(
             RuntimeErrorCode.ITEM_SLOT_OUTSIDE_REGION,
-            '[compiled-runtime] item attribute slot outside an each Region',
+            '[compiled-runtime] item attribute slot outside an each Block',
           );
         }
         for (const [name, field] of node.iattrs) {
@@ -135,10 +135,10 @@ function mountPart(
   if (!part) fail(RuntimeErrorCode.PART_MISSING, `[compiled-runtime] missing Part ${index}`);
   if (part.k === 'text') return buildTextPart(ctx, parentScope, doc, part);
   if (part.k === 'when') {
-    return regionBuildersOrFail().buildWhen(ctx, parentScope, doc, part, item, itemPart, parent);
+    return blockBuildersOrFail().buildWhen(ctx, parentScope, doc, part, item, itemPart, parent);
   }
   if (part.k === 'each') {
-    return regionBuildersOrFail().buildEach(ctx, parentScope, doc, part, parent);
+    return blockBuildersOrFail().buildEach(ctx, parentScope, doc, part, parent);
   }
   fail(
     RuntimeErrorCode.FIXED_PART_AS_ANCHOR,

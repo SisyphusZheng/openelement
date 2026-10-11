@@ -24,7 +24,7 @@
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../../tests/lib/vitest-asserts.ts';
 import { validatePartProgram } from '@openelement/protocol/part-program';
-import { PartProgramClaimError } from '../../src/internal/compiled/runtime.ts';
+import { PartProgramHydrationError } from '../../src/internal/compiled/runtime.ts';
 import { testProgram } from '../compiled-runtime/test-program.ts';
 import { parseHtml, TestDocument, TestElement, TestText } from '../compiled-runtime/test-dom.ts';
 import {
@@ -178,7 +178,7 @@ test('A10.4: claim fails closed on static drift inside a when Region branch', ()
   // sibling sink at canonical path [0].
   const error = assertThrowsIncludes(
     () => claimExisting(program, whenHost(), root as unknown as Node),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(error.message).toContain('template[1].branch[0]');
   expect(error.message).toContain('attribute drift on "title"');
@@ -228,7 +228,7 @@ test('A10.4: claim fails closed on static and per-item drift inside an each Regi
   (staticRoot.childNodes[2] as TestElement).setAttribute('title', 'tampered');
   const staticError = assertThrowsIncludes(
     () => claimExisting(program, eachHost(), staticRoot as unknown as Node),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(staticError.message).toContain('template[1].item[0][0]');
   expect(staticError.message).toContain('attribute drift on "title"');
@@ -239,7 +239,7 @@ test('A10.4: claim fails closed on static and per-item drift inside an each Regi
   (itemRoot.childNodes[2] as TestElement).setAttribute('data-label', 'tampered');
   const itemError = assertThrowsIncludes(
     () => claimExisting(program, eachHost(), itemRoot as unknown as Node),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(itemError.message).toContain('item attribute drift on "data-label"');
 });
@@ -267,7 +267,7 @@ test('A10.4: a Region nested inside the sink element keeps canonical paths (deep
   (tamperedDiv.childNodes[1] as TestElement).setAttribute('title', 'tampered');
   const error = assertThrowsIncludes(
     () => claimExisting(program, whenHost(), tamperedRoot as unknown as Node),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(error.message).toContain('attribute drift on "title"');
 });
@@ -470,14 +470,14 @@ test('#1374: a genuine duplicate each key still fails closed on both executors',
     () => serializeServer(program, mixedKeyHost(duplicated)),
     Error,
   );
-  expect(serverError.message).toContain('duplicate each Region key 1');
+  expect(serverError.message).toContain('duplicate each Block key 1');
 
   // Claim still fails closed before attaching anything.
   const doc = new TestDocument();
   const root = parseHtml(doc, '<ul><!--oe:p0--><li>one</li><li>again</li><!--oe:/p0--></ul>');
   const claimError = assertThrowsIncludes(
     () => claimExisting(program, mixedKeyHost(duplicated), root as unknown as Node),
-    PartProgramClaimError,
+    PartProgramHydrationError,
   );
   expect(claimError.message).toContain('duplicate key');
 });

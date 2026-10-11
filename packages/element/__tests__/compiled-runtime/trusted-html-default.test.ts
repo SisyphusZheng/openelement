@@ -101,7 +101,7 @@ test('the compile artifact separates the serializable projection from the runtim
 test('island SSR with no props renders the branded default (the KR-12 failure)', () => {
   const rendered = renderDsd(TAG, {
     componentClass: TrustedHtmlIsland as unknown as CustomElementConstructor,
-  }).html;
+  });
   expect(rendered).toContain('<b class="branded">branded default</b>');
 });
 
@@ -121,7 +121,7 @@ test('an explicit branded prop wins (the page-component props() form)', () => {
   const rendered = renderDsd(TAG, {
     componentClass: TrustedHtmlIsland as unknown as CustomElementConstructor,
     props: { bodyHtml: trustedHtml('<i>from props</i>') },
-  }).html;
+  });
   expect(rendered).toContain('<i>from props</i>');
   expect(rendered).not.toContain('branded default');
 });
@@ -129,7 +129,7 @@ test('an explicit branded prop wins (the page-component props() form)', () => {
 test('the claimed element hydrates against the same branded content', () => {
   const serialized = renderDsd(TAG, {
     componentClass: TrustedHtmlIsland as unknown as CustomElementConstructor,
-  }).html;
+  });
   const element = mountSerialized(dom, serialized) as AnyElement;
   // The program root is shadow-open, so the rendered tree is the DSD root's
   // content (the facade harness's shadowRoot surface).

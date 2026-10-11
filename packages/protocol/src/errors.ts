@@ -4,7 +4,7 @@
  *
  * Every failure raised by this package is an {@linkcode OpenElementError}
  * carrying `code`, `severity`, `phase` and `recoverable`; the dedicated
- * exception classes below (`PartProgramClaimError`,
+ * exception classes below (`PartProgramHydrationError`,
  * `CompiledProgramValidationError`, `EachKeyError`) only ADD their own
  * provenance fields on top of that contract, so a consumer catches by code
  * through the one class.
@@ -202,13 +202,6 @@ export const RuntimeErrorCode = {
   SERIALIZED_ANCHOR_MISSING: 'OE_RUNTIME_SERIALIZED_ANCHOR_MISSING',
   /** A when/each Block Part needs the Block builders, which this entry does not install (#1548). */
   BLOCK_BUILDERS_MISSING: 'OE_RUNTIME_BLOCK_BUILDERS_MISSING',
-  /**
-   * Transitional alias of {@linkcode BLOCK_BUILDERS_MISSING} (alpha15 R batch 1).
-   * Batch-2 readers (element `runtime/regions-seam.ts`) still reference this key;
-   * the value stays the pre-rename code so untouched readers keep their exact
-   * observable behavior. Batch 2 moves those readers and removes this key.
-   */
-  REGION_BUILDERS_MISSING: 'OE_RUNTIME_REGION_BUILDERS_MISSING',
 } as const;
 
 /** Element-lifecycle failures: the kernel was driven outside its contract (phase `csr`). */
@@ -242,7 +235,7 @@ export const StyleErrorCode = {
 /**
  * Claim failures: the existing DOM does not match the program that would own
  * it. The value shipped in 1.0.0-alpha.3 and is kept verbatim; consumers match
- * on it, and `PartProgramClaimError` is its only raiser.
+ * on it, and `PartProgramHydrationError` is its only raiser.
  */
 export const ClaimErrorCode = {
   /** Claimed DOM structure or node identity drifted from the compiled program. */
