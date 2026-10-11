@@ -2,7 +2,7 @@
 // esm-boundary:scanner — this file scans for CJS constructs, so it names them.
 /**
  * Release gate: verify packed npm artifacts stay ESM-only and keep host APIs
- * out of all four published packages — runtime-free element/router/ui bar
+ * out of the runtime-face packages — protocol/element/compiler/router/ui bar
  * Node AND Deno APIs, the node-hosted create CLI bars Deno APIs,
  * and every packed module is checked for CJS syntax, undeclared imports, and
  * the JSR bridge.
@@ -24,13 +24,18 @@ const ATTW_VERSION = '0.18.4';
 const RUNTIME_FREE_PACKAGES = new Set([
   '@openelement/protocol',
   '@openelement/element',
+  // The compiler ships no node:* import, process/Buffer use, or Deno API —
+  // only the `typescript` compiler API (a plain JS dependency) and
+  // type-only vite imports — so it scans under the same strict policy as the
+  // runtime packages instead of skipping host checks entirely (M-T4).
+  '@openelement/compiler',
   '@openelement/router',
   '@openelement/ui',
 ]);
 
 /**
  * The node-hosted create CLI: its packed artifact bars the Deno API surface
- * (unlike the runtime-free trio above, which also bars `node:*` /
+ * (unlike the runtime-free packages above, which also bar `node:*` /
  * process / Buffer).
  */
 const NODE_FREE_PACKAGES = new Set(['@openelement/create']);
@@ -415,7 +420,9 @@ type HostPolicy = 'runtime-free' | 'deno-free' | 'none';
 /**
  * Runtime-free packages: the request-time runtime face always scans strict,
  * confirmed host tooling scans with no host patterns, and everything else
- * stays fail-closed strict. create's packed CLI is Deno-barred only.
+ * stays fail-closed strict. No retained package resolves to 'none' outside
+ * the router host-tooling allowlist below: create's packed CLI is Deno-barred
+ * only.
  */
 function hostPolicyFor(packageName: string, relative: string): HostPolicy {
   if (!RUNTIME_FREE_PACKAGES.has(packageName)) {

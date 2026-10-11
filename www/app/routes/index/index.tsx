@@ -14,9 +14,8 @@ import {
 import {
   alphaLineNote,
   COMMON_PUBLISHED_NOTE,
-  OPENELEMENT_VERSION,
   packageCountModifier,
-  packageCountPhrase,
+  REGISTRY_NOTE,
 } from '../../data/version.ts';
 import { installCommand } from '../../data/_generated-install-command.ts';
 import { homeHeroCodeHtml } from '../../data/_generated-page-code.ts';
@@ -272,16 +271,14 @@ export default definePage(PageHome, {
   props({ locale }) {
     const resolved = contentLocale(locale ?? 'en');
     const { headTitle: _headTitle, headDescription: _headDescription, ...copy } = content[resolved];
-    // The version block is one line, and every part of it is generated truth:
-    // the source version, the release-state package count, and the shared
-    // per-package registry fact. The link target is the per-package npm view
-    // command's subject — the package name is the line's stable anchor, while
-    // the version shown beside it moves with the release line.
-    const versionLine = [
-      OPENELEMENT_VERSION,
-      packageCountPhrase(resolved),
-      resolved === 'zh' ? '同一版本' : 'one version',
-    ].join(' · ');
+    // The version block is the per-package version table (T7): one entry
+    // per package from the release-state registry projection, on one nowrap
+    // row. It never claims a shared "one version" line — packages may ride
+    // different versions after the per-package split, and the table shows it
+    // with no further code change. The link target stays the per-package npm
+    // view command's subject — the package name is the line's stable anchor,
+    // while each version shown beside it moves with its own release.
+    const versionLine = REGISTRY_NOTE;
     return {
       ...copy,
       ...homeStrings(resolved),
