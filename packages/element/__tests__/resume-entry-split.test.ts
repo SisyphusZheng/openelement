@@ -140,10 +140,21 @@ const TEXT_PROGRAM_SPEC = `testProgram({
   tag: 'oe-probe',
   root: 'shadow-open',
   template: [{ k: 'el', tag: 'div', attrs: [], children: [
+    { k: 'el', tag: 'button', attrs: [], children: [{ k: 'text', value: '+' }] },
     { k: 'part', index: 0 },
     { k: 'el', tag: 'span', attrs: [['data-slot', 'tail']], children: [{ k: 'text', value: 'tail' }] },
   ] }],
-  parts: [{ k: 'text', index: 0, signal: 'message' }],
+  parts: [
+    { k: 'text', index: 0, signal: 'message' },
+    {
+      k: 'event',
+      index: 1,
+      event: 'click',
+      handler: 'bump',
+      action: { kind: 'method', name: 'bump' },
+      path: [0, 0],
+    },
+  ],
 })`;
 
 /** The same behind a when Block — the client-only island shape. */
@@ -151,6 +162,7 @@ const BLOCK_PROGRAM_SPEC = `testProgram({
   tag: 'oe-probe',
   root: 'shadow-open',
   template: [{ k: 'el', tag: 'div', attrs: [], children: [
+    { k: 'el', tag: 'button', attrs: [], children: [{ k: 'text', value: '+' }] },
     { k: 'part', index: 0 },
     { k: 'part', index: 1 },
   ] }],
@@ -163,6 +175,14 @@ const BLOCK_PROGRAM_SPEC = `testProgram({
       test: { signal: 'visible', op: 'truthy', value: true },
       on: [{ k: 'el', tag: 'p', attrs: [], children: [{ k: 'text', value: 'on' }] }],
       off: [{ k: 'el', tag: 'em', attrs: [], children: [{ k: 'text', value: 'off' }] }],
+    },
+    {
+      k: 'event',
+      index: 2,
+      event: 'click',
+      handler: 'bump',
+      action: { kind: 'method', name: 'bump' },
+      path: [0, 0],
     },
   ],
 })`;
@@ -186,7 +206,7 @@ function resumeDrive(options: { blocks: boolean }): string {
   const visible = new ProbeSignal(false);
   const kernel = new CompiledElementKernel(host, program, {
     signals: { message, visible },
-    handlers: {},
+    handlers: { bump: () => {} },
     rootMode: 'shadow-open',
   });
   host.attachShadow();
@@ -205,6 +225,7 @@ function resumeDrive(options: { blocks: boolean }): string {
     resumeError = error.message;
   }
   message.value = 'four';
+  const button = host.shadowRoot.childNodes[0].childNodes[0];
   console.log(JSON.stringify({
     firstMode: first.mode,
     resumeMode,
@@ -212,6 +233,7 @@ function resumeDrive(options: { blocks: boolean }): string {
     beforeMove,
     afterResume: text(host.shadowRoot),
     active: kernel.active,
+    listeners: button.listenerCount('click'),
   }));
   `;
 }
@@ -228,8 +250,9 @@ test('four-entry resume A: the full entry resumes an activated CSR instance', as
   expect(state.firstMode, 'a CSR component starts fresh').toEqual('fresh');
   expect(state.resumeError, 'the full entry resumes').toEqual('');
   expect(state.afterResume).toEqual(
-    '<div><!--oe:p0-->four<span data-slot="tail">tail</span></div>',
+    '<div><button>+</button><!--oe:p0-->four<span data-slot="tail">tail</span></div>',
   );
+  expect(state.listeners, 'the resumed event binding is attached exactly once').toEqual(1);
 });
 
 test('four-entry resume B: client-only survives fresh → resume with blocks', async () => {
@@ -248,8 +271,9 @@ test('four-entry resume B: client-only survives fresh → resume with blocks', a
   ).toEqual('');
   expect(state.resumeMode).toEqual('claim');
   expect(state.afterResume, 'the resumed DOM shows the current values').toEqual(
-    '<div><!--oe:p0-->four<!--oe:p1--><em>off</em><!--oe:/p1--></div>',
+    '<div><button>+</button><!--oe:p0-->four<!--oe:p1--><em>off</em><!--oe:/p1--></div>',
   );
+  expect(state.listeners, 'the resumed event binding is attached exactly once').toEqual(1);
   expect(state.active, 'the resumed kernel is active').toEqual(true);
 });
 
@@ -262,10 +286,14 @@ test('four-entry resume C: no-blocks claims, resumes and still rejects Block pro
       `${ELEMENT_SRC}internal/compiled/runtime.ts`,
     )});
     // Seed the SSR-shaped artifact through the runtime itself, then claim it.
-    createFreshDom(program, { signals: { message: new ProbeSignal('seed') }, handlers: {} }, host.attachShadow());
+    createFreshDom(
+      program,
+      { signals: { message: new ProbeSignal('seed') }, handlers: { bump: () => {} } },
+      host.attachShadow(),
+    );
     const message = new ProbeSignal('seed');
     const kernel = new CompiledElementKernel(host, program, {
-      signals: { message }, handlers: {}, rootMode: 'shadow-open',
+      signals: { message }, handlers: { bump: () => {} }, rootMode: 'shadow-open',
     });
     const claimMode = kernel.connect().mode;
     kernel.disconnect();
@@ -277,7 +305,9 @@ test('four-entry resume C: no-blocks claims, resumes and still rejects Block pro
   const state = JSON.parse(out.trim().split('\n').at(-1)!);
   expect(state.claimMode, 'the no-blocks entry keeps the claim').toEqual('claim');
   expect(state.resumeMode, 'and it resumes').toEqual('claim');
-  expect(state.dom).toEqual('<div><!--oe:p0-->resumed<span data-slot="tail">tail</span></div>');
+  expect(state.dom).toEqual(
+    '<div><button>+</button><!--oe:p0-->resumed<span data-slot="tail">tail</span></div>',
+  );
 });
 
 test('four-entry resume C2: no-blocks keeps failing closed on a Block program', async () => {
@@ -314,8 +344,9 @@ test('four-entry resume D: base resumes a blocks-free CSR instance without eithe
   ).toEqual('');
   expect(state.resumeMode).toEqual('claim');
   expect(state.afterResume).toEqual(
-    '<div><!--oe:p0-->four<span data-slot="tail">tail</span></div>',
+    '<div><button>+</button><!--oe:p0-->four<span data-slot="tail">tail</span></div>',
   );
+  expect(state.listeners, 'the resumed event binding is attached exactly once').toEqual(1);
 });
 
 test('four-entry resume E: un-activated foreign DOM still fails closed on the minimal entries', async () => {
@@ -329,7 +360,9 @@ test('four-entry resume E: un-activated foreign DOM still fails closed on the mi
       await import(${JSON.stringify(entry.specifier)});
       host.attachShadow().appendChild(makeElement('DIV'));
       const kernel = new CompiledElementKernel(host, program, {
-        signals: { message: new ProbeSignal('x') }, handlers: {}, rootMode: 'shadow-open',
+        signals: { message: new ProbeSignal('x') },
+        handlers: { bump: () => {} },
+        rootMode: 'shadow-open',
       });
       try { kernel.connect(); console.log('NO-ERROR'); }
       catch (error) { console.log('THREW ' + error.message); }
