@@ -41,10 +41,8 @@ export interface TextPartSlot {
   current: string;
 }
 
-export function updateTextPart(slot: TextPartSlot, value: unknown): void {
-  if (slot.scope.disposed) return;
-  const next = displayValue(value);
-  if (next === slot.current) return;
+/** The canonical anchor/value-node write of one text Part. */
+function writeTextPart(slot: TextPartSlot, next: string): void {
   const parent = slot.anchor.parentNode;
   if (!parent) {
     slot.current = next;
@@ -54,12 +52,29 @@ export function updateTextPart(slot: TextPartSlot, value: unknown): void {
     slot.text?.parentNode?.removeChild(slot.text);
     slot.text = undefined;
   } else if (slot.text) {
-    slot.text.data = next;
+    if (slot.text.data !== next) slot.text.data = next;
   } else {
     slot.text = slot.anchor.ownerDocument.createTextNode(next);
     parent.insertBefore(slot.text, slot.anchor.nextSibling);
   }
   slot.current = next;
+}
+
+export function updateTextPart(slot: TextPartSlot, value: unknown): void {
+  if (slot.scope.disposed) return;
+  const next = displayValue(value);
+  if (next === slot.current) return;
+  writeTextPart(slot, next);
+}
+
+/**
+ * Reconcile the slot's owned node to `value` unconditionally (resume
+ * reconciliation): the reconnect path cannot trust its `current` baseline,
+ * because the DOM it owned may carry a write that never reached a
+ * subscription.
+ */
+export function reconcileTextPart(slot: TextPartSlot, value: unknown): void {
+  writeTextPart(slot, displayValue(value));
 }
 
 export function buildTextPart(
@@ -82,6 +97,9 @@ export function buildTextPart(
     slot.text = undefined;
   });
   subscribeWrites(ctx, scope, part.signal, (value) => updateTextPart(slot, value));
+  // The ownership record a reconnect re-arms (revive.ts): this slot is the
+  // single owner of the anchor and the value node for this Part index.
+  ctx.bindings.set(part.index, slot);
   return [anchor, ...(slot.text ? [slot.text] : [])];
 }
 

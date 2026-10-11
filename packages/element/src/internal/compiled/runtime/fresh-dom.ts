@@ -26,13 +26,13 @@ import {
   createContext,
   displayValue,
   fail,
-  instance,
   itemAttrValue,
   itemValue,
   NO_ITEM,
   removeNodes,
 } from './program-kernel.ts';
 import { attachFixedParts, buildTextPart } from './parts.ts';
+import { createRevivableInstance } from './revive.ts';
 import { blockBuildersOrFail } from './blocks-seam.ts';
 import type { ItemAttrSlot, ItemValueSlot } from './blocks.ts';
 
@@ -180,7 +180,7 @@ export function createFreshDom(
       root.appendChild(node);
     }
     attachFixedParts(ctx, root, 'fresh');
-    return instance(ctx);
+    return createRevivableInstance(ctx, root);
   } catch (error) {
     removeNodes(created);
     try {

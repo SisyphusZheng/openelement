@@ -211,10 +211,14 @@ test('a resume never repairs structural damage inside a block range', () => {
   div.removeChild(div.childNodes[2]);
   const before = toHtml(div);
 
+  // The repair path is what must not run: the resume fails closed and leaves
+  // the range untouched. The diagnostic names the expected end anchor exactly
+  // (the reconnect verifies the retained ownership graph, so it can say which
+  // node is missing instead of only that a child is).
   assertThrowsIncludes(
     () => kernel.connect(),
     Error,
-    'missing child',
+    'expected <!--oe:/p0--> anchor',
     'an unidentifiable block range fails closed instead of being rebuilt',
   );
   expect(toHtml(div), 'a failed resume leaves the range untouched').toEqual(before);

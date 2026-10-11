@@ -22,12 +22,19 @@ import {
   RuntimeErrorCode,
 } from '@openelement/protocol/errors';
 import type { RuntimeProgramIR } from '../runtime-program.ts';
+// Type-only (erased): the binding shapes this context records, owned by the
+// Part and Block modules that create them.
+import type { TextPartSlot } from './parts.ts';
+import type { EachBlock, WhenBlock } from './blocks.ts';
 import { LifetimeScope } from '../lifetime-scope.ts';
 
 export type ProgramFixedPart = Extract<
   PartProgramV2['parts'][number],
   { k: 'attr' | 'prop' | 'bool' | 'class' | 'style' | 'html' | 'event' | 'ref' }
 >;
+
+/** The retained binding of one Part anchor (see MountContext.bindings). */
+export type PartBinding = TextPartSlot | WhenBlock | EachBlock;
 
 export type CompiledEventHandler = (event: unknown) => void;
 export type CompiledRefHandler = (element: Element | null) => void | Unsubscribe;
@@ -57,6 +64,14 @@ export interface CompiledProgramInstance {
   dispose(): void;
   /** Adopt one formerly pending streamed Part after its owned range is filled. */
   resolveDeferred?(partIndex: number): void;
+  /**
+   * Detach the live bindings (subscriptions, listeners) while keeping the DOM
+   * this instance produced and the ownership record that re-arms it
+   * (revive.ts). A suspended instance owns no live resources.
+   */
+  suspend?(): void;
+  /** Re-verify the owned DOM and re-arm every retained binding. */
+  revive?(): void;
 }
 
 export interface MountContext {
@@ -65,44 +80,13 @@ export interface MountContext {
   rootScope: LifetimeScope;
   fixedPartsByPath: Map<string, ProgramFixedPart[]>;
   /**
-   * Resume-only: value-node reconciles planned by the scan and applied only
-   * after the complete owned structure has validated. The staged-scan
-   * discipline ("validate first, attach second") extends to the resume's own
-   * mutations: a resume that fails later in the scan must leave the
-   * disconnect-time render untouched instead of half-reconciled.
+   * The DOM ownership record of this program instance: one retained binding
+   * per Part anchor (text slot, when Block, each Block). Built by whichever
+   * executor materialized the DOM (fresh creation or the initial claim) and
+   * re-armed by a reconnect (revive.ts) — the reconnect never re-discovers
+   * the tree it produced.
    */
-  resumeTextPlan?: ResumeTextPlan;
-}
-
-/** Pending value-node mutations of a resume, committed by the owning scan. */
-export interface ResumeTextPlan {
-  /** Value updates on the Part's own (adopted) node. */
-  writes: Array<{ node: Text; value: string }>;
-  /** Retirements of the Part's own node on the empty transition. */
-  removals: Array<{ parent: Node; node: Node }>;
-  /** Value nodes created in the plan phase, inserted after it succeeds. */
-  insertions: Array<{ parent: Node; before: Node | null; node: Text }>;
-}
-
-/**
- * The resume plan of one hydration attempt, created on first use. Each
- * `hydrateExistingDom` iteration owns its own context, so a repaired re-scan
- * starts from a fresh plan and the failed iteration's plan is dropped.
- */
-export function resumeTextPlan(ctx: MountContext): ResumeTextPlan {
-  return (ctx.resumeTextPlan ??= { writes: [], removals: [], insertions: [] });
-}
-
-/** Apply a resume's planned value-node mutations, in plan order. */
-export function commitResumeTextPlan(ctx: MountContext): void {
-  const plan = ctx.resumeTextPlan;
-  if (!plan) return;
-  for (const write of plan.writes) write.node.data = write.value;
-  for (const removal of plan.removals) removal.parent.removeChild(removal.node);
-  for (const insertion of plan.insertions) {
-    insertion.parent.insertBefore(insertion.node, insertion.before);
-  }
-  ctx.resumeTextPlan = undefined;
+  bindings: Map<number, PartBinding>;
 }
 
 export function createContext(
@@ -123,6 +107,7 @@ export function createContext(
     host,
     rootScope: ownerScope?.child() ?? new LifetimeScope(),
     fixedPartsByPath,
+    bindings: new Map(),
   };
 }
 

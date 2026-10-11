@@ -267,6 +267,8 @@ export function buildWhen(
     itemPart,
   };
   scope.addRangeCleanup(() => removeNodes(block.nodes));
+  // The ownership record a reconnect re-arms (revive.ts).
+  ctx.bindings.set(part.index, block);
   block.nodes = mountNodes(
     ctx,
     block.branchScope,
@@ -378,6 +380,8 @@ export function buildEach(
     block.byKey.set(key, stored);
     nodes.push(...entry.nodes);
   }
+  // The ownership record a reconnect re-arms (revive.ts).
+  ctx.bindings.set(part.index, block);
   subscribeWrites(
     ctx,
     scope,

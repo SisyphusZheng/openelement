@@ -373,7 +373,17 @@ export class OpenElement extends OpenElementConfiguration {
         state.signals[field].value = seed.value;
         kernel.resolveStreamPart(part);
       });
-      if (activation.mode === 'claim') {
+      if (activation.resumed) {
+        // A reconnect re-arms the DOM this instance already owns. The one-time
+        // claim work (pre-upgrade replay) does not repeat, and the activation
+        // hook that matches the instance's ORIGIN fires: `onDsdHydrated` is
+        // shadow/DSD-only, while a CSR/light connection fires `onCsrRendered`
+        // on every activation — reconnect included. Per-instance
+        // work that must run once stays in the activation path that ran once;
+        // per-connection setup belongs in `clientActivate()` below.
+        if (activation.origin === 'claim') this.onDsdHydrated();
+        else this.onCsrRendered();
+      } else if (activation.mode === 'claim') {
         replayPreUpgradeCaptures(activation.root as unknown as Node);
         this.onDsdHydrated();
       } else {

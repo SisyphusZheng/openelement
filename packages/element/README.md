@@ -76,6 +76,21 @@ facade for one job; none of them names an `internal/` module.
 | `@openelement/element/base`            | Neither optional install: no hydration executor, no Block builders (#1548) — the `base` row of the per-feature floor table, for pages whose every island is client-only AND uses no Blocks. The Router's two-predicate selection lands here only on proof of both. |
 | `@openelement/element/css-modules`     | Ambient `*.css` module type (#1558): the default export of an imported `.css` sheet is the cross-realm `StyleSheetLike`. Types-only — load it through tsconfig `types` (the vite/client pattern); it resolves no runtime module. |
 
+Reconnect is a core capability, not an entry option: reconnecting an
+activated element re-binds the DOM that instance produced, from the ownership
+record the runtime keeps (one retained binding per Part anchor in
+`MountContext.bindings`), verified against the program before anything is
+re-armed — so `./client-only` and `./base` resume a moved island without the
+hydration executor (`internal/compiled/runtime/revive.ts`). The entries differ
+only in which *first-activation* capabilities they install, and an entry
+without the executor still refuses unknown DOM on a first connect, naming the
+entry that can hydrate it. Repo-local measurement of the four entries (this
+package's runtime plus one text Part, minified ESM, 2026-10-12): `.` 100,646 B
+raw / 27,605 B gzip, `./client-only` 83,444 / 23,211, `./no-blocks`
+92,219 / 25,224, `./base` 73,386 / 20,328 — the claim axis is worth ~17 KB raw
+and the blocks axis ~8 KB raw, while the shared reconnect capability costs
+~5 KB raw (1.3 KB gzip) per entry.
+
 The compiler (`@openelement/compiler`, including the standalone `element()`
 Vite plugin at `@openelement/compiler/vite`) is a separate package since the
 #1557 split: it imports the TypeScript compiler API and must never be reached

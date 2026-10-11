@@ -15,6 +15,7 @@
  */
 
 import {
+  attachItemEvents,
   buildEach,
   buildWhen,
   expectsArrayMessage,
@@ -31,4 +32,5 @@ installBlockBuilders({
   updateEach,
   whenActive,
   expectsArrayMessage,
+  attachItemEvents,
 });

@@ -54,9 +54,37 @@ export interface BlockBuilders {
   updateEach(block: EachBlock, value: unknown): void;
   whenActive(part: ProgramWhenPart, value: unknown): boolean;
   expectsArrayMessage(where: string, part: ProgramEachPart, value: unknown): string;
+  /**
+   * Per-item event wiring, re-run by a reconnect so a revived list reinstates
+   * exactly the listeners its entries had (revive.ts) without importing the
+   * blocks module into a blocks-free graph.
+   */
+  attachItemEvents(
+    ctx: MountContext,
+    part: ProgramEachPart,
+    nodes: Node[],
+    scope: LifetimeScope,
+    itemBox: { item: unknown },
+  ): void;
 }
 
 let installed: BlockBuilders | undefined;
+
+/**
+ * Per-item event re-wiring for a revived list (revive.ts): the seam's own
+ * accessor, so a blocks-free graph never imports the blocks module. Reaching
+ * this with no builders installed means the same build-selection bug the
+ * builders themselves report.
+ */
+export function attachItemEvents(
+  ctx: MountContext,
+  part: ProgramEachPart,
+  nodes: Node[],
+  scope: LifetimeScope,
+  itemBox: { item: unknown },
+): void {
+  blockBuildersOrFail().attachItemEvents(ctx, part, nodes, scope, itemBox);
+}
 
 /** Install the one set of Block builders. Called by the installing entries' module. */
 export function installBlockBuilders(builders: BlockBuilders): void {

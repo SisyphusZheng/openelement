@@ -101,10 +101,21 @@ interface ErrorRoutingHost {
  */
 export type CompiledActivationMode = 'claim' | 'fresh';
 
-/** Truth of one successful kernel activation: the mode and the root it ran against. */
+/**
+ * Truth of one successful kernel activation: the mode and the root it ran
+ * against, plus whether this connect re-bound the DOM of an already-activated
+ * instance (a reconnect). A reconnect reports `mode: 'claim'` — it binds
+ * existing DOM — and `resumed: true` identifies it, together with the
+ * `origin` activation that produced the DOM the instance owns. The facade
+ * derives its lifecycle hooks from these facts: `onDsdHydrated` is
+ * shadow/DSD-only, while a CSR/light connection keeps `onCsrRendered` on
+ * every activation, reconnect included.
+ */
 export interface CompiledKernelActivation {
   readonly mode: CompiledActivationMode;
   readonly root: CompiledStyleRoot;
+  readonly resumed: boolean;
+  readonly origin: CompiledActivationMode;
 }
 
 export interface CompiledElementKernelOptions extends CompiledRuntimeHost {
@@ -141,6 +152,12 @@ export class CompiledElementKernel {
    * semantics.
    */
   #activatedOnce = false;
+  /**
+   * The activation that produced the DOM this instance owns ('fresh' for CSR
+   * creation, 'claim' for server/DSD markup). A reconnect re-binds that same
+   * DOM, so its activation hook is the origin's hook, not a new claim's.
+   */
+  #origin: CompiledActivationMode | undefined;
   #lifecycle = new LifetimeScope();
   #root?: CompiledStyleRoot;
   #instance?: CompiledProgramInstance;
@@ -215,6 +232,25 @@ export class CompiledElementKernel {
       // survived parsing still mounts fresh instead of failing a claim that
       // could not match. Real content — an element, an anchor comment, or
       // visible text — keeps the fail-closed claim path.
+      const retained = this.#activatedOnce ? this.#instance : undefined;
+      if (retained?.revive) {
+        // A reconnect is a RESUME: bind the DOM this instance already owns.
+        // It needs no SSR hydration executor — the retained bindings ARE the
+        // record of that DOM — so the same path serves every entry, and the
+        // verification inside fails closed on structure damage before
+        // anything is mutated.
+        retained.revive();
+        this.context.connect();
+        if (this.errors.hasError) this.errors.reset();
+        this.#activation = {
+          mode: 'claim',
+          root,
+          resumed: true,
+          origin: this.#origin ?? 'claim',
+        };
+        this.#active = true;
+        return this.#activation;
+      }
       const hasContent = Array.from(root.childNodes).some(isClaimableNode);
       // An activated instance always resumes: if its program-owned nodes are
       // gone, that is external structure damage and the resume must fail closed
@@ -247,10 +283,11 @@ export class CompiledElementKernel {
       this.#instance =
         mode === 'fresh'
           ? createFreshDom(this.#program, host, root, this.#lifecycle)
-          : this.#claim(host, root, styleCount, this.#activatedOnce);
+          : this.#claim(host, root, styleCount);
       this.context.connect();
       if (this.errors.hasError) this.errors.reset();
-      this.#activation = { mode, root };
+      this.#origin = mode;
+      this.#activation = { mode, root, resumed: false, origin: mode };
       this.#active = true;
       this.#activatedOnce = true;
       return this.#activation;
@@ -266,11 +303,18 @@ export class CompiledElementKernel {
         // Preserve the original construction/claim error.
       }
       try {
-        this.#instance?.dispose();
+        if (this.#activatedOnce) {
+          // A failed RESUME keeps the retained instance: the reconnect mutated
+          // nothing, the damage is repairable, and a later connect can revive
+          // the same DOM (K-Final-2).
+          this.#instance?.suspend?.();
+        } else {
+          this.#instance?.dispose();
+          this.#instance = undefined;
+        }
       } catch {
         // Preserve the original construction/claim error.
       }
-      this.#instance = undefined;
       if (themeConnected) themeManager.disconnect(this.#element);
       this.#styleScope.disconnect();
       this.#lifecycle = new LifetimeScope();
@@ -294,8 +338,9 @@ export class CompiledElementKernel {
       }
     };
     attempt(() => this.#lifecycle.dispose());
-    attempt(() => this.#instance?.dispose());
-    this.#instance = undefined;
+    // Suspend, do not destroy: the instance keeps the DOM it produced and the
+    // ownership record a reconnect re-arms (revive.ts).
+    attempt(() => this.#instance?.suspend?.());
     attempt(() => this.context.disconnect());
     attempt(() => themeManager.disconnect(this.#element));
     attempt(() => this.#styleScope.disconnect());
@@ -312,6 +357,12 @@ export class CompiledElementKernel {
   dispose(): void {
     if (this.#destroyed) return;
     this.disconnect();
+    try {
+      this.#instance?.dispose();
+    } catch {
+      // A destroyed kernel still releases every other service below.
+    }
+    this.#instance = undefined;
     this.context.dispose();
     this.form.dispose();
     this.errors.dispose();
@@ -330,7 +381,6 @@ export class CompiledElementKernel {
     host: CompiledRuntimeHost,
     root: CompiledStyleRoot,
     styleCount: number,
-    resume = false,
   ): CompiledProgramInstance {
     const executor = hydrationExecutor();
     if (!executor) {
@@ -356,7 +406,6 @@ export class CompiledElementKernel {
       {
         expectStaticStyle: styleCount > 0,
         staticStyleReady: staticStyleReadiness(this.#options.styles),
-        resume,
         streamParts: stream?.parts,
         pendingParts: stream ? [...stream.pending] : undefined,
         recovery: stream ? 'owning' : 'throw',
