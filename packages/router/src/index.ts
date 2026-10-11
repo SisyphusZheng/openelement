@@ -87,20 +87,6 @@ export {
   OPEN_ELEMENT_STYLES_KEYS,
   resolveDirs,
 } from './config.ts';
-/**
- * Pre-rename `app-shell` convention names (alpha15 R batch 3 transitional
- * aliases; batch 4 removes). Prefer the `LAYOUT` canonical names in new code.
- */
-/** Pre-rename convention path. @deprecated Use CONVENTION_LAYOUT_PATH. */
-export { CONVENTION_APP_SHELL_PATH } from './config.ts';
-/** Pre-rename convention suffix. @deprecated Use CONVENTION_LAYOUT_SUFFIX. */
-export { CONVENTION_APP_SHELL_SUFFIX } from './config.ts';
-/** Pre-rename convention tag. @deprecated Use CONVENTION_LAYOUT_TAG. */
-export { CONVENTION_APP_SHELL_TAG } from './config.ts';
-/** Pre-rename convention path helper. @deprecated Use conventionLayoutPath. */
-export { conventionAppShellPath } from './config.ts';
-/** Pre-rename accepted-keys list. @deprecated Use OPEN_ELEMENT_LAYOUT_KEYS. */
-export { OPEN_ELEMENT_APP_SHELL_KEYS } from './config.ts';
 export type {
   OpenElementBuildConfig,
   OpenElementDirsConfig,

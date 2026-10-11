@@ -268,16 +268,6 @@ export interface LayoutPlan {
   default: ResolvedLayout;
   layouts: Record<string, ResolvedLayout>;
 }
-/**
- * Pre-rename layout plan types (alpha15 R batch 3 transitional aliases; batch 4 removes).
- * Prefer the `Layout` canonical names in new code.
- */
-/** Pre-rename layout declaration. @deprecated Use LayoutDecl. */
-export type AppShellDecl = LayoutDecl;
-/** Pre-rename resolved layout. @deprecated Use ResolvedLayout. */
-export type ResolvedAppShell = ResolvedLayout;
-/** Pre-rename layout plan. @deprecated Use LayoutPlan. */
-export type AppShellPlan = LayoutPlan;
 
 /** The full build-time description of one generated entry: routes, islands, renderers, middleware, document, and layout plans. */
 export interface EntryDescriptor {

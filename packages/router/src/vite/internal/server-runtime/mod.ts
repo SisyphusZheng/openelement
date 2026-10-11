@@ -98,18 +98,6 @@ export type {
 } from './renderer-runtime.ts';
 export { createLayoutRuntime, createStatusHtml, localizeLayoutHref } from './document-runtime.ts';
 export type { LayoutRuntime, LayoutRuntimeDeps, StatusHtmlRenderer } from './document-runtime.ts';
-/**
- * Pre-rename server-runtime names (alpha15 R batch 3 transitional aliases;
- * batch 4 removes). Prefer the `Layout` canonical names in new code.
- */
-/** Pre-rename runtime creator. @deprecated Use createLayoutRuntime. */
-export { createLayoutRuntime as createAppShellRuntime } from './document-runtime.ts';
-/** Pre-rename href localizer. @deprecated Use localizeLayoutHref. */
-export { localizeLayoutHref as localizeShellHref } from './document-runtime.ts';
-/** Pre-rename runtime type. @deprecated Use LayoutRuntime. */
-export type { LayoutRuntime as AppShellRuntime } from './document-runtime.ts';
-/** Pre-rename runtime deps type. @deprecated Use LayoutRuntimeDeps. */
-export type { LayoutRuntimeDeps as AppShellRuntimeDeps } from './document-runtime.ts';
 export {
   createStreamPageShell,
   createStreamBody,

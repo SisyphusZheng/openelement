@@ -101,11 +101,6 @@ export type LayoutConfig =
       import: string;
       props?: Record<string, unknown>;
     };
-/**
- * Pre-rename layout declaration type (alpha15 R batch 3 transitional alias; batch 4 removes).
- * @deprecated Use LayoutConfig.
- */
-export type AppShellConfig = LayoutConfig;
 type LayoutsConfig = Record<string, LayoutConfig | undefined>;
 
 /**

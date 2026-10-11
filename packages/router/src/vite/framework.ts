@@ -13,11 +13,6 @@ export type {
   SpecialFileType,
   SsrAdmissionDecision,
 } from '@openelement/element';
-/**
- * Pre-rename layout declaration type (alpha15 R batch 3 transitional alias; batch 4 removes).
- * @deprecated Use LayoutConfig.
- */
-export type { LayoutConfig as AppShellConfig } from '@openelement/element';
 
 /**
  * Project locale declaration.

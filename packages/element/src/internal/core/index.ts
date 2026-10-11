@@ -31,11 +31,6 @@ export type {
   StrategySource,
   UnsafeHtml,
 } from '@openelement/protocol/framework';
-/**
- * Pre-rename layout declaration type (alpha15 R batch 3 transitional alias; batch 4 removes).
- * @deprecated Use LayoutConfig.
- */
-export type { LayoutConfig as AppShellConfig } from '@openelement/protocol/framework';
 
 export {
   ERROR_PREFIX,

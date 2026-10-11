@@ -96,18 +96,6 @@ export const CONVENTION_HEAD_PATH = `${CONVENTION_BASE_DIR}/${CONVENTION_HEAD_SU
 /** The tag name the convention layout is registered under. */
 export const CONVENTION_LAYOUT_TAG = 'app-layout';
 
-/**
- * Pre-rename `app-shell` convention names (alpha15 R batch 3 transitional
- * aliases; batch 4 removes). Prefer the `CONVENTION_LAYOUT_*` canonical
- * names in new code.
- */
-/** Pre-rename convention suffix. @deprecated Use CONVENTION_LAYOUT_SUFFIX (`layout.tsx`). */
-export const CONVENTION_APP_SHELL_SUFFIX = CONVENTION_LAYOUT_SUFFIX;
-/** Pre-rename convention path. @deprecated Use CONVENTION_LAYOUT_PATH (`app/layout.tsx`). */
-export const CONVENTION_APP_SHELL_PATH = CONVENTION_LAYOUT_PATH;
-/** Pre-rename convention tag. @deprecated Use CONVENTION_LAYOUT_TAG (`app-layout`). */
-export const CONVENTION_APP_SHELL_TAG = CONVENTION_LAYOUT_TAG;
-
 /** The site-title convention source (the package.json `name` field). */
 export const CONVENTION_PACKAGE_JSON = 'package.json';
 
@@ -345,11 +333,6 @@ export const OPEN_ELEMENT_DIRS_KEYS: readonly string[] = ['routes', 'islands', '
 
 /** Accepted keys inside `layout`. */
 export const OPEN_ELEMENT_LAYOUT_KEYS: readonly string[] = ['import', 'props'];
-/**
- * Pre-rename accepted-keys list (alpha15 R batch 3 transitional alias; batch 4 removes).
- * @deprecated Use OPEN_ELEMENT_LAYOUT_KEYS.
- */
-export const OPEN_ELEMENT_APP_SHELL_KEYS: readonly string[] = OPEN_ELEMENT_LAYOUT_KEYS;
 
 /** Accepted keys inside `styles`. */
 export const OPEN_ELEMENT_STYLES_KEYS: readonly string[] = ['tokens'];
@@ -665,14 +648,6 @@ export function conventionTokensPath(base: string): string {
 /** The layout convention path for a resolved `dirs` block. */
 export function conventionLayoutPath(base: string): string {
   return `${base}/${CONVENTION_LAYOUT_SUFFIX}`;
-}
-
-/**
- * Pre-rename layout convention path helper (alpha15 R batch 3 transitional alias; batch 4 removes).
- * @deprecated Use conventionLayoutPath.
- */
-export function conventionAppShellPath(base: string): string {
-  return conventionLayoutPath(base);
 }
 
 /** The structural document-head convention path for a resolved `dirs` block. */
