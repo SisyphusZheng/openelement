@@ -59,6 +59,7 @@ import process from 'node:process';
 import { basename, isAbsolute, join, relative, resolve } from 'pathe';
 import type { Plugin, ResolvedConfig } from 'vite';
 import { PresetErrorCode, buildError } from '../internal/error-codes.ts';
+import type { TailwindPresetOptions } from '../config.ts';
 import { OPEN_ELEMENT_DIR } from './internal/paths.ts';
 import { createLogger } from '@openelement/element';
 
@@ -72,39 +73,14 @@ export const TAILWIND_BUNDLE_ASSET = 'open-tailwind.css' as const;
 /** The emitted `@scope` light-DOM face asset, under `assets/`. */
 export const TAILWIND_SCOPE_ASSET = 'open-tailwind.scope.css' as const;
 
-/** Options for the opt-in Tailwind preset. `tailwind: true` uses every default. */
-export interface TailwindPresetOptions {
-  /**
-   * Style sources compiled into the bundle's `theme` layer: package CSS
-   * specifiers (`@openelement/ui/theme.css`) or app-relative paths. Their
-   * `@theme` blocks (and any Tailwind utilities they reference) compile
-   * through `@tailwindcss/vite`.
-   */
-  theme?: string[];
-  /**
-   * Style sources wrapped into `@layer components` — the component-facing
-   * token/recipe layer. Also the source of the `@scope` light-DOM face.
-   */
-  components?: string[];
-  /**
-   * Host tags the `@scope` light-DOM face is emitted for (one `@scope (tag)`
-   * block per tag carrying the components layer). Empty/absent skips the
-   * face. Package-island apps derive this from the package manifest.
-   */
-  scopeTags?: string[];
-  /**
-   * Whether the bundle link is also injected into every DSD shadow template
-   * (seam 2's shadow adoption). Default `false`: the compiled claim requires
-   * the DSD template's children to equal the Part Program's own nodes (the
-   * @openelement/element compiled-hydration walk fails closed on any injected
-   * node), so the exact-claim default leaves the shadow templates untouched.
-   * The head link alone still reaches every shadow tree, because CSS custom
-   * properties — the theme layer's entire delivery — inherit across the
-   * shadow boundary. Set `true` only for consumers whose compiled elements
-   * do not claim their SSR shadow DOM exactly.
-   */
-  injectDsdLinks?: boolean;
-}
+/**
+ * The preset's option shape is owned by the host-neutral config surface
+ * (`../config.ts`), not by this Vite build layer: the Framework-root
+ * declaration graph that packed consumers typecheck must never name `vite`,
+ * so this module re-exports the type instead of declaring it (the
+ * packed-consumer boundary walk is the authority).
+ */
+export type { TailwindPresetOptions };
 
 /** Normalize `tailwind: true` / object / undefined into resolved options. */
 export function resolveTailwindPresetOptions(
