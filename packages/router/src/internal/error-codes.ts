@@ -192,6 +192,11 @@ export const ClientAssetErrorCode = {
    * resolve to the same asset and strategy, tag ownership is one-to-one.
    */
   ISLAND_TAG_DUPLICATE: 'OE_CLIENT_ASSET_ISLAND_TAG_DUPLICATE',
+  /**
+   * The Tailwind entry is enabled but the client entry chunk emitted no
+   * stylesheet — the document would ship unstyled (alpha15 S lane).
+   */
+  STYLESHEET_MISSING: 'OE_CLIENT_ASSET_STYLESHEET_MISSING',
 } as const;
 
 /**
@@ -303,26 +308,16 @@ export const RouteScanErrorCode = {
 } as const;
 
 /**
- * Stable codes for the Tailwind preset seam (`vite/preset-tailwind.ts`).
- * Phase `build`: the preset is an opt-in build-layer delivery (alpha9 C2,
- * #1505) — it compiles the app's declared style sources through
- * `@tailwindcss/vite` into one linked bundle and injects the DSD/head
- * `<link>` emission, and every way that can fail carries a code.
+ * Stable codes for the Tailwind entry seam (`vite/tailwind.ts`). Phase
+ * `build`: the entry is an opt-in delivery (alpha9 C2 #1505; externalized in
+ * the alpha15 S lane) — the app's declared style sources are compiled by the
+ * OFFICIAL `@tailwindcss/vite` pipeline inside the client build and the
+ * emitted stylesheet is linked in the document head, so the only failure this
+ * seam owns is the peer's absence.
  */
 export const PresetErrorCode = {
-  /** The preset is enabled but `@tailwindcss/vite` is not resolvable. */
+  /** The entry is enabled but `@tailwindcss/vite` is not resolvable. */
   TAILWIND_UNRESOLVABLE: 'OE_PRESET_TAILWIND_UNRESOLVABLE',
-  /** The preset's bundle compile (an inner Vite build) failed. */
-  BUNDLE_COMPILE_FAILED: 'OE_PRESET_BUNDLE_COMPILE_FAILED',
-  /**
-   * The preset is enabled while a rendered page still fully inlines the
-   * global sheet as an inline `<style>` (the `styleText()` full-inline
-   * delivery). The preset's link-not-inline seam is the only global-sheet
-   * channel while it is active: the build fails closed instead of shipping
-   * both deliveries. Per-component `<style data-oe-static-styles>` emission
-   * is not a full-sheet inline and stays legal.
-   */
-  GLOBAL_SHEET_INLINE_FORBIDDEN: 'OE_PRESET_GLOBAL_SHEET_INLINE_FORBIDDEN',
 } as const;
 
 /**

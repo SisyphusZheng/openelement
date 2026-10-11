@@ -69,9 +69,9 @@ test('openPlugin: returns retained plugins in correct order', () => {
     // sheet adapters for the requests the open:core compiled-element
     // transform (protocol-activated) emits.
     'open:style-assets-dev',
-    // #1582: the dev half of the Tailwind preset (apply: 'serve'), inert
-    // until the resolved options carry the `tailwind` key.
-    'open:tailwind-preset-dev',
+    // The dev half of the Tailwind entry (apply: 'serve'), inert until the
+    // resolved options carry the `tailwind` key.
+    'open:tailwind-dev',
     'open:virtual-entry',
     '@hono/vite-dev-server',
     'open:island-transform',

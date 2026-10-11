@@ -79,7 +79,7 @@ accepted-key list. `vite.config.ts` stays Vite-only: `plugins: [...openElement()
   content. The layout is a convention: delete the file and pages still render
   (carrying their own chrome again), or opt out explicitly with `layout: false`
   in `openelement.config.ts`.
-- `app/styles/theme.css` — the @theme role sheet: Tailwind-ON roles, the starter palette aliases, dark and forced-colors pairs. Dev serves it directly; the build compiles it through the router's Tailwind preset.
+- `app/styles/theme.css` — the @theme role sheet: Tailwind-ON roles, the starter palette aliases, dark and forced-colors pairs. Dev serves the compiled result at `/.openElement/tailwind.css` and the build emits it as the content-hashed document stylesheet the head links — both through the official `@tailwindcss/vite` pipeline.
   Dark values ride `prefers-color-scheme`; no theme runtime.
 - `app/styles/recipes.css` — documented plain HTML+CSS recipes for the
   zero-interaction shapes (badge, callout, card, CSS-only tabs) that retired

@@ -97,7 +97,7 @@ source, no shipped values:
 **The package ships no token values.** The compiled `theme-tokens` twin
 (`themeTokenCss` / `themeTokenSheet`) was deleted in alpha9 C5 — the role
 names, dark pairs and forced-colors tier are the contract; the values come
-from the `@openelement/router` Tailwind preset (ON) or a table the consumer
+from the `@openelement/router` Tailwind entry (ON) or a table the consumer
 writes itself (OFF). See [CUSTOMIZATION.md](./CUSTOMIZATION.md),
 "Value delivery".
 
@@ -150,7 +150,7 @@ manifest; the per-component JSDoc is the source of truth for those.
 @openelement/ui/open-theme-toggle
 @openelement/ui/open-dialog
 @openelement/ui/open-dropdown
-@openelement/ui/theme.css              (the @theme role source; compiled through the router preset)
+@openelement/ui/theme.css              (the @theme role source; compiled through the router Tailwind entry)
 @openelement/ui/instance-state         (per-element instance state store; tree-shakeable leaf)
 @openelement/ui/manifest               (generated WC package manifest; node-safe leaf)
 ```

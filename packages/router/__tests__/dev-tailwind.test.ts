@@ -1,34 +1,32 @@
 /**
- * @openelement/router — dev-mode Tailwind preset delivery (#1582).
+ * @openelement/router — the dev channel of the Tailwind entry (alpha15 S lane).
  *
- * The preset's build half (#1505) linked the compiled theme into the SSG
- * output, and the dev pipeline read `tailwind` nowhere: `pnpm dev` on the
- * alpha.11 starter served pages whose `var(--paper/--brand/…)` all resolved
- * empty, because the authored `@theme` block is an unknown at-rule to the
- * browser and only the Tailwind compile turns its roles into real custom
- * properties. This suite boots a REAL dev server (vite + @hono/vite-dev-server
- * over the generated entry, the `request-time-parity` harness shape) against a
- * fixture that declares `tailwind: { theme }` and asserts the delivered
- * document:
+ * The build links the compiled source bundle into the SSG output and the dev
+ * pipeline must deliver the SAME compiled fact: the authored `@theme` block is
+ * an unknown at-rule to the browser, and the role aliases seated on it stay
+ * empty until the entry passes through the official Tailwind compile (#1582).
+ * This suite boots a REAL dev server (vite + @hono/vite-dev-server over the
+ * generated entry, the `request-time-parity` harness shape) against a fixture
+ * that declares `tailwind: { theme }` and asserts the delivered document:
  *
- *   1. the head carries `<link rel="stylesheet">` to the staged entry and the
- *      URL answers the COMPILED theme (a resolved `--color-*` scale value,
- *      no raw `@theme` at-rule);
- *   2. that link precedes the page's `@scope` static styles in the document;
+ *   1. the head carries `<link rel="stylesheet">` to the served entry and the
+ *      URL answers the COMPILED theme (a resolved `--color-*` scale value, no
+ *      raw `@theme` at-rule);
+ *   2. that link precedes the page's own static styles in the document;
  *   3. editing the declared sheet reaches the browser as a Vite `css-update`
  *      and a `?t=`-stamped re-request answers the edited tokens;
  *   4. with no `tailwind` key the document is byte-identical to the same
- *      pipeline minus this plugin (OFF stays OFF: no staging file, no link,
- *      nothing contributed).
- *   5. dev/build parity: the served entry and the build bundle (through
- *      `buildTailwindPresetBundle`) declare the same custom-property set
+ *      pipeline minus this plugin (OFF stays OFF: no file, no link, nothing
+ *      contributed), and the dev channel owns no file on disk at all;
+ *   5. dev/build parity: the served entry and a build of the SAME entry
+ *      through the same plugin + peer declare the same custom-property set
  *      with an equal normalized declaration set — including the
- *      Tailwind-internal `--tw-shadow`, whose multi-occurrence shape and
- *      the peer's two inherent variant differences are documented at the
- *      parity test below.
+ *      Tailwind-internal `--tw-shadow`, whose multi-occurrence shape and the
+ *      peer's two inherent variant differences are documented at the parity
+ *      test below.
  *
  * The fixture lives under __test_fixtures__ (gitignored) and is written per
- * run — the #1535/#1536 preset tests use the same shape.
+ * run.
  */
 
 import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -39,7 +37,12 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import type { Plugin, ViteDevServer } from 'vite';
 import { openElement } from '../src/vite/app-vite.ts';
-import { buildTailwindPresetBundle } from '../src/vite/preset-tailwind.ts';
+import {
+  tailwindEntryPath,
+  tailwindEntryPlugin,
+  tailwindEntryUrl,
+  tailwindPlugins,
+} from '../src/vite/tailwind.ts';
 
 const FIXTURE_DIR = join(import.meta.dirname!, '../__test_fixtures__/tailwind-dev-delivery');
 const THEME_PATH = join(FIXTURE_DIR, 'app', 'styles', 'theme.css');
@@ -48,7 +51,8 @@ const THEME_PATH = join(FIXTURE_DIR, 'app', 'styles', 'theme.css');
 const COMPILED_SCALE_MARKER = /--color-violet-700:\s*(?:oklch|#|rgb)/;
 /** The compiled theme block: roles inside one `:root, :host` scope. */
 const COMPILED_THEME_BLOCK = /:root,?\s*:host\s*\{/;
-const STAGED_ENTRY = '.openElement/tailwind-preset/entry.css';
+/** The served entry's URL, joined through the dev server's base. */
+const ENTRY_URL = tailwindEntryUrl('/');
 
 const THEME_CSS = `@theme {
   --color-background: var(--color-white);
@@ -80,7 +84,7 @@ export default class HomePage extends OpenElement {
   render() {
     return (
       <main>
-        <h1 id='home'>dev preset fixture</h1>
+        <h1 id='home'>dev tailwind fixture</h1>
         <section class='panel shadow-1'>panel</section>
       </main>
     );
@@ -91,7 +95,7 @@ export default class HomePage extends OpenElement {
 const INDEX_ROUTE = `import { definePage } from '@openelement/router';
 import HomePage from '../components/page-home.tsx';
 
-export default definePage(HomePage, { head: { title: 'dev preset fixture' } });
+export default definePage(HomePage, { head: { title: 'dev tailwind fixture' } });
 `;
 
 /** Write the fixture app; idempotent so a re-run reuses the same tree. */
@@ -177,17 +181,17 @@ async function bootDev(plugins: Plugin[]): Promise<DevHandle> {
   };
 }
 
-const PRESET_OPTIONS = {
+const BASE_OPTIONS = {
   routesDir: 'app/routes',
   islandsDir: 'app/islands',
   layout: false as const,
 };
 
-/** The one option under test: the declared theme source, preset ON. */
-const PRESET_ON = {
-  ...PRESET_OPTIONS,
-  // App-relative (the documented contract, #1633): the preset resolves it
-  // against the app root into the staged entry's own base.
+/** The one option under test: the declared theme source, Tailwind ON. */
+const TAILWIND_ON = {
+  ...BASE_OPTIONS,
+  // App-relative (the documented contract): the entry resolves it against the
+  // app root into its own base.
   tailwind: { theme: ['app/styles/theme.css'] },
 };
 
@@ -197,12 +201,12 @@ async function fetchDoc(handle: DevHandle, path = '/'): Promise<string> {
   return await response.text();
 }
 
-async function fetchStagedCss(handle: DevHandle, query = ''): Promise<string> {
-  const response = await fetch(`${handle.base}/${STAGED_ENTRY}${query}`, {
+async function fetchEntryCss(handle: DevHandle, query = ''): Promise<string> {
+  const response = await fetch(`${handle.base}${ENTRY_URL}${query}`, {
     headers: { accept: 'text/css,*/*;q=0.1' },
   });
-  expect(response.status, 'GET staged entry').toEqual(200);
-  expect(response.headers.get('content-type') ?? '', 'staged entry content type').toContain(
+  expect(response.status, 'GET served entry').toEqual(200);
+  expect(response.headers.get('content-type') ?? '', 'served entry content type').toContain(
     'text/css',
   );
   return await response.text();
@@ -219,25 +223,27 @@ afterAll(async () => {
   rmSync(FIXTURE_DIR, { recursive: true, force: true });
 });
 
-test('dev document head carries the compiled theme sheet (#1582)', async () => {
-  const handle = await bootDev(openElement(PRESET_ON));
+test('dev document head carries the compiled entry sheet (#1582)', async () => {
+  const handle = await bootDev(openElement(TAILWIND_ON));
   handles.push(handle);
 
   const doc = await fetchDoc(handle);
-  const linkIndex = doc.indexOf(STAGED_ENTRY);
-  expect(linkIndex, 'the dev document links the staged preset entry').toBeGreaterThan(-1);
+  const linkIndex = doc.indexOf(ENTRY_URL);
+  expect(linkIndex, 'the dev document links the served entry').toBeGreaterThan(-1);
   expect(doc.slice(0, linkIndex).includes('<head>'), 'the link sits in the document head').toEqual(
     true,
   );
 
-  // The page's own static styles are `@scope`-scoped into the body markup: the
-  // head link precedes them by construction, which is the delivery order the
+  // The page's own static styles are emitted into the body markup: the head
+  // link precedes them by construction, which is the delivery order the
   // acceptance criteria name.
-  const scopeIndex = doc.indexOf('@scope');
-  expect(scopeIndex, 'the fixture page emits scoped static styles').toBeGreaterThan(-1);
-  expect(linkIndex, 'the theme link precedes the page @scope styles').toBeLessThan(scopeIndex);
+  const staticStyleIndex = doc.indexOf('data-oe-static-styles');
+  expect(staticStyleIndex, 'the fixture page emits static styles').toBeGreaterThan(-1);
+  expect(linkIndex, 'the theme link precedes the page static styles').toBeLessThan(
+    staticStyleIndex,
+  );
 
-  const css = await fetchStagedCss(handle);
+  const css = await fetchEntryCss(handle);
   // The COMPILED theme: the scale value the authored sheet never declares, in
   // the compiled `:root, :host` theme block, with no raw `@theme` at-rule left
   // (an `@theme` block is an unknown at-rule in a browser — delivering it
@@ -255,24 +261,23 @@ test('dev document head carries the compiled theme sheet (#1582)', async () => {
 });
 
 test('a theme.css edit hot-updates the delivered sheet (#1582)', async () => {
-  const handle = await bootDev(openElement(PRESET_ON));
+  const handle = await bootDev(openElement(TAILWIND_ON));
   handles.push(handle);
-  // Prime the module graph with the staged entry, as a browsing client would.
-  await fetchStagedCss(handle);
+  // Prime the module graph with the served entry, as a browsing client would.
+  await fetchEntryCss(handle);
 
   const original = await readFile(THEME_PATH, 'utf8');
   try {
     await writeFile(THEME_PATH, original.replace('--color-violet-700', '--color-violet-600'));
-    // The edit must surface as a css-update for the staged entry: that is the
+    // The edit must surface as a css-update for the served entry: that is the
     // HMR signal the browser applies, and the peer registers the declared
     // sources as watch files precisely so this fires.
     //
-    // The deadline is 30s, not 10s (F-1, alpha.13): this test starts a real Vite
-    // dev server and a real Tailwind compile, and on a 2-core CI runner those
-    // compete with the rest of the suite for the same cores — the 10s wall
-    // clock was observed exceeding once for a compile that then did arrive. The
-    // loop still fails on a genuinely missing update, just later; the assertion
-    // below is unchanged.
+    // The deadline is 30s, not 10s (F-1, alpha.13): this test starts a real
+    // Vite dev server and a real Tailwind compile, and on a 2-core CI runner
+    // those compete with the rest of the suite for the same cores — the 10s
+    // wall clock was observed exceeding once for a compile that then did
+    // arrive. The loop still fails on a genuinely missing update, just later.
     const deadline = Date.now() + 30_000;
     while (
       !handle.hotPayloads.some(
@@ -282,17 +287,17 @@ test('a theme.css edit hot-updates the delivered sheet (#1582)', async () => {
           'type' in payload &&
           (payload as { type?: unknown }).type === 'update' &&
           JSON.stringify(payload).includes('css-update') &&
-          JSON.stringify(payload).includes('/tailwind-preset/entry.css'),
+          JSON.stringify(payload).includes('tailwind.css'),
       )
     ) {
-      if (Date.now() > deadline) throw new Error('no css-update for the staged entry');
+      if (Date.now() > deadline) throw new Error('no css-update for the served entry');
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
 
     // The client re-requests the link with a `?t=` stamp; the stamped answer
     // must carry the edited token (the `?t=` form is what the Hono dev
     // server's exclude list lets through to Vite).
-    const css = await fetchStagedCss(handle, `?t=${Date.now()}`);
+    const css = await fetchEntryCss(handle, `?t=${Date.now()}`);
     expect(css, 'the edited scale step reaches the delivered sheet').toMatch(
       /--color-violet-600:\s*(?:oklch|#|rgb)/,
     );
@@ -302,74 +307,56 @@ test('a theme.css edit hot-updates the delivered sheet (#1582)', async () => {
 });
 
 test('with no tailwind key the dev document is unchanged (#1582 constraint)', async () => {
-  // The ON tests above staged the entry; clear it so "OFF writes nothing" is
-  // asserted against this run and not against their leftover.
-  rmSync(join(FIXTURE_DIR, '.openElement'), { recursive: true, force: true });
   // The control is the same pipeline with this one plugin removed: a
   // byte-identical document is the honest statement of "zero behavior change",
-  // and it also pins that the preset plugin contributes no styling of its own.
-  const withPlugin = await bootDev(openElement(PRESET_OPTIONS));
+  // and it also pins that the plugin contributes no styling of its own.
+  const withPlugin = await bootDev(openElement(BASE_OPTIONS));
   handles.push(withPlugin);
   const control = await bootDev(
-    openElement(PRESET_OPTIONS).filter((plugin) => plugin.name !== 'open:tailwind-preset-dev'),
+    openElement(BASE_OPTIONS).filter((plugin) => plugin.name !== 'open:tailwind-dev'),
   );
   handles.push(control);
 
   const doc = await fetchDoc(withPlugin);
   const controlDoc = await fetchDoc(control);
-  expect(doc, 'preset-less dev document carries no preset artifact').not.toContain(
-    'tailwind-preset',
-  );
+  expect(doc, 'tailwind-less dev document carries no entry artifact').not.toContain('tailwind.css');
   expect(doc).not.toMatch(/<link rel="stylesheet"/);
   expect(doc, 'OFF stays OFF: byte-identical document').toEqual(controlDoc);
-  expect(
-    existsSync(join(FIXTURE_DIR, '.openElement/tailwind-preset/entry.css')),
-    'OFF writes no staging file',
-  ).toEqual(false);
 });
 
-test('the served entry is request-time: a build emptying .openElement cannot 404 it', async () => {
-  rmSync(join(FIXTURE_DIR, '.openElement'), { recursive: true, force: true });
-  const handle = await bootDev(openElement(PRESET_ON));
+test('the dev channel owns no file on disk (the entry is virtual)', async () => {
+  const handle = await bootDev(openElement(TAILWIND_ON));
   handles.push(handle);
-  const stagedPath = join(FIXTURE_DIR, STAGED_ENTRY);
+  const entryDiskPath = tailwindEntryPath(FIXTURE_DIR);
 
-  // The dev channel owns no file: the URL answers the compiled theme with
-  // nothing on disk (the build half's `emptyOutDir` inner build empties that
-  // directory — a disk-backed dev channel died with the next `vite build`).
-  const served = await fetchStagedCss(handle);
+  // The URL answers the compiled theme with nothing on disk.
+  const served = await fetchEntryCss(handle);
   expect(served).toMatch(COMPILED_THEME_BLOCK);
-  expect(() => readFileSync(stagedPath, 'utf8'), 'the dev channel writes no file').toThrow(
+  expect(() => readFileSync(entryDiskPath, 'utf8'), 'the dev channel writes no file').toThrow(
     /ENOENT/,
   );
 
-  // A build half's staging write lands on that same path next; the served
-  // module must stay the generated entry (the file is never the source), and
-  // its later deletion (the inner build's emptyOutDir) must not disturb the
-  // already-running server.
-  mkdirSync(join(FIXTURE_DIR, '.openElement', 'tailwind-preset'), { recursive: true });
-  writeFileSync(stagedPath, '/* stale staging text a build left behind */\n', 'utf8');
-  const afterWrite = await fetchStagedCss(handle, `?t=${Date.now()}`);
-  expect(afterWrite, 'the file at the mapped path is not the served source').toMatch(
-    COMPILED_THEME_BLOCK,
-  );
-  rmSync(stagedPath);
-  // Both client shapes after the wipe: the HMR-stamped re-request and the
-  // plain URL a browser refresh asks for (the plain form is the one the
-  // recorded incident saw 404 — the unlink had invalidated the module).
-  const afterWipe = await fetchStagedCss(handle, `?t=${Date.now()}`);
-  expect(afterWipe, 'the wiped entry still answers the compile').toMatch(COMPILED_SCALE_MARKER);
-  const afterWipePlain = await fetchStagedCss(handle);
-  expect(afterWipePlain, 'the plain URL still answers the compile').toMatch(COMPILED_THEME_BLOCK);
+  // A stale file at the entry's identity path is never the served source.
+  mkdirSync(join(FIXTURE_DIR, '.openElement'), { recursive: true });
+  writeFileSync(entryDiskPath, '/* stale text that must never be served */\n', 'utf8');
+  try {
+    const afterWrite = await fetchEntryCss(handle, `?t=${Date.now()}`);
+    expect(afterWrite, 'the file at the mapped path is not the served source').toMatch(
+      COMPILED_THEME_BLOCK,
+    );
+    expect(afterWrite, 'stale bytes never ride the served sheet').not.toContain('stale text');
+  } finally {
+    rmSync(entryDiskPath, { force: true });
+  }
 });
 
 // ─── Dev/build parity (--tw-shadow and the minified-literal deltas) ─────────
 //
-// The preset's two channels ride the two variants of the @tailwindcss/vite
-// peer (dev-tailwind.ts proxies the serve plugins; preset-tailwind.ts runs
-// the inner build with the build plugins), and the peer compiles them with
-// a few known, INHERENT differences — verified against 4.3.3 by direct
-// probe and pinned here so they cannot silently grow:
+// The two channels ride the two variants of the @tailwindcss/vite peer (the
+// dev wrapper proxies the serve plugins; the build runs the build plugins as
+// every other CSS module in a vite build), and the peer compiles them with a
+// few known, INHERENT differences — verified against 4.3.3 by direct probe
+// and pinned here so they cannot silently grow:
 //
 // 1. MINIFICATION: the build variant emits minified literals —
 //    `rgb(0 0 0 / 0.05)` → `#0000000d`, `0.27` → `.27`, `150ms` → `.15s`,
@@ -383,16 +370,15 @@ test('the served entry is request-time: a build emptying .openElement cannot 404
 // 3. BLOCK ORDER: the build variant emits `@layer properties` (the --tw-*
 //    compat fallbacks) BEFORE `@layer utilities`, the serve variant after.
 //    `--tw-shadow` is one NAME for several distinct declarations by design —
-//    the shadow utility's resolved value (`.shadow-1 { --tw-shadow: 0 1px
-//    2px 0 var(--tw-shadow-color, …), … }`), the `*, ::before, …` compat
-//    fallback (`--tw-shadow: 0 0 #0000`), and the `@property` initial value
-//    (also `0 0 #0000`) — so a NAME-keyed (first/last-wins) dev/build diff
-//    reports different occurrences as "the value" and looks like a
-//    divergence. It is not one: both channels ship the same declarations.
+//    the shadow utility's resolved value, the `*, ::before, …` compat
+//    fallback (`--tw-shadow: 0 0 #0000`), and the `@property` initial value —
+//    so a NAME-keyed (first/last-wins) dev/build diff reports different
+//    occurrences as "the value" and looks like a divergence. It is not one:
+//    both channels ship the same declarations.
 //
-// The parity bound below therefore compares (a) the custom-property NAME
-// sets and (b) the SET of unique normalized declarations — anything beyond
-// the inherent differences above fails the test.
+// The parity bound below therefore compares (a) the custom-property NAME sets
+// and (b) the SET of unique normalized declarations — anything beyond the
+// inherent differences above fails the test.
 
 /** Abstract color/time literals and minified decimal/whitespace spellings. */
 function normalizeDeclarationValue(value: string): string {
@@ -414,31 +400,53 @@ function cssDeclarations(css: string): Array<{ name: string; value: string }> {
   }));
 }
 
+/** The build channel over the same root and options: one real vite build. */
+async function buildEntry(root: string): Promise<string> {
+  const { build } = await import('vite');
+  const probe = join(root, 'build-probe-entry.js');
+  writeFileSync(probe, `import ${JSON.stringify(tailwindEntryPath(root))};\n`, 'utf8');
+  try {
+    const result = await build({
+      configFile: false,
+      root,
+      logLevel: 'silent',
+      publicDir: false,
+      plugins: [
+        tailwindEntryPlugin(root, { theme: ['app/styles/theme.css'] }),
+        ...(await tailwindPlugins()),
+      ],
+      build: {
+        write: false,
+        minify: false,
+        rollupOptions: { input: { entry: probe } },
+      },
+    });
+    const output = (Array.isArray(result) ? result[0] : result).output;
+    return output
+      .filter((item) => item.type === 'asset' && item.fileName.endsWith('.css'))
+      .map((item) => String(item.source))
+      .join('\n');
+  } finally {
+    rmSync(probe, { force: true });
+  }
+}
+
 test('dev and build compile one contract: equal declaration sets (--tw-shadow pinned)', async () => {
   // The fixture carries the consumer-reported shape: custom `--shadow-1`/
   // `--shadow-2` theme tokens AND a page that uses the `shadow-1` utility,
   // so the Tailwind-internal `--tw-shadow` machinery compiles on both
   // channels (with no shadow utility neither channel emits any --tw-shadow
   // at all — the variable exists only as utility/compat output).
-  rmSync(join(FIXTURE_DIR, '.openElement'), { recursive: true, force: true });
-  const handle = await bootDev(openElement(PRESET_ON));
+  const handle = await bootDev(openElement(TAILWIND_ON));
   handles.push(handle);
-  const devCss = await fetchStagedCss(handle);
-
-  // The build channel over the SAME root and options. It stages/empties
-  // `.openElement/tailwind-preset/` on disk — the dev channel's served
-  // module is disk-independent (the test above), so the order is safe.
-  const built = await buildTailwindPresetBundle({
-    root: FIXTURE_DIR,
-    outDir: join(FIXTURE_DIR, 'dist'),
-    options: PRESET_ON.tailwind,
-    base: '/',
-  });
+  const devCss = await fetchEntryCss(handle);
+  const buildCss = await buildEntry(FIXTURE_DIR);
+  expect(buildCss.length, 'the build channel emitted a stylesheet').toBeGreaterThan(0);
 
   // (a) The name SETS are equal: neither channel drops or adds a custom
   // property (a dropped candidate or a dropped theme token fails here).
   const devNames = new Set(cssDeclarations(devCss).map((entry) => entry.name));
-  const buildNames = new Set(cssDeclarations(built.bundleCss).map((entry) => entry.name));
+  const buildNames = new Set(cssDeclarations(buildCss).map((entry) => entry.name));
   expect(
     [...devNames].filter((name) => !buildNames.has(name)),
     'dev-only names',
@@ -448,30 +456,24 @@ test('dev and build compile one contract: equal declaration sets (--tw-shadow pi
     'build-only names',
   ).toEqual([]);
 
-  // (b) The SET of unique normalized declarations is equal: the only
-  // accepted deltas are the peer's minified literal spellings and its
-  // duplicate-declaration dedup, both of which the normalizer abstracts
-  // away (counts excluded for exactly the dedup reason above).
+  // (b) The SET of unique normalized declarations is equal: the only accepted
+  // deltas are the peer's minified literal spellings and its
+  // duplicate-declaration dedup, both of which the normalizer abstracts away.
   const uniqueDeclarations = (css: string): string[] =>
     [...new Set(cssDeclarations(css).map((entry) => `${entry.name}: ${entry.value}`))].sort();
-  expect(uniqueDeclarations(devCss), 'dev declaration set').toEqual(
-    uniqueDeclarations(built.bundleCss),
-  );
+  expect(uniqueDeclarations(devCss), 'dev declaration set').toEqual(uniqueDeclarations(buildCss));
 
-  // --tw-shadow, covered explicitly (the reported pair):
-  // both channels carry the compat fallback — byte-identical, `0 0 #0000`
-  // is already the minified spelling on both sides…
+  // --tw-shadow, covered explicitly: both channels carry the compat fallback
+  // and the utility's own resolved value with the two-layer geometry the
+  // authored `--shadow-1` token declares.
   for (const [label, css] of [
     ['dev', devCss],
-    ['build', built.bundleCss],
+    ['build', buildCss],
   ] as const) {
     expect(
       css.match(/--tw-shadow:\s*0 0 #0000/g)?.length ?? 0,
       `${label}: the compat fallback occurrence count`,
     ).toBeGreaterThan(0);
-    // …and both carry the utility's own resolved value with the two-layer
-    // geometry the authored `--shadow-1` token declares, the color overlay
-    // spelled per variant (rgb() on dev, minified hex on build).
     expect(
       css.match(
         /--tw-shadow:\s*0 1px 2px 0 var\(--tw-shadow-color, (?:rgb\(0 0 0 \/ 0\.05\)|#0000000d)\), 0 1px 3px 0 var\(--tw-shadow-color, (?:rgb\(0 0 0 \/ 0\.1\)|#0000001a)\)/,
@@ -480,10 +482,15 @@ test('dev and build compile one contract: equal declaration sets (--tw-shadow pi
     ).toBeTruthy();
   }
 
-  // The consumer-reported tokens are present on both channels (their value
-  // delta is exactly the minified color class the normalizer abstracts).
+  // The consumer-reported tokens are present on both channels.
   for (const token of ['--shadow-1', '--shadow-2']) {
     expect(devCss.match(new RegExp(`${token}:`)), `dev carries ${token}`).toBeTruthy();
-    expect(built.bundleCss.match(new RegExp(`${token}:`)), `build carries ${token}`).toBeTruthy();
+    expect(buildCss.match(new RegExp(`${token}:`)), `build carries ${token}`).toBeTruthy();
   }
+});
+
+test('the fixture tree stays free of retired-entry leftovers', () => {
+  // Guard: the retired `.openElement/tailwind-preset/` staging path must not
+  // come back from any code path this suite exercises.
+  expect(existsSync(join(FIXTURE_DIR, '.openElement/tailwind-preset'))).toEqual(false);
 });

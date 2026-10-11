@@ -233,6 +233,14 @@ interface GenerateClientEntryOptions {
    * only bytes.
    */
   includeBlocksRuntime?: boolean;
+  /**
+   * The document stylesheet module the entry statically imports (the Tailwind
+   * entry, alpha15 S lane): its presence puts the CSS into this build's graph
+   * so the official pipeline compiles it and Vite emits the content-hashed
+   * `.css` asset. The import has no runtime effect — Vite extracts it — so it
+   * is emitted even when the entry carries no islands.
+   */
+  styleEntry?: string;
 }
 
 export function generateClientEntry(
@@ -242,8 +250,18 @@ export function generateClientEntry(
   const allIslands = expandClientIslandEntries(islands);
   // hydrate:'none' islands SSR-only — they never enter the client bundle
   const admittedIslands = allIslands.filter((i) => i.strategy !== 'none');
+  // The document stylesheet import rides every entry shape, including the
+  // island-free ones: the CSS asset is the whole reason a style-only client
+  // build exists (alpha15 S lane).
+  const styleImport =
+    options.styleEntry === undefined
+      ? ''
+      : `import ${quoteGeneratedJavaScriptValue(options.styleEntry)};\n`;
 
   if (admittedIslands.length === 0 && options.enhancedForms !== true) {
+    if (styleImport !== '') {
+      return `// openElement Client Entry - no client islands; the document stylesheet only\n${styleImport}`;
+    }
     if (allIslands.length > 0) {
       return '// openElement Client Entry - All islands are hydrate:none (SSR-only), zero client JS\n';
     }
@@ -394,7 +412,7 @@ ensureDeepFragmentNavigation();`;
 
   return `${headerComment}
 
-${importsBlock}
+${styleImport}${importsBlock}
 
 var __map = {
 ${islandMap}

@@ -134,6 +134,13 @@ export interface OpenPluginState {
   headExtrasValue: string | undefined;
   allowHeadExtrasValue: boolean;
   /**
+   * The document stylesheet hrefs THIS plugin instance contributed (the dev
+   * Tailwind entry's compiled sheet). Kept apart from the user's own
+   * `inject.stylesheets` so a re-resolution re-points the framework's link
+   * instead of accumulating one per content hash.
+   */
+  frameworkStylesheets: string[];
+  /**
    * Whether the caller supplied framework options inline. `openElement()`
    * forwards the user object verbatim, so it can be derived; `openPipeline()`
    * builds a full options object from its own config shape and must state it.
@@ -173,21 +180,26 @@ function applyResolvedOptions(state: OpenPluginState, merged: FrameworkOptions):
 }
 
 /**
- * Append one stylesheet to the resolved `inject.stylesheets` channel and
- * re-serialize the head artifact. The single late-contribution path: the dev
- * Tailwind preset's theme link joins the user's own declared stylesheets here,
- * so the raw user `headExtras` stays the only re-validation input, the channel
- * is validated exactly once per append, and the link is built by
- * `buildHeadExtras`'s own serializer — one `<link>` emitter, whose href passes
- * the protocol blocklist.
+ * Point the framework's own document stylesheet links at `hrefs` — the
+ * single late-contribution path (the dev Tailwind entry's compiled sheet; the
+ * build's emitted asset joins Phase 3's head artifact directly).
+ *
+ * The setter re-points rather than accumulates: a re-resolution (dev server
+ * restart, or a rebuild in one process) replaces the hrefs this function
+ * contributed, so a content hash change never leaves a stale link behind. The
+ * link is built by `buildHeadExtras`'s own serializer — one `<link>` emitter,
+ * whose href passes the protocol blocklist.
  */
-export function appendInjectStylesheets(state: OpenPluginState, hrefs: string[]): void {
+export function setFrameworkStylesheets(state: OpenPluginState, hrefs: readonly string[]): void {
   if (hrefs.length === 0) return;
+  const previous = new Set(state.frameworkStylesheets);
   const existing = state.resolvedOptions.inject?.stylesheets ?? [];
-  const missing = hrefs.filter((href) => !existing.includes(href));
-  if (missing.length === 0) return;
+  const kept = existing.filter(
+    (entry) => !previous.has(typeof entry === 'string' ? entry : entry.href),
+  );
+  state.frameworkStylesheets = [...hrefs];
   applyResolvedOptions(state, {
-    inject: { ...state.resolvedOptions.inject, stylesheets: [...existing, ...missing] },
+    inject: { ...state.resolvedOptions.inject, stylesheets: [...kept, ...hrefs] },
   });
 }
 
@@ -315,6 +327,7 @@ export function createOpenPluginState(
     rawHeadExtras,
     headExtrasValue,
     allowHeadExtrasValue,
+    frameworkStylesheets: [],
     inlineOptionsPresent,
     produceMode: 'build',
     resolvedConfigFile: null,

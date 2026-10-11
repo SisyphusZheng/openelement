@@ -19,7 +19,7 @@ import { buildPlugin } from './build.ts';
 import { islandTransformPlugin, layoutAdmissionFromOptions } from './island-transform.ts';
 import { devIslandClientPlugin } from './dev-island-client.ts';
 import { lazyHonoDevServer } from './dev-server.ts';
-import { devTailwindPresetPlugin } from './dev-tailwind.ts';
+import { devTailwindPlugin } from './dev-tailwind.ts';
 import { mdxPlugin } from './plugin-mdx.ts';
 import { createConfigHooks, createOpenPluginState } from './plugin-config.ts';
 import { createCompilerHooks } from './plugin-hmr.ts';
@@ -78,12 +78,13 @@ export function createOpenPlugin(
     // compiled-element transform above activates the protocol, and this
     // plugin serves the sheet adapters (inline form; no emitted asset in dev).
     devStyleAssetPlugin(),
-    // the dev half of the Tailwind preset (#1582, alpha.12): the same staged
-    // entry the build compiles, served as a module through the lazily-mounted
+    // the dev half of the Tailwind entry: the same generated entry the client
+    // build compiles, served as a module through the lazily-mounted
     // `@tailwindcss/vite` peer with a head `<link>` to it. `apply: 'serve'`
-    // keeps it out of `vite build` entirely, where the build's own
-    // closeBundle delivery owns the preset — the channels never coexist.
-    devTailwindPresetPlugin(state),
+    // keeps it out of `vite build` entirely, where the client build's own
+    // mount owns the compile. Both channels link through the same head
+    // channel, so they still never coexist in one artifact.
+    devTailwindPlugin(state),
     virtualEntryPlugin,
   ];
 

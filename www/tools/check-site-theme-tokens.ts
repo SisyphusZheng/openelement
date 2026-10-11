@@ -1,7 +1,7 @@
 /**
  * site theme-token gate: theme values in the site must come from the
  * @theme role source (packages/ui/src/theme.css, delivered by the
- * @openelement/router Tailwind preset) or the site alias layer
+ * @openelement/router Tailwind entry) or the site alias layer
  * (www/site-css.ts), never from hardcoded literals.
  *
  * Rules for sources under www/app/ (routes, islands, components):

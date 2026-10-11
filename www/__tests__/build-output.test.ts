@@ -57,11 +57,13 @@ test('build output: artifact scan — no vendored highlighter, no CDN font refer
         violations.push(`vendored Prism artifact: ${rel}`);
       }
       if (entry.name.endsWith('.woff2')) {
-        const asset = `assets/${entry.name}`;
-        if (!rel.startsWith('assets/')) {
+        // The client build emits the stylesheet's url() assets into
+        // dist/client/assets/ (the document stylesheet lives there); a face
+        // anywhere else is a stray binary.
+        if (!rel.startsWith('assets/') && !rel.startsWith('client/assets/')) {
           violations.push(`font binary outside the emitted assets tree: ${rel}`);
         }
-        fontReferences.add(asset);
+        fontReferences.add(entry.name);
       }
       if (/\.(?:html|css|js|json|xml|txt|webmanifest)$/.test(entry.name)) {
         const text = readFileSync(path, 'utf8');
@@ -77,23 +79,27 @@ test('build output: artifact scan — no vendored highlighter, no CDN font refer
   };
   walk(DIST);
 
-  // The self-hosted contract (H lane): the face binaries ship, and the
-  // linked style bundle is what references them. A build that drops the
-  // preset font sources (or rewrites their url() targets wrongly) fails here
-  // instead of delivering fallback glyphs.
+  // The self-hosted contract (H lane): the face binaries ship, and the linked
+  // style bundle is what references them. A build that drops the font sources
+  // (or rewrites their url() targets wrongly) fails here instead of delivering
+  // fallback glyphs. The bundle is the document stylesheet the emitted head
+  // links — the client build's content-hashed asset (alpha15 S lane: the
+  // official Tailwind pipeline and Vite's own asset graph own emission).
   expect(
     fontReferences.size,
-    'no woff2 faces shipped under dist/assets — the self-hosted font sources ' +
+    'no woff2 faces shipped under dist — the self-hosted font sources ' +
       'did not reach the emitted style bundle',
   ).toBeGreaterThan(0);
-  const bundlePath = join(DIST, 'assets', 'open-tailwind.css');
+  const homeHtml = readFileSync(join(DIST, 'index.html'), 'utf8');
+  const stylesheetHref = homeHtml.match(/<link rel="stylesheet" href="([^"]+)"/)?.[1];
+  expect(stylesheetHref, 'the built head links a stylesheet').toBeTruthy();
+  const bundlePath = join(DIST, stylesheetHref!.replace(/^\//, ''));
   expect(existsSync(bundlePath), `linked style bundle is missing: ${bundlePath}`).toBeTruthy();
   const bundle = readFileSync(bundlePath, 'utf8');
-  for (const asset of fontReferences) {
-    expect(
-      bundle.includes(asset.slice('assets/'.length)),
-      `shipped face ${asset} is not referenced by ${bundlePath}`,
-    ).toBe(true);
+  for (const face of fontReferences) {
+    expect(bundle.includes(face), `shipped face ${face} is not referenced by ${bundlePath}`).toBe(
+      true,
+    );
   }
   expect(bundle.includes('@font-face'), 'the linked bundle carries no @font-face rule').toBe(true);
 

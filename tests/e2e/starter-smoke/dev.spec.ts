@@ -64,7 +64,7 @@ test('dev delivers the compiled theme tokens (#1582)', async ({ page }) => {
   // rides the document head while the page static styles sit in the body.
   const linkHref = await page.locator('head link[rel="stylesheet"]').first().getAttribute('href');
   expect(linkHref, 'the dev document head links the compiled theme sheet').toContain(
-    'tailwind-preset/entry.css',
+    '.openElement/tailwind.css',
   );
 
   // --brand is the alias the starter's component sheets consume; it resolves

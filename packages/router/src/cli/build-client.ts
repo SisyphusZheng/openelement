@@ -40,8 +40,16 @@ import {
   type ClientAssetIslandInput,
   createClientAssetManifest,
   collectClientBuildChunks,
+  findClientEntryStyles,
   packageIslandChunkName,
+  readViteClientManifest,
 } from '../vite/client-asset-manifest.ts';
+import {
+  resolveTailwindOptions,
+  tailwindEntryPath,
+  tailwindEntryPlugin,
+  tailwindPlugins,
+} from '../vite/tailwind.ts';
 import {
   ELEMENT_RUNTIME_ENTRY_SPECIFIER,
   type ElementRuntimeIdentity,
@@ -62,7 +70,7 @@ import { compilerBehaviorDeclarations } from '../vite/internal/ssg/client-admiss
 import { sortAliasEntries } from '../vite/alias-utils.ts';
 import { formatError } from '@openelement/element';
 import { createLogger } from '@openelement/element';
-import { buildError, ClientBuildErrorCode } from '../internal/error-codes.ts';
+import { buildError, ClientAssetErrorCode, ClientBuildErrorCode } from '../internal/error-codes.ts';
 import {
   CHUNK_SIZE_WARNING_LIMIT_KB,
   DEFAULT_ISLANDS_DIR,
@@ -320,11 +328,18 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     (route) => route.type === 'page' && route.hasEnhancedForms === true,
   );
 
+  // The Tailwind entry (alpha15 S lane): the app's declared style sources,
+  // compiled by the official @tailwindcss/vite pipeline and emitted as the
+  // document stylesheet asset. Island-free apps still build here — the entry
+  // is the reason.
+  const tailwindOptions = resolveTailwindOptions(ctx.options.tailwind);
+
   if (
     localIslands.length === 0 &&
     packageIslandDecls.length === 0 &&
     compilerBehaviorDecls.length === 0 &&
-    !enhancedForms
+    !enhancedForms &&
+    !tailwindOptions
   ) {
     await removeClientDeliveryArtifacts(root, outDir);
     log.info('No islands found - zero client JS output');
@@ -374,7 +389,8 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     selectedLocalTags.length === 0 &&
     selectedPackageDecls.length === 0 &&
     selectedCompilerBehaviorDecls.length === 0 &&
-    !enhancedForms
+    !enhancedForms &&
+    !tailwindOptions
   ) {
     await removeClientDeliveryArtifacts(root, outDir);
     log.info('No admitted reachable islands - zero client JS output');
@@ -484,6 +500,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const clientEntryCode = generateClientEntry(islandEntries, {
     enhancedForms,
     renderer: ctx.options.renderer,
+    // The document stylesheet's module: the generated entry imports the
+    // Tailwind entry so the official pipeline compiles it inside this build's
+    // CSS graph and Vite emits the content-hashed `.css` asset (plus every
+    // `url()` asset the sources reference) into dist/client. No other module
+    // imports it, so the entry chunk's CSS is exactly the document stylesheet.
+    ...(tailwindOptions ? { styleEntry: tailwindEntryPath(root) } : {}),
     // Omitted on any doubt: the flag's default (builders installed) is the
     // entry codegen's own conservative default, not a second copy of it. The
     // alias bailing out does not flip this flag: the entry subpath resolves
@@ -506,6 +528,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
 
   const clientOutDir = resolve(root, outDir, 'client');
   const clientBase = ctx.phase3.base || '/';
+
+  // The official Tailwind integration, mounted into this build's CSS graph
+  // only while the app declares the entry (alpha15 S lane). `@tailwindcss/vite`
+  // is an optional peer; a declared entry with no resolvable peer fails closed
+  // with the loader's own coded diagnostic.
+  const tailwindPeerPlugins = tailwindOptions ? await tailwindPlugins() : [];
 
   // this build owns the island style asset protocol's `.css`
   // artifacts. The emission records feed the manifest's `styles` field and
@@ -673,6 +701,13 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         | undefined,
     },
     plugins: [
+      // The Tailwind entry (S lane): the virtual entry module's resolve/load
+      // plus the official plugins that compile it. The peer's own `apply`
+      // filters its serve/build halves, exactly as in a user config. Absent
+      // (not inert) when the app declares no entry.
+      ...(tailwindOptions
+        ? [tailwindEntryPlugin(root, tailwindOptions), ...tailwindPeerPlugins]
+        : []),
       // The compiler is part of the official client build path. The outer
       // open:core hook covers normal Vite transforms; this inline build owns
       // its own plugin list and must use the same transform exactly once.
@@ -808,6 +843,25 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       resolvedIslandModuleIds: islandModuleIds,
       styleFileNames: [...styleAssetRecords.values()].map((record) => record.fileName),
     });
+
+    // The document stylesheet (S lane): the client entry chunk's emitted CSS
+    // files, read from the same manifest the asset manifest consumes. Fail
+    // closed — a declared Tailwind entry that emitted no stylesheet would ship
+    // pages styled by nothing, silently.
+    if (tailwindOptions) {
+      const manifestPath = join(clientOutDir, '.vite', 'manifest.json');
+      const viteManifest = await readViteClientManifest(manifestPath);
+      ctx.clientStyleAssets = findClientEntryStyles(viteManifest, manifestPath);
+      if (ctx.clientStyleAssets.length === 0) {
+        throw buildError(
+          ClientAssetErrorCode.STYLESHEET_MISSING,
+          'The tailwind entry is enabled but the client build emitted no document stylesheet ' +
+            `(manifest: ${manifestPath}) — the generated entry imports ${tailwindEntryPath(root)} ` +
+            ', so a missing CSS asset is a build defect, never a silent unstyled page',
+        );
+      }
+      log.info(`Tailwind document stylesheet emitted: ${ctx.clientStyleAssets.join(', ')}`);
+    }
 
     const { printBuildManifest } = await import('../vite/build-manifest.ts');
     printBuildManifest({ root, outDir, phase: 2, budget: ctx.phase3.manifestBudget });

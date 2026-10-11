@@ -7,10 +7,11 @@
  * every option it omits is provided by a file convention:
  *
  *   - design tokens: `app/styles/tokens.css` (inlined into the document head;
- *     a generic token channel — apps on the Tailwind preset typically name
- *     their sheet `theme.css` instead and reach it through `tailwind.theme`,
- *     which replaces this convention for them: dev serves the compiled theme
- *     sheet and links it, the build emits it as the linked bundle asset)
+ *     a generic token channel — an app on the Tailwind entry typically names
+ *     its sheet `theme.css` instead and reaches it through `tailwind.theme`,
+ *     which replaces this convention for it: the sources compile through the
+ *     official `@tailwindcss/vite` pipeline and the emitted stylesheet is
+ *     linked as the document stylesheet, in dev and in the build alike)
  *   - layout:        `app/layout.tsx` (auto-registered, deletable)
  *   - site title:    the `name` field of `package.json`
  *   - document head: `app/head.tsx` (structural head content, see below)
@@ -162,44 +163,27 @@ export interface OpenElementBuildConfig {
 }
 
 /**
- * Options for the opt-in Tailwind preset. `tailwind: true` uses every default.
+ * Options for the opt-in Tailwind entry (alpha15 S lane; the pre-S "preset"
+ * compiled the sources itself — this shape only declares them).
+ *
+ * `tailwind: true` enables the entry with no declared sources: the document
+ * stylesheet is Tailwind's own default compile (`@import 'tailwindcss'`).
  *
  * The shape lives here, on the host-neutral config surface, and the Vite
- * build layer that implements the preset re-exports it — the Framework-root
- * declaration graph packed consumers typecheck must never name `vite`
- * (the packed-consumer gate's declaration leak pattern).
+ * build layer consumes it — the Framework-root declaration graph packed
+ * consumers typecheck must never name `vite` (the packed-consumer gate's
+ * declaration leak pattern).
  */
-export interface TailwindPresetOptions {
+export interface TailwindOptions {
   /**
-   * Style sources compiled into the bundle's `theme` layer: package CSS
-   * specifiers (`@openelement/ui/theme.css`) or app-relative paths. Their
-   * `@theme` blocks (and any Tailwind utilities they reference) compile
-   * through `@tailwindcss/vite`.
+   * The style sources the entry `@import`s after Tailwind itself: package CSS
+   * specifiers (`@openelement/ui/theme.css`, `tailwindcss/theme.css`) or
+   * app-relative paths. Their `@theme` blocks, `@import`s and `url()` assets
+   * compile through the official `@tailwindcss/vite` pipeline into the
+   * document stylesheet — the router neither scans for classes nor transforms
+   * the compiled CSS.
    */
   theme?: string[];
-  /**
-   * Style sources wrapped into `@layer components` — the component-facing
-   * token/recipe layer. Also the source of the `@scope` light-DOM face.
-   */
-  components?: string[];
-  /**
-   * Host tags the `@scope` light-DOM face is emitted for (one `@scope (tag)`
-   * block per tag carrying the components layer). Empty/absent skips the
-   * face. Package-island apps derive this from the package manifest.
-   */
-  scopeTags?: string[];
-  /**
-   * Whether the bundle link is also injected into every DSD shadow template
-   * (seam 2's shadow adoption). Default `false`: the compiled claim requires
-   * the DSD template's children to equal the Part Program's own nodes (the
-   * @openelement/element compiled-hydration walk fails closed on any injected
-   * node), so the exact-claim default leaves the shadow templates untouched.
-   * The head link alone still reaches every shadow tree, because CSS custom
-   * properties — the theme layer's entire delivery — inherit across the
-   * shadow boundary. Set `true` only for consumers whose compiled elements
-   * do not claim their SSR shadow DOM exactly.
-   */
-  injectDsdLinks?: boolean;
 }
 
 /** Overrides accepted by an `openelement.config.ts` file (unknown keys fail closed). */
@@ -242,13 +226,13 @@ export interface OpenElementUserConfig {
    */
   viewTransition?: boolean;
   /**
-   * The Tailwind preset (alpha9 C2 #1505, opt-in): the config-file home for
-   * the same option the inline `openElement(...)` face takes. `true` enables
-   * the preset with defaults; an object names the theme/components sources,
-   * the `@scope` face tags, and the DSD link injection — see
-   * `TailwindPresetOptions` (@openelement/router/vite).
+   * The Tailwind entry (alpha15 S lane, opt-in): the config-file home for the
+   * same option the inline `openElement(...)` face takes. `true` enables the
+   * entry with no declared sources; an object names the style sources that
+   * compile into the document stylesheet — see `TailwindOptions`
+   * (@openelement/router/vite).
    */
-  tailwind?: boolean | TailwindPresetOptions;
+  tailwind?: boolean | TailwindOptions;
   /**
    * Speculation Rules emission. Boolean for now: `true` uses the framework
    * route-derived defaults, `false` emits none. An object form (explicit
@@ -292,13 +276,8 @@ export const OPEN_ELEMENT_CONFIG_KEYS: readonly string[] = [
   'middleware',
 ];
 
-/** Accepted keys inside the `tailwind` preset object. */
-export const OPEN_ELEMENT_TAILWIND_KEYS: readonly string[] = [
-  'theme',
-  'components',
-  'scopeTags',
-  'injectDsdLinks',
-];
+/** Accepted keys inside the `tailwind` options object. */
+export const OPEN_ELEMENT_TAILWIND_KEYS: readonly string[] = ['theme'];
 
 /** Accepted keys inside `head`. */
 export const OPEN_ELEMENT_HEAD_KEYS: readonly string[] = [
@@ -519,14 +498,8 @@ export function assertValidUserConfig(value: unknown): asserts value is OpenElem
       throw typeError('tailwind', 'true or an object', tailwind);
     }
     assertKnownKeys(tailwind, 'tailwind', OPEN_ELEMENT_TAILWIND_KEYS);
-    for (const key of ['theme', 'components', 'scopeTags'] as const) {
-      const list = tailwind[key];
-      if (list !== undefined) assertStringArray(`tailwind.${key}`, list);
-    }
-    const injectDsdLinks = (tailwind as { injectDsdLinks?: unknown }).injectDsdLinks;
-    if (injectDsdLinks !== undefined) {
-      assertBooleanKey('tailwind.injectDsdLinks', injectDsdLinks);
-    }
+    const theme = (tailwind as { theme?: unknown }).theme;
+    if (theme !== undefined) assertStringArray('tailwind.theme', theme);
   }
 
   if (build !== undefined) {

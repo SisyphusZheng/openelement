@@ -10,10 +10,10 @@
       component sheets use, each seated on a role so the dark and
       forced-colors pairs below apply everywhere.
 
-   `pnpm dev` and the build both compile this file through the router's
-   Tailwind preset: dev serves the compile from
-   /.openElement/tailwind-preset/entry.css and links it in the document head,
-   the build emits the same compile as the layer-ordered linked bundle.
+   `pnpm dev` and the build both compile this file through the official
+   @tailwindcss/vite pipeline driven by the router: dev serves the compile at
+   /.openElement/tailwind.css and links it in the document head, the build
+   emits the same compile as the content-hashed document stylesheet.
    ═══════════════════════════════════════════════════════════════════════ */
 
 @theme {

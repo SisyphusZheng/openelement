@@ -183,6 +183,15 @@ export class OpenElementBuildContext {
   clientAssetManifest: ClientAssetManifest | null = null;
 
   /**
+   * Phase 2 output (alpha15 S lane): the document stylesheet's emitted files,
+   * dist/client-relative, read from the client entry chunk's manifest record
+   * (the Tailwind entry is the client entry's only CSS module). The build
+   * links them into the Phase 3 head artifact — SSG pages and the
+   * request-time server alike. Empty when the app declares no Tailwind entry.
+   */
+  clientStyleAssets: string[] = [];
+
+  /**
   /** Canonical result consumed by release evidence and deployment adapters. */
   buildArtifacts: BuildArtifacts | null = null;
   /** Phase 1: Route scanning & build metadata */

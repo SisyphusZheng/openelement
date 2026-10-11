@@ -1,5 +1,6 @@
 /** Adapter-owned framework, build, content, and routing contracts. */
 import type { FrameworkOptions as ElementFrameworkOptions } from '@openelement/element';
+import type { TailwindOptions } from '../config.ts';
 import type { CriticalAssetsOptions } from './internal/ssg/critical-assets.ts';
 
 export type {
@@ -38,13 +39,13 @@ export type FrameworkOptions = ElementFrameworkOptions & {
   critical?: CriticalAssetsOptions;
   i18n?: OpenElementI18nOptions;
   /**
-   * Opt-in Tailwind preset (alpha9 C2, #1505). `true` or an options object
-   * enables the build-layer seams: the compiled `@layer theme, base,
-   * components, utilities` bundle asset and the DSD/head link-not-inline
-   * emission. Default (absent) keeps the build byte-identical to a
-   * preset-less pipeline.
+   * Opt-in Tailwind entry (alpha9 C2, #1505; externalized alpha15 S lane).
+   * `true` or an options object declares the style sources that compile
+   * through the official `@tailwindcss/vite` pipeline into the linked
+   * document stylesheet; absent keeps the build byte-identical to a
+   * Tailwind-less pipeline.
    */
-  tailwind?: boolean | import('./preset-tailwind.ts').TailwindPresetOptions;
+  tailwind?: boolean | TailwindOptions;
 };
 
 /** Blog options stored in the adapter build context. */

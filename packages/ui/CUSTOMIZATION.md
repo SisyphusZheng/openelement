@@ -55,12 +55,13 @@ token module — the retired `@openelement/ui/theme-tokens`
 `var(--color-*)` / `var(--spacing)` / etc.; until the host supplies those
 variables the recipes resolve to nothing. Values have exactly two suppliers:
 
-- **Preset ON**: a `@openelement/router` Tailwind build compiles
-  `theme.css` through the preset (`tailwind: { theme:
-  ['@openelement/ui/theme.css'] }`), emitting the roles plus Tailwind's own
-  scale layer. This is the first-party delivery (the www site and the
-  router-ui-dogfood fixture).
-- **Preset OFF**: the consumer writes its own table. The only requirement is
+- **Entry ON**: a `@openelement/router` Tailwind build compiles
+  `theme.css` through the official `@tailwindcss/vite` pipeline
+  (`tailwind: { theme: ['@openelement/ui/theme.css'] }`), emitting the roles
+  plus Tailwind's own scale layer into the head-linked document stylesheet.
+  This is the first-party delivery (the www site and the router-ui-dogfood
+  fixture).
+- **Entry OFF**: the consumer writes its own table. The only requirement is
   that it defines the role names (and any scale variables the recipes
   consume, e.g. `--spacing`, `--radius-md`) under the same selectors.
   Minimal shape, values illustrative:

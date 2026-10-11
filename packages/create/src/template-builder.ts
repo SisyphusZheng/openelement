@@ -102,7 +102,7 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   // overrides one.
   ['openelement.config.ts.tmpl', 'openelement.config.ts'],
   // The @theme role sheet — the ONE styling source (dev serves it directly,
-  // build compiles it through the router's Tailwind preset).
+  // build compiles it through the router's Tailwind entry).
   ['app/styles/theme.css', 'app/styles/theme.css'],
   // #1557: the retired ui zero-interaction component shapes ship as plain
   // HTML+CSS recipes the consumer deletes if unused (never an npm dep).

@@ -28,15 +28,13 @@
  * ('Inter Variable', 'JetBrains Mono Variable', 'Instrument Serif').
  *
  * Token delivery (alpha9 C4, #1507; twin retired alpha9 C5): the site build
- * enables the router's Tailwind preset (see vite.config.ts), so the @theme
- * role table (packages/ui/src/theme.css) ships through the preset's linked,
- * layer-ordered bundle — NOT as an inline copy here. The ui package carries
- * no scale values of its own (the compiled theme-tokens twin is deleted), so
- * there is no fallback sheet to inline: if the preset ever turns off, the
- * site must supply its own role table first (the OFF contract,
- * packages/ui/CUSTOMIZATION.md "Value delivery") — carrying a duplicated
- * table inline would also trip the preset's full-inline prohibition
- * (assertNoGlobalSheetInline).
+ * enables the router's Tailwind entry (see openelement.config.ts), so the
+ * @theme role table (packages/ui/src/theme.css) ships through the entry's
+ * compiled, head-linked stylesheet — NOT as an inline copy here. The ui
+ * package carries no scale values of its own (the compiled theme-tokens twin
+ * is deleted), so there is no fallback sheet to inline: if the entry ever
+ * turns off, the site must supply its own role table first (the OFF contract,
+ * packages/ui/CUSTOMIZATION.md "Value delivery").
  */
 
 /**
@@ -272,8 +270,8 @@ open-code-block pre {
   }
 }`;
 
-// Token note (see the module doc): the theme layer comes from the preset's
-// linked bundle asset, so nothing here re-declares it. Shadow trees keep
+// Token note (see the module doc): the theme layer comes from the entry's
+// head-linked stylesheet asset, so nothing here re-declares it. Shadow trees keep
 // inheriting the variables from the document root the same as before — the
 // delivery changed, the inheritance contract did not.
 
@@ -283,10 +281,10 @@ open-code-block pre {
  * this text is inlined into the head, where a relative font URL would
  * resolve against the page, and the raw-<style> head contract rejects
  * `@import` outright. They ride the site's linked style bundle instead
- * (www/site-fonts.ts → www/openelement.config.ts `tailwind.theme` →
- * /assets/open-tailwind.css), whose same-origin woff2 siblings are emitted
- * and URL-rewritten by the preset's asset shipping (#1535). The theme token
- * table is not part of this body either — the same linked bundle carries it
- * (see the module doc). app/head.tsx wraps this in one <style> entry.
+ * (www/site-fonts.ts → www/openelement.config.ts `tailwind.theme` → the
+ * head-linked document stylesheet), whose same-origin woff2 siblings are
+ * emitted and URL-rewritten by Vite's own asset graph. The theme token
+ * table is not part of this body either — the same linked stylesheet
+ * carries it (see the module doc). app/head.tsx wraps this in one <style> entry.
  */
 export const documentStyle = `body{font-family:var(--font-sans);-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}${siteCSS}`;

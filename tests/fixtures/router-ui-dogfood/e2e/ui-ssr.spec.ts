@@ -72,7 +72,7 @@ test.describe('ui dogfood SSR/DSD output', () => {
 });
 
 /**
- * Tailwind preset delivery over compiled DSD (the C-seam integration proof).
+ * Tailwind entry delivery over compiled DSD (the C-seam integration proof).
  *
  * The fixture is preset-ON with `injectDsdLinks` explicitly false — the
  * exact-claim contract: the compiled bundle reaches the document through the
@@ -81,20 +81,25 @@ test.describe('ui dogfood SSR/DSD output', () => {
  * take the theme through CSS custom property inheritance. Verified here end
  * to end: SSR bytes, then real hydration on the prerendered page.
  */
-test.describe('tailwind preset delivery (preset-on + compiled DSD)', () => {
-  const BUNDLE_LINK = '<link rel="stylesheet" href="/assets/open-tailwind.css" />';
+test.describe('tailwind entry delivery (entry-on + compiled DSD)', () => {
+  /** The compiled document stylesheet: a content-hashed client asset. */
+  const BUNDLE_HREF = /^\/client\/assets\/.+\.css$/;
 
-  test('the bundle is head-linked exactly once and no DSD template carries an injected link', async ({
+  test('the document stylesheet is head-linked exactly once and no DSD template carries an injected link', async ({
     request,
   }) => {
     const response = await request.get('/dialog');
     expect(response.ok()).toBe(true);
     const html = await response.text();
-    // Document adoption: exactly one bundle link, inside <head> (the @scope
-    // face rides next to it as its own head link when configured).
-    const escaped = BUNDLE_LINK.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    expect(html.match(new RegExp(escaped, 'g'))?.length).toBe(1);
-    expect(html).toMatch(new RegExp(`<head>[\\s\\S]*?${BUNDLE_LINK}`));
+    // Document adoption: exactly one compiled-stylesheet link, inside <head>.
+    const stylesheetHrefs = [...html.matchAll(/<link rel="stylesheet" href="([^"]+)"/g)].map(
+      (match) => match[1]!,
+    );
+    expect(
+      stylesheetHrefs.filter((href) => BUNDLE_HREF.test(href)),
+      `exactly one document stylesheet link, got ${stylesheetHrefs.join(', ')}`,
+    ).toHaveLength(1);
+    expect(html).toMatch(/<head>[\s\S]*?<link rel="stylesheet" href="\/client\/assets\//);
     // Shadow adoption rides inheritance, not injection: every DSD template's
     // children are exactly the Part Program's nodes.
     for (const match of html.matchAll(/<template shadowrootmode=[^>]*>([\s\S]*?)<\/template>/g)) {
