@@ -322,7 +322,11 @@ export function hydrateNodes(
     if (node.k === 'text') {
       const dom = at(cursor++);
       if (!isText(dom)) hydrateFailure(nodePath, 'expected a text node', owner);
-      if (!resume && dom.data !== node.value) {
+      // Inside a bounded Block range the static content is a pure function of
+      // the signal, so it is verified even on resume: a branch that flipped
+      // while the element was disconnected is detected (and repaired by the
+      // bounded Block rebuild) instead of being silently bound as-is.
+      if ((!resume || owner.kind === 'block') && dom.data !== node.value) {
         hydrateFailure(
           nodePath,
           `text drift: expected ${JSON.stringify(node.value)}, found ${JSON.stringify(dom.data)}`,
@@ -445,7 +449,39 @@ export function hydrateNodes(
       const anchor = expectComment(at(cursor++), partAnchorMarker(part.index), nodePath, owner);
       const expected = displayValue(signalOf(ctx, part.signal).value);
       let text: Text | undefined;
-      if (expected.length > 0) {
+      if (resume) {
+        // Resume binds the runtime's own value node: a value written while the
+        // element was disconnected reaches no subscription, so the DOM holds
+        // the disconnect-time render. The node after the anchor is this Part's
+        // value node whenever it is a text node — except when it is exactly the
+        // static text node that follows the anchor in a `{value} suffix`
+        // template. Reconciliation preserves the node (and its identity) for a
+        // non-empty value and retires/creates it on the empty transitions.
+        const candidate: Node | undefined = parent.childNodes[cursor];
+        const nextTemplateNode = nodes[index + 1];
+        const staticSuffix =
+          nextTemplateNode?.k === 'text' &&
+          candidate !== undefined &&
+          isText(candidate) &&
+          candidate.data === nextTemplateNode.value;
+        if (candidate !== undefined && isText(candidate) && !staticSuffix) {
+          if (expected.length === 0) {
+            // Removing the owned node pulls the following nodes into this DOM
+            // index, so the cursor stays put.
+            parent.removeChild(candidate);
+          } else {
+            cursor++;
+            if (candidate.data !== expected) candidate.data = expected;
+            text = candidate;
+          }
+        } else if (expected.length > 0) {
+          // The value arrived while the element was disconnected: the owned
+          // node is created at the anchor and the cursor steps past it.
+          text = anchor.ownerDocument.createTextNode(expected);
+          parent.insertBefore(text, anchor.nextSibling);
+          cursor++;
+        }
+      } else if (expected.length > 0) {
         const next = at(cursor++);
         if (!isText(next)) {
           hydrateFailure(nodePath, 'expected a text node after the part anchor', owner);
@@ -634,11 +670,23 @@ export interface CompiledHydrationOptions {
   staticStyleReady?: Promise<unknown>;
   /**
    * Resume after a successful activation: bind the runtime's own DOM again
-   * without re-running the SSR-artifact consistency checks (text and static
+   * without re-running the SSR-artifact consistency checks (static text and
    * attribute drift, trailing-node count, the not-yet-retired style node). The
-   * first activation never sets this — it keeps the strict fail-closed claim —
-   * and structural safety is still enforced: anchors, fixed-part targets and
-   * the program's node identity must resolve, or the resume fails closed.
+   * first activation never sets this — it keeps the strict fail-closed claim.
+   *
+   * Signals written while the element was disconnected reached no
+   * subscription, so the DOM holds the disconnect-time render. The resume
+   * reconciles it to the current values instead of re-verifying it as an SSR
+   * artifact: value Parts apply their current value, text Parts update their
+   * owned node in place, and a bounded Block range that no longer is a render
+   * of the current value (the range holds no anchors, so its content is a pure
+   * function of the signals) is rebuilt between its own anchors. Inside those
+   * ranges the static text is verified even on resume — that is how a branch
+   * flipped while disconnected is detected and routed to the bounded rebuild
+   * instead of being silently bound as-is. Structural safety is still enforced
+   * everywhere else: anchors, fixed-part targets and the program's node
+   * identity must resolve, or the resume fails closed — a damaged root is never
+   * silently rebuilt.
    */
   resume?: boolean;
   /** Default is `throw`; `owning` enables one bounded recovery attempt. */
@@ -789,6 +837,9 @@ export function hydrateExistingDom(
   const recovery = options.recovery ?? 'throw';
   let recovered = false;
   let rootRebuilt = false;
+  // Block ranges already repaired by a resume, keyed by Part index: each range
+  // is rebuilt at most once, which also bounds the re-scan loop.
+  const repairedBlocks = new Set<number>();
   for (;;) {
     const ctx = createContext(normalizePartProgram(program), host, ownerScope);
     const pending: DeferredSubscription[] = [];
@@ -822,10 +873,13 @@ export function hydrateExistingDom(
       for (const deferred of pending) {
         subscribeWrites(ctx, deferred.scope, deferred.signal, deferred.fn);
       }
-      // A rebuilt root carries no live values yet: fixed Parts apply their
-      // initial values exactly as fresh creation would. A Block-range
-      // recovery never contains fixed-Part targets, so `claim` mode stands.
-      attachFixedParts(ctx, root, rootRebuilt ? 'fresh' : 'claim', cursorStart);
+      // A rebuilt root carries no live values yet, and a resumed instance binds
+      // the runtime's own DOM: in both cases the signals are the authority for
+      // every value Part, so their current values are applied — a value written
+      // while the element was disconnected reaches the DOM again. Only the
+      // initial claim keeps the SSR artifact authoritative (`claim`).
+      const applyValues = rootRebuilt || options.resume === true;
+      attachFixedParts(ctx, root, applyValues ? 'fresh' : 'claim', cursorStart);
       replayPreUpgradeEvents(root, capturedEvents);
       // Part binding completed: the DSD style node's double application
       // retires (no-op when the hydration ran from cursor 0). On the recovery
@@ -875,11 +929,23 @@ export function hydrateExistingDom(
       }
       if (!(error instanceof PartProgramHydrationError)) throw error;
       options.onMismatch?.(error);
-      if (stream || recovery !== 'owning' || recovered || !recoverHydrationOwner(error, ctx)) {
+      // A resumed instance repairs a stale bounded Block range: the range holds
+      // no anchors (only static structure and item values), so its content is a
+      // pure function of the current signal values and the rebuild stays inside
+      // the Block's own anchor pair. Every other owner keeps the resume's strict
+      // identity requirements — the root is never rebuilt, so an externally
+      // damaged activation still fails closed (Finding B) — and a range whose
+      // rebuild does not settle the mismatch fails closed with this diagnostic.
+      const owner = error.owner;
+      const resumableBlock =
+        options.resume === true && owner.kind === 'block' && !repairedBlocks.has(owner.part.index);
+      const oneShotRecovery = recovery === 'owning' && !recovered;
+      if (stream || (!resumableBlock && !oneShotRecovery) || !recoverHydrationOwner(error, ctx)) {
         throw error;
       }
-      recovered = true;
-      rootRebuilt = error.owner.kind === 'root';
+      if (resumableBlock) repairedBlocks.add(owner.part.index);
+      else recovered = true;
+      rootRebuilt = owner.kind === 'root';
     }
   }
 }
