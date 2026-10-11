@@ -169,11 +169,25 @@ describe('request-time parity: dev (hono) vs build (Nitro)', () => {
     // sources around it, and a stale entry makes the suite assert a past build
     // while reporting on the working tree (2026-09-17: a fixture dist and a
     // shadowing node_modules copy each hid the same stale codegen).
+    //
+    // The build runs with NODE_ENV removed. Vitest sets NODE_ENV=test for its
+    // workers, and Vite derives the SSR bundle's `import.meta.env.PROD` from
+    // the ambient NODE_ENV — inheriting it inlined `PROD=false` into the
+    // generated server entry, so the fixture left on disk answered with
+    // development error details. The e2e suite serves the same dist, and its
+    // production-scrubbing assertion then failed on every engine: the
+    // intermittent full-suite failure (one per engine) was this unit test
+    // rewriting the shared artifact in test semantics. Build with the
+    // documented environment (no NODE_ENV), so the artifact this suite
+    // validates against dev is the production build the e2e suite runs on.
+    const buildEnv = { ...process.env };
+    delete buildEnv.NODE_ENV;
     const fixtureBuild = spawnSync(
       'pnpm',
       ['--dir', 'tests/fixtures/router-request-time', 'run', 'build'],
       {
         cwd: join(fixtureDir, '../../..'),
+        env: buildEnv,
         stdio: 'inherit',
       },
     );
