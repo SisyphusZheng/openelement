@@ -27,7 +27,6 @@ export default defineConfig({
       renderer: 'lit',
       routesDir: 'app/routes',
       islandsDir: 'app/islands',
-      componentsDir: 'app/components',
       appShell: false,
       head: {
         title: 'app-flow-lit fixture',

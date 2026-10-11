@@ -22,12 +22,10 @@
 import { build as viteBuild, type InlineConfig, type Plugin } from 'vite';
 import type { FrameworkOptions } from './framework.ts';
 import { createOpenPlugin } from './plugin.ts';
-import { DEFAULT_COMPONENTS_DIR, DEFAULT_ISLANDS_DIR, DEFAULT_ROUTES_DIR } from './paths.ts';
+import { DEFAULT_ISLANDS_DIR, DEFAULT_ROUTES_DIR } from './paths.ts';
 
 /** Options for the low-level {@linkcode openPipeline} Vite plugin pipeline. */
 export interface OpenPipelineConfig {
-  /** Build/dev mode. 'ssg' (default) enables SSR dev server + static generation. */
-  mode?: 'ssg';
   routes?: { dir?: string };
   output?: { outDir?: string };
   island?: { dir?: string; upgradeStrategy?: string };
@@ -38,10 +36,8 @@ export interface OpenPipelineConfig {
 /** Low-level Vite plugin pipeline: SSR dev server, SSG and islands without the content/i18n conveniences of `openElement()`. */
 export function openPipeline(config: OpenPipelineConfig = {}): Plugin[] {
   const options: FrameworkOptions = {
-    mode: config.mode,
     routesDir: config.routes?.dir || DEFAULT_ROUTES_DIR,
     islandsDir: config.island?.dir || DEFAULT_ISLANDS_DIR,
-    componentsDir: DEFAULT_COMPONENTS_DIR,
     viewTransition: config.viewTransition ?? true,
     headExtras: config.headExtras,
     island: config.island as FrameworkOptions['island'],

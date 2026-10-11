@@ -37,12 +37,7 @@ import type {
   StaticComponentDecl,
 } from '@openelement/protocol/ssg';
 import type { ClientAssetManifest } from '@openelement/protocol/client-assets';
-import {
-  DEFAULT_COMPONENTS_DIR,
-  DEFAULT_ISLANDS_DIR,
-  DEFAULT_OUT_DIR,
-  DEFAULT_ROUTES_DIR,
-} from './internal/paths.ts';
+import { DEFAULT_ISLANDS_DIR, DEFAULT_OUT_DIR, DEFAULT_ROUTES_DIR } from './internal/paths.ts';
 
 export type Phase = 1 | 2 | 3;
 
@@ -150,9 +145,6 @@ class Phase3Meta {
 
   /** Islands directory */
   islandsDir: string = DEFAULT_ISLANDS_DIR;
-
-  /** Components directory */
-  componentsDir: string = DEFAULT_COMPONENTS_DIR;
 }
 
 /**
@@ -283,7 +275,6 @@ export class OpenElementBuildContext {
     this.phase3.ssrNoExternal = ssrNoExternal;
     this.phase3.routesDir = options.routesDir || DEFAULT_ROUTES_DIR;
     this.phase3.islandsDir = options.islandsDir || DEFAULT_ISLANDS_DIR;
-    this.phase3.componentsDir = options.componentsDir || DEFAULT_COMPONENTS_DIR;
     this.phase3.middleware = options.middleware || null;
     this.phase3.html = options.html || null;
     this.phase3.upgradeStrategy = options.island?.upgradeStrategy || 'idle';

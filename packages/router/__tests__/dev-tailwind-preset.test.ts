@@ -180,7 +180,6 @@ async function bootDev(plugins: Plugin[]): Promise<DevHandle> {
 const PRESET_OPTIONS = {
   routesDir: 'app/routes',
   islandsDir: 'app/islands',
-  componentsDir: 'app/components',
   appShell: false as const,
 };
 

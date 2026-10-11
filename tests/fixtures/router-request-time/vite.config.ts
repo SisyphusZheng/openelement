@@ -22,7 +22,6 @@ export default defineConfig({
     ...openElement({
       routesDir: 'app/routes',
       islandsDir: 'app/islands',
-      componentsDir: 'app/components',
       // No app shell: the fixture stays minimal and does not pull @acme/components.
       appShell: false,
       head: {

@@ -27,6 +27,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { fileURLToPath } from 'node:url';
 import { commandStatus } from './node-command.ts';
 import { vpExecutable, vpTaskArgv } from './vp-dispatch.ts';
 
@@ -70,7 +71,7 @@ export function parseGateStep(step: string): GateStep {
   return { pkg, task };
 }
 
-const repoRoot = new URL('../..', import.meta.url).pathname;
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 let rootPackage: string | undefined;
 

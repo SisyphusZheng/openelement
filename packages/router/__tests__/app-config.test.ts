@@ -478,7 +478,6 @@ test('app config: dirs moves the tokens/app-shell conventions with the roots', a
     });
     expect(resolved.options.routesDir).toEqual('src/routes');
     expect(resolved.options.islandsDir).toEqual('src/islands');
-    expect(resolved.options.componentsDir).toEqual('src/components');
     expect(resolved.options.appShell).toEqual({
       tagName: 'app-shell',
       import: './src/islands/app-shell.tsx',
@@ -513,7 +512,6 @@ test('app config: a partial dirs override leaves the conventions at their defaul
     // A `dirs` block states all three roots; the two the author omitted take
     // the documented defaults, and the conventions follow the shared base.
     expect(resolved.options.islandsDir).toEqual('app/islands');
-    expect(resolved.options.componentsDir).toEqual('app/components');
     expect(resolved.options.appShell).toEqual({
       tagName: 'app-shell',
       import: './app/islands/app-shell.tsx',

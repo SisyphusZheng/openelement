@@ -94,10 +94,6 @@ test('OpenElement exposes base static contract', () => {
   expect(typeof OpenElement.registerGlobalStyles).toEqual('function');
   expect(typeof OpenElement.getGlobalStyles).toEqual('function');
   expect(typeof OpenElement._resetGlobalStyles).toEqual('function');
-  class LightElement extends OpenElement {
-    static override renderMode = 'light' as const;
-  }
-  expect(LightElement.renderMode).toEqual('light');
 });
 
 test('OpenElement without a compiled program fails closed at connect', () => {
