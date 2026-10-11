@@ -179,6 +179,13 @@ async function gatherFailureEvidence(page: Page): Promise<string> {
 }
 
 test('KR-2: repeated navigations all define every load-strategy island tag', async ({ page }) => {
+  // The loader's own failure is caught by the activation wrapper, so it never
+  // reaches unhandledrejection. Record the page's console and page errors too:
+  // a swallowed rejection still leaves a trace there.
+  const consoleLines: string[] = [];
+  page.on('console', (message) => consoleLines.push(`${message.type()}: ${message.text()}`));
+  page.on('pageerror', (error) => consoleLines.push(`pageerror: ${error.message}`));
+
   // The static precondition the race rides on: the entry chunk's export binds
   // behind its style await, so a read inside that window sees `undefined`.
   const ordering = chunkOrderingEvidence();
@@ -206,7 +213,12 @@ test('KR-2: repeated navigations all define every load-strategy island tag', asy
       );
     }
     if (missing.length === 0) continue;
-    failures.push(`attempt ${attempt}:\n    ${await gatherFailureEvidence(page)}`);
+    const swallowed = consoleLines.slice(-6);
+    consoleLines.length = 0;
+    failures.push(
+      `attempt ${attempt}:\n    ${await gatherFailureEvidence(page)}` +
+        `\n    console trace: ${swallowed.length > 0 ? `\n      ${swallowed.join('\n      ')}` : '(nothing logged)'}`,
+    );
   }
 
   expect(
@@ -349,4 +361,123 @@ test('KR-2 engine characterization: resolving a re-export facade while its async
   // Every engine agrees the binding is correct once the dependency completes:
   // the module is fine, only the moment it is observed differs.
   expect(probe.readAfterEvaluation, detail).toEqual('function');
+});
+
+/**
+ * K0: can the facade be dropped for a direct import of the module that defines
+ * the class? The loader currently imports the re-export facade, which WebKit
+ * resolves while its async dependency is still evaluating. Three shapes are
+ * measured against the same held dependency:
+ *
+ *   cold      `import(B)` — B defines and exports the class behind its await;
+ *             nothing has started B yet.
+ *   second    `import(B)` again while B is already evaluating through another
+ *             consumer — the product's real situation, where the light island's
+ *             chunk has already pulled the shared chunk in.
+ *   facade    `import(A)` where A only re-exports B (the shipped loader path).
+ *
+ * A direct import is only a candidate fix if `second` waits for the dependency
+ * and yields the constructor; a cold-only success would leave the loader
+ * reading early exactly when another island reached the chunk first.
+ */
+test('K0: direct import of the defining module versus the re-export facade', async ({
+  page,
+  browserName,
+}) => {
+  await page.goto('/combobox');
+  const measured = await page.evaluate(async () => {
+    const holdMs = 400;
+    // One flag per module: a shared flag would let one shape's entry satisfy
+    // another shape's wait.
+    const makeB = (flagName: string) =>
+      URL.createObjectURL(
+        new Blob(
+          [
+            `
+          globalThis[${JSON.stringify(flagName)}] = true;
+          await new Promise((resolve) => setTimeout(resolve, ${holdMs}));
+          var exported = class { static probe = 'B'; };
+          export { exported as default };
+          `,
+          ],
+          { type: 'text/javascript' },
+        ),
+      );
+
+    const waitForHold = async (flagName: string) => {
+      const deadline = performance.now() + 2_000;
+      while (
+        (globalThis as Record<string, unknown>)[flagName] !== true &&
+        performance.now() < deadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      return (globalThis as Record<string, unknown>)[flagName] === true;
+    };
+    const read = async (url: string) => {
+      const startedAt = performance.now();
+      const namespace = (await import(/* @vite-ignore */ url)) as Record<string, unknown>;
+      return {
+        elapsedMs: Math.round(performance.now() - startedAt),
+        defaultType: typeof namespace.default,
+      };
+    };
+
+    // cold: first consumer, nothing else has started the module.
+    const cold = await read(makeB('__k0Cold'));
+
+    // second: the module is mid-evaluation through another consumer.
+    const runningB = makeB('__k0Second');
+    const running = read(runningB);
+    const secondEntered = await waitForHold('__k0Second');
+    const second = await read(runningB);
+    await running;
+
+    // facade: the shipped loader path, over the same held shape.
+    const facadeB = makeB('__k0Facade');
+    const started = read(facadeB);
+    const facadeEntered = await waitForHold('__k0Facade');
+    const facadeUrl = URL.createObjectURL(
+      new Blob(
+        [
+          `
+          import reexported from ${JSON.stringify(facadeB)};
+          export { reexported as default };
+          `,
+        ],
+        { type: 'text/javascript' },
+      ),
+    );
+    const facade = await read(facadeUrl);
+    await started;
+
+    return { holdMs, cold, second, facade, secondEntered, facadeEntered };
+  });
+
+  const summary =
+    `held dependency ${measured.holdMs}ms — ` +
+    `cold import ${measured.cold.elapsedMs}ms/${measured.cold.defaultType}, ` +
+    `second import ${measured.second.elapsedMs}ms/${measured.second.defaultType}, ` +
+    `facade import ${measured.facade.elapsedMs}ms/${measured.facade.defaultType}`;
+  expect(
+    measured.secondEntered && measured.facadeEntered,
+    `probe setup failed (secondEntered=${measured.secondEntered}, ` +
+      `facadeEntered=${measured.facadeEntered}): ${summary}`,
+  ).toBe(true);
+  if (browserName === 'webkit') {
+    // The recorded behaviour: the first, cold import is spec-ordered, while any
+    // import of a module that is already evaluating resolves early — the facade
+    // and a direct re-import alike. This is why dropping the facade cannot fix
+    // the loader: another consumer always reaches the shared chunk first.
+    expect(measured.cold.defaultType, summary).toEqual('function');
+    expect(measured.cold.elapsedMs, summary).toBeGreaterThanOrEqual(measured.holdMs / 2);
+    expect(measured.second.defaultType, summary).toEqual('undefined');
+    expect(measured.facade.defaultType, summary).toEqual('undefined');
+  } else {
+    // Every shape waits for the dependency and sees the constructor.
+    for (const shape of [measured.cold, measured.second, measured.facade]) {
+      expect(shape.defaultType, summary).toEqual('function');
+      expect(shape.elapsedMs, summary).toBeGreaterThanOrEqual(measured.holdMs / 2);
+    }
+  }
 });
