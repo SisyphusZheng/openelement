@@ -1,7 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { installCommand } from '../app/data/_generated-install-command.ts';
-import { SOURCE_VERSION } from '../app/data/_generated-release-line.ts';
-import { packageCountPhrase } from '../app/data/version.ts';
+import { REGISTRY_NOTE } from '../app/data/version.ts';
 
 /**
  * The hero media stack, as selectors the band guard below matches on: the
@@ -148,12 +147,11 @@ test.describe('Cinematic homepage', () => {
     // Four fact cells: the one-line version block plus three sentence facts
     // (E2 §2). The count is pinned so a silent re-add of a label grid fails.
     await expect(home.locator('.spec-strip .spec-cell')).toHaveCount(4);
-    // The version line is generated truth: source version, release-state
-    // package count, and the shared-version fact, on one nowrap row.
+    // The version line is generated truth: the per-package registry table
+    // (one entry per package, no shared "one version" claim), on one nowrap
+    // row.
     const versionLine = home.locator('.version-line');
-    await expect(versionLine).toHaveText(
-      `v${SOURCE_VERSION} · ${packageCountPhrase('en')} · one version`,
-    );
+    await expect(versionLine).toHaveText(REGISTRY_NOTE);
     await expect(versionLine).toHaveAttribute(
       'href',
       'https://www.npmjs.com/package/@openelement/element',

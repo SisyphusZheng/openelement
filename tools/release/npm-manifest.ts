@@ -122,6 +122,8 @@ const SIDE_EFFECTS: Record<string, false | string[]> = {
 const PACKAGE_DESCRIPTIONS: Record<string, string> = {
   '@openelement/protocol':
     'Cross-system contracts and tiny pure predicates for the OpenElement framework.',
+  '@openelement/compiler':
+    'Build-time compiler for OpenElement: transforms TSX with @element decorators into Part Program modules.',
   '@openelement/router':
     'Routing, application runtime, and lifecycle tooling for the OpenElement framework.',
   '@openelement/create': 'Project generator for the OpenElement Web Components framework.',

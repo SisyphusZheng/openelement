@@ -29,6 +29,7 @@ function manifest(
   return {
     name,
     version: '1.0.0-alpha.2',
+    description: metadata.description,
     homepage: metadata.homepage,
     keywords: metadata.keywords,
     engines: metadata.engines,
@@ -45,6 +46,8 @@ test('pack surface: metadata parity with packedMetadata()', () => {
 
 test('pack surface: a missing or divergent facade field fails', () => {
   const fields: Array<[string, unknown]> = [
+    ['description', undefined],
+    ['description', 'some other description'],
     ['homepage', undefined],
     ['homepage', 'https://example.com'],
     ['keywords', ['openelement']],
@@ -62,6 +65,27 @@ test('pack surface: a missing or divergent facade field fails', () => {
     ).map((violation) => violation.message);
     expect(messages.length, `${field}=${JSON.stringify(value)} must fail`).toEqual(1);
     expect(messages[0]).toContain(field);
+  }
+});
+
+test('pack surface: every retained package declares a description (H6)', () => {
+  // The compiler packed without one: PACKAGE_DESCRIPTIONS had five keys and
+  // JSON.stringify drops the undefined, so the tarball carried no
+  // description and nothing asserted it.
+  for (const name of [
+    '@openelement/protocol',
+    '@openelement/element',
+    '@openelement/compiler',
+    '@openelement/router',
+    '@openelement/create',
+    '@openelement/ui',
+  ]) {
+    const metadata = packedMetadata(name);
+    expect(typeof metadata.description, name).toEqual('string');
+    expect(
+      findMetadataViolations(name, manifest(name), metadata),
+      `${name}: packed facade must carry its description`,
+    ).toEqual([]);
   }
 });
 

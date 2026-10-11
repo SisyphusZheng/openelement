@@ -81,9 +81,10 @@
   .spec-cell:first-child { border-inline-start:0; }
   .spec-fact { margin:0; color:var(--color-foreground); font-size:var(--text-sm); font-weight:var(--font-weight-semibold); line-height:1.4; }
   .spec-fact.accent { color:var(--color-primary); }
-  /* The version line is one nowrap row: version · packages · one version.
-     It scrolls inside its own cell rather than wrapping or widening the
-     strip (the cell is the only horizontal-scroll owner in the hero). */
+  /* The version line is one nowrap row: the per-package version table
+     (protocol vX · element vX · …). It scrolls inside its own cell rather
+     than wrapping or widening the strip (the cell is the only
+     horizontal-scroll owner in the hero). */
   .version-line { display:block; overflow-x:auto; color:var(--color-foreground); font-family:var(--font-mono); font-size:var(--text-sm); font-weight:var(--font-weight-bold); white-space:nowrap; text-decoration:none; }
   .version-line:hover { color:var(--color-primary); text-decoration:underline; text-underline-offset:calc(var(--spacing) * 1); }
   .spec-version small { color:var(--color-muted-foreground); font-size:var(--font-size-micro); line-height:1.4; }

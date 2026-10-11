@@ -131,6 +131,13 @@ export function findMetadataViolations(
     });
   };
   if (packageJson.homepage !== metadata.homepage) fail('homepage', metadata.homepage);
+  // H6: description rides the same parity — a package missing from
+  // PACKAGE_DESCRIPTIONS packed with the key dropped (JSON.stringify omits
+  // undefined), which this assertion catches. Guarded: a future package with
+  // no declared description stays exempt rather than failing closed here.
+  if (metadata.description !== undefined && packageJson.description !== metadata.description) {
+    fail('description', metadata.description);
+  }
   if (JSON.stringify(packageJson.keywords) !== JSON.stringify(metadata.keywords)) {
     fail('keywords', metadata.keywords);
   }

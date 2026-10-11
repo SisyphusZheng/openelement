@@ -66,10 +66,9 @@ publish; a missing environment fails the job closed instead of publishing:
   line publishes onto `latest` and rides the channel tag as a re-pointed alias
   (`npmPublishTag`, tested — see "Public 1.0 prerelease baseline"). A pre-1.0
   prerelease still never moves `latest` onto itself.
-- Required checks for `dev` and `main` (repository ruleset `21775463`):
-  `fast-checks`, `source-matrix`, `fresh-clone`, and `packed-consumers` from
-  AutoFlow CI, plus `dependency-review`, `CodeQL`, and the strict required
-  status-check policy. These producer checks are individually required; the
+- Required checks for `dev` and `main` (repository ruleset `24288967`):
+  `lint`, `test`, `e2e`, and `pack` from AutoFlow CI, plus `CodeQL` and the
+  strict required status-check policy. These producer checks are individually required; the
   `autoflow-ci` aggregate still validates the complete evidence bundle and
   does not re-run the suite. Compatibility probes and the independently
   governed `apps/saas` application are not part of every PR run; use their

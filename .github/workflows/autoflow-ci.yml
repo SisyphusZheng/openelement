@@ -189,9 +189,9 @@ jobs:
       - name: Install all browser engines
         run: ./node_modules/.bin/playwright install --with-deps chromium firefox webkit
       - name: Build site
-        run: vp run site:build
+        run: vp run --fail-if-no-match site:build
       - name: Site E2E (3 engines)
-        run: vp run @openelement/www#e2e:browsers
+        run: vp run --fail-if-no-match @openelement/www#e2e:browsers
       - name: Fixture gates
         run: |
           vp run --fail-if-no-match @openelement/fixture-router-native-framework#gate
