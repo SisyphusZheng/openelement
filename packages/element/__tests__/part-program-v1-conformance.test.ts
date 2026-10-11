@@ -655,7 +655,7 @@ describe('compiled part program v1 - one program, three execution modes', () => 
       'parts[0].index must equal its position',
     );
     const wrongVersion = JSON.parse(programJson);
-    wrongVersion.version = 2;
+    wrongVersion.version = 99;
     assertThrowsIncludes(() => validatePartProgram(wrongVersion), Error, 'version');
 
     const unknownInstruction = JSON.parse(programJson);

@@ -200,7 +200,14 @@ export const RuntimeErrorCode = {
   FRESH_ROOT_NOT_EMPTY: 'OE_RUNTIME_FRESH_ROOT_NOT_EMPTY',
   /** A fixed Part has no serialized anchor to bind. */
   SERIALIZED_ANCHOR_MISSING: 'OE_RUNTIME_SERIALIZED_ANCHOR_MISSING',
-  /** A when/each Region Part needs the Region builders, which this entry does not install (#1548). */
+  /** A when/each Block Part needs the Block builders, which this entry does not install (#1548). */
+  BLOCK_BUILDERS_MISSING: 'OE_RUNTIME_BLOCK_BUILDERS_MISSING',
+  /**
+   * Transitional alias of {@linkcode BLOCK_BUILDERS_MISSING} (alpha15 R batch 1).
+   * Batch-2 readers (element `runtime/regions-seam.ts`) still reference this key;
+   * the value stays the pre-rename code so untouched readers keep their exact
+   * observable behavior. Batch 2 moves those readers and removes this key.
+   */
   REGION_BUILDERS_MISSING: 'OE_RUNTIME_REGION_BUILDERS_MISSING',
 } as const;
 

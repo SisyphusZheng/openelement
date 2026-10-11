@@ -189,7 +189,7 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
     locations.push({ id: element.id, kind: 'element', tag: element.tag, path: element.path });
   }
   const regionPartIds = new Set<string>();
-  const regions: Array<Record<string, unknown>> = [];
+  const blocks: Array<Record<string, unknown>> = [];
   const dependencies: Array<Record<string, unknown>> = [];
   for (const part of spec.parts) {
     const locationId = `p${part.index}`;
@@ -206,7 +206,7 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
     }
     if (REGION_KINDS.has(part.k)) {
       regionPartIds.add(locationId);
-      regions.push({
+      blocks.push({
         id: `r${part.index}`,
         index: part.index,
         kind: part.k,
@@ -231,7 +231,7 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
     'root',
     ...properties.map((property) => `property:${property.name}`),
     ...locations.map((location) => location.id as string),
-    ...regions.map((region) => region.id as string),
+    ...blocks.map((block) => block.id as string),
   ];
   const sourceMap = {
     version: 1,
@@ -284,12 +284,15 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
     .filter((node) => node.k === 'el')
     .map((node) => node.id as string);
   const raw: unknown = {
-    version: 1,
+    version: 2,
     tag: spec.tag,
     root: { id: 'root', kind: spec.rootMode ?? 'light', nodes: topLevelElements },
     template,
     parts,
-    regions,
+    blocks,
+    // Transitional `regions` mirror (alpha15 R batch 1): batch-4 readers
+    // still read this key — always the identical array.
+    regions: blocks,
     dependencies,
     locations,
     sourceMap,

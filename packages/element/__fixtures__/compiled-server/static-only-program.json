@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "tag": "oe-static-card",
   "root": {
     "id": "root",
@@ -28,6 +28,7 @@
     }
   ],
   "parts": [],
+  "blocks": [],
   "regions": [],
   "dependencies": [],
   "locations": [

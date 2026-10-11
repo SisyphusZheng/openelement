@@ -22,7 +22,7 @@ into the others' graphs.
 | `@openelement/protocol/manifest`       | CEM manifest and compatibility contract types.                                                                                               |
 | `@openelement/protocol/module-descriptors` | Binding-identity module descriptors shared by the compiler's semantic core and its hosts (#1557 package split).                           |
 | `@openelement/protocol/module-vocabulary` | The router's module-scan vocabulary injected into the element semantic core.                                                               |
-| `@openelement/protocol/part-program`   | Serializable Part Program v1: the compiled element's exchange artifact (template, parts, regions, locations, source map, metadata) + validator. |
+| `@openelement/protocol/part-program`   | Serializable Part Program v1: the compiled element's exchange artifact (template, parts, blocks, locations, source map, metadata) + validator. |
 | `@openelement/protocol/policy`         | Numeric build/runtime admission budgets (stream bounds, composition depth, action body limit, timeouts).                                     |
 | `@openelement/protocol/registry-markers` | SSR customElements registry marker contract (#965).                                                                                        |
 | `@openelement/protocol/render`         | Render pipeline types (`RenderOutput`, SSR admission decisions).                                                                             |

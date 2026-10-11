@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "tag": "oe-demo-card",
   "root": {
     "id": "root",
@@ -224,6 +224,24 @@
           0
         ]
       }
+    }
+  ],
+  "blocks": [
+    {
+      "id": "r3",
+      "index": 3,
+      "kind": "when",
+      "anchor": "p3",
+      "end": "p3:end",
+      "source": "p3"
+    },
+    {
+      "id": "r4",
+      "index": 4,
+      "kind": "each",
+      "anchor": "p4",
+      "end": "p4:end",
+      "source": "p4"
     }
   ],
   "regions": [

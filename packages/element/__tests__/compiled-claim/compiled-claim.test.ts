@@ -522,7 +522,7 @@ test('alpha.3 failed claim stops a live pre-upgrade capture', async () => {
   const invalidCapture = capturePreUpgradeEvents(dom.root as unknown as EventTarget, ['click']);
   assertThrowsIncludes(
     () =>
-      claimExistingDom({ version: 2 }, host, dom.root as unknown as Node, {
+      claimExistingDom({ version: 99 }, host, dom.root as unknown as Node, {
         preUpgradeEvents: invalidCapture,
       }),
     Error,
