@@ -584,6 +584,19 @@ export interface IslandConfig {
   hydrate?: IslandDeliveryStrategy;
   /** Media query required by the `media` delivery strategy. */
   media?: string;
+  /**
+   * The root family this island is delivered in: `'shadow'` (the compiled
+   * default, DSD markup in a shadow root) or `'light'` (the component's
+   * children live in the document tree, which is what lets a light island use
+   * utility classes without a shadow-boundary workaround).
+   *
+   * Declarative only: `@element(tag, { root: 'light' })` on the component
+   * class is the single source of truth, and the build fails closed when this
+   * declaration disagrees with the compiled program's root. Declaring it here
+   * puts the island's root next to its delivery policy so a reader does not
+   * have to open the component to learn it.
+   */
+  root?: 'light' | 'shadow';
   /** Custom-element tags delivered by this one capability module. */
   tags?: readonly string[];
   /** Alias accepted by generated artifact producers. */
@@ -597,6 +610,7 @@ const ISLAND_CONFIG_FIELDS = new Set([
   'dsd',
   'hydrate',
   'media',
+  'root',
   'tags',
   'tagNames',
   'exportNames',
@@ -653,8 +667,8 @@ export function defineIslandConfig(config: IslandConfig): IslandConfig {
     throw authoringError(
       IslandErrorCode.DESCRIPTOR_SHAPE,
       `${ERROR_PREFIX} defineIslandConfig() requires an object descriptor. ` +
-        'Write export const openElement = defineIslandConfig({ ssr, dsd, hydrate, media, tags, ' +
-        'tagNames, exportNames }).',
+        'Write export const openElement = defineIslandConfig({ ssr, dsd, hydrate, media, root, ' +
+        'tags, tagNames, exportNames }).',
     );
   }
   for (const key of Object.keys(config)) {
@@ -662,7 +676,7 @@ export function defineIslandConfig(config: IslandConfig): IslandConfig {
       throw authoringError(
         IslandErrorCode.DESCRIPTOR_SHAPE,
         `${ERROR_PREFIX} defineIslandConfig() does not accept "${key}". ` +
-          'Use only ssr, dsd, hydrate, media, tags, tagNames, and exportNames. ' +
+          'Use only ssr, dsd, hydrate, media, root, tags, tagNames, and exportNames. ' +
           `Remove "${key}" from the descriptor.`,
       );
     }
@@ -703,6 +717,14 @@ export function defineIslandConfig(config: IslandConfig): IslandConfig {
       IslandErrorCode.HYDRATE,
       `${ERROR_PREFIX} defineIslandConfig() media is only valid with hydrate "media". ` +
         "Either set hydrate: 'media' or remove the media field — the two must agree.",
+    );
+  }
+  if (config.root !== undefined && config.root !== 'light' && config.root !== 'shadow') {
+    throw authoringError(
+      IslandErrorCode.DESCRIPTOR_SHAPE,
+      `${ERROR_PREFIX} defineIslandConfig() root must be "light" or "shadow". ` +
+        "Write root: 'light' for a component compiled with @element(tag, { root: 'light' }), " +
+        "or root: 'shadow' for the DSD default — the build fails closed when the two disagree.",
     );
   }
   const tags = config.tags === undefined ? undefined : validateIslandTags(config.tags, 'tags');

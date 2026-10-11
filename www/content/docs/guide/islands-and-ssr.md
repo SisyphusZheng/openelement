@@ -26,6 +26,18 @@ export const openElement = defineIslandConfig({ hydrate: 'visible', ssr: true, d
 
 The upgrade itself is the browser's Custom Element mechanism. The server serializes the compiled Part Program as Declarative Shadow DOM; when the class is defined the generated claim artifact runs the same program against the DOM that is already there, binding the handlers the template declared and restoring `@property` fields from host attributes. No tree is rebuilt, no binding is discovered by string lookup, and no event is synthesized from an attribute. A [streaming](/guide/streaming) route is the exception to that serialization promise — see above.
 
+## Light islands
+
+An island's root is decided by its component: `@element(tag, { root: 'light' })` compiles a program whose children live in the document tree, while the default shadow mode serializes Declarative Shadow DOM. The island config may restate the family the module belongs to:
+
+```tsx
+export const openElement = defineIslandConfig({ hydrate: 'visible', root: 'light' });
+```
+
+That declaration is checked, not obeyed. The decorator stays the single source of truth, and a config that contradicts it fails the build with `OEC9030`; declaring it just makes the island's root readable next to its delivery policy, without opening the component.
+
+Light islands are the practical route for utility-first styling. A shadow root is a style boundary — class selectors authored outside it do not reach the component's children — so a shadow island needs compiler-side utility extraction to bridge it, while a light island's children are ordinary document nodes that the page's compiled sheet already styles. What it gives up in exchange is the isolation the shadow root would have provided.
+
 ## Small runtime
 
 What ships is the set of island chunks a page declares plus the generated claim code — there is no framework runtime that every page must load. A page with no interactive module loads no framework JavaScript at all, and a page whose islands are all `'visible'` pays nothing until the reader scrolls to them.

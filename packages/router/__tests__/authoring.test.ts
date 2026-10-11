@@ -390,6 +390,21 @@ test('defineIslandConfig() bounds media delivery queries', () => {
   );
 });
 
+test('defineIslandConfig() carries the declared root family', () => {
+  expect(defineIslandConfig({ root: 'light' }).root).toEqual('light');
+  expect(defineIslandConfig({ root: 'shadow', hydrate: 'load' }).root).toEqual('shadow');
+  // Declaring nothing stays valid: the compiled program's root is the source
+  // of truth, and the field is a declaration next to the delivery policy.
+  expect(defineIslandConfig({ hydrate: 'load' }).root).toBeUndefined();
+  assertThrowsIncludes(
+    () => {
+      defineIslandConfig({ root: 'sideways' } as never);
+    },
+    Error,
+    'root must be "light" or "shadow"',
+  );
+});
+
 test('defineIslandConfig() rejects non-canonical island metadata', () => {
   assertThrowsIncludes(
     () => {

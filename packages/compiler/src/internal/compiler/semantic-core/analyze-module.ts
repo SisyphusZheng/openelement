@@ -690,6 +690,42 @@ function isIslandConfigStatement(
 /** The `@element` root ownership mode (alpha.8). */
 export type ElementRootKind = 'light' | 'shadow-open' | 'shadow-closed';
 
+/**
+ * The root family an admitted island config declares, or `undefined` when the
+ * descriptor does not pin one. The config speaks the user-facing
+ * `'light' | 'shadow'` pair while the decorator keeps the precise
+ * `shadow-open`/`shadow-closed` modes. Validated here so the cross-check below
+ * can trust the value it compares.
+ */
+function islandConfigDeclaredRoot(
+  statement: ts.Statement,
+  sf: ts.SourceFile,
+  fail: CompilerFail,
+): 'light' | 'shadow' | undefined {
+  if (!ts.isVariableStatement(statement)) return undefined;
+  const declaration = statement.declarationList.declarations[0];
+  const initializer = declaration?.initializer;
+  if (!initializer || !ts.isCallExpression(initializer)) return undefined;
+  const descriptor = initializer.arguments[0];
+  if (!descriptor || !ts.isObjectLiteralExpression(descriptor)) return undefined;
+  for (const entry of descriptor.properties) {
+    if (!ts.isPropertyAssignment(entry) || entry.name.getText(sf) !== 'root') continue;
+    if (!ts.isStringLiteral(entry.initializer)) {
+      fail(entry, 'OEC9030', 'island config root must be a string literal');
+    }
+    const value = entry.initializer.text;
+    if (value !== 'light' && value !== 'shadow') {
+      fail(
+        entry,
+        'OEC9030',
+        `island config root "${value}" is unsupported; use "light" or "shadow"`,
+      );
+    }
+    return value;
+  }
+  return undefined;
+}
+
 /** Everything the lowering and emission stages consume from one authored module. */
 export interface AnalyzedModule {
   /** Runtime statements admitted as verbatim passthrough (the island policy). */
@@ -742,6 +778,7 @@ export function analyzeCompiledModule(
   // styles` initializer must array exactly these bindings.
   const sheetImports = collectSheetImports(sf, fail);
   const passthroughStatements: ts.Statement[] = [];
+  let islandConfigStatement: ts.Statement | undefined;
   for (const statement of sf.statements) {
     if (
       ts.isImportDeclaration(statement) ||
@@ -756,6 +793,7 @@ export function analyzeCompiledModule(
     // compiled module may carry; it is validated and copied verbatim below.
     if (isIslandConfigStatement(statement, intrinsics)) {
       passthroughStatements.push(statement);
+      islandConfigStatement = statement;
       continue;
     }
     fail(
@@ -900,6 +938,24 @@ export function analyzeCompiledModule(
         entry,
         'OEC9002',
         '@element options support only root, delegatesFocus and formAssociated',
+      );
+    }
+  }
+  // The island config's `root` is a declaration, not a second source of truth:
+  // the decorator above already decided the compiled program's root, so a
+  // disagreeing config fails the build here rather than shipping an island
+  // whose documented delivery contradicts the program it compiles to.
+  if (islandConfigStatement !== undefined) {
+    const declaredRoot = islandConfigDeclaredRoot(islandConfigStatement, sf, fail);
+    const compiledRoot = rootKind === 'light' ? 'light' : 'shadow';
+    if (declaredRoot !== undefined && declaredRoot !== compiledRoot) {
+      fail(
+        islandConfigStatement,
+        'OEC9030',
+        `the island config declares root "${declaredRoot}" but @element('${tag}', ` +
+          `{ root: '${rootKind}' }) compiles a ${compiledRoot}-rooted program. The @element ` +
+          'decorator owns the root — point the config at the light component ' +
+          "(@element(tag, { root: 'light' })) or drop the config's root field so the two agree.",
       );
     }
   }

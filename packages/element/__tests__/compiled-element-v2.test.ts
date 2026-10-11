@@ -771,6 +771,52 @@ describe('compiled-element alpha.8 - canonical page/island authoring grammar', (
     );
   });
 
+  test('the island config root declaration must agree with the compiled program root', () => {
+    const compile = (configFields: string, decorator: string) =>
+      compileElementProgram(
+        [
+          prelude,
+          `export const openElement = defineIslandConfig({ ${configFields} });`,
+          `@element('oe-alpha8-root', ${decorator})`,
+          'export default class Alpha8Root extends OpenElement {',
+          '  render() { return <main><h1>root</h1></main>; }',
+          '}',
+        ].join('\n'),
+        '/project/app/islands/alpha8-root.tsx',
+        { staticSidecars: [ISLAND_SIDECAR] },
+      );
+
+    // Agreement, in both families. The config is declarative: the decorator
+    // still owns the program's root.
+    const light = compile("hydrate: 'load', root: 'light'", "{ root: 'light' }");
+    expect(light.program.root.kind).toEqual('light');
+    const shadow = compile("hydrate: 'load', root: 'shadow'", "{ root: 'shadow-open' }");
+    expect(shadow.program.root.kind).toEqual('shadow-open');
+    // Omitting the declaration stays valid, and the decorator's precise mode
+    // is untouched by the two-value config vocabulary.
+    const undeclared = compile("hydrate: 'load', ssr: true", "{ root: 'shadow-closed' }");
+    expect(undeclared.program.root.kind).toEqual('shadow-closed');
+
+    // A config contradicting the decorator fails the build, naming both sides.
+    assertThrowsIncludes(
+      () => compile("hydrate: 'load', root: 'shadow'", "{ root: 'light' }"),
+      Error,
+      'OEC9030',
+    );
+    assertThrowsIncludes(
+      () => compile("hydrate: 'load', root: 'light'", "{ root: 'shadow-open' }"),
+      Error,
+      "declares root \"light\" but @element('oe-alpha8-root', { root: 'shadow-open' })",
+    );
+    // The declared value is validated at the same place, so a typo fails the
+    // build instead of silently skipping the cross-check.
+    assertThrowsIncludes(
+      () => compile("hydrate: 'load', root: 'sideways'", "{ root: 'light' }"),
+      Error,
+      'island config root "sideways" is unsupported',
+    );
+  });
+
   test('nested custom-element hosts lower as static shells with prop-Part attributes', () => {
     const source = [
       prelude,
