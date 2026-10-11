@@ -10,7 +10,8 @@
 # minimumReleaseAgeExclude: pnpm's supply-chain cooldown withholds versions
 # published inside its maturity window. These entries are exempt: the
 # @openelement packages at the version this project was generated from (a
-# fresh scaffold installs on release day) and vite-plus itself.
+# fresh scaffold installs on release day) — element/router direct, compiler/
+# protocol as their transitives — and vite-plus itself.
 catalog:
   vite: npm:@voidzero-dev/vite-plus-core@1.1.0
   vite-plus: 1.1.0

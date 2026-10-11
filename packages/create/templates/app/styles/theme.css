@@ -120,8 +120,11 @@
   --brand: var(--color-primary);
   --brand-ink: var(--color-primary-foreground);
   --brand-soft: var(--color-secondary);
-  --ok: var(--color-secondary);
-  --warn: var(--color-accent);
+  /* --ok/--warn seat on *-foreground roles, not surface steps: badges.css
+     reads them as text on a low-% tint of themselves, so a surface step here
+     is unreadable (≈1.1:1). */
+  --ok: var(--color-secondary-foreground);
+  --warn: var(--color-accent-foreground);
 }
 
 /* ── Static (non-role) design tokens the component sheets read ── */
@@ -174,6 +177,7 @@ body {
     --brand: var(--color-violet-400);
     --brand-ink: var(--color-violet-950);
     --brand-soft: var(--color-zinc-800);
-    --ok: var(--color-zinc-800);
+    --ok: var(--color-secondary-foreground);
+    --warn: var(--color-accent-foreground);
   }
 }

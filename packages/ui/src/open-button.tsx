@@ -113,7 +113,7 @@ export class OpenButton extends OpenElement {
         <button
           class='control btn'
           part='control'
-          // oxlint-disable-next-line button-has-type -- dynamic type is a validated public prop
+          // oxlint-disable-next-line button-has-type -- type always set from the type prop (default 'button'); only submit/reset act on a form in handleClick
           type={this.type}
           disabled={this.disabled}
           hidden={this.linkMode}

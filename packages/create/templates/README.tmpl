@@ -16,7 +16,7 @@ plans). `pnpm dev` and `pnpm build` write it as needed; the `.gitignore`
 excludes it and deleting it is safe — the next run recreates it.
 
 The `@openelement/element` and `@openelement/router` dependencies carry caret
-ranges over the `1.0.0` release this starter was generated from, so
+ranges over the `1.0.0` prerelease this starter was generated from, so
 `pnpm update` picks up later `1.0.0` prereleases (and the final `1.0.0`)
 without editing this file.
 
@@ -29,6 +29,7 @@ without editing this file.
 | `/` live timer island (`live-timer`) | yes, client-only      | a live clock has nothing to prerender |
 | `/about`                             | no islands at all     | fully static SSG output               |
 | `/api/ping`                          | no (server)           | a plain `Request → Response` handler  |
+| `/404` (unmatched paths)             | no (server)           | dynamic 404 from the styled 404 page  |
 
 The badge classes (`badge-static`, `badge-island`) live in
 `app/components/badges.css` — copy them onto new sections and keep the
