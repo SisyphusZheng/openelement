@@ -216,7 +216,12 @@ export class CompiledElementKernel {
       // could not match. Real content — an element, an anchor comment, or
       // visible text — keeps the fail-closed claim path.
       const hasContent = Array.from(root.childNodes).some(isClaimableNode);
-      const mode: CompiledActivationMode = hasContent ? 'claim' : 'fresh';
+      // An activated instance always resumes: if its program-owned nodes are
+      // gone, that is external structure damage and the resume must fail closed
+      // (unresolved node) — never silently restart the component as a first CSR
+      // activation. A root with no recognizable content on a *first* connect is
+      // still the documented fresh path.
+      const mode: CompiledActivationMode = this.#activatedOnce || hasContent ? 'claim' : 'fresh';
       if (!hasContent && root.childNodes.length > 0) clearFormattingWhitespace(root);
       // Update-phase failures (#1375) land in the same element-local boundary
       // as connect failures: this element owns the Block subscriptions, so it

@@ -834,3 +834,74 @@ test('K0: direct import of the defining module versus the re-export facade', asy
     }
   }
 });
+
+/**
+ * Finding B1: an activated instance whose program-owned root content was
+ * removed externally must not silently restart as a first CSR activation. The
+ * reconnect resumes against the program's own DOM and fails closed with the
+ * unresolved-node diagnostic; the root must not be rebuilt behind the caller's
+ * back, and the failed connect must not leave a half-activated kernel.
+ */
+test('Q1-B/B1: an externally cleared activated root fails closed instead of restarting fresh', async ({
+  page,
+}) => {
+  // The fail-closed diagnostic reaches the page as a page error or as the
+  // framework's console channel depending on the engine; either proves it was
+  // raised, and the assertions below keep checking it is that diagnostic.
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  page.on('console', (message) => {
+    if (message.type() === 'error' || message.type() === 'warning') errors.push(message.text());
+  });
+
+  await page.goto('/combobox', { waitUntil: 'load' });
+  await page.waitForFunction(
+    (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+    ISLAND_TAGS,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+
+  const cleared = await page.evaluate(() => {
+    const frame = document.querySelector('combobox-page')?.shadowRoot;
+    const host = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
+    if (!host) return null;
+    const parent = host.parentNode as ParentNode;
+    host.remove();
+    while (host.firstChild) host.removeChild(host.firstChild);
+    parent.appendChild(host); // reconnect the emptied, already-activated root
+    return { childrenAfterClear: host.childNodes.length };
+  });
+  expect(cleared, 'the fixture must expose the light island').not.toBeNull();
+
+  // Bounded observation for the diagnostic: the connect reaction runs at the
+  // end of the task the reconnect happened in.
+  const deadline = Date.now() + 3_000;
+  while (Date.now() < deadline && !errors.some((line) => line.includes('missing child'))) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  const state = await page.evaluate(() => {
+    const frame = document.querySelector('combobox-page')?.shadowRoot;
+    const host = frame?.querySelector('zag-combobox-light') as HTMLElement | null;
+    const nodes = document.querySelectorAll('style[data-open-element-compiled-style]').length;
+    return {
+      children: host?.childNodes.length ?? -1,
+      styleNodes: nodes,
+      // The program's own content: a fresh fallback rebuilds it; a fail-closed
+      // resume leaves the cleared root alone.
+      programContent: host?.querySelector('input[data-part], form, ul, [data-part]') !== null,
+    };
+  });
+
+  expect(
+    errors.some((line) => line.includes('missing child')),
+    `a cleared activated root must fail closed with the unresolved-node diagnostic ` +
+      `(page errors: ${errors.join(' | ') || '(none)'})`,
+  ).toBe(true);
+  expect(
+    state.programContent,
+    `the cleared root must not be silently rebuilt as a fresh activation ` +
+      `(children=${state.children}, program content present=${state.programContent})`,
+  ).toBe(false);
+  expect(state.styleNodes, 'a failed connect must not leave a style node behind').toEqual(0);
+});
