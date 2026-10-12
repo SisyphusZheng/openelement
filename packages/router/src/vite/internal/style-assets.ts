@@ -688,8 +688,21 @@ async function admitServerRenderedStyleEdges(
   // is owned by the build rather than detached from it.
   for (const registryKey of edges.keys()) {
     const request = getStyleRequest(registryKey);
-    if (request === undefined) continue;
-    await emission.emit(this as unknown as StyleAssetEmitContext, request);
+    if (request === undefined) {
+      log.warn(`[dbg-pass] NO REQUEST for ${registryKey.split('/').slice(-1)[0]}`);
+      continue;
+    }
+    log.warn(`[dbg-pass] emitting ${registryKey.split('/').slice(-1)[0]}`);
+    try {
+      await emission.emit(this as unknown as StyleAssetEmitContext, request);
+    } catch (error) {
+      log.warn(
+        `[dbg-pass] EMIT FAILED ${registryKey.split('/').slice(-1)[0]}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      throw error;
+    }
   }
   this.info(
     `Server-rendered discovery walked ${walk.files.length} module(s) and declared ${edges.size} ` +
@@ -713,13 +726,12 @@ async function emitStyleAsset(
   records: Map<string, StyleAssetRecord>,
   emitted: Map<string, string>,
 ): Promise<{ css: string; fileName: string; referenceId: string }> {
+  const key = styleAssetRegistryKey(styleAssetGraphId(request.moduleId)) ?? request.moduleId;
   const css = await readEdgeCss(context, request);
   const hash = styleAssetHash(css);
   const fileName = styleAssetFileName(css);
-  records.set(styleAssetRegistryKey(styleAssetGraphId(request.moduleId)) ?? request.moduleId, {
-    fileName,
-    hash,
-  });
+  records.set(key, { fileName, hash });
+  log.warn(`[dbg-emit] ${key.split('/').slice(-1)[0]} -> ${fileName} records=${records.size}`);
   let referenceId = emitted.get(fileName);
   if (referenceId === undefined) {
     referenceId = context.emitFile({ type: 'asset', fileName, source: css });
@@ -805,6 +817,11 @@ export function serverStyleAssetPlugin(options?: {
       // either a sheet that build could not process or a defect of discovery.
       // It is never answered by inlining an in-root component's CSS: the render
       // fails closed with a stable, actionable diagnostic.
+      log.warn(
+        `[dbg-lookup] missing key=${registryKey}\n  file=${request.file}\n  manifest=${JSON.stringify(
+          [...(options?.files?.keys() ?? [])].map((k) => k.split('/').slice(-1)[0]),
+        )}`,
+      );
       if (withinRoot(request.file, this.environment.config.root)) {
         throw buildError(
           ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,
