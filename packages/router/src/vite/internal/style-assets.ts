@@ -676,33 +676,24 @@ async function admitServerRenderedStyleEdges(
     registerStyleEdges(file, artifact.requests, artifact.scopeTag);
     log.debug(`[css-discovery] packed artifact edges ${artifact.requests.length} from ${file}`);
   }
-  const edges = new Map<string, string>();
+  // The registered request objects themselves — never a re-derived key. The
+  // previous form rebuilt each edge's graph id and decoded it back through
+  // `getStyleRequest`, a round-trip that does not hold for every registry key
+  // (11 starter sheets failed it: `NO REQUEST`), so their assets were never
+  // emitted and the SSR phase failed closed. The registry already gave us the
+  // requests; use them, keyed by their canonical module id.
+  const edges = new Map<string, RegisteredStyleRequest>();
   for (const file of walk.files) {
     for (const request of styleRequestsForImporter(file)) {
-      edges.set(styleAssetGraphId(request.moduleId), request.file);
+      edges.set(request.moduleId, request);
     }
   }
   // Emit through the shared operation — never by awaiting the virtual module's
   // own `load` hook, which nests one load inside another (the cycle that left
   // packed sheets unemitted). The await happens inside this hook, so the work
   // is owned by the build rather than detached from it.
-  for (const registryKey of edges.keys()) {
-    const request = getStyleRequest(registryKey);
-    if (request === undefined) {
-      log.warn(`[dbg-pass] NO REQUEST for ${registryKey.split('/').slice(-1)[0]}`);
-      continue;
-    }
-    log.warn(`[dbg-pass] emitting ${registryKey.split('/').slice(-1)[0]}`);
-    try {
-      await emission.emit(this as unknown as StyleAssetEmitContext, request);
-    } catch (error) {
-      log.warn(
-        `[dbg-pass] EMIT FAILED ${registryKey.split('/').slice(-1)[0]}: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-      throw error;
-    }
+  for (const request of edges.values()) {
+    await emission.emit(this as unknown as StyleAssetEmitContext, request);
   }
   this.info(
     `Server-rendered discovery walked ${walk.files.length} module(s) and declared ${edges.size} ` +
@@ -726,12 +717,10 @@ async function emitStyleAsset(
   records: Map<string, StyleAssetRecord>,
   emitted: Map<string, string>,
 ): Promise<{ css: string; fileName: string; referenceId: string }> {
-  const key = styleAssetRegistryKey(styleAssetGraphId(request.moduleId)) ?? request.moduleId;
   const css = await readEdgeCss(context, request);
   const hash = styleAssetHash(css);
   const fileName = styleAssetFileName(css);
-  records.set(key, { fileName, hash });
-  log.warn(`[dbg-emit] ${key.split('/').slice(-1)[0]} -> ${fileName} records=${records.size}`);
+  records.set(request.moduleId, { fileName, hash });
   let referenceId = emitted.get(fileName);
   if (referenceId === undefined) {
     referenceId = context.emitFile({ type: 'asset', fileName, source: css });
@@ -817,11 +806,6 @@ export function serverStyleAssetPlugin(options?: {
       // either a sheet that build could not process or a defect of discovery.
       // It is never answered by inlining an in-root component's CSS: the render
       // fails closed with a stable, actionable diagnostic.
-      log.warn(
-        `[dbg-lookup] missing key=${registryKey}\n  file=${request.file}\n  manifest=${JSON.stringify(
-          [...(options?.files?.keys() ?? [])].map((k) => k.split('/').slice(-1)[0]),
-        )}`,
-      );
       if (withinRoot(request.file, this.environment.config.root)) {
         throw buildError(
           ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,

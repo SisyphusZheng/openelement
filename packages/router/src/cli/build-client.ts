@@ -997,11 +997,6 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     ctx.clientStyleAssetFiles = new Map(
       [...styleAssetRecords.entries()].map(([key, record]) => [key, record.fileName]),
     );
-    log.warn(
-      `[dbg-records] final size=${styleAssetRecords.size} keys=${[...styleAssetRecords.keys()]
-        .map((k) => k.split('/').slice(-1)[0])
-        .join(' | ')}`,
-    );
 
     // The component stylesheet (alpha15 S lane): a declared shadow-candidate
     // set whose entry emitted no CSS would ship unstyled shadow components —
