@@ -466,9 +466,85 @@ try {
     light.className = 'rotate-45 p-8';
     document.body.appendChild(light);
 
-    // Engine capability probe: does this engine apply the independent rotate
-    // property at all (Tailwind v4 lowers rotate-45 to it), and does the
-    // delivered sheet actually contain the rule?
+    // ── WebKit rotate A/B (bounded): three delivery channels, both properties
+    // and a GEOMETRIC read (a 100x100 box rotated 45deg has a ~141.4px bounding
+    // box), so the verdict is the visual effect, not a support claim.
+    const BOX = 'width:100px;height:100px;background:#123456;';
+    const box = (selector) => {
+      const element = document.createElement('div');
+      element.style.cssText = BOX;
+      element.className = selector;
+      return element;
+    };
+
+    // Channel 1 — pure CSS, DOCUMENT stylesheet.
+    const documentStyle = document.createElement('style');
+    documentStyle.textContent = '.ab-doc-rotate { rotate: 45deg; } .ab-doc-transform { transform: rotate(45deg); }';
+    document.head.appendChild(documentStyle);
+    const docRotate = box('ab-doc-rotate');
+    const docTransform = box('ab-doc-transform');
+    const docPlain = box('');
+    document.body.append(docRotate, docTransform, docPlain);
+
+    // Channel 2 — pure CSS, SHADOW ROOT adopted constructed sheet.
+    const shadowHost = document.createElement('div');
+    const shadowRoot = shadowHost.attachShadow({ mode: 'open' });
+    const shadowSheet = new CSSStyleSheet();
+    shadowSheet.replaceSync('.ab-shadow-rotate { rotate: 45deg; } .ab-shadow-transform { transform: rotate(45deg); }');
+    shadowRoot.adoptedStyleSheets = [shadowSheet];
+    const shadowRotate = box('ab-shadow-rotate');
+    const shadowTransform = box('ab-shadow-transform');
+    const shadowPlain = box('');
+    shadowRoot.append(shadowRotate, shadowTransform, shadowPlain);
+    document.body.appendChild(shadowHost);
+
+    // Channel 3 — the OpenElement-delivered packed component sheet, linked
+    // inside a shadow root exactly as the widget's DSD declares it.
+    const linkHost = document.createElement('div');
+    const linkRoot = linkHost.attachShadow({ mode: 'open' });
+    const widgetSheetHref = widget?.shadowRoot?.querySelector('link[data-oe-static-styles]')?.getAttribute('href') ?? '';
+    if (widgetSheetHref) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = widgetSheetHref;
+      linkRoot.appendChild(link);
+    }
+    const linkRotate = box('rotate-45');
+    const linkPlain = box('');
+    linkRoot.append(linkRotate, linkPlain);
+    document.body.appendChild(linkHost);
+    // A <link> applies asynchronously: wait for ITS sheet to be live before
+    // measuring, bounded (the first measurement pass read a not-yet-applied
+    // sheet and produced a false negative in chromium/webkit).
+    const link = linkRoot.querySelector('link');
+    if (link) {
+      await new Promise((resolve) => {
+        const timer = setTimeout(resolve, 2000);
+        if (link.sheet) {
+          clearTimeout(timer);
+          resolve(undefined);
+          return;
+        }
+        link.addEventListener('load', () => { clearTimeout(timer); resolve(undefined); }, { once: true });
+      });
+    }
+
+    const geometry = (element) => {
+      const rect = element.getBoundingClientRect();
+      return { rotate: getComputedStyle(element).rotate, transform: getComputedStyle(element).transform, width: Math.round(rect.width * 10) / 10 };
+    };
+    const rotateAb = {
+      documentRotate: geometry(docRotate),
+      documentTransform: geometry(docTransform),
+      documentPlain: geometry(docPlain),
+      shadowRotate: geometry(shadowRotate),
+      shadowTransform: geometry(shadowTransform),
+      shadowPlain: geometry(shadowPlain),
+      deliveredRotate: geometry(linkRotate),
+      deliveredPlain: geometry(linkPlain),
+      deliveredSheetHref: widgetSheetHref,
+    };
+
     const capability = document.createElement('div');
     const capabilityRoot = capability.attachShadow({ mode: 'open' });
     const capabilitySheet = new CSSStyleSheet();
@@ -495,6 +571,8 @@ try {
       widgetTransform: widgetSpan ? getComputedStyle(widgetSpan).transform : 'missing',
       lightTransform: getComputedStyle(light).transform,
       lightPaddingTop: getComputedStyle(light).paddingTop,
+      engineVersion: navigator.userAgent,
+      rotateAb,
       rotatePropertySupported: CSS.supports('rotate', '45deg'),
       engineRotateProperty: getComputedStyle(capRotate).rotate,
       engineTransformProperty: getComputedStyle(capTransform).transform,
@@ -545,6 +623,7 @@ try {
   if (!lab.sheetType.includes('text/css')) failures.push('component sheet content-type=' + lab.sheetType);
   if (failures.length > 0) throw new Error('[' + browserName + '] ' + failures.join(' | ') + ' :: ' + JSON.stringify(measured));
   console.log('UI-UTILITY-OK ' + browserName + ' ' + browser.version() + ' ' + JSON.stringify(measured));
+  console.log('[rotate-ab:' + browserName + '] ' + JSON.stringify(measured.lab.rotateAb) + ' engine=' + browser.version());
 } finally {
   await browser.close();
 }
@@ -563,6 +642,13 @@ async function runUtilityBrowserMatrix(starter: string, baseUrl: string): Promis
       BROWSER_TIMEOUT_MS,
     );
     if (probe.success && probe.output.includes(`UI-UTILITY-OK ${browserName}`)) {
+      // Record the measurements themselves, not just the verdict: the A/B rows
+      // are the evidence a reviewer reads (computed values + geometry + engine
+      // version, per engine).
+      for (const line of probe.output.split('\n')) {
+        if (line.includes('UI-UTILITY-OK') || line.includes('[rotate-ab:'))
+          console.log(line.trim());
+      }
       console.log(`PASS utility computed styles / ${browserName} / pass`);
     } else {
       failures.push(
