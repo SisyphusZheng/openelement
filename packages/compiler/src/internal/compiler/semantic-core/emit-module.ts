@@ -367,6 +367,15 @@ export function emitCompiledModule(input: EmitModuleInput): EmitModuleResult {
   // class with no candidates stays byte-identical to before.
   if (analyzed.rootKind !== 'light' && lowering.classCandidates.size > 0) {
     push('  static __oeUtilityClasses: boolean = true;');
+    // The candidate FACT itself (S5-B): a consumer build that resolves this
+    // emitted module cannot re-derive it from TSX, so the tokens ride the
+    // artifact and the router's recovery reads them (one writer, one fact —
+    // the same list the authored path registers).
+    push(
+      `  static __oeClassCandidates: readonly string[] = ${JSON.stringify([
+        ...lowering.classCandidates,
+      ])};`,
+    );
   }
   const computedFields = fields.filter((field) => field.computed);
   if (computedFields.length > 0) {

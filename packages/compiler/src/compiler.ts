@@ -22,6 +22,7 @@ export {
 // `compiledElementPlugin` (the router dev transform, plugin-hmr.ts) register
 // these the same way the plugin does.
 export { compiledArtifactStyleRequests } from './internal/compiler/compiled-artifact-style-requests.ts';
+export { compiledArtifactClassCandidates } from './internal/compiler/compiled-artifact-class-candidates.ts';
 export {
   CompiledElementError,
   compileElementProgram,

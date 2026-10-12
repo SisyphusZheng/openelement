@@ -368,6 +368,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         ...(ctx.phase1.cachedRoutes ?? [])
           .filter((route) => route.type === 'page')
           .map((route) => ({ path: `${candidateRoutesDir}/${route.filePath}` })),
+        // Package islands (a shipped component library, packed or linked):
+        // their module files carry the pack-time candidate facts (S5-B), so
+        // the sheet covers a dependency's shadow components too. A specifier
+        // the app cannot resolve is skipped here — the authoritative compile
+        // reports it.
+        ...packageIslandDecls.map((island) => ({ path: island.modulePath, resolve: true })),
       ],
     });
   }

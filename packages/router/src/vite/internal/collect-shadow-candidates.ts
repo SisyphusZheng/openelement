@@ -24,14 +24,25 @@
  */
 
 import { readFile } from 'node:fs/promises';
-import { compileElementModule, registerClassCandidates } from '@openelement/compiler';
+import { createRequire } from 'node:module';
+import {
+  compileElementModule,
+  compiledArtifactClassCandidates,
+  registerClassCandidates,
+} from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
-import { resolve } from 'pathe';
+import { join, resolve } from 'pathe';
 
-/** One module the collection pass should compile, as a project-relative path. */
+/** One module the collection pass should compile. */
 export interface CandidateModule {
-  /** Project-relative POSIX path of the module source. */
+  /**
+   * Project-relative POSIX path of the module source — or, with
+   * `resolve: true`, a bare package specifier the pass resolves from the app
+   * root (the packed/linked component-library case).
+   */
   readonly path: string;
+  /** Resolve `path` as a package specifier from the app root. */
+  readonly resolve?: boolean;
 }
 
 export interface CollectShadowCandidatesOptions {
@@ -51,8 +62,18 @@ export async function collectShadowClassCandidates(
 ): Promise<number> {
   let contributed = 0;
   const seen = new Set<string>();
-  for (const module of options.modules) {
-    const file = resolve(options.root, module.path);
+  for (const entry of options.modules) {
+    let file: string;
+    if (entry.resolve === true) {
+      try {
+        file = createRequire(join(options.root, 'package.json')).resolve(entry.path);
+      } catch {
+        // The authoritative compile reports an unresolvable specifier.
+        continue;
+      }
+    } else {
+      file = resolve(options.root, entry.path);
+    }
     if (seen.has(file)) continue;
     seen.add(file);
     let source: string;
@@ -61,7 +82,17 @@ export async function collectShadowClassCandidates(
     } catch {
       continue;
     }
-    if (!source.includes('@element(')) continue;
+    if (!source.includes('@element(')) {
+      // A shipped compiled artifact has no authored grammar left, but it
+      // carries its candidate facts (S5-B) — the pack-time truth, recovered
+      // exactly as the transform bindings recover it.
+      const recovered = compiledArtifactClassCandidates(source, file);
+      if (recovered !== undefined) {
+        registerClassCandidates(file, recovered, { shadow: true });
+        contributed += 1;
+      }
+      continue;
+    }
     let compiled: ReturnType<typeof compileElementModule>;
     try {
       compiled = compileElementModule(source, file, { staticSidecars: [ISLAND_ADMISSION] });

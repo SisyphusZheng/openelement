@@ -19,6 +19,7 @@
 
 import { beforeEach, describe, expect, test } from 'vitest';
 import { compileElementProgram } from '../src/internal/compiler/semantic-core/compile.ts';
+import { compiledArtifactClassCandidates } from '../src/internal/compiler/compiled-artifact-class-candidates.ts';
 import { compiledElementPlugin } from '../src/internal/compiler/plugin.ts';
 import {
   allClassCandidates,
@@ -124,6 +125,55 @@ describe('runtime class values are never guessed', () => {
     expect(candidatesOf(`<div class={this.kind}><span class="truncate">x</span></div>`)).toEqual([
       'truncate',
     ]);
+  });
+});
+
+describe('candidate facts survive into the artifact (S5-B)', () => {
+  test('the emitted class carries the candidates and the recovery round-trips them', () => {
+    const compiled = compileElementProgram(
+      authoredSource(
+        `<article class="rounded-xl p-8 bg-primary"><h2 class="text-2xl">x</h2></article>`,
+      ),
+      MODULE_ID,
+    );
+    expect(compiled.code, 'the artifact carries the candidate static').toContain(
+      '__oeClassCandidates',
+    );
+    expect(compiledArtifactClassCandidates(compiled.code, MODULE_ID)).toEqual([
+      'rounded-xl',
+      'p-8',
+      'bg-primary',
+      'text-2xl',
+    ]);
+  });
+
+  test('a light-root component emits no candidate static (nothing to recover)', () => {
+    const source = [
+      "import { element, OpenElement } from '@openelement/element';",
+      "@element('oe-light', { root: 'light' })",
+      'export class OeLight extends OpenElement {',
+      '  render() {',
+      '    return <div class="p-2">x</div>;',
+      '  }',
+      '}',
+    ].join('\n');
+    const compiled = compileElementProgram(source, MODULE_ID);
+    expect(compiled.classCandidates).toEqual(['p-2']);
+    expect(compiled.code, 'light roots carry no shadow stylesheet fact').not.toContain(
+      '__oeClassCandidates',
+    );
+    expect(compiledArtifactClassCandidates(compiled.code, MODULE_ID)).toBeUndefined();
+  });
+
+  test('a foreign module is never guessed at', () => {
+    expect(compiledArtifactClassCandidates('export const x = 1;', '/proj/a.js')).toBeUndefined();
+    expect(
+      compiledArtifactClassCandidates(
+        'class X { static __oeClassCandidates = [someValue]; }',
+        '/proj/a.js',
+      ),
+      'a non-literal element list is not adopted',
+    ).toBeUndefined();
   });
 });
 

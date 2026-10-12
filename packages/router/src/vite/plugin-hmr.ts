@@ -12,6 +12,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Plugin } from 'vite';
 import {
+  compiledArtifactClassCandidates,
   compiledArtifactStyleRequests,
   compileElementModule,
   registerClassCandidates,
@@ -88,6 +89,11 @@ export function createCompilerHooks(
             // classes live in document DOM and the document entry covers them.
             shadow: result.program.root.kind !== 'light',
           });
+        } else if (result === null) {
+          // A shipped artifact module carries its candidates (S5-B): the dev
+          // binding registers the packed form exactly as the build binding.
+          const recovered = compiledArtifactClassCandidates(code, id);
+          if (recovered !== undefined) registerClassCandidates(id, recovered, { shadow: true });
         }
         // The edge registration is the whole job for an adopted artifact:
         // it ships as its own module, nothing to compile or hand back.

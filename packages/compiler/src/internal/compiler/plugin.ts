@@ -41,6 +41,7 @@ import {
 } from './semantic-core/module-analysis.ts';
 import { diagnosticPluginError } from './semantic-core/diagnostics/index.ts';
 import { typeCheckEmittedModule } from './semantic-core/type-check.ts';
+import { compiledArtifactClassCandidates } from './compiled-artifact-class-candidates.ts';
 import { compiledArtifactStyleRequests } from './compiled-artifact-style-requests.ts';
 import { registerStyleRequest, styleRequestFile, styleRequestModuleId } from './style-requests.ts';
 import { registerClassCandidates } from './tailwind-candidates.ts';
@@ -225,6 +226,13 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
             // classes live in document DOM and the document entry covers them.
             shadow: compiled.program.root.kind !== 'light',
           });
+        } else if (compiled === null) {
+          // An already-compiled artifact (a shipped package module): its
+          // candidates were proven at pack time and travel in the module
+          // (S5-B), so the same registry admits the packed form exactly as the
+          // authored form — no second parser over the shipped markup.
+          const recovered = compiledArtifactClassCandidates(code, id);
+          if (recovered !== undefined) registerClassCandidates(id, recovered, { shadow: true });
         }
         // The edge registration above is the whole job for an adopted
         // artifact: it ships as its own emitted module, nothing to compile or
