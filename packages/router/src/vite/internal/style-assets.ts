@@ -82,7 +82,6 @@ import {
   STYLE_SHEET_READY,
   STYLE_SHEET_URL,
 } from '@openelement/protocol/style-sheet';
-import { createLogger } from '@openelement/element';
 import { buildError, ClientBuildErrorCode } from '../../internal/error-codes.ts';
 import { scopeLightRootCss } from './light-css-scope.ts';
 import { dirname as posixDirname, relative as posixRelative } from 'pathe';
@@ -515,11 +514,6 @@ export const clientStyleAssetPlugin: (
     resolveId: styleEdgeResolveId,
     async load(id) {
       const registryKey = styleAssetRegistryKey(id);
-      if (registryKey !== undefined && registryKey.includes('open-button')) {
-        log.warn(
-          `[css-discovery] emission load for open-button: request=${getStyleRequest(registryKey) !== undefined}`,
-        );
-      }
       if (registryKey === undefined) return null;
       const request = getStyleRequest(registryKey);
       if (!request) {
@@ -659,16 +653,19 @@ async function admitServerRenderedStyleEdges(
     roots.push(resolved.id.split('?', 1)[0]!);
   }
   if (roots.length === 0) {
-    log.warn('[css-discovery] no server-renderable seeds; nothing to discover');
+    // Reported through the build's own channel, like every other boundary of
+    // this pass: a build with no route, layout or SSR-renderable island module
+    // emits no sheet, and saying so is the difference between a diagnosis and
+    // a silent no-op.
+    this.warn(
+      'Server-rendered style discovery found no module roots (no route, layout or ' +
+        'SSR-renderable island module); no stylesheet edge was emitted.',
+    );
     return;
   }
   const root = serverRenderRoot ?? process.cwd();
   const workspaceRoot = findBuildWorkspaceRoot(root) ?? undefined;
-  log.warn(`[css-discovery] seeds=${roots.length}`);
   const walk = await walkModuleGraph(this, roots);
-  log.warn(
-    `[css-discovery] walked=${walk.files.length} packed=${walk.files.filter((f) => f.includes('node_modules')).length}`,
-  );
   if (walk.truncated) {
     this.warn(
       'Server-rendered module discovery stopped at its module bound; some server-only ' +
@@ -701,7 +698,6 @@ async function admitServerRenderedStyleEdges(
     const artifact = readCompiledArtifactStyles(source, file);
     if (artifact === undefined) continue;
     registerStyleEdges(file, artifact.requests, artifact.scopeTag);
-    log.debug(`[css-discovery] packed artifact edges ${artifact.requests.length} from ${file}`);
   }
   // The registered request objects themselves — never a re-derived key. The
   // previous form rebuilt each edge's graph id and decoded it back through
@@ -747,11 +743,6 @@ async function emitStyleAsset(
   const css = await readEdgeCss(context, request);
   const hash = styleAssetHash(css);
   const fileName = styleAssetFileName(css);
-  if (request.moduleId.includes('node_modules')) {
-    log.warn(
-      `[dbg-key] CLIENT_RECORD_KEY=${JSON.stringify(request.moduleId)}\n[dbg-key] CLIENT_FILE=${JSON.stringify(request.file)}`,
-    );
-  }
   records.set(request.moduleId, { fileName, hash });
   let referenceId = emitted.get(fileName);
   if (referenceId === undefined) {
@@ -766,9 +757,6 @@ function withinRoot(candidate: string, root: string): boolean {
   const base = root.endsWith('/') ? root : `${root}/`;
   return candidate === root || candidate.startsWith(base);
 }
-
-/** The discovery pass's own diagnostics (visible without a debug flag). */
-const log = createLogger('router-style-discovery');
 
 /** Vite's asset reference placeholder, as its CSS text carries it. */
 const ASSET_PLACEHOLDER_PREFIX = '__VITE_ASSET__';
@@ -838,9 +826,6 @@ export function serverStyleAssetPlugin(options?: {
       // either a sheet that build could not process or a defect of discovery.
       // It is never answered by inlining an in-root component's CSS: the render
       // fails closed with a stable, actionable diagnostic.
-      log.warn(
-        `[dbg-key] SSR_LOOKUP_KEY=${JSON.stringify(registryKey)}\n[dbg-key] SSR_FILE=${JSON.stringify(request.file)}`,
-      );
       if (withinRoot(request.file, this.environment.config.root)) {
         throw buildError(
           ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,
