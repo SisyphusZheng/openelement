@@ -398,7 +398,7 @@ test('v0.44 client delivery follows islands imported through a route component',
       },
     ];
 
-    const reachable = findReachableIslandTags(ctx, root, 'dist', ['oe-used', 'oe-unused']).tags;
+    const reachable = findReachableIslandTags(ctx, root, 'dist', ['oe-used', 'oe-unused']);
     expect([...reachable]).toEqual(['oe-used']);
   } finally {
     await rm(root, { recursive: true });
@@ -441,7 +441,7 @@ test('v0.44 client delivery keeps an explicitly imported island capability', asy
       },
     ];
 
-    const reachable = findReachableIslandTags(ctx, root, 'dist', ['oe-late-child']).tags;
+    const reachable = findReachableIslandTags(ctx, root, 'dist', ['oe-late-child']);
     expect([...reachable]).toEqual(['oe-late-child']);
   } finally {
     await rm(root, { recursive: true });

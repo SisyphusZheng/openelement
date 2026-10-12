@@ -11,7 +11,6 @@
 export {
   COMPILED_ELEMENT_MARKER,
   compiledElementPlugin,
-  registerStyleEdges,
   compileElementModule,
   hasElementDecoratorApplication,
   isCompiledElementModule,
@@ -47,7 +46,6 @@ export {
   registerStyleRequest,
   type RegisteredStyleRequest,
   styleEdgesForFile,
-  styleRequestsForImporter,
   styleRequestFile,
   styleRequestModuleId,
 } from './internal/compiler/style-requests.ts';
