@@ -107,8 +107,17 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
   `url()` 由 Vite 资产图产出并改写、随后做作用域投影），文件名哈希仍取自
   最终文本；SSR 文本形态是唯一保留作者原字节的一侧。退役条件不变
   （server-only CSS 资产发现）。
-- 处置：dev 半边已删（S-C1.3）；SSR 文本形态保持"保留为边界"，其删除
-  条件是 server-only CSS 资产发现（剩余 S 收口项）。
+- 收口（S-C1.4，#1609）：dev resource 通道之外，BUILD 侧的 server-only 组件
+  （页面/布局/其嵌套组件）也进入同一条边协议——客户端构建把服务端渲染的本地
+  源文件集交给 `serverRenderedStyleEdgesPlugin`，以编译器程序取得 admission
+  事实（`registerStyleEdges`），再经同一 emission 插件发出资产；因此 **项目根
+  内的 URL 可寻址 sheet 不再有内联退路**（缺资产即抛
+  `OE_CLIENT_BUILD_STYLE_ASSET_UNREGISTERED`）。仍保留的文本形态只剩两类：
+  运行期内存 `StyleSheet`（作者数据，无文件、无 URL）与项目根外的包 sheet
+  （从未进入任何客户端图，会记录命名该文件的 warning 并给出 packageIslands
+  处置建议）。删除条件收敛为"包组件也进入客户端图"。
+- 处置：dev 半边已删（S-C1.3）；根内 URL 可寻址类别已收口（S-C1.4）；剩余
+  文本形态为上述两类，非本协议可外置对象。
 
 ### 5. `ShimStyleSheet`（SSR 侧 CSSStyleSheet）——保留为平台边缘
 
