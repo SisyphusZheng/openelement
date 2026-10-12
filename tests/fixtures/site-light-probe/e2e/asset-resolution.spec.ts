@@ -201,3 +201,41 @@ test('the shadow card parses an inlined import and a resolved image', async ({ p
   expect(measured.imageUrl, 'the shadow sheet names a resolved asset').toContain('/assets/');
   expect(failures, 'no stylesheet or asset request may fail').toEqual([]);
 });
+
+test.describe('resolved resources without client JavaScript', () => {
+  test.use({ javaScriptEnabled: false });
+
+  test('the server-declared sheets name served assets for the first paint', async ({ page }) => {
+    const failures: string[] = [];
+    page.on('response', (response) => {
+      if (response.status() >= 400) failures.push(`${response.status()} ${response.url()}`);
+    });
+    await page.goto('/');
+
+    const measured = await page.evaluate(
+      ([cardTag, shadowTag]) => {
+        const shell = document.querySelector(cardTag)?.querySelector('.card-shell');
+        const root = document.querySelector(shadowTag)?.shadowRoot;
+        const shadowCard = root?.querySelector('.shadow-card');
+        return {
+          lightBackground: shell ? getComputedStyle(shell).backgroundImage : 'missing',
+          lightFont: shell ? getComputedStyle(shell.querySelector('.card-mark')!).fontFamily : '',
+          shadowBackground: shadowCard ? getComputedStyle(shadowCard).backgroundImage : 'missing',
+          shadowBorder: shadowCard ? getComputedStyle(shadowCard).borderColor : 'missing',
+          shadowImported: root?.querySelector('.probe-shadow-imported') !== null,
+        };
+      },
+      [CARD_TAG, SHADOW_TAG] as const,
+    );
+
+    // The paint happens on the first response: every URL the server wrote into
+    // the emitted sheets is the emitted asset, both inside a shadow tree (the
+    // DSD link) and in the document.
+    expect(measured.lightBackground).toContain('/assets/');
+    expect(measured.lightFont).toContain('ProbeCard');
+    expect(measured.shadowBackground).toContain('/assets/');
+    expect(measured.shadowBorder, 'the inlined import applies without JS').toBe('rgb(0, 90, 90)');
+    expect(measured.shadowImported, 'the imported class reaches the DSD-rendered tree').toBe(true);
+    expect(failures, 'no stylesheet or asset request may fail').toEqual([]);
+  });
+});
