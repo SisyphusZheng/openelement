@@ -30,6 +30,7 @@ import { DEFAULT_ISLANDS_DIR } from './internal/paths.ts';
 import { compilerBehaviorDeclarations } from './internal/ssg/client-admission.ts';
 import { runtimeModulePath } from './internal/runtime-module-path.ts';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
+import { COMPONENT_SHEET_SPECIFIER } from './tailwind.ts';
 
 const VIRTUAL_CLIENT_ENTRY_ID = 'virtual:open-client-entry';
 // Exported for plugin.ts: the dev watcher invalidates this module when the
@@ -119,6 +120,10 @@ export function devIslandClientPlugin(
       return generateClientEntry(islandEntries, {
         enhancedForms,
         renderer: options.renderer,
+        // alpha15 S lane (S5-A): the dev entry registers the shared component
+        // stylesheet through the same adapter protocol the built entry uses,
+        // so a client-created shadow component is styled in dev too.
+        ...(options.tailwind ? { utilitySheet: COMPONENT_SHEET_SPECIFIER } : {}),
         ...(mightUseBlocks ? {} : { includeBlocksRuntime: false }),
       });
     },

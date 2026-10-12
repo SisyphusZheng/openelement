@@ -76,6 +76,7 @@ const HOME_CSS = `:host { display: block; }
 
 const HOME_TSX = `import { element, OpenElement } from '@openelement/element';
 import pageStyles from './page-home.css';
+import './dev-card.tsx';
 
 @element('index-page', { root: 'light' })
 export default class HomePage extends OpenElement {
@@ -86,7 +87,41 @@ export default class HomePage extends OpenElement {
       <main>
         <h1 id='home'>dev tailwind fixture</h1>
         <section class='panel shadow-1'>panel</section>
+        <oe-dev-card label='dev probe'></oe-dev-card>
+        <dev-counter></dev-counter>
       </main>
+    );
+  }
+}
+`;
+
+const DEV_COUNTER_TSX = `import { element, OpenElement, property } from '@openelement/element';
+import { defineIslandConfig } from '@openelement/router';
+
+export const openElement = defineIslandConfig({ hydrate: 'load', ssr: true, dsd: true });
+
+@element('dev-counter')
+export default class DevCounter extends OpenElement {
+  @property({ reflect: false }) label = 'counter';
+
+  render() {
+    return <button id='dev-counter-button'>{this.label}</button>;
+  }
+}
+`;
+
+/** A shadow component whose ONLY styling is Tailwind utilities in TSX (S5-A). */
+const DEV_CARD_TSX = `import { element, OpenElement, property } from '@openelement/element';
+
+@element('oe-dev-card', { root: 'shadow-open' })
+export default class OeDevCard extends OpenElement {
+  @property({ reflect: false }) label = '';
+
+  render() {
+    return (
+      <article class='dev-card rounded-xl bg-primary p-8 text-white'>
+        <h2 class='text-2xl font-semibold'>{this.label}</h2>
+      </article>
     );
   }
 }
@@ -101,11 +136,19 @@ export default definePage(HomePage, { head: { title: 'dev tailwind fixture' } })
 /** Write the fixture app; idempotent so a re-run reuses the same tree. */
 function writeFixture(): void {
   rmSync(FIXTURE_DIR, { recursive: true, force: true });
-  const dirs = ['app/routes', 'app/components', 'app/styles', 'node_modules/@openelement'];
+  const dirs = [
+    'app/routes',
+    'app/components',
+    'app/styles',
+    'app/islands',
+    'node_modules/@openelement',
+  ];
   for (const dir of dirs) mkdirSync(join(FIXTURE_DIR, dir), { recursive: true });
   writeFileSync(join(FIXTURE_DIR, 'app/styles/theme.css'), THEME_CSS, 'utf8');
   writeFileSync(join(FIXTURE_DIR, 'app/components/page-home.css'), HOME_CSS, 'utf8');
   writeFileSync(join(FIXTURE_DIR, 'app/components/page-home.tsx'), HOME_TSX, 'utf8');
+  writeFileSync(join(FIXTURE_DIR, 'app/components/dev-card.tsx'), DEV_CARD_TSX, 'utf8');
+  writeFileSync(join(FIXTURE_DIR, 'app/islands/dev-counter.tsx'), DEV_COUNTER_TSX, 'utf8');
   writeFileSync(join(FIXTURE_DIR, 'app/routes/index.tsx'), INDEX_ROUTE, 'utf8');
   writeFileSync(
     join(FIXTURE_DIR, 'package.json'),
@@ -201,8 +244,18 @@ async function fetchDoc(handle: DevHandle, path = '/'): Promise<string> {
   return await response.text();
 }
 
-async function fetchEntryCss(handle: DevHandle, query = ''): Promise<string> {
-  const response = await fetch(`${handle.base}${ENTRY_URL}${query}`, {
+/** The component-sheet href a served dev document declares (S5-A). */
+async function declaredComponentSheetHref(handle: DevHandle): Promise<string> {
+  const doc = await fetchDoc(handle);
+  const match = doc.match(
+    /<link rel="stylesheet" href="([^"]*tailwind-components[^"]*\.css)" data-oe-static-styles \/>/,
+  );
+  expect(match, 'the dev document declares the component stylesheet').not.toBeNull();
+  return match![1]!;
+}
+
+async function fetchEntryCss(handle: DevHandle, query = '', url = ENTRY_URL): Promise<string> {
+  const response = await fetch(`${handle.base}${url}${query}`, {
     headers: { accept: 'text/css,*/*;q=0.1' },
   });
   expect(response.status, 'GET served entry').toEqual(200);
@@ -347,6 +400,78 @@ test('the dev channel owns no file on disk (the entry is virtual)', async () => 
     expect(afterWrite, 'stale bytes never ride the served sheet').not.toContain('stale text');
   } finally {
     rmSync(entryDiskPath, { force: true });
+  }
+});
+
+test('dev serves the component stylesheet and declares it in the DSD (S5-A)', async () => {
+  const handle = await bootDev(openElement(TAILWIND_ON));
+  handles.push(handle);
+
+  const doc = await fetchDoc(handle);
+  // The shadow component's DSD declares the resource: a parser-visible link,
+  // never inline CSS, never a runtime node.
+  const card = doc.slice(doc.indexOf('<oe-dev-card'), doc.indexOf('</oe-dev-card>'));
+  expect(card, 'the shadow component is DSD-rendered').toContain(
+    '<template shadowrootmode="open">',
+  );
+  expect(card, 'no inline <style> in the dev DSD').not.toContain('<style');
+  expect(card, 'the dev DSD declares a versioned component stylesheet').toMatch(
+    /<link rel="stylesheet" href="\/\.openElement\/tailwind-components\.[^"]+\.css" data-oe-static-styles \/>/,
+  );
+
+  // The declared URL answers the COMPILED utility sheet from the official
+  // pipeline (dev versions the resource; production content-addresses it).
+  const sheet = await fetchEntryCss(handle, '', await declaredComponentSheetHref(handle));
+  expect(sheet, 'the admitted utilities compiled').toMatch(/\.p-8\s*\{/);
+  expect(sheet, '\.rounded-xl compiled').toMatch(/\.rounded-xl\s*\{/);
+  expect(sheet, '\.bg-primary compiled through the app theme').toMatch(/\.bg-primary\s*\{/);
+  expect(sheet, 'a reduced entry: no preflight reset in the component sheet').not.toContain(
+    'button, input, select',
+  );
+
+  // The client's shared sheet rides the same adapter protocol the built entry
+  // uses: one CSSStyleSheet, fetch + replace(), the readiness and identity
+  // keys — and NO DOM node creation anywhere in the adapter.
+  const adapter = await fetch(`${handle.base}/@id/__x00__oe-tailwind-components-dev.js`).then(
+    (response) => response.text(),
+  );
+  expect(adapter, 'one shared sheet per realm').toContain('__openElementComponentSheet');
+  expect(adapter, 'filled by replace(), never a DOM node').toContain('sheet.replace(');
+  expect(adapter, 'carries the readiness key').toContain('__openElementStyleReady');
+  expect(adapter, 'carries the resource identity key').toContain('__openElementStyleSheetUrl');
+  expect(adapter, 'no style/link node is ever created').not.toContain('createElement');
+});
+
+test('a TSX class edit recompiles the served component sheet (S5-A)', async () => {
+  const handle = await bootDev(openElement(TAILWIND_ON));
+  handles.push(handle);
+  const cardPath = join(FIXTURE_DIR, 'app/components/dev-card.tsx');
+
+  // Prime: render the page (compiles the card module, registering candidates)
+  // and read the sheet the document declares.
+  const beforeHref = await declaredComponentSheetHref(handle);
+  const before = await fetchEntryCss(handle, '', beforeHref);
+  expect(before, 'the initial sheet carries p-8').toMatch(/\.p-8\s*\{/);
+
+  const original = await readFile(cardPath, 'utf8');
+  try {
+    await writeFile(cardPath, original.replace('p-8', 'p-4'));
+    // The watcher invalidates the compile cache; the next page render
+    // re-registers the edited candidates, and the next sheet read answers the
+    // recompiled CSS at the SAME url.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The edit moves the served resource: the next document declares a NEW
+    // versioned sheet URL (Vite keys dev modules by id, so a byte-stable URL
+    // would keep serving the first compile). The browser-level proof — the
+    // computed style actually changing without a reload — runs in the dogfood
+    // fixture's dev Playwright spec.
+    const afterHref = await declaredComponentSheetHref(handle);
+    expect(afterHref, 'the dev sheet URL re-versions after a class edit').not.toEqual(beforeHref);
+    const after = await fetchEntryCss(handle, '', afterHref);
+    expect(after, 'the edited class compiled').toMatch(/\.p-4\s*\{/);
+    expect(after, 'the removed class is gone').not.toMatch(/\.p-8\s*\{/);
+  } finally {
+    await writeFile(cardPath, original);
   }
 });
 

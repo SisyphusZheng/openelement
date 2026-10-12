@@ -319,7 +319,7 @@ interface OfficialCompiler {
  * transform would replace the compiler. Fails closed with the entry seam's
  * coded error when either the peer or its compiler is missing.
  */
-async function compileComponentStyleSheet(
+export async function compileComponentStyleSheet(
   root: string,
   options: ResolvedTailwindOptions,
   candidates: readonly string[],
