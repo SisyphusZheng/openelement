@@ -825,8 +825,9 @@ async function main(): Promise<void> {
     }
     // Showcase delivery (#1530 + #1558): the authored tokens/recipes sheets
     // ride the build as content-addressed client assets, and the static page
-    // carries its critical styles inline — link-adopted or inline sheets, never
-    // a JS-embedded style blob (that form retired with css``).
+    // declares them as marked external links — never a JS-embedded style blob
+    // (that form retired with css``), never inline text (retired for every
+    // URL-addressable sheet with the alpha15 S lane).
     const clientAssets = join(starter, 'dist', 'client', 'assets');
     const emittedSheets = existsSync(clientAssets)
       ? readdirSync(clientAssets).filter((name) => name.endsWith('.css'))
@@ -837,8 +838,39 @@ async function main(): Promise<void> {
           `(expected at least one under ${clientAssets})`,
       );
     }
-    if (!indexHtml.includes('<style')) {
-      throw new Error('Packed starter dist/index.html carries no inline critical styles');
+    // Showcase delivery (#1530 + #1558; alpha15 S lane S-C1.2/S-C1.4): the
+    // authored tokens/recipes sheets ride the build as content-addressed client
+    // assets, and the static page DECLARES them as marked external stylesheet
+    // links — the zero-JS page is styled by those links alone. The inline
+    // `<style data-oe-static-styles>` fallback is retired for every
+    // URL-addressable sheet (#1609), so this page's marker is a link and never
+    // style text. Measured on the built appliance: six marked links, no
+    // `<style>` tag.
+    const declaredHrefs = [
+      ...indexHtml.matchAll(/<link rel="stylesheet" href="([^"]+)" data-oe-static-styles \/>/g),
+    ].map((match) => match[1]!);
+    if (declaredHrefs.length === 0) {
+      throw new Error(
+        'Packed starter dist/index.html declares no marked external stylesheet link — ' +
+          'the static page must be styled without JavaScript',
+      );
+    }
+    for (const href of declaredHrefs) {
+      if (!/^\/client\/assets\/[0-9a-f]{12}\.css$/.test(href)) {
+        throw new Error(
+          'Packed starter dist/index.html declares a stylesheet that is not a ' +
+            `content-addressed client asset: ${href}`,
+        );
+      }
+      if (!existsSync(join(starter, 'dist', href.slice(1)))) {
+        throw new Error(`Packed starter declared stylesheet ${href} was not emitted`);
+      }
+    }
+    if (/<style[^>]*data-oe-static-styles/.test(indexHtml)) {
+      throw new Error(
+        'Packed starter dist/index.html inlines a marked stylesheet for a URL-addressable ' +
+          'sheet — the inline fallback retired with S-C1.2/S-C1.4',
+      );
     }
     const aboutHtmlPath = join(starter, 'dist', 'about', 'index.html');
     if (!existsSync(aboutHtmlPath)) {
