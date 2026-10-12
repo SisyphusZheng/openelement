@@ -4,11 +4,13 @@
  *
  * Compiled page: the render() below is lowered to a Part Program
  * at build time. The page uses a light root and owns its rules via
- * `static styles` (the imported .css sheets): the server inlines them into the SSR
- * output as a @scope(index-page) <style data-oe-static-styles> block, so the
- * page is styled with zero client JS. The two island hosts (<my-counter>,
- * <live-timer>) are static custom-element hosts that the generated server
- * entry expands through the islands' own compiled classes.
+ * `static styles` (the imported .css sheets): the build emits them as
+ * content-addressed assets whose text is the sheets wrapped in the light
+ * root's @scope(index-page), and the served document declares them as marked
+ * <link rel="stylesheet"> resources — so the page is styled with zero client
+ * JS, and no CSS text is inlined or shipped in JavaScript. The two island
+ * hosts (<my-counter>, <live-timer>) are static custom-element hosts that the
+ * generated server entry expands through the islands' own compiled classes.
  *
  * The site chrome (header, main block, footer) is NOT here: every page
  * renders inside the auto-registered layout
