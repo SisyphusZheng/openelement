@@ -260,8 +260,10 @@ const UI_SHEET_MARKERS = ['.control:focus-visible', '.btn[hidden]'] as const;
 
 /**
  * The rule selectors of a component sheet, normalized for comparison against
- * the build-processed copy: comments dropped, whitespace collapsed, attribute
- * quotes removed (a CSS minifier normalizes `[size='sm']` to `[size=sm]`).
+ * the build-processed copy: comments dropped, whitespace collapsed, whitespace
+ * around a selector-list comma removed, attribute quotes removed (a CSS
+ * minifier writes `:host(:not([size])) .btn,:host([size=md]) .btn` for the
+ * authored `… .btn, … .btn` and normalizes `[size='sm']` to `[size=sm]`).
  * The minifier preserves selector text — it rewrites declarations — so the
  * selector set is what survives as the sheet's provenance.
  */
@@ -273,7 +275,9 @@ function sheetSelectors(css: string): string[] {
     .map((part) => (part.split('}').pop() ?? '').replace(/\s+/g, ' ').trim())
     .filter((selector) => selector !== '' && !selector.startsWith('@'))
     .map((selector) =>
-      selector.replace(/\[([^\]]*)\]/g, (_, body: string) => `[${body.replace(/['"]/g, '')}]`),
+      selector
+        .replace(/\s*,\s*/g, ',')
+        .replace(/\[([^\]]*)\]/g, (_, body: string) => `[${body.replace(/['"]/g, '')}]`),
     );
 }
 
