@@ -552,7 +552,10 @@ test('verifyNpmRelease parallel worst case fits the total budget (M-T6)', () => 
   // worst is one package's two ladders, which must sit inside the total cap
   // with room for publish, alias re-point, and registry sync. Query latency
   // adds on top; a hung query is bounded by the workflow job timeout.
-  const fieldSum = DEFAULT_FIELD_DELAYS_MS.reduce((total, delay) => total + delay, 0);
+  // The sum is a plain number, not one of the ladder's literal delay values:
+  // without the explicit accumulator type, `reduce` constrains it to the
+  // tuple's element union and rejects `total + delay`.
+  const fieldSum = DEFAULT_FIELD_DELAYS_MS.reduce<number>((total, delay) => total + delay, 0);
   expect(2 * fieldSum).toBeLessThan(VERIFY_TOTAL_BUDGET_MS);
 });
 
