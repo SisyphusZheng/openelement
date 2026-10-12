@@ -22,5 +22,8 @@
   "devDependencies": {
     "@playwright/test": "1.59.1",
     "vite": "8.0.16"
+  },
+  "imports": {
+    "#app/*": "./app/*"
   }
 }
