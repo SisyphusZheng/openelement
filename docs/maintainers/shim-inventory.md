@@ -102,6 +102,11 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
   如非 island 的页面组件；应用自带的内存 sheet）继续内联其文本
   —— 这是 S-C1.2 记录的边界，不是 dev 通道的退路，且文本本身就是构建期
   `@scope` 投影。dev 下这类 sheet 不再内联（dev 端点覆盖每条 edge）。
+- 同源修正（S-C1.3 follow-up）：BUILD 侧发出的 `.css` 资产也不再是
+  "作者原字节"而是同一条 Vite `?inline` 处理链的产物（`@import` 展开、
+  `url()` 由 Vite 资产图产出并改写、随后做作用域投影），文件名哈希仍取自
+  最终文本；SSR 文本形态是唯一保留作者原字节的一侧。退役条件不变
+  （server-only CSS 资产发现）。
 - 处置：dev 半边已删（S-C1.3）；SSR 文本形态保持"保留为边界"，其删除
   条件是 server-only CSS 资产发现（剩余 S 收口项）。
 

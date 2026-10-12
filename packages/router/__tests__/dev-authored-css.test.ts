@@ -705,6 +705,35 @@ for (const [name, engine] of ENGINE_FACTORIES) {
           (window as unknown as { __devCssSheet?: unknown }).__devCssSheet ===
           (document.querySelector('dev-css-card')?.shadowRoot?.adoptedStyleSheets?.[0] ?? null),
       );
+      // Dev dual delivery, measured: the SSR link keeps the copy it parsed
+      // (the browser never re-fetches a `<link>` whose href did not change),
+      // while the live adopted sheet is the edit. The two copies diverge for
+      // exactly this window, and the live one is what the page shows — the
+      // adopted sheet is ordered after the document's own sheets, so a tie
+      // resolves to the newer content, never to the stale one.
+      const divergence = await page.evaluate(() => {
+        const root = document.querySelector('dev-css-card')?.shadowRoot;
+        const link = root?.querySelector('link[data-oe-static-styles]');
+        const linked = link?.sheet;
+        const linkedText =
+          linked === null || linked === undefined
+            ? 'no-link'
+            : [...linked.cssRules].map((rule) => rule.cssText).join('\n');
+        const live = root?.adoptedStyleSheets?.[0];
+        return {
+          linkedText,
+          liveText:
+            live === undefined ? '' : [...live.cssRules].map((rule) => rule.cssText).join('\n'),
+        };
+      });
+      expect(divergence.linkedText, 'the linked copy is a real parsed stylesheet').toContain(
+        'rgb(11, 22, 33)',
+      );
+      expect(
+        divergence.linkedText,
+        'the linked copy is stale until the document renders again',
+      ).not.toContain('rgb(77, 88, 99)');
+      expect(divergence.liveText, 'the live copy carries the edit').toContain('rgb(77, 88, 99)');
       expect(
         after.loadCount,
         `no page reload happened (payloads: ${JSON.stringify(
@@ -716,6 +745,100 @@ for (const [name, engine] of ENGINE_FACTORIES) {
       expect(after.letterSpacing, 'the rest of the sheet is intact').toBe('3px');
     } finally {
       writeFileSync(CARD_CSS_PATH, original, 'utf8');
+      await context.close();
+    }
+  });
+
+  test(`[${name}] the dev realm cache keeps one sheet per edge and rejects a stale refill`, async () => {
+    const handle = await bootDev();
+    handles.push(handle);
+    const browser = await browserFor(name, engine);
+    const { context, page } = await openPages(browser, handle.base);
+    try {
+      // The adapter module the browser loaded for the shadow edge (its URL is
+      // what the module graph registered).
+      const adapterUrl = await page.evaluate(
+        () =>
+          performance
+            .getEntriesByType('resource')
+            .map((entry) => entry.name)
+            .find((name) => name.includes('oe-style-asset') && name.endsWith('.js')) ?? '',
+      );
+      expect(adapterUrl, 'the edge adapter module was loaded').not.toBe('');
+
+      const result = await page.evaluate(async (url) => {
+        const text = await fetch(url, { cache: 'no-store' }).then((response) => response.text());
+        const holder = (
+          globalThis as unknown as {
+            __openElementDevStyleSheets?: Map<string, { sheet: CSSStyleSheet }>;
+          }
+        ).__openElementDevStyleSheets;
+        if (holder === undefined) throw new Error('the realm sheet cache is missing');
+        const before = holder.size;
+        const realFetch = window.fetch.bind(window);
+        let call = 0;
+        // Two evaluations of the SAME adapter: the first response is delayed
+        // and stale, the second is immediate and fresh. Only the fresh one may
+        // reach the sheet.
+        window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+          const target = String(input);
+          if (!target.includes('.openElement/authored-css.')) return realFetch(input, init);
+          call += 1;
+          const stale = call === 1;
+          const css = stale
+            ? '.stale-refill-probe{color:rgb(1,2,3)}'
+            : '.fresh-refill-probe{color:rgb(4,5,6)}';
+          return new Promise((resolve) =>
+            setTimeout(
+              () =>
+                resolve(
+                  new Response(css, {
+                    status: 200,
+                    headers: { 'content-type': 'text/css; charset=utf-8' },
+                  }),
+                ),
+              stale ? 600 : 0,
+            ),
+          );
+        };
+        // Built at runtime: a literal `import()` inside an evaluate() body is
+        // rewritten by the test runner's own transform.
+        const loadModule = new Function('url', 'return import(url)') as (
+          url: string,
+        ) => Promise<{ default: CSSStyleSheet }>;
+        const evaluate = async (suffix: string) => {
+          // The blob module has no hierarchical base, so Vite's client import
+          // (the HMR socket, irrelevant to the cache seam under test) is
+          // dropped instead of resolved.
+          const body = text.replace(/^import[^\n]*@vite\/client[^\n]*\n/m, '');
+          const moduleUrl = URL.createObjectURL(new Blob([body], { type: 'text/javascript' }));
+          try {
+            return await loadModule(`${moduleUrl}${suffix}`);
+          } finally {
+            URL.revokeObjectURL(moduleUrl);
+          }
+        };
+        const first = await evaluate('#stale');
+        const second = await evaluate('#fresh');
+        await new Promise((resolve) => setTimeout(resolve, 900));
+        window.fetch = realFetch;
+        const rules = second.default.cssRules;
+        return {
+          before,
+          after: holder.size,
+          sameSheet: first.default === second.default,
+          rules: [...rules].map((rule) => rule.cssText).join('\n'),
+        };
+      }, adapterUrl);
+
+      expect(result.before, 'one entry per registered edge').toBeGreaterThan(0);
+      expect(result.after, 'evaluating an edge again adds no entry').toEqual(result.before);
+      expect(result.sameSheet, 'the realm holds ONE sheet object per edge').toBe(true);
+      expect(result.rules, 'the fresh response is applied').toContain('rgb(4, 5, 6)');
+      expect(result.rules, 'the delayed stale response never overwrites it').not.toContain(
+        'rgb(1, 2, 3)',
+      );
+    } finally {
       await context.close();
     }
   });

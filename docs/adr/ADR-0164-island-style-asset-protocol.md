@@ -511,3 +511,102 @@ corrupted the `.css?inline` text the dev endpoint serves (the markers became
 part of the stylesheet). The transform now admits only the script modules the
 island scanner admits (`*.ts|tsx|js|jsx`, query/hash stripped), so the two
 halves of island admission state one rule.
+
+## Amendment (2026-10-12): production resources and the dev host's delegation (S-C1.3 follow-up)
+
+The S-C1.3 amendment closed dev-vs-build parity for the sheet's TEXT and left
+two defects it had named, plus one it had not measured. Both defects are
+corrected here, and the dev dual delivery is audited rather than assumed.
+
+**1. The built asset carries Vite-processed bytes.** The client build's emitted
+asset used to be the authored file's own bytes, so a relative `url()` inside a
+component sheet resolved against the emitted asset's URL (`assets/<hash>.css` →
+`assets/<name>`, a 404) and an `@import` survived into a sheet a constructed
+`CSSStyleSheet` then refused to parse (`replaceSync` throws on `@import`, so the
+SHADOW half of the same sheet died outright). The emission now reads the
+authored file through **Vite's own CSS pipeline** — the `?inline` CSS module,
+reached in a build through the plugin context (`this.load` + `getModuleInfo`,
+the dev server's `transformRequest` equivalent) — with the identical extraction
+and scope step the dev endpoint uses (`processedEdgeCss` / `inlineCssModuleText`
+/ `scopeEdgeCss`). One processing path, two access paths, one resource: imports
+expanded, `url()` targets emitted content-hashed by Vite's asset graph (or
+inlined under the configured limit), relative references rewritten, the
+project's PostCSS chain applied, and the public base of the client build
+respected.
+
+The named files Vite emitted inside that text arrive as Vite's own
+`__VITE_ASSET__<referenceId>__` placeholder; Vite resolves those for the CSS it
+generates per chunk, and an asset this protocol emits is outside that pass. The
+resolution therefore runs in the plugin's `generateBundle`, with the same public
+API (`getFileName` — the bundler's file-name mapping, never a second hashing
+algorithm) and the same base rule Vite applies to CSS assets (base-absolute
+under an absolute base, relative to the CSS asset under a relative one). The
+sheet's own file name still derives from the pre-resolution text, and the
+placeholder embeds the referenced file's content hash, so the name remains a
+faithful content address: two different referenced assets can never produce one
+sheet name.
+
+The SSR text shim (the URL-less sheet of a component the client graph never
+contains) deliberately keeps the authored bytes: a server build's `url()`
+rewriting describes the SERVER output, and that text is parsed by the
+document/constructed-sheet consumers. External resource coverage for URL-less
+sheets remains #1609's scope.
+
+**2. The dev host strips the public base and delegates the files Vite serves.**
+With a non-root `base`, every URL the browser sees is base-prefixed (module
+code, the injected Vite client, framework resource links) while the app's
+routes, the router's own dev endpoints and Vite's endpoints are written
+base-less. Vite's base middleware strips for the middlewares it installs after
+itself, and plugin middlewares run before it, so `/sub/@vite/client` was routed
+into the application: the module graph never loaded, nothing upgraded, and
+`GET /sub/` was not the app. Two middlewares now run immediately before the
+application's (after every router-owned endpoint, which stays base-aware):
+a base strip derived from Vite's resolved `base` alone, and a delegation of
+requests for files Vite serves — an existing asset file under the project root
+(`config.assetsInclude`, Vite's own list plus the app's additions, public dir
+excluded) is rewritten to Vite's `/@fs/` endpoint, which the dev-server peer's
+namespace exclusion already delegates. A pattern list cannot answer "is this
+path a file on disk", which is why the peer's `exclude` had no asset entry and
+a `.css` `url('./texture.png')` 404'd in dev while its stylesheet arrived.
+
+Inverting the peer's middleware order instead was rejected on measurement:
+Vite's HTML fallback middleware REWRITES `req.url` (`/foo` → `/foo/index.html`,
+unknown → `/index.html`), so an application middleware running after it receives
+the wrong route path.
+
+**3. HMR updates name the path the client registered.** An update payload must
+carry the module path Vite's client knows, and that path is the SERVER-side url,
+never a base-prefixed variant: under `base: '/sub/'` the client registers
+`createHotContext("/@id/__x00__…")` while the browser's own request keeps the
+prefix, so a base-prefixed update path matched nothing and was silently dropped
+by the update walk — the edit appeared to do nothing. `devClientModulePath`
+(internal/dev-client-path.ts) is now the one spelling of that rule for both
+emitters (the authored edge in `plugin-hmr.ts`, the utility sheet in
+`dev-tailwind-components.ts`, whose payload previously carried the raw
+NUL-prefixed id and could never match either).
+
+**4. Dev dual delivery and the realm cache, audited.** In dev a sheet is
+declared by a markup `<link>` (the parser-visible first paint, and the whole
+delivery without JavaScript) AND adopted as the live `CSSStyleSheet` (the copy
+an edit re-fills). The two copies are identical bytes at first paint; after an
+edit the link keeps what it parsed (a browser never re-fetches a `<link>` whose
+href did not change) while the adopted sheet is the edit — measured, and the
+adopted sheet wins the tie, because adopted sheets are ordered after the
+document's own sheets. Cascade order, `@layer`, custom properties, media
+queries, keyframes and specificity are therefore unaffected by the duplication:
+identical declarations on both sides, and on divergence the newer copy is the
+authoritative one. The realm store (`globalThis.__openElementDevStyleSheets`)
+is the HMR identity store, not a second registry of resources: one entry per
+edge digest (so no cross-app or cross-server collision, and two documents of one
+realm share the sheet object), a per-evaluation revision that rejects a delayed
+stale response, and a fixed size — re-evaluating an edge adds nothing. Both
+properties have regressions in the dev suite. No fix was needed; the audit
+replaced an assumption with a test.
+
+**Outstanding, measured in the same runs.** The Tailwind-compiled sheet
+(`componentStyleSheetPlugin`) reaches its `url()` targets through the official
+compiler's own rebasing rather than through Vite's asset graph, so a font
+referenced from such a sheet lands as a source-relative path in the emitted
+asset; the same fonts are delivered correctly by the document entry's
+stylesheet, so no page regresses. That is a different emitter (the Tailwind peer
+compile owns the text), recorded for the S lane rather than changed here.

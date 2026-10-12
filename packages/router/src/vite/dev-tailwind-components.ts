@@ -44,6 +44,7 @@ import {
   type ResolvedTailwindOptions,
 } from './tailwind.ts';
 import { STYLE_LINKS_VIRTUAL_ID } from './internal/element-style-links.ts';
+import { devClientModulePath } from './internal/dev-client-path.ts';
 import type { OpenPluginState } from './plugin-config.ts';
 
 const log = createLogger('router-vite:tailwind-components-dev');
@@ -230,7 +231,7 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
         const clientGraph = server.environments.client.moduleGraph;
         const adapter = clientGraph.idToModuleMap.get(adapterId);
         if (adapter !== undefined) {
-          const url = adapter.url;
+          const url = devClientModulePath(adapter);
           clientGraph.invalidateModule(adapter);
           if (url !== undefined) {
             server.environments.client.hot.send({

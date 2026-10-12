@@ -49,12 +49,30 @@ interface EmittedAsset {
   source: string;
 }
 
-/** A hook harness: the plugin context shape the hooks actually touch. */
-function harness(emitted: EmittedAsset[]) {
+/**
+ * A hook harness: the plugin context shape the hooks actually touch. The sheet
+ * text arrives from Vite's `?inline` CSS module (the build's own processing of
+ * the authored file), so the harness stubs that module exactly as Vite serves
+ * it — a module whose first statement is the CSS text as a JSON string.
+ */
+function harness(emitted: EmittedAsset[], sheetText: string = SHEET) {
+  const requested: string[] = [];
   return {
+    requested,
     emitFile(file: { type: string; fileName: string; source: string }): string {
       emitted.push({ fileName: file.fileName, source: file.source });
       return `ref-${emitted.length}`;
+    },
+    load(options: { id: string }): Promise<unknown> {
+      // Recorded, not ignored: the plugin reads the sheet through Vite's
+      // `?inline` CSS module, never from the file itself.
+      requested.push(options.id);
+      return Promise.resolve(undefined);
+    },
+    getModuleInfo(id: string): { code?: string } | null {
+      return id.endsWith('?inline')
+        ? { code: `export default ${JSON.stringify(sheetText)}` }
+        : null;
     },
   };
 }
@@ -145,18 +163,24 @@ test('the client build emits the authored file bytes under a content-hashed name
     this: { emitFile(file: unknown): string },
     id: string,
   ) => Promise<string | null>;
-  const adapter = (await load.call(harness(emitted), styleAssetGraphId(registryKey))) as string;
+  const sheetText = SHEET;
+  const context = harness(emitted, sheetText);
+  const adapter = (await load.call(context, styleAssetGraphId(registryKey))) as string;
+  expect(context.requested, 'the sheet text comes from Vite`s ?inline CSS module').toEqual([
+    `${sheetFile}?inline`,
+  ]);
 
   expect(emitted).toHaveLength(1);
-  // The artifact owner is the client build; the bytes are the authored
-  // file's own — the DSD text and the runtime replace() text derive from
-  // exactly these bytes.
+  // The artifact owner is the client build; the bytes are Vite's processing of
+  // the authored file — the same text the dev resource endpoint serves, and
+  // what the runtime's replace() parses.
   expect(emitted[0].source).toEqual(SHEET);
+  expect(emitted[0].source).toEqual(sheetText);
   expect(emitted[0].fileName).toEqual(styleAssetFileName(SHEET));
   expect(emitted[0].fileName).toMatch(/^assets\/[0-9a-f]{12}\.css$/);
   expect(records.get(registryKey)).toEqual({
     fileName: emitted[0].fileName,
-    hash: styleAssetHash(SHEET),
+    hash: styleAssetHash(sheetText),
   });
   // The fetch adapter references the emission for the sheet.
   expect(adapter).toContain(`import.meta.ROLLUP_FILE_URL_ref-1`);

@@ -15,11 +15,15 @@
  * plain app stylesheet and passes through untouched; a `.css` import from a
  * tracked module with no edge entry is a defect and fails closed.
  *
- * The sheet's bytes live in exactly one place — the authored file (P6). The
- * intercept reads those bytes for every half: the client build emits them
- * content-hashed, the SSR build declares them by URL, and the dev server
- * serves them from a real `text/css` resource. There is no second copy of the
- * bytes anywhere in the protocol, so there is nothing to reconcile.
+ * The sheet's text lives in exactly one place — the authored file (P6), read
+ * through ONE processing path for every half: Vite's own CSS pipeline (its
+ * `?inline` CSS module — `@import` dependencies expanded, `url()` targets
+ * emitted and rewritten, the project's PostCSS chain applied), plus the one
+ * scope decision. The client build emits those bytes content-hashed (resolving
+ * Vite's asset placeholders in `generateBundle`), the SSR build declares the
+ * emitted URL, and the dev server serves the same processed bytes from a real
+ * `text/css` resource. There is no second copy of the text anywhere in the
+ * protocol, so there is nothing to reconcile.
  *
  * The graph id handed to the bundler is a `\0`-virtual id whose encoded key
  * carries no path shape and whose terminal suffix is `.js` — never the
@@ -71,6 +75,7 @@ import {
 } from '@openelement/protocol/style-sheet';
 import { buildError, ClientBuildErrorCode } from '../../internal/error-codes.ts';
 import { scopeLightRootCss } from './light-css-scope.ts';
+import { dirname as posixDirname, relative as posixRelative } from 'pathe';
 
 /**
  * The `\0`-virtual graph id prefix. The registry key rides base64url-encoded
@@ -369,14 +374,63 @@ function styleEdgeResolveId(this: unknown, source: string, importer?: string): s
   return styleAssetGraphId(registryKey);
 }
 
-/** Read the edge's sheet file — the one place the bytes exist. */
-async function readSheetFile(file: string): Promise<string> {
+/**
+ * The authored sheet's text as VITE's CSS pipeline produces it for this build
+ * (S-C1.3 follow-up).
+ *
+ * A component sheet is not a document stylesheet: its bytes are consumed as an
+ * emitted asset AND as the text a constructed `CSSStyleSheet` parses, so a
+ * relative `url()` or an `@import` left in them resolves against the asset's
+ * own location instead of the authoring file's. Vite's `?inline` CSS module is
+ * the toolchain's documented form of "this file's CSS as a string" — the
+ * project's PostCSS chain, `@import` dependencies expanded, relative `url()`
+ * references emitted as content-addressed assets (or inlined under the
+ * configured `assetsInlineLimit`) and rewritten — and it is the SAME seam the
+ * dev resource endpoint reads, so dev and production serve one CSS semantics
+ * from one processing path rather than two.
+ *
+ * The build reaches it through the plugin context (`load` +
+ * `getModuleInfo`): Vite's dev server exposes the same module through
+ * `environment.transformRequest`, which a build has no equivalent of. The
+ * module is loaded, never imported — nothing in the bundle carries CSS text.
+ */
+interface SheetProcessingContext {
+  load(options: { id: string }): Promise<unknown>;
+  getModuleInfo(id: string): { code?: string | null } | null;
+}
+
+async function readEdgeCss(
+  context: SheetProcessingContext,
+  request: RegisteredStyleRequest,
+): Promise<string> {
+  const moduleId = `${request.file}?inline`;
+  await context.load({ id: moduleId });
+  const code = context.getModuleInfo(moduleId)?.code;
+  if (typeof code !== 'string') {
+    throw buildError(
+      ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,
+      `Vite produced no ?inline CSS module for the style edge's sheet ${request.file}`,
+    );
+  }
+  return processedEdgeCss(request, code);
+}
+
+/**
+ * The authored sheet's own bytes with the scope decision applied — the SSR
+ * build's text shim (no client asset exists, so there is no URL to declare).
+ * It deliberately keeps Vite out of the SSR build: a server build's `url()`
+ * rewriting describes the SERVER output, and this text is parsed by the
+ * document/constructed-sheet consumers, so the authored spelling is the only
+ * correct one. External resource coverage for URL-less sheets is #1609's
+ * scope, not this seam's.
+ */
+async function readAuthoredEdgeCss(request: RegisteredStyleRequest): Promise<string> {
   try {
-    return await readFile(file, 'utf8');
+    return scopeEdgeCss(request, await readFile(request.file, 'utf8'));
   } catch (cause) {
     throw buildError(
       ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,
-      `The style edge's sheet file ${file} cannot be read — authored .css files are ` +
+      `The style edge's sheet file ${request.file} cannot be read — authored .css files are ` +
         `the protocol's only byte source (reason: ${(cause as Error).message})`,
       { cause: cause as Error },
     );
@@ -384,21 +438,13 @@ async function readSheetFile(file: string): Promise<string> {
 }
 
 /**
- * The bytes one edge's asset carries (alpha15 S lane, S-C1.2).
- *
- * A shadow-root edge ships the authored sheet verbatim: a shadow tree already
- * IS the boundary. A light-root edge ships the same authored sheet wrapped in
- * native `@scope (<component tag>)` — the light boundary only exists if the
- * build writes it, and the emitted asset is the one place it can be written
- * once for every consumer (SSR's link, CSR's adopted sheet, dev's resource).
- *
- * Both the content hash and the emitted file name derive from what this
- * returns, so a scoped asset and a raw asset of the same authored file are
- * two distinct resources with two distinct URLs — never one file serving two
- * different meanings.
+ * One edge's serving bytes from Vite's `?inline` CSS module code — the same
+ * extraction for both access paths (a build's plugin context, the dev
+ * server's `transformRequest`), so the scope decision and the CSS processing
+ * have exactly one spelling per half.
  */
-async function readEdgeCss(request: RegisteredStyleRequest): Promise<string> {
-  return scopeEdgeCss(request, await readSheetFile(request.file));
+function processedEdgeCss(request: RegisteredStyleRequest, inlineCode: string): string {
+  return scopeEdgeCss(request, inlineCssModuleText(inlineCode, request.file));
 }
 
 /**
@@ -413,7 +459,8 @@ function scopeEdgeCss(request: RegisteredStyleRequest, authored: string): string
 
 /**
  * The client-build plugin: intercepts style edges, emits the real `.css`
- * asset (content-addressed from the authored file's bytes), records each
+ * asset (content-addressed from the edge's serving bytes — Vite's own
+ * processing of the authored file, see {@linkcode readEdgeCss}), records each
  * emission into `records` for the client asset manifest's `styles` field, and
  * hands the sheet adapter back to the module graph.
  */
@@ -440,7 +487,7 @@ export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) =>
             'disappeared between resolution and load',
         );
       }
-      const css = await readEdgeCss(request);
+      const css = await readEdgeCss(this, request);
       const hash = styleAssetHash(css);
       const fileName = styleAssetFileName(css);
       records.set(registryKey, { fileName, hash });
@@ -456,8 +503,56 @@ export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) =>
       }
       return fetchSheetAdapterModule(referenceId);
     },
+
+    /**
+     * Vite's CSS processing emits the files a sheet references (an image, a
+     * font) and leaves its own `__VITE_ASSET__<referenceId>__` placeholder in
+     * the text. Vite resolves those placeholders for the CSS it generates per
+     * chunk; an asset this protocol emits is outside that pass, so the same
+     * resolution runs here — with the same public API Vite uses
+     * (`getFileName`: the bundler's own file-name mapping, never a second
+     * hashing algorithm) and the same base rule Vite applies to CSS assets.
+     *
+     * The placeholder embeds the referenced file's own content hash, so the
+     * sheet's file name (computed from the pre-resolution text) stays a
+     * faithful content address: two different referenced assets can never
+     * produce one sheet name.
+     */
+    generateBundle(_options, bundle) {
+      const base = this.environment.config.base;
+      for (const [fileName, output] of Object.entries(bundle)) {
+        if (output.type !== 'asset' || !fileName.endsWith('.css')) continue;
+        const css =
+          typeof output.source === 'string'
+            ? output.source
+            : Buffer.from(output.source).toString('utf8');
+        if (!css.includes(ASSET_PLACEHOLDER_PREFIX)) continue;
+        output.source = css.replace(
+          assetPlaceholderRE,
+          (_match, referenceId: string, postfix = '') =>
+            encodeURI(cssAssetUrl(base, fileName, this.getFileName(referenceId) + postfix)),
+        );
+      }
+    },
   };
 };
+
+/** Vite's asset reference placeholder, as its CSS text carries it. */
+const ASSET_PLACEHOLDER_PREFIX = '__VITE_ASSET__';
+const assetPlaceholderRE = /__VITE_ASSET__([\w$]+)__(?:\$_(.*?)__)?/g;
+
+/**
+ * The URL a CSS asset gives a file the build emitted, following Vite's own CSS
+ * rule: a base-absolute URL under an absolute base (the client build's
+ * `/client/`), and a path relative to the CSS asset when the base is relative.
+ */
+function cssAssetUrl(base: string, cssFileName: string, emittedFileName: string): string {
+  if (base === '' || base === './') {
+    const relative = posixRelative(posixDirname(cssFileName), emittedFileName);
+    return relative.startsWith('.') ? relative : `./${relative}`;
+  }
+  return `${base.endsWith('/') ? base : `${base}/`}${emittedFileName}`;
+}
 
 /**
  * The SSR-build plugin: serves the server half of the protocol. The sheet
@@ -507,7 +602,7 @@ export function serverStyleAssetPlugin(options?: {
       }
       // No client asset (an island-free build): the text shim keeps the
       // component styled instead of shipping a link to a missing file.
-      const text = await readEdgeCss(request);
+      const text = await readAuthoredEdgeCss(request);
       return [
         '// <generated by open:style-assets — SSR style sheet adapter; do not edit>',
         '// Server half of the style edge protocol: the sheet text is the .css bytes',
@@ -625,7 +720,7 @@ export function devStyleAssetPlugin(): Plugin {
               `Vite produced no ?inline CSS module for the style edge's sheet ${edge.file}`,
             );
           }
-          const css = scopeEdgeCss(edge, inlineCssModuleText(inline.code, edge.file));
+          const css = processedEdgeCss(edge, inline.code);
           response.statusCode = 200;
           response.setHeader('Content-Type', 'text/css; charset=utf-8');
           // The endpoint owns its response and the sheet is the live copy an

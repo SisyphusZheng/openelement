@@ -26,24 +26,8 @@ import {
 } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { styleAssetGraphId } from './internal/style-assets.ts';
+import { devClientModulePath } from './internal/dev-client-path.ts';
 import type { OpenPluginState } from './plugin-config.ts';
-
-/**
- * The URL a client knows a module by — what an HMR update payload must name.
- *
- * A module the browser fetched carries its fetched URL. A module whose graph
- * entry was instead created from its `\0`-virtual id (the style-asset graph
- * id: the transform of the importing island resolves it, and the SSR render
- * loads it) carries the RAW id, which no client can match. The browser-facing
- * form is Vite's own encoding of that id — `<base>@id/__x00__<id minus NUL>`
- * (the placeholder Vite substitutes so the null byte can ride a URL).
- */
-function clientModuleUrl(module: { id: string | null; url: string }, base: string): string {
-  const id = module.id;
-  if (id === null || module.url !== id || !id.startsWith('\0')) return module.url;
-  const prefix = base.endsWith('/') ? base : `${base}/`;
-  return `${prefix}@id/__x00__${id.slice(1)}`;
-}
 
 /**
  * Create the `transform`/`handleHotUpdate` hooks of `open:core` over the
@@ -147,13 +131,12 @@ export function createCompilerHooks(
       // re-renders. The server half is invalidated too, so the next document
       // render declares the same resource with the new bytes behind it.
       if (/\.css$/.test(hmr.file) && styleEdgesForFile(hmr.file).length > 0) {
-        const base = hmr.server.config.base ?? '/';
         for (const edge of styleEdgesForFile(hmr.file)) {
           const graphId = styleAssetGraphId(edge.moduleId);
           for (const environment of Object.values(hmr.server.environments)) {
             const loaded = environment.moduleGraph.idToModuleMap.get(graphId);
             if (loaded === undefined) continue;
-            const url = clientModuleUrl(loaded, base);
+            const url = devClientModulePath(loaded);
             environment.moduleGraph.invalidateModule(loaded);
             // The client module is the one a browser holds: hand it the update
             // so its hot-accept refetches. Sending an update for a module the

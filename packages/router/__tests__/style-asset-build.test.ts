@@ -37,7 +37,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
-import { styleAssetFileName, styleAssetHash } from '../src/vite/internal/style-assets.ts';
+import { styleAssetFileName } from '../src/vite/internal/style-assets.ts';
 
 const REPO_ROOT = join(import.meta.dirname!, '..', '..', '..');
 const ROUTER_BUILD_CLI = join(REPO_ROOT, 'packages', 'router', 'src', 'cli', 'build.ts');
@@ -101,7 +101,9 @@ async function buildFixture(): Promise<string> {
       "import { openElement } from '@openelement/router/vite';",
       "import { defineConfig } from 'vite';",
       '',
-      'export default defineConfig({ plugins: [openElement()] });',
+      // A non-root production base: every emitted URL, manifest entry and
+      // rendered `<link>` must carry it (S-C1.3 follow-up).
+      "export default defineConfig({ base: '/sub/', plugins: [openElement()] });",
       '',
     ].join('\n'),
   );
@@ -239,15 +241,29 @@ test('island chunks carry no component CSS text — only sheet-adapter reference
   expect(joined).toMatch(/new URL\((["'`])\.\.\/assets\/[0-9a-f]{12}\.css\1, ?import\.meta\.url\)/);
 });
 
-test('the emitted .css assets exist with the exact sheet bytes', async () => {
+test('the emitted .css assets carry the authored rules at content-addressed names', async () => {
   const assetsDir = join(appDir, 'dist', 'client', 'assets');
   const cssFiles = (await readdir(assetsDir)).filter((file) => file.endsWith('.css'));
-  // Content-addressed: the two islands sharing bytes reuse ONE asset.
-  const sharedName = styleAssetFileName(SHARED_SHEET).replace('assets/', '');
-  const cName = styleAssetFileName(C_SHEET).replace('assets/', '');
-  expect(cssFiles.sort()).toEqual([cName, sharedName]);
-  expect(await readFile(join(assetsDir, sharedName), 'utf8')).toEqual(SHARED_SHEET);
-  expect(await readFile(join(assetsDir, cName), 'utf8')).toEqual(C_SHEET);
+  // Content-addressed: the two islands sharing bytes reuse ONE asset, and the
+  // name is the hash of the bytes the asset actually serves (the emitted text
+  // is Vite's own processing of the authored sheet — imports resolved, urls
+  // rewritten — so the address describes the served resource, not the source).
+  expect(cssFiles).toHaveLength(2);
+  const bodies = await Promise.all(cssFiles.map((file) => readFile(join(assetsDir, file), 'utf8')));
+  for (const [index, body] of bodies.entries()) {
+    expect(
+      styleAssetFileName(body).replace('assets/', ''),
+      `${cssFiles[index]} is named after the bytes it serves`,
+    ).toEqual(cssFiles[index]);
+  }
+  const shared = bodies.find((body) => body.includes('.shared-rule'));
+  const own = bodies.find((body) => body.includes('.c-rule'));
+  expect(shared, 'the shared sheet is emitted once').toBeDefined();
+  expect(own, "the island's own sheet is emitted").toBeDefined();
+  // The rules survive Vite's processing (whitespace-insensitive comparison).
+  expect(shared!.replace(/\s+/g, '')).toMatch(/\.shared-rule\{color:(red|#f00)\}/);
+  expect(own!.replace(/\s+/g, '')).toMatch(/\.c-rule\{color:(blue|#00f)\}/);
+  expect(shared!.replace(/\s+/g, '')).toContain(':host{display:grid}');
 });
 
 test('the client asset manifest records the deduplicated styles preload URLs', async () => {
@@ -257,12 +273,14 @@ test('the client asset manifest records the deduplicated styles preload URLs', a
     entry: string;
     styles: string[];
   };
-  expect(manifest.entry).toMatch(/^\/client\/islands\/.*\.js$/);
-  // Two distinct sheets, one URL each — the shared sheet appears once.
-  expect(manifest.styles).toEqual([
-    `/client/${styleAssetFileName(C_SHEET)}`,
-    `/client/${styleAssetFileName(SHARED_SHEET)}`,
-  ]);
+  expect(manifest.entry).toBe('/sub/client/islands/client.js');
+  // Two distinct sheets, one URL each — the shared sheet appears once — and
+  // every URL is base-prefixed and present on disk.
+  expect(manifest.styles).toHaveLength(2);
+  for (const href of manifest.styles) {
+    expect(href).toMatch(/^\/sub\/client\/assets\/[0-9a-f]{12}\.css$/);
+    await readFile(join(appDir, 'dist', href.slice('/sub/'.length)), 'utf8');
+  }
 });
 
 test('the prerendered DSD declares the emitted assets as external resources (S5-C)', async () => {
@@ -276,22 +294,13 @@ test('the prerendered DSD declares the emitted assets as external resources (S5-
   ].map((match) => match[1]!);
   // One declared resource per styled island instance: shared twice, c once.
   expect(declared).toHaveLength(3);
-  const sharedHref = `/client/${styleAssetFileName(SHARED_SHEET)}`;
-  const cHref = `/client/${styleAssetFileName(C_SHEET)}`;
+  const [sharedHref] = declared.filter((href, index) => declared.indexOf(href) === index);
   expect(declared.filter((href) => href === sharedHref)).toHaveLength(2);
-  expect(declared.filter((href) => href === cHref)).toHaveLength(1);
-  // Every declared resource IS the emitted asset whose bytes are the authored
-  // sheet's own bytes — one fact, one file, no second copy anywhere.
-  const sharedAsset = await readFile(
-    join(appDir, 'dist', 'client', styleAssetFileName(SHARED_SHEET)),
-    'utf8',
-  );
-  const cAsset = await readFile(
-    join(appDir, 'dist', 'client', styleAssetFileName(C_SHEET)),
-    'utf8',
-  );
-  expect(sharedAsset).toEqual(SHARED_SHEET);
-  expect(cAsset).toEqual(C_SHEET);
-  expect(styleAssetHash(sharedAsset)).toEqual(styleAssetHash(SHARED_SHEET));
-  expect(styleAssetHash(cAsset)).toEqual(styleAssetHash(C_SHEET));
+  // Every declared resource IS an emitted asset — one fact, one file, no
+  // second copy anywhere — declared under the configured base.
+  for (const href of declared) {
+    expect(href).toMatch(/^\/sub\/client\/assets\/[0-9a-f]{12}\.css$/);
+    const body = await readFile(join(appDir, 'dist', href.slice('/sub/'.length)), 'utf8');
+    expect(styleAssetFileName(body)).toEqual(href.slice('/sub/client/'.length));
+  }
 });

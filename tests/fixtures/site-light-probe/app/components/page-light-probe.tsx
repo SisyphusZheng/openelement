@@ -34,6 +34,11 @@ export default class LightProbePage extends OpenElement {
             hosts. */}
         <light-probe-card count='1'></light-probe-card>
         <light-probe-card count='2'></light-probe-card>
+        {/* The shadow-root half of the resource probe: its sheet reaches the
+            shadow root as an adopted CSSStyleSheet parsed from the emitted
+            asset, so the asset's `@import` and `url()` resolution is what the
+            shadow tree styles depend on. */}
+        <probe-shadow-card></probe-shadow-card>
         <light-probe-runtime-carrier hidden></light-probe-runtime-carrier>
       </main>
     );
