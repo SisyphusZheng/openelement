@@ -456,7 +456,10 @@ async function buildSSG(
         // sheet adapter embeds the authored .css file's bytes, the same bytes
         // the client build emitted content-hashed, so the DSD text and the
         // client sheet cannot drift.
-        serverStyleAssetPlugin(),
+        serverStyleAssetPlugin({
+          files: ctx.clientStyleAssetFiles,
+          base: options.base ?? '/',
+        }),
         // Virtual SSG entry module
         {
           name: 'open:virtual-ssg-entry',

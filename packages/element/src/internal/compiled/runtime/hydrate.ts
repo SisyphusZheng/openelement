@@ -667,6 +667,13 @@ function isStaticStyleFallbackNode(node: Node | undefined): boolean {
  * template's leading children. The scan skips exactly these; the claim keeps
  * every link (an external reference is the delivery, not a fallback) and may
  * retire the inline fallback once the replacing sheets are installed.
+ *
+ * A marked LINK is additionally checked against the expected resource set
+ * (alpha15 S lane, S5-D1): the expected hrefs come from the class's own sheet
+ * objects and the registered framework sheets — the compiler/build facts —
+ * never from the DOM being claimed. A href that set does not declare is drift
+ * and fails closed, so an unrelated valid URL can never pass for the
+ * component's stylesheet.
  */
 function leadingStaticStyleNodeCount(root: Node): number {
   let count = 0;

@@ -203,6 +203,14 @@ export class OpenElementBuildContext {
   componentStyleSheet: { fileName: string } | null = null;
 
   /**
+   * Phase 2 output (alpha15 S lane, S5-C): the emitted authored-sheet files,
+   * keyed by the style-edge registry key (the sheet's resolved path). Phase 3
+   * hands them to the SSR adapter, which then declares each authored sheet as
+   * an external `<link>` in the DSD template instead of inlining its text.
+   */
+  clientStyleAssetFiles: Map<string, string> = new Map();
+
+  /**
   /** Canonical result consumed by release evidence and deployment adapters. */
   buildArtifacts: BuildArtifacts | null = null;
   /** Phase 1: Route scanning & build metadata */

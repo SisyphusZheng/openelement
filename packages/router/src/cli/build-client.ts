@@ -926,6 +926,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       log.info(`Tailwind document stylesheet emitted: ${ctx.clientStyleAssets.join(', ')}`);
     }
 
+    // The authored sheets' emitted files (S5-C): the SSR adapter declares each
+    // as an external resource instead of inlining the bytes.
+    ctx.clientStyleAssetFiles = new Map(
+      [...styleAssetRecords.entries()].map(([key, record]) => [key, record.fileName]),
+    );
+
     // The component stylesheet (alpha15 S lane): a declared shadow-candidate
     // set whose entry emitted no CSS would ship unstyled shadow components —
     // fail closed instead.

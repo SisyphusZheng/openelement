@@ -265,13 +265,23 @@ test('the client asset manifest records the deduplicated styles preload URLs', a
   ]);
 });
 
-test('the prerendered DSD style text is byte-equal to the emitted assets', async () => {
+test('the prerendered DSD declares the emitted assets as external resources (S5-C)', async () => {
   const html = await readFile(join(appDir, 'dist', 'index.html'), 'utf8');
-  const dsdTexts = [...html.matchAll(/<style data-oe-static-styles>([\s\S]*?)<\/style>/g)].map(
-    (match) => match[1],
-  );
-  // One DSD node per styled island instance: shared twice, c once.
-  expect(dsdTexts).toHaveLength(3);
+  // The authored sheets are NOT inlined any more: the DSD template declares
+  // each one as a marked, parser-visible `<link>` (the client build's
+  // content-addressed asset), and no framework style node remains.
+  expect(html, 'no inlined framework stylesheet').not.toContain('<style data-oe-static-styles>');
+  const declared = [
+    ...html.matchAll(/<link rel="stylesheet" href="([^"]+)" data-oe-static-styles \/>/g),
+  ].map((match) => match[1]!);
+  // One declared resource per styled island instance: shared twice, c once.
+  expect(declared).toHaveLength(3);
+  const sharedHref = `/client/${styleAssetFileName(SHARED_SHEET)}`;
+  const cHref = `/client/${styleAssetFileName(C_SHEET)}`;
+  expect(declared.filter((href) => href === sharedHref)).toHaveLength(2);
+  expect(declared.filter((href) => href === cHref)).toHaveLength(1);
+  // Every declared resource IS the emitted asset whose bytes are the authored
+  // sheet's own bytes — one fact, one file, no second copy anywhere.
   const sharedAsset = await readFile(
     join(appDir, 'dist', 'client', styleAssetFileName(SHARED_SHEET)),
     'utf8',
@@ -280,10 +290,8 @@ test('the prerendered DSD style text is byte-equal to the emitted assets', async
     join(appDir, 'dist', 'client', styleAssetFileName(C_SHEET)),
     'utf8',
   );
-  expect(dsdTexts.filter((text) => text === sharedAsset)).toHaveLength(2);
-  expect(dsdTexts.filter((text) => text === cAsset)).toHaveLength(1);
-  // And the DSD bytes hash to the same content hash the client build
-  // recorded — the drift reconciliation, observed in the deployable tree.
+  expect(sharedAsset).toEqual(SHARED_SHEET);
+  expect(cAsset).toEqual(C_SHEET);
   expect(styleAssetHash(sharedAsset)).toEqual(styleAssetHash(SHARED_SHEET));
   expect(styleAssetHash(cAsset)).toEqual(styleAssetHash(C_SHEET));
 });

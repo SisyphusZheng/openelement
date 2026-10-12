@@ -12,6 +12,7 @@ import {
   serializeCompiledProgram,
 } from './internal/compiled/server/index.ts';
 import { convertToAttribute } from './internal/compiled/facade-host.ts';
+import { sheetResourceUrls } from './internal/compiled/style-links.ts';
 import { requestTimeStyleLinks } from './internal/compiled/server/style-links.ts';
 import { scopeCompiledLightCss } from './internal/compiled/style.ts';
 import type {
@@ -123,24 +124,33 @@ interface CompiledComponentConstructor extends CustomElementConstructor {
 
 /**
  * The declarative external stylesheet links this component's DSD template
- * declares (alpha15 S lane): the emitted component-sheet URL(s) the server
- * build injected, carried only by components whose classes were statically
- * admitted. Light-root components never take links in their subtree — their
+ * declares (alpha15 S lane, S5-C).
+ *
+ * Two sources, in cascade order: the component's OWN sheets that an external
+ * asset delivers (each adapter records its resource URL under
+ * {@linkcode STYLE_SHEET_URL} — authored `.css` files and generated utility
+ * sheets alike), then the framework's shared component stylesheet when the
+ * compiler admitted classes for this component (utilities last — the Tailwind
+ * convention). Light-root components never take links in their subtree: their
  * content lives in the document, which the document stylesheet already styles.
  */
-function utilityStyleLinks(
+function declaredStyleLinks(
   ctor: CompiledComponentConstructor,
   mode: 'light' | 'open' | 'closed',
 ): readonly string[] {
   if (mode === 'light') return [];
-  return ctor.__oeUtilityClasses === true ? requestTimeStyleLinks() : [];
+  const links = sheetResourceUrls(ctor.styles);
+  if (ctor.__oeUtilityClasses === true) links.push(...requestTimeStyleLinks());
+  return links;
 }
 
 /**
- * Collect a compiled class's static styles as CSS text for the DSD template
- * (DSD template contract): the serializer inlines the result as one
- * marked <style> element so never-upgrading hosts (pages) still ship their
- * component styles in the SSR payload.
+ * A compiled class's static styles for the DSD template: the CSS TEXT a sheet
+ * carries WITHOUT an external identity — an app-provided in-memory sheet,
+ * never a framework-generated resource (those always ship as linked assets).
+ * The links ride the serializer's `styleLinks` option; this text node is the
+ * one remaining legitimate inline path, and it is author-owned data, not
+ * framework stylesheet delivery.
  */
 function collectStaticStyleCss(ctor: CompiledComponentConstructor): string | undefined {
   const styles = ctor.styles;
@@ -148,6 +158,7 @@ function collectStaticStyleCss(ctor: CompiledComponentConstructor): string | und
   const sheets = Array.isArray(styles) ? styles : [styles];
   let css = '';
   for (const sheet of sheets) {
+    if (sheetResourceUrls(sheet).length > 0) continue; // delivered by a link
     const rules = (sheet as { cssRules?: ArrayLike<{ cssText: string }> } | undefined)?.cssRules;
     if (!rules) continue;
     try {
@@ -575,7 +586,7 @@ export async function createStreamShellExecutor(
       dsd: ctor.delegatesFocus === true ? { delegatesFocus: true } : undefined,
       styleCss:
         mode === 'light' && styleCss ? scopeCompiledLightCss(program.tag, styleCss) : styleCss,
-      styleLinks: utilityStyleLinks(ctor, mode),
+      styleLinks: declaredStyleLinks(ctor, mode),
     },
   );
   return {
@@ -690,7 +701,7 @@ function renderToStringAtDepth(
         mode === 'light' && staticStyleCss
           ? scopeCompiledLightCss(tag, staticStyleCss)
           : staticStyleCss,
-      styleLinks: utilityStyleLinks(resolvedClass, mode),
+      styleLinks: declaredStyleLinks(resolvedClass, mode),
       projectedChildren: options.projectedChildren,
       renderNestedElement:
         admitted.size === 0
