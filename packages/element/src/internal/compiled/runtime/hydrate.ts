@@ -630,6 +630,16 @@ export interface CompiledHydrationOptions {
    */
   staticStyleReady?: Promise<unknown>;
   /** Default is `throw`; `owning` enables one bounded recovery attempt. */
+  /**
+   * The external stylesheet resources this component's markup may declare
+   * (alpha15 S lane, S-R1). Derived by the kernel from the class's own sheet
+   * objects and the registered framework sheets — build facts, never the DOM
+   * under verification. Identity is path + query, so origin- and
+   * spelling-differences between the bundler-resolved client URL and the
+   * server-declared href are not drift; a different resource never matches.
+   * Absent/empty means no fact was supplied and marked links are accepted.
+   */
+  expectedStyleLinks?: readonly string[];
   recovery?: HydrationRecoveryMode;
   /** Observe the exact structured mismatch before optional recovery. */
   onMismatch?: (error: PartProgramHydrationError) => void;
@@ -675,10 +685,39 @@ function isStaticStyleFallbackNode(node: Node | undefined): boolean {
  * and fails closed, so an unrelated valid URL can never pass for the
  * component's stylesheet.
  */
-function leadingStaticStyleNodeCount(root: Node): number {
+function leadingStaticStyleNodeCount(
+  root: Node,
+  options: CompiledHydrationOptions,
+  owner: RootHydrationOwner,
+): number {
   let count = 0;
-  while (isStaticStyleNode(root.childNodes[count])) count++;
+  while (isStaticStyleNode(root.childNodes[count])) {
+    const node = root.childNodes[count];
+    if (isElement(node) && node.tagName.toLowerCase() === 'link') {
+      const href = resourceIdentity(node.getAttribute('href') ?? '');
+      const expected = (options.expectedStyleLinks ?? []).map(resourceIdentity);
+      if (expected.length > 0 && !expected.includes(href)) {
+        hydrateFailure(
+          'template',
+          `unexpected static stylesheet resource ${JSON.stringify(href)} (expected ${JSON.stringify(expected)})`,
+          owner,
+        );
+      }
+    }
+    count++;
+  }
   return count;
+}
+
+/** One resource's identity: path + query, origin- and spelling-independent. */
+function resourceIdentity(url: string): string {
+  try {
+    const base = typeof document === 'undefined' ? 'http://localhost/' : document.baseURI;
+    const parsed = new URL(url, base);
+    return `${parsed.pathname}${parsed.search}`;
+  } catch {
+    return url;
+  }
 }
 
 /**
@@ -757,7 +796,7 @@ function scanHydration(
   stream?: StreamHydrationState,
 ): number {
   const owner: RootHydrationOwner = { kind: 'root', root };
-  const styleNodeCount = leadingStaticStyleNodeCount(root);
+  const styleNodeCount = leadingStaticStyleNodeCount(root, options, owner);
   if (styleNodeCount > 0 && !options.expectStaticStyle) {
     hydrateFailure('template', 'unexpected static style element', owner);
   }

@@ -17,6 +17,7 @@ import {
   themeManager,
 } from '../../../open-element-styles.ts';
 import type { StyleSheetLike } from '@openelement/protocol/style-sheet';
+import { sheetResourceUrls } from '../style-links.ts';
 // Single error dialect (#1386 item 3): kernel lifecycle failures carry codes.
 import { ClaimErrorCode, KernelErrorCode, raiseFrameworkError } from '@openelement/protocol/errors';
 
@@ -413,6 +414,10 @@ export class CompiledElementKernel {
       root,
       {
         expectStaticStyle: styleCount > 0 || this.#options.utilityStyleLinks === true,
+        expectedStyleLinks: [
+          ...sheetResourceUrls(this.#options.styles),
+          ...sheetResourceUrls(themeManager.getStyles()),
+        ],
         staticStyleReady: staticStyleReadiness(this.#options.styles),
         streamParts: stream?.parts,
         pendingParts: stream ? [...stream.pending] : undefined,
