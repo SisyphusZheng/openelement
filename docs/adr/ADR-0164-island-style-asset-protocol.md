@@ -361,3 +361,76 @@ Consequences, each retiring machinery this ADR carried:
 - **Fetch/native adapter verdict unchanged** (Appendix C stands): Safari still has
   no CSS module scripts, and rolldown still fails the native form; the fetch adapter
   keeps its written retirement condition.
+
+## Amendment (2026-10-12): light-root components join the one asset protocol (S-C1.2)
+
+A light root has no native style boundary: its DOM is the document's DOM. The
+protocol therefore serves light-root sheets from the SAME emission — one asset
+per authored edge, content-addressed, emitted by the client build — with the
+component's scope written into the asset at build time, and the runtime only
+ever installing the sheet object it was handed.
+
+**The delivery, end to end.**
+
+1. **Build-time scoping.** A light-root component's edge is emitted as
+   `@scope (<component tag>) { … }` around the authored bytes
+   (`router/vite/internal/light-css-scope.ts`), so the boundary exists in the
+   file a browser parses. `:host`/`:host(<sel>)`/`::slotted(<sel>)` project onto
+   `:scope`/`:scope:is(<sel>)`/`slot > :is(<sel>)` — byte-for-byte the rewrite
+   the runtime used to apply. Prologue at-rules (`@charset`, `@import`,
+   `@namespace`) are hoisted above the wrapper: they are only valid before any
+   other rule, and they stay unscoped — the honest boundary, since the protocol
+   scopes the sheet it owns.
+2. **Scope identity rides the edge key.** The component tag is part of the
+   registry key (`file` + `\0` + tag), because two components sharing one sheet
+   file are two resources with two scopes. The compiler's transform registers
+   the key explicitly (`styleRequestModuleId(importer, specifier, scopeTag)`)
+   and the intercept resolves the same key from the importer index — a
+   disagreement fails closed at the intercept instead of emitting an unscoped
+   asset.
+3. **SSR: the document declares the resource.** A light-root component reports
+   its external sheet URLs into the render's `DocumentStyleResources`, and
+   `wrapInDocument` serializes them as marked `<link rel="stylesheet">` nodes in
+   the original document head, after `headExtras` (the site's document
+   stylesheet). The component's subtree carries neither link nor text.
+4. **CSR: the document adopts the sheet.** `CompiledStyleScope` installs the
+   sheet object on the document that holds the component's DOM
+   (`adoptedStyleSheets`), the same way it installs shadow sheets on a shadow
+   root. The document is shared state, so a light scope never removes: the sheet
+   is a per-component-type singleton whose rules are `@scope`-bounded, other
+   live instances still need it, and `document.adoptedStyleSheets` is itself the
+   record.
+5. **One delivery per resource, still.** A marked document link IS a delivery:
+   `sheetDeliveredByLink` now compares a link's href against the sheet's
+   expected URL through the S-C1.1 canonical identity
+   (`origin + pathname + search` against the document base) and skips adoption —
+   so an SSR page does not parse and apply the same rules twice, and a CSR-only
+   page adopts exactly once.
+
+**Retired machinery (verified deletion).** The light-DOM style sink is gone:
+`CompiledStyleScope.#lightStyle`, the runtime `document.createElement('style')`
++ `document.head.appendChild`, the `cssRules` text snapshot (`styleText`), the
+readiness-triggered re-write, `document.head` node removal on disconnect, the
+runtime scoping module (`element/internal/compiled/style.ts`) and its
+`OE_STYLES_LIGHT_SINK_WITHOUT_DOCUMENT` code, and the `mode === 'light'`
+cutoffs in `declaredStyleLinks`/`renderToString`. `cssRules` is not read at all
+any longer, which also retires the cross-engine filling-sheet race (KR-2/Q1-B)
+by construction.
+
+**Boundary, stated rather than hidden.** The asset protocol's owner is the
+client build, so a compiled component the client graph never contains (a page
+component that is not an island, or an island-free build) has no emitted
+resource and therefore no document link. Those sheets keep the pre-existing
+marked inline `<style data-oe-static-styles>` node inside the host — now
+carrying the build-time-scoped bytes the SSR half emits, with no runtime
+scoping and no client JavaScript required. Emitting that class of asset would
+mean a second emission owner and a second asset manifest, which this lane
+rejects; the boundary is recorded here instead.
+
+**Scan boundary and its retirement condition.** The scoping transform is a
+string-, comment- and escape-aware scan, not a regex pass over CSS text, because
+this toolchain ships no CSS parser the router may resolve (postcss,
+lightningcss and css-tree are all unresolvable from `@openelement/router`; the
+installed Tailwind toolchain exposes only its own compiler and minifier). When a
+CSS AST becomes resolvable, `light-css-scope.ts` is the single seam to swap —
+the asset contract above does not change.
