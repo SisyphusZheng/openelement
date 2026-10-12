@@ -178,7 +178,9 @@ function renderRouteContentLines(
   // (the lit page-data side channel — embedded JSON no
   // client consumed — was removed; page-state restoration needs a real
   // consumer contract first.)
-  lines.push(`${indent}let __content = __ssr(__tag, ${propsExpr}, { route: ${pathLiteral} })`);
+  lines.push(
+    `${indent}let __content = __ssr(__tag, ${propsExpr}, { route: ${pathLiteral}, documentStyles: __documentStyles })`,
+  );
   if (matchingRenderers.length > 0) {
     lines.push(`${indent}// Renderer tree wrapping (outer -> inner)`);
     for (const renderer of matchingRenderers) {
@@ -215,7 +217,7 @@ function renderRouteResponseAndCatch(lines: string[], ctx: RouteHandlerEmitConte
     lines.push(`    const __token = crypto.randomUUID();`);
     lines.push(`    const __instance = crypto.randomUUID();`);
     lines.push(
-      `    const __executor = await __createStreamPageShell(${pathLiteral}, ${ctx.route.varName}, __pageProps(${ctx.route.varName}, __pageContext), __instance, __token);`,
+      `    const __executor = await __createStreamPageShell(${pathLiteral}, ${ctx.route.varName}, __pageProps(${ctx.route.varName}, __pageContext), __instance, __token, __documentStyles);`,
     );
     lines.push(
       `    if (__resolveLayout(__routeMetaValue)) throw new Error('stream route ' + ${pathLiteral} + ' resolved a compiled layout, and a streamed document is flushed in parts so it cannot be wrapped: build the project with layout: false and no layouts entries, or leave streaming off for this route.');`,
@@ -331,7 +333,7 @@ function renderRouteResponseAndCatch(lines: string[], ctx: RouteHandlerEmitConte
     // above re-resolves the route's meta, and the wrap below serializes it.
     lines.push(...routeHeadExtrasStatements(headExtrasExpr, '        '));
     lines.push(
-      `        let __errorHtml = __ssr(__tag, __pageErrorProps(${ctx.route.varName}, err, __pageContext), { route: ${pathLiteral} })`,
+      `        let __errorHtml = __ssr(__tag, __pageErrorProps(${ctx.route.varName}, err, __pageContext), { route: ${pathLiteral}, documentStyles: __documentStyles })`,
     );
     if (matchingRenderers.length > 0) {
       for (const renderer of matchingRenderers) {

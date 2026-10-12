@@ -226,12 +226,16 @@ export const ContextErrorCode = {
 
 /** Compiled-style application failures (phase `csr`). */
 export const StyleErrorCode = {
-  /** The shadow root has no `adoptedStyleSheets` support. */
+  /** The target root (shadow root or document) has no `adoptedStyleSheets` support. */
   ADOPTED_STYLES_UNSUPPORTED: 'OE_STYLES_ADOPTED_SHEETS_UNSUPPORTED',
-  /** A light-DOM style sink needs an owner document with a usable head. */
-  LIGHT_SINK_WITHOUT_DOCUMENT: 'OE_STYLES_LIGHT_SINK_WITHOUT_DOCUMENT',
   /** A generated sheet adapter could not fill its sheet (request or replace failed). */
   SHEET_LOAD_FAILED: 'OE_STYLES_SHEET_LOAD_FAILED',
+  /**
+   * A component stylesheet resource href is not a site-absolute path or an
+   * absolute http(s) URL — the one shape rule both stylesheet-link sinks (the
+   * document head and a DSD template) enforce.
+   */
+  INVALID_STYLE_HREF: 'OE_STYLES_INVALID_HREF',
 } as const;
 
 /**

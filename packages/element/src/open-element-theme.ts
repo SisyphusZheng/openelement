@@ -1,21 +1,53 @@
 import { STYLE_SHEET_URL, type StyleSheetLike } from '@openelement/protocol/style-sheet';
 import { STATIC_STYLES_MARKER } from '@openelement/protocol/part-program';
+import {
+  isExpectedStyleResource,
+  type StyleResourceBase,
+} from './internal/compiled/style-identity.ts';
 
 /**
- * True when the root's own serialized markup already delivers this sheet: a
- * marked `<link rel="stylesheet">` whose href is the sheet's
+ * The adoption targets a component's sheets can be installed into: a shadow
+ * root for a shadow-root component, the document for a light-root component
+ * (alpha15 S lane, S-C1.2 — a light root's DOM lives in the document, so the
+ * document is the only root that can reach it).
+ */
+export type StyleAdoptionTarget = ShadowRoot | Document;
+
+/**
+ * The document base a marked link's href and a sheet's expected URL are
+ * compared against: `document.baseURI` for a document, the owning document's
+ * for a shadow root. A target without one (a DOM double, a detached root)
+ * resolves nothing, so comparison falls back to raw text equality — the
+ * identity contract's own malformed-input rule.
+ */
+function resourceBase(target: StyleAdoptionTarget): StyleResourceBase {
+  const direct = (target as { baseURI?: unknown }).baseURI;
+  if (typeof direct === 'string') return { baseURI: direct };
+  const owner = (target as { ownerDocument?: { baseURI?: unknown } | null }).ownerDocument;
+  return { baseURI: typeof owner?.baseURI === 'string' ? owner.baseURI : '' };
+}
+
+/**
+ * True when the target's own serialized markup already delivers this sheet: a
+ * marked `<link rel="stylesheet">` whose href names the sheet's
  * {@linkcode STYLE_SHEET_URL} (alpha15 S lane). Such a root keeps the
  * declarative reference as the single delivery and must NOT adopt a second
  * constructable copy — duplicate application would parse and apply the same
  * rules twice. Sheets without a URL (dev inline adapters, the SSR shim) are
  * never link-delivered.
+ *
+ * The href is compared through the S-C1.1 canonical identity (origin +
+ * pathname + search, resolved against the document base), not as raw text:
+ * the server writes the deployment's own path while the client holds the
+ * bundler-resolved URL, and the two name one resource.
  */
-function sheetDeliveredByLink(root: ShadowRoot, sheet: StyleSheetLike): boolean {
+function sheetDeliveredByLink(target: StyleAdoptionTarget, sheet: StyleSheetLike): boolean {
   const url = (sheet as { [STYLE_SHEET_URL]?: unknown })[STYLE_SHEET_URL];
   if (typeof url !== 'string' || url === '') return false;
-  const links = root.querySelectorAll(`link[${STATIC_STYLES_MARKER}][rel="stylesheet"]`);
+  const base = resourceBase(target);
+  const links = target.querySelectorAll(`link[${STATIC_STYLES_MARKER}][rel="stylesheet"]`);
   for (const link of links) {
-    if (link.getAttribute('href') === url) return true;
+    if (isExpectedStyleResource(link.getAttribute('href') ?? '', [url], base)) return true;
   }
   return false;
 }
@@ -60,19 +92,19 @@ export class OpenElementThemeManager {
     this.#styles.length = 0;
   }
 
-  applyStyles(root: ShadowRoot, component?: StyleSheetLike | StyleSheetLike[]): void {
+  applyStyles(target: StyleAdoptionTarget, component?: StyleSheetLike | StyleSheetLike[]): void {
     const componentStyles = component ? (Array.isArray(component) ? component : [component]) : [];
-    const existing: readonly unknown[] = root.adoptedStyleSheets;
-    // A sheet the root's own DSD markup already delivers as a marked
+    const existing: readonly unknown[] = target.adoptedStyleSheets;
+    // A sheet the target's own DSD markup already delivers as a marked
     // `<link rel="stylesheet">` is NOT adopted again (alpha15 S lane): the
     // declarative reference is the delivery, and a second constructable copy
     // would apply the same rules twice. Every other sheet keeps today's
-    // behavior, and sheets the root already adopted are preserved untouched.
+    // behavior, and sheets the target already adopted are preserved untouched.
     const missing = [...new Set([...this.#styles, ...componentStyles])].filter(
-      (sheet) => !existing.includes(sheet) && !sheetDeliveredByLink(root, sheet),
+      (sheet) => !existing.includes(sheet) && !sheetDeliveredByLink(target, sheet),
     );
     if (missing.length > 0) {
-      root.adoptedStyleSheets = [...existing, ...missing] as unknown as CSSStyleSheet[];
+      target.adoptedStyleSheets = [...existing, ...missing] as unknown as CSSStyleSheet[];
     }
   }
 

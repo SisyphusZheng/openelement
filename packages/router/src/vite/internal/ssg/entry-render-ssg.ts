@@ -10,7 +10,7 @@ import type { EntryDescriptor } from '@openelement/protocol/ssg';
 import { quoteGeneratedJavaScriptValue } from './codegen-literals.ts';
 import { routeHeadExtrasStatements } from './entry-codegen.ts';
 import {
-  documentResolutionSetupLine,
+  documentResolutionSetupLines,
   documentWrapOptionsLines,
   pageRouteTagExpr,
   renderMatchingRenderersFn,
@@ -113,14 +113,16 @@ export function renderSsgSection(desc: EntryDescriptor): string {
     '    const __pageContext = { data, actionData: undefined, params, request: options.request, locale, route: loadContext.route, meta: routeMeta };',
   );
   lines.push('    const props = __pageProps(info.module, __pageContext);');
-  lines.push(`    ${documentResolutionSetupLine('page', '__pageContext')}`);
+  lines.push(...documentResolutionSetupLines('page', '__pageContext', '    '));
   // Per-property og dedup: the wrap below serializes this page's __doc.meta,
   // so the site-level fallback drops the og tags the route declares. Status
   // pages below keep the raw headExtrasValue — they emit no route meta, so
   // filtering there would orphan the head of its og block.
   lines.push(...routeHeadExtrasStatements('headExtrasValue', '    '));
   lines.push('    if (locale) props.locale = locale;');
-  lines.push('    let content = __ssr(info.tagName, props, { route: routePath });');
+  lines.push(
+    '    let content = __ssr(info.tagName, props, { route: routePath, documentStyles: __documentStyles });',
+  );
   lines.push('    for (const renderer of __matchingRenderers(routePath)) {');
   lines.push('      content = await renderer.wrap(content, __rendererContext(routePath, params));');
   lines.push('    }');
@@ -202,10 +204,14 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   lines.push(
     '        const __errorPageContext = { data: undefined, actionData: undefined, params, request: options.request, locale, route: loadContext.route, meta: routeMeta };',
   );
+  // The resolved document is set up BEFORE the boundary re-render: the
+  // render reports its light-root stylesheets into `__documentStyles`
+  // (alpha15 S lane, S-C1.2), and the wrap below reads both. Same context
+  // object, same order as the success path.
+  lines.push(...documentResolutionSetupLines('page', '__errorPageContext', '        '));
   lines.push(
-    '        const errorContent = __renderLayout(__ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath }), routePath, { locale, routeMeta });',
+    '        const errorContent = __renderLayout(__ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles }), routePath, { locale, routeMeta });',
   );
-  lines.push(`        ${documentResolutionSetupLine('page', '__errorPageContext')}`);
   // Per-property og dedup on the boundary re-render: the fresh __doc above
   // re-resolves the route's meta, and the wrap below serializes it.
   lines.push(...routeHeadExtrasStatements('headExtrasValue', '        '));

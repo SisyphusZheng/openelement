@@ -46,6 +46,7 @@ import {
 } from '@openelement/element/authoring';
 import { isOpenElementNotFound, isOpenElementRedirect } from '../../../authoring.ts';
 import { serveError, StreamErrorCode } from '../../../internal/error-codes.ts';
+import type { DocumentStyleSink } from './renderer-runtime.ts';
 import type { StreamRouteManifest } from '@openelement/protocol/ssg';
 
 /** One declared deferred field's settlement record (the pump's queue unit). */
@@ -474,6 +475,8 @@ export interface StreamPageShellConfig {
     manifest: StreamRouteManifest;
     instanceId: string;
     documentToken?: string;
+    /** The streamed document's stylesheet collection (alpha15 S lane, S-C1.2). */
+    documentStyles?: DocumentStyleSink;
   }) => Promise<StreamExecutorView>;
 }
 
@@ -495,6 +498,7 @@ export function createStreamPageShell(
   props: unknown,
   instanceId: string,
   documentToken: string,
+  documentStyles?: DocumentStyleSink,
 ) => Promise<StreamExecutorView> {
   const { streamManifests, createStreamShellExecutor } = config;
   return async function __createStreamPageShell(
@@ -503,6 +507,7 @@ export function createStreamPageShell(
     props,
     instanceId,
     documentToken,
+    documentStyles,
   ) {
     const manifest = streamManifests[route];
     const Cls = (
@@ -533,6 +538,10 @@ export function createStreamPageShell(
       manifest,
       instanceId,
       documentToken,
+      // The streamed document owns the shell's light-root stylesheets
+      // (alpha15 S lane, S-C1.2): the shell reports them into the same
+      // collection the document halves serialize from.
+      documentStyles,
     });
   };
 }

@@ -13,8 +13,9 @@ import { readFile } from 'node:fs/promises';
 import type { Plugin } from 'vite';
 import {
   compiledArtifactClassCandidates,
-  compiledArtifactStyleRequests,
   compileElementModule,
+  lightRootScopeTag,
+  readCompiledArtifactStyles,
   registerClassCandidates,
   registerStyleRequest,
   stableModuleId,
@@ -63,19 +64,25 @@ export function createCompilerHooks(
         // authored grammar left to compile, but its `.css` imports are the
         // same style edges — recovered through the artifact read so dev admits
         // the packed form exactly as the build does (#1558/KR-10).
-        const styleRequests = result?.styleRequests ?? compiledArtifactStyleRequests(code, id);
+        const artifact = result ? undefined : readCompiledArtifactStyles(code, id);
+        const styleRequests = result?.styleRequests ?? artifact?.requests;
         // the compiled-element transform is the style-edge
         // registry's one writer — this hook is that transform's dev host
         // binding (element's compiledElementPlugin is the build binding),
         // so the registration travels with it; the dev plugin's intercept
         // answers from this registry.
         if (styleRequests !== undefined) {
+          // The component's root scope is part of every edge (alpha15 S lane,
+          // S-C1.2): a light-root sheet leaves the build wrapped in
+          // `@scope (<tag>)`, and dev scopes the served adapter identically.
+          const scopeTag = result ? lightRootScopeTag(result.program) : artifact?.scopeTag;
           for (const specifier of styleRequests) {
             registerStyleRequest({
-              moduleId: styleRequestModuleId(id, specifier),
+              moduleId: styleRequestModuleId(id, specifier, scopeTag),
               importer: id,
               specifier,
               file: styleRequestFile(id, specifier),
+              ...(scopeTag === undefined ? {} : { scopeTag }),
             });
           }
         }

@@ -47,7 +47,7 @@ import {
 // Canonical attribute-escape contract (issue #1220, L1): the server output is
 // the wire truth for hydration parity, so both serializers share this one
 // implementation (escapes & < > " ').
-import { escapeAttr } from '../../core/html-escape.ts';
+import { escapeAttr, isComponentStyleHref } from '../../core/html-escape.ts';
 // Canonical each-Block item-key derivation (#1374): single source shared
 // with the runtime executors; do not reintroduce a private copy.
 import { displayValue, itemTemplateFields, itemValue } from '../runtime/program-kernel.ts';
@@ -465,13 +465,14 @@ function serializeCompiledSnapshot(
  * absolute http(s) URL and may not carry whitespace or markup-significant
  * characters — a framework-emitted asset address always satisfies this, and a
  * value that does not is a defect that must fail closed (never escape into
- * markup).
+ * markup). The shape rule itself is shared with the document head's
+ * stylesheet-link sink (`isComponentStyleHref`): one rule, two sinks.
  */
 function serializeStyleLinks(links: readonly string[] | undefined): string {
   if (!links || links.length === 0) return '';
   let markup = '';
   for (const href of links) {
-    if (!/^(?:\/[^/\s]|https?:\/\/[^\s])/.test(href) || /["'<>\s]/.test(href)) {
+    if (!isComponentStyleHref(href)) {
       throw new CompiledProgramValidationError(
         'styleLinks',
         `component stylesheet href must be a site-absolute path or an absolute http(s) URL, got ${JSON.stringify(href)}`,

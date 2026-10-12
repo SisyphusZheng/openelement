@@ -1,6 +1,5 @@
 import { STYLE_SHEET_READY, type StyleSheetLike } from '@openelement/protocol/style-sheet';
-import { scopeCompiledLightCss } from './internal/compiled/style.ts';
-import { OpenElementThemeManager } from './open-element-theme.ts';
+import { OpenElementThemeManager, type StyleAdoptionTarget } from './open-element-theme.ts';
 // Single error dialect (#1386 item 3): style-application failures carry codes.
 import { frameworkError, raiseFrameworkError, StyleErrorCode } from '@openelement/protocol/errors';
 import { reportError } from './internal/core/errors.ts';
@@ -28,10 +27,6 @@ function asStyleList(component?: StyleSheetLike | StyleSheetLike[]): StyleSheetL
       ...(component ? (Array.isArray(component) ? component : [component]) : []),
     ]),
   ];
-}
-
-function styleText(styles: readonly StyleSheetLike[]): string {
-  return styles.flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText)).join('\n');
 }
 
 /**
@@ -74,95 +69,116 @@ function isShadowRoot(root: CompiledStyleRoot): root is ShadowRoot {
 }
 
 /**
- * Owns the style sink for one compiled element activation. Shadow roots use
- * constructable sheets; light DOM uses one document-head style node so the
- * compiled template's child-node claim shape remains untouched. Sheets this
- * scope applied are tracked so disconnect removes exactly those, preserving
- * sheets the root already had.
+ * The adoption target one compiled root's sheets belong to: the root itself
+ * for a shadow-root component, the root's OWN document for a light-root
+ * component (alpha15 S lane, S-C1.2).
+ *
+ * The document is resolved from the element at each connect, never cached: an
+ * element can be adopted into another document between two connections, and
+ * the sheets must land in the document the element is in NOW.
+ */
+function adoptionTargetOf(root: CompiledStyleRoot): StyleAdoptionTarget {
+  if (isShadowRoot(root)) return root;
+  const owned = root.ownerDocument;
+  if (owned && 'adoptedStyleSheets' in owned) return owned;
+  fail(
+    StyleErrorCode.ADOPTED_STYLES_UNSUPPORTED,
+    '[compiled-styles] a light root needs an owner document that supports adoptedStyleSheets',
+  );
+}
+
+/**
+ * Owns the style sink for one compiled element activation (alpha15 S lane,
+ * S-C1.2).
+ *
+ * ONE delivery form for both root kinds: the component's sheets are ADOPTED
+ * into the root that can reach the component's DOM — `adoptedStyleSheets` on
+ * a shadow root, `adoptedStyleSheets` on the document for a light root. No
+ * `<style>` node is created, no rule text is copied, and no CSS is generated
+ * at runtime: the build emits each sheet, already scoped to its light-root
+ * component's tag, and this scope only installs the sheet object it was
+ * handed.
+ *
+ * Adoption is also what makes the old light-DOM snapshot unnecessary: a sheet
+ * whose `replace()` is still in flight fills itself in place, on every target
+ * that adopted it, so a reconnect inside that window needs no second pass and
+ * cannot read a still-filling sheet (the cross-engine KR-2/Q1-B race).
+ *
+ * Ownership at disconnect differs by target, and deliberately so:
+ *
+ *   - A shadow root belongs to ONE instance, so the sheets this scope
+ *     installed are removed again (`#adoptedSheets`), leaving the root's
+ *     pre-existing sheets untouched.
+ *   - The document is SHARED by every instance of every component, so a light
+ *     scope never removes: the sheet is a per-component-type singleton owned
+ *     by the module graph, other live instances still need it, and its rules
+ *     are `@scope`-bounded to its own tag, so it can never reach a foreign
+ *     element. `document.adoptedStyleSheets` is itself the record — this
+ *     scope keeps no second registry to drift from it, and re-adoption after
+ *     a reconnect is a no-op because the sheet object is already listed.
  */
 export class CompiledStyleScope {
   #root?: CompiledStyleRoot;
   #styles: StyleSheetLike[] = [];
-  #lightStyle?: HTMLStyleElement;
+  /** Sheets this scope installed into a shadow root (never a document). */
   #adoptedSheets: StyleSheetLike[] = [];
   /**
    * One generation per connection. A sheet that settles after this scope moved
-   * on — disconnect or a reconnect to another root — must not touch the newer
-   * connection's nodes, so every continuation compares the generation it was
+   * on — disconnect or a reconnect to another root — must not report against
+   * the newer connection, so every continuation compares the generation it was
    * created under with the current one.
    */
   #generation = 0;
 
   connect(root: CompiledStyleRoot, component?: StyleSheetLike | StyleSheetLike[]): void {
     const styles = asStyleList(component);
-    if (this.#root !== root) {
-      this.#removeLightStyle();
-      this.#removeAdoptedSheets();
-    }
+    if (this.#root !== root) this.#removeAdoptedSheets();
     this.#root = root;
     this.#styles = styles;
     const generation = (this.#generation += 1);
 
-    if (isShadowRoot(root)) {
-      if (!('adoptedStyleSheets' in root)) {
-        fail(
-          StyleErrorCode.ADOPTED_STYLES_UNSUPPORTED,
-          '[compiled-styles] shadow root does not support adoptedStyleSheets',
-        );
-      }
-      themeManager.applyStyles(root, component);
-      this.#adoptedSheets = styles;
+    // Nothing to install: the root is resolved and recorded, and no adoption
+    // target is even consulted. A component with no styles (and no registered
+    // global sheets) must connect on any root — including one whose document
+    // has no stylesheet list at all, which is exactly the shape a stylesheet-
+    // free host presents.
+    if (styles.length === 0) {
+      this.#adoptedSheets = [];
       this.#observeSheetReadiness(styles, generation);
       return;
     }
 
-    if (styles.length === 0) {
-      this.#removeLightStyle();
-      this.#observeSheetReadiness(styles, generation);
-      return;
+    const target = adoptionTargetOf(root);
+    if (!('adoptedStyleSheets' in target)) {
+      fail(
+        StyleErrorCode.ADOPTED_STYLES_UNSUPPORTED,
+        '[compiled-styles] the style adoption target does not support adoptedStyleSheets',
+      );
     }
-    // A sheet that is still filling must not be read: `replace()` settling puts
-    // the sheet in a state where reading `cssRules` throws on engines that
-    // refuse it (Firefox: "Can't access rules of still-loading style sheet")
-    // while Chromium and WebKit answer an empty list — and either way the
-    // snapshot would be wrong. The owned node is created now; its text is
-    // written by the readiness continuation below, or immediately when every
-    // sheet it snapshots is already usable.
-    this.#writeLightStyle(root, this.#sheetsUsable());
+    themeManager.applyStyles(target, component);
+    // Only a shadow root's adoption is this scope's to undo; a document's is
+    // document-lifetime (see the class doc). The sheets are recorded AFTER the
+    // adoption, so a failing apply never records sheets it did not install.
+    this.#adoptedSheets = isShadowRoot(root) ? styles : [];
     this.#observeSheetReadiness(styles, generation);
   }
 
   /**
-   * True when no sheet the owned node snapshots — the component's own styles
-   * and the registered global styles — is still filling.
-   */
-  #sheetsUsable(): boolean {
-    return (
-      pendingSheetReadiness(this.#styles).length === 0 &&
-      pendingSheetReadiness(themeManager.getStyles()).length === 0
-    );
-  }
-
-  /**
-   * Report a failed sheet and refresh late styles on the owning connection.
+   * Report a failed sheet on the owning connection.
    *
-   * Shadow roots need no refresh: they adopted the sheet object itself, and
-   * `replace()` publishes its rules to every root holding it. The light path
-   * snapshots the rules into its owned node, so it re-writes that same node
-   * once the sheets are ready — no second head node, no new owner.
+   * Adoption needs no refresh step: the sheet object fills itself, so a late
+   * settlement is already reflected everywhere it was adopted. What remains is
+   * the failure half of the sheet contract — a rejected `replace()` / fetch is
+   * reported once, against the connection that owned the sheet.
    */
   #observeSheetReadiness(styles: readonly StyleSheetLike[], generation: number): void {
     const pending = pendingSheetReadiness(styles as StyleSheetLike[]);
     if (pending.length === 0) return;
     void Promise.all(pending).then(
-      () => {
-        const root = this.#root;
-        if (generation !== this.#generation || root === undefined || isShadowRoot(root)) return;
-        this.#writeLightStyle(root);
-      },
+      () => {},
       (error: unknown) => {
-        // A stale connection reports nothing: its node is gone and the next
-        // connection reports its own outcome.
+        // A stale connection reports nothing: its sheets are gone with it and
+        // the next connection reports its own outcome.
         if (generation !== this.#generation) return;
         reportError(
           frameworkError(
@@ -180,48 +196,14 @@ export class CompiledStyleScope {
     );
   }
 
-  /**
-   * Write the owned light-DOM style node for the current connection. With
-   * `ready: false` the node is created and owned but its text snapshot waits
-   * for the readiness continuation — see the connect() call site for why the
-   * read must not happen while a sheet fills.
-   */
-  #writeLightStyle(root: HTMLElement, ready = true): void {
-    const document = root.ownerDocument;
-    const parent = document?.head ?? document?.documentElement;
-    if (!document?.createElement || !parent) {
-      fail(
-        StyleErrorCode.LIGHT_SINK_WITHOUT_DOCUMENT,
-        '[compiled-styles] light DOM style sink requires an owner document',
-      );
-    }
-    const style = this.#lightStyle ?? document.createElement('style');
-    style.setAttribute('data-open-element-compiled-style', '');
-    if (ready) {
-      const globalStyles = themeManager.getStyles();
-      const componentStyles = this.#styles.filter((sheet) => !globalStyles.includes(sheet));
-      const globalCss = styleText(globalStyles);
-      const componentCss = styleText(componentStyles);
-      style.textContent = [
-        globalCss,
-        componentCss ? scopeCompiledLightCss(root.tagName.toLowerCase(), componentCss) : '',
-      ]
-        .filter(Boolean)
-        .join('\n');
-    }
-    if (style.parentNode !== parent) parent.appendChild(style);
-    this.#lightStyle = style;
-  }
-
   adopted(root: CompiledStyleRoot, component?: StyleSheetLike | StyleSheetLike[]): void {
     this.connect(root, component);
   }
 
   disconnect(): void {
     // Bump the generation first: a sheet settling after this point belongs to a
-    // connection that no longer owns a node.
+    // connection that no longer owns a root to report against.
     this.#generation += 1;
-    this.#removeLightStyle();
     this.#removeAdoptedSheets();
     this.#root = undefined;
     this.#styles = [];
@@ -233,11 +215,6 @@ export class CompiledStyleScope {
 
   get styles(): StyleSheetLike[] {
     return [...this.#styles];
-  }
-
-  #removeLightStyle(): void {
-    this.#lightStyle?.parentNode?.removeChild(this.#lightStyle);
-    this.#lightStyle = undefined;
   }
 
   #removeAdoptedSheets(): void {

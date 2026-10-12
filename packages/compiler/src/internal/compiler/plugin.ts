@@ -42,8 +42,13 @@ import {
 import { diagnosticPluginError } from './semantic-core/diagnostics/index.ts';
 import { typeCheckEmittedModule } from './semantic-core/type-check.ts';
 import { compiledArtifactClassCandidates } from './compiled-artifact-class-candidates.ts';
-import { compiledArtifactStyleRequests } from './compiled-artifact-style-requests.ts';
-import { registerStyleRequest, styleRequestFile, styleRequestModuleId } from './style-requests.ts';
+import { readCompiledArtifactStyles } from './compiled-artifact-style-requests.ts';
+import {
+  lightRootScopeTag,
+  registerStyleRequest,
+  styleRequestFile,
+  styleRequestModuleId,
+} from './style-requests.ts';
 import { registerClassCandidates } from './tailwind-candidates.ts';
 
 /** The authored substring every compiled element module contains (`@element(`), used as the cheap prefilter. */
@@ -198,19 +203,27 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
         // artifact read (compiled-artifact-style-requests.ts) so the packed
         // form is admitted identically to the workspace-source form (#1558/
         // KR-10). This transform stays the registry's one writer.
-        const styleRequests = compiled?.styleRequests ?? compiledArtifactStyleRequests(code, id);
+        const artifact = compiled ? undefined : readCompiledArtifactStyles(code, id);
+        const styleRequests = compiled?.styleRequests ?? artifact?.requests;
         // The compiled module's `.css` edges travel to the intercepting host
         // plugin through the style-edge registry — keyed by the id the
         // bundler's resolver lands on for the authored import. The compiler
         // never writes files or reads sheet bytes; the host build owns the
         // emitted artifacts from here.
         if (styleRequests !== undefined) {
+          // The importing component's root scope is part of every edge it
+          // registers (alpha15 S lane, S-C1.2): a light-root component's
+          // sheets leave the build wrapped in `@scope (<tag>)`, so the tag
+          // travels to the intercept through the registry key. A shipped
+          // artifact states the same fact in its Part Program literal.
+          const scopeTag = compiled ? lightRootScopeTag(compiled.program) : artifact?.scopeTag;
           for (const specifier of styleRequests) {
             registerStyleRequest({
-              moduleId: styleRequestModuleId(id, specifier),
+              moduleId: styleRequestModuleId(id, specifier, scopeTag),
               importer: id,
               specifier,
               file: styleRequestFile(id, specifier),
+              ...(scopeTag === undefined ? {} : { scopeTag }),
             });
           }
         }

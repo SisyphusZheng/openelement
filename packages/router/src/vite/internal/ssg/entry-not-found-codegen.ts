@@ -72,7 +72,7 @@ export function renderNotFoundRoute(
   lines.push(
     `    let __content = __ssr(__tag, __pageProps(${route.varName}, __pageContext), { route: ${quoteGeneratedJavaScriptValue(
       route.path,
-    )} })`,
+    )}, documentStyles: __documentStyles })`,
   );
   lines.push('');
   for (const renderer of renderers.filter((r) => rendererScopeMatches(route.path, r.scope))) {

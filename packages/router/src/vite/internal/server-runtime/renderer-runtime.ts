@@ -26,10 +26,28 @@ export interface TrustedHtmlValue {
   readonly html: string;
 }
 
+/**
+ * The document stylesheet collection a page render reports its light-root
+ * components' external sheets into (alpha15 S lane, S-C1.2), declared
+ * structurally for the same reason {@linkcode TrustedHtmlValue} is: this seam
+ * injects Element functions, it never imports them. The generated entry
+ * creates the collection and lists it in `wrapInDocument`; the page render
+ * only ever adds to it.
+ */
+export interface DocumentStyleSink {
+  add(urls: readonly string[]): void;
+}
+
 /** Source metadata the serializer attributes to a render (the `{ route }` seam). */
 export interface PageSsrSourceInfo {
   route?: string;
   source?: string;
+  /**
+   * The render's document stylesheet collection. It rides this per-render
+   * object because every emitted `__ssr` call site already builds one, and the
+   * collection's lifetime IS the render's.
+   */
+  documentStyles?: DocumentStyleSink;
 }
 
 /** Trusted parent-owned light children keyed by slot name (the shell slot claim). */
@@ -59,6 +77,7 @@ export interface NativePageRendererDeps {
       sourceInfo?: PageSsrSourceInfo;
       ssrRenderableTags?: readonly string[];
       projectedChildren?: ProjectedChildren;
+      documentStyles?: DocumentStyleSink;
     },
   ) => string;
   /** The SSR registry (the runtime's `customElements` global). */
@@ -101,10 +120,15 @@ export function createNativePageRenderer(deps: NativePageRendererDeps): PageSsrR
           '> is not registered in the SSR registry. Generated entries register every admitted route/island class explicitly; an unknown OpenElement host cannot be server-rendered (client-only and foreign tags pass through per the admission plan).',
       );
     }
+    // The collection is a render-side channel, not render diagnostics: it is
+    // split out of sourceInfo so the serializer's source attribution stays
+    // exactly what the call site declared (alpha15 S lane, S-C1.2).
+    const { documentStyles, ...diagnostics } = sourceInfo ?? {};
     return renderToString(tag, {
       componentClass: Cls,
       props,
-      sourceInfo,
+      sourceInfo: diagnostics,
+      documentStyles,
       ssrRenderableTags,
       projectedChildren,
     });

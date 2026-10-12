@@ -14,7 +14,7 @@ import {
 import { convertToAttribute } from './internal/compiled/facade-host.ts';
 import { sheetResourceUrls } from './internal/compiled/style-links.ts';
 import { requestTimeStyleLinks } from './internal/compiled/server/style-links.ts';
-import { scopeCompiledLightCss } from './internal/compiled/style.ts';
+import type { DocumentStyleResources } from './internal/core/html-escape.ts';
 import type {
   CompiledElementMetadata,
   CompiledPropertyMetadata,
@@ -56,11 +56,13 @@ export {
 export { injectPropsSafe } from './internal/core/security.ts';
 export type { TrustedHtml } from './internal/core/security.ts';
 export {
+  createDocumentStyleResources,
   documentStreamParts,
   escapeAttr,
   escapeHtml,
   wrapInDocument,
 } from './internal/core/html-escape.ts';
+export type { DocumentStyleResources } from './internal/core/html-escape.ts';
 // Streamed-frame admission policy (#1412 companion): the single source the
 // build manifest scan, the stream executor admission, and the generated
 // browser installer all consume.
@@ -131,8 +133,8 @@ interface CompiledComponentConstructor extends CustomElementConstructor {
  * {@linkcode STYLE_SHEET_URL} — authored `.css` files and generated utility
  * sheets alike), then the framework's shared component stylesheet when the
  * compiler admitted classes for this component (utilities last — the Tailwind
- * convention). Light-root components never take links in their subtree: their
- * content lives in the document, which the document stylesheet already styles.
+ * convention). Light-root components take no links in their subtree: see
+ * {@linkcode documentStyleResourcesOf}.
  */
 function declaredStyleLinks(
   ctor: CompiledComponentConstructor,
@@ -142,6 +144,27 @@ function declaredStyleLinks(
   const links = sheetResourceUrls(ctor.styles);
   if (ctor.__oeUtilityClasses === true) links.push(...requestTimeStyleLinks());
   return links;
+}
+
+/**
+ * The external stylesheets a LIGHT-root component delivers (alpha15 S lane,
+ * S-C1.2): its own sheets' resource URLs, reported to the render's document
+ * so the document head declares them.
+ *
+ * A light root's content is the document's content, so the document — not the
+ * component's subtree — is the only owner that can deliver its CSS: the head
+ * link reaches the styled content without client JavaScript, and the client
+ * adopts the same resource only when the document did not already link it.
+ * The shared component (utility) sheet is deliberately absent: the compiler
+ * excludes a light root's class candidates from it (its utility classes are
+ * the document entry's job), so there is no per-component utility resource to
+ * declare.
+ */
+function documentStyleResourcesOf(
+  ctor: CompiledComponentConstructor,
+  mode: 'light' | 'open' | 'closed',
+): readonly string[] {
+  return mode === 'light' ? sheetResourceUrls(ctor.styles) : [];
 }
 
 /**
@@ -171,6 +194,13 @@ function collectStaticStyleCss(ctor: CompiledComponentConstructor): string | und
 }
 
 /**
+ * The half of {@linkcode DocumentStyleResources} a render needs: it only ever
+ * reports the sheets it discovered, so the seam is typed by that one method
+ * and stays assignable from any structurally identical collector.
+ */
+export type DocumentStyleSink = Pick<DocumentStyleResources, 'add'>;
+
+/**
  * Options for one `renderToString()` call: the compiled component class to
  * serialize, the values projected onto its compiled properties, optional
  * route/source diagnostics metadata, the nested compiled tags the build
@@ -184,6 +214,14 @@ export interface RenderToStringOptions {
   ssrRenderableTags?: readonly string[];
   /** Trusted parent-owned light children keyed by slot name. */
   projectedChildren?: ReadonlyMap<string, TrustedHtml>;
+  /**
+   * The render's document stylesheet collection (alpha15 S lane, S-C1.2).
+   * Every light-root component serialized in this render reports its external
+   * sheet URLs here, and the document wrapper declares them in the head. The
+   * caller owns the collection's lifetime — one per document render — so
+   * styles discovered for one page can never reach another page's head.
+   */
+  documentStyles?: DocumentStyleSink;
 }
 
 /** Element-private normalized options used while recursively composing components. */
@@ -343,6 +381,8 @@ export interface CreateStreamShellOptions {
   manifest: StreamShellManifest;
   instanceId: string;
   documentToken?: string;
+  /** The streamed document's stylesheet collection (see RenderToStringOptions). */
+  documentStyles?: DocumentStyleSink;
 }
 
 /** Initial shell, typed seed, and bounded updates for a stream shell request. */
@@ -576,6 +616,10 @@ export async function createStreamShellExecutor(
     instanceId: options.instanceId,
   };
   const styleCss = collectStaticStyleCss(ctor);
+  // The shell's light-root stylesheets belong to the streamed document, not to
+  // the shell (S-C1.2): they are reported before the document halves are
+  // serialized, exactly as a synchronous render reports them.
+  options.documentStyles?.add(documentStyleResourcesOf(ctor, mode));
   const executor = createStreamServerExecutor(
     program,
     { signals, handlers: {} },
@@ -584,8 +628,7 @@ export async function createStreamShellExecutor(
       mode,
       hostAttrs,
       dsd: ctor.delegatesFocus === true ? { delegatesFocus: true } : undefined,
-      styleCss:
-        mode === 'light' && styleCss ? scopeCompiledLightCss(program.tag, styleCss) : styleCss,
+      styleCss,
       styleLinks: declaredStyleLinks(ctor, mode),
     },
   );
@@ -686,6 +729,13 @@ function renderToStringAtDepth(
         : 'closed';
   const host: CompiledProgramHost = { signals, handlers: {} };
   const staticStyleCss = collectStaticStyleCss(resolvedClass);
+  // A light root's external sheets are the DOCUMENT's resources (S-C1.2):
+  // report them to this render's collection, whose owner writes them into the
+  // head. The component's own subtree carries no link and no scoped text —
+  // `collectStaticStyleCss` already skips every sheet that has a URL, and the
+  // URL-less sheets that remain are the in-memory/dev shims, whose bytes the
+  // build (or the author) already scoped.
+  options.documentStyles?.add(documentStyleResourcesOf(resolvedClass, mode));
   const admitted = new Set(options.ssrRenderableTags ?? []);
   /** Serialize this element's program once (re-run by the boundary capture below). */
   const serializeOnce = (): string =>
@@ -697,10 +747,12 @@ function renderToStringAtDepth(
       // matching shadowrootdelegatesfocus marker or the claimed shadow root
       // silently loses focus delegation.
       dsd: resolvedClass.delegatesFocus === true ? { delegatesFocus: true } : undefined,
-      styleCss:
-        mode === 'light' && staticStyleCss
-          ? scopeCompiledLightCss(tag, staticStyleCss)
-          : staticStyleCss,
+      // The static style TEXT an in-memory (URL-less) sheet carries, verbatim.
+      // Scoping is not applied here: a light root's boundary is written into
+      // its emitted asset at build time, and a sheet without an external
+      // identity is author-provided data this renderer has no mandate to
+      // rewrite (S-C1.2).
+      styleCss: staticStyleCss,
       styleLinks: declaredStyleLinks(resolvedClass, mode),
       projectedChildren: options.projectedChildren,
       renderNestedElement:
@@ -751,6 +803,9 @@ function renderToStringAtDepth(
                   ssrRenderableTags: options.ssrRenderableTags,
                   hostAttrs: passthrough,
                   projectedChildren: nestedMode === 'light' ? nested.projectedChildren : undefined,
+                  // A nested light-root component's sheets belong to the same
+                  // render's document as its parent's (S-C1.2).
+                  documentStyles: options.documentStyles,
                 },
                 depth + 1,
               );

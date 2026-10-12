@@ -46,6 +46,7 @@ const native: RendererAdapter = {
       {
         from: '@openelement/element',
         names: [
+          'createDocumentStyleResources',
           'createStreamShellExecutor',
           ...(hasStreamRoute ? ['documentStreamParts', 'escapeAttr'] : []),
           'renderToString',
@@ -89,7 +90,7 @@ const lit: RendererAdapter = {
     return [
       {
         from: '@openelement/element/html',
-        names: ['trustedHtml', 'escapeHtml', 'wrapInDocument'],
+        names: ['createDocumentStyleResources', 'trustedHtml', 'escapeHtml', 'wrapInDocument'],
       },
       {
         from: '@openelement/router/lit-ssr',

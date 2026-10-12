@@ -40,6 +40,14 @@ export {
 // application code never calls it; the generated entry does, and the deployed
 // request-time server re-applies it at startup.
 export { __setRequestTimeStyleSheetUrls } from './internal/compiled/server/style-links.ts';
+// alpha15 S lane (S-C1.2): the per-render document stylesheet collection. The
+// generated entry creates one per document render, hands it to the page render
+// (light-root components report their external sheets into it) and to
+// wrapInDocument (which declares them as marked head links). One collection
+// per render is what keeps one page's component stylesheets out of another
+// page's head.
+export { createDocumentStyleResources } from './public-runtime.ts';
+export type { DocumentStyleResources } from './public-runtime.ts';
 export type { RenderToStringOptions } from './public-runtime.ts';
 export type {
   CreateStreamShellOptions,
