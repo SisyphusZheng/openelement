@@ -72,7 +72,7 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { commandOutput } from '../repo/node-command.ts';
+import { spawnCommand } from '../repo/node-command.ts';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -169,7 +169,7 @@ export interface ProcessRunOptions {
 /**
  * The one timeout/AbortSignal subprocess runner for the packed-consumer
  * harnesses (app legs, starter, node-serve, router, ui all delegate here).
- * commandOutput resolves — not rejects — when the abort signal kills the
+ * spawnCommand resolves — not rejects — when the abort signal kills the
  * subprocess, so the timeout is tracked explicitly to report it instead of
  * an empty failure.
  */
@@ -190,7 +190,7 @@ export async function runProcess(
           controller.abort();
         }, timeoutMs);
   try {
-    const result = await commandOutput(command, {
+    const result = await spawnCommand(command, {
       args,
       cwd,
       stdout: 'piped',

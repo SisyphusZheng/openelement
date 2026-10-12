@@ -17,7 +17,7 @@ import {
   normalizeLcovSourcePaths,
   parseLcov,
 } from './coverage-summary.ts';
-import { commandStatus } from './node-command.ts';
+import { spawnCommand } from './node-command.ts';
 
 function getNumberArg(flag: string, fallback: number): number {
   const args = process.argv.slice(2);
@@ -132,7 +132,7 @@ async function runCoverage(crashRetries: number): Promise<string> {
         // excluded surfaces contributes to the production-source denominator.
         const projectArgs = COVERAGE_PROJECTS.flatMap((project) => ['--project', project]);
         const includeArgs = COVERAGE_INCLUDES.map((include) => `--coverage.include=${include}`);
-        return await commandStatus('pnpm', {
+        return await spawnCommand('pnpm', {
           args: [
             'exec',
             'vitest',

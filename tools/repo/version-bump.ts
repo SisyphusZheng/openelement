@@ -72,7 +72,7 @@ import process from 'node:process';
 import fastGlob from 'fast-glob';
 import { wwwReleaseAnchorDrift } from './www-release-anchor.ts';
 import { readWorkspaceGlobs } from './workspace-tasks.ts';
-import { commandStatus } from './node-command.ts';
+import { spawnCommand } from './node-command.ts';
 
 /** Packages whose package.json carries the release line version. */
 export const PACKAGE_CONFIGS: readonly string[] = [
@@ -736,7 +736,7 @@ export function renderDiff(edit: VersionEdit, limit = 12): string {
  * script so the generator set is never duplicated here.
  */
 export async function regenerateTrackedOutputs(root: string): Promise<void> {
-  const { code } = await commandStatus(process.execPath, {
+  const { code } = await spawnCommand(process.execPath, {
     args: [join(root, 'tools/repo/generate-all.ts')],
     cwd: root,
     stdin: 'null',

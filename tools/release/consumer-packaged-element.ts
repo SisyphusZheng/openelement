@@ -1,6 +1,6 @@
 /** Packed Element author -> Vite compile -> separate plain-HTML browser proof (#1338). */
 import { tmpdir } from 'node:os';
-import { commandOutput } from '../repo/node-command.ts';
+import { spawnCommand } from '../repo/node-command.ts';
 import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { strict as assert } from 'node:assert/strict';
 import { join, resolve } from 'node:path';
@@ -14,7 +14,7 @@ const root = resolve(import.meta.dirname!, '../..');
 const author = await mkdtemp(join(tmpdir(), 'oe-element-author-'));
 const consumer = await mkdtemp(join(tmpdir(), 'oe-element-html-'));
 async function run(args: string[]): Promise<void> {
-  const output = await commandOutput(args[0], {
+  const output = await spawnCommand(args[0], {
     args: args.slice(1),
     cwd: author,
     stdout: 'piped',

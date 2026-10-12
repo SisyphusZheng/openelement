@@ -5,7 +5,7 @@
  * shapes (runCommand throwing on non-zero exit, runWithOutput capturing
  * stdio, runCaptured's error copy) are shared by the release-flow call sites.
  */
-import { commandOutput, commandStatus } from '../repo/node-command.ts';
+import { spawnCommand } from '../repo/node-command.ts';
 import { fileURLToPath } from 'node:url';
 import process from 'node:process';
 
@@ -52,7 +52,7 @@ export async function runCommand(
   const { cwd, env, stdin = 'inherit', stdout = 'inherit', stderr = 'inherit', signal } = options;
   const effectiveCwd = resolveCwd(cwd);
   console.log(`$ ${[command, ...args].join(' ')}${effectiveCwd ? `  # cwd=${effectiveCwd}` : ''}`);
-  const status = await commandStatus(command, {
+  const status = await spawnCommand(command, {
     args,
     cwd: effectiveCwd,
     env,
@@ -79,7 +79,7 @@ export async function runWithOutput(
   options: RunWithOutputOptions = {},
 ): Promise<RunWithOutputResult> {
   const { cwd, env, signal } = options;
-  const result = await commandOutput(command, {
+  const result = await spawnCommand(command, {
     args,
     cwd: resolveCwd(cwd),
     env,

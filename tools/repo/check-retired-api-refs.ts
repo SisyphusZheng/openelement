@@ -17,7 +17,7 @@
 import { readdir } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
-import { commandOutput } from './node-command.ts';
+import { spawnCommand } from './node-command.ts';
 
 const RETIRED = [
   '@openelement/app',
@@ -96,7 +96,7 @@ function symbolNames(snapshot: SnapshotLike): Set<string> {
 
 async function gitShow(ref: string): Promise<string | undefined> {
   try {
-    const output = await commandOutput('git', {
+    const output = await spawnCommand('git', {
       args: ['show', `${ref}:docs/release/public-interface-snapshot.json`],
       stdin: 'null',
       stdout: 'piped',
@@ -112,7 +112,7 @@ async function gitShow(ref: string): Promise<string | undefined> {
 /** Names present at the newest tagged release snapshot but gone today. */
 async function deriveRetiredSymbols(): Promise<Set<string>> {
   const retired = new Set<string>(ADDITIONAL_RETIRED_SYMBOLS);
-  const tags = await commandOutput('git', {
+  const tags = await spawnCommand('git', {
     args: ['tag', '--list', 'v*', '--sort=-creatordate'],
     stdin: 'null',
     stdout: 'piped',

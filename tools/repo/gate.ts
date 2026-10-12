@@ -28,7 +28,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { commandStatus } from './node-command.ts';
+import { spawnCommand } from './node-command.ts';
 import { vpExecutable, vpTaskArgv } from './vp-dispatch.ts';
 
 export interface GateStepResult {
@@ -126,7 +126,7 @@ async function defaultSpawn(step: string): Promise<number> {
   try {
     const executable = vpExecutable(repoRoot);
     const args = vpTaskArgv(parsed.pkg ?? rootPackageName(), parsed.task).slice(1);
-    const status = await commandStatus(executable, {
+    const status = await spawnCommand(executable, {
       args,
       cwd: repoRoot,
       // Gates never interact: stdin stays closed so an unexpected prompt fails
