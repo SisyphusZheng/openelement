@@ -58,6 +58,7 @@ import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constan
 import { readPackages } from '../lib/package-graph.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
 import { CREATE_BIN } from './npm-manifest.ts';
+import ts from 'typescript';
 import { compileElementModule } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { CREATE_VERSION } from '../../packages/create/src/version.ts';
@@ -234,7 +235,7 @@ const UTILITY_WIDGET_COMPONENT = `/**
 import { element, OpenElement } from '@openelement/element';
 
 @element('${UTILITY_WIDGET_TAG}', { root: 'shadow-open' })
-export default class UtilityWidget extends OpenElement {
+export class UtilityWidget extends OpenElement {
   render() {
     return <span class='${UTILITY_WIDGET_CANDIDATES.join(' ')}'>utility widget</span>;
   }
@@ -254,6 +255,7 @@ async function packUtilityWidget(dir: string): Promise<string> {
     throw new Error('the utility-widget probe did not compile as an openElement island module');
   }
   const pkgDir = join(dir, 'acme-utility-widget');
+  await mkdir(join(pkgDir, 'src'), { recursive: true });
   await writeFile(
     join(pkgDir, 'package.json'),
     `${JSON.stringify(
@@ -272,8 +274,18 @@ async function packUtilityWidget(dir: string): Promise<string> {
       2,
     )}\n`,
   );
-  await mkdir(join(pkgDir, 'src'), { recursive: true });
-  await writeFile(join(pkgDir, 'src', 'utility-widget.js'), compiled.code);
+  // The compiler's emission is TypeScript (the release pack pipeline transpiles
+  // it while packing); a shipped package module must be plain JS. Transpile with
+  // the repo's own TypeScript — the same tool the packer's step uses — rather
+  // than hand-stripping annotations.
+  const emittedJs = ts.transpileModule(compiled.code, {
+    compilerOptions: {
+      target: ts.ScriptTarget.ES2022,
+      module: ts.ModuleKind.ESNext,
+      jsx: ts.JsxEmit.ReactJSX,
+    },
+  }).outputText;
+  await writeFile(join(pkgDir, 'src', 'utility-widget.js'), emittedJs);
   await writeFile(
     join(pkgDir, 'src', 'manifest.js'),
     `export const manifest = ${JSON.stringify(
