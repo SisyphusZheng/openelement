@@ -193,6 +193,41 @@ function resolveConfiguredSource(root: string, importPath: string): string | nul
  * or in a request-time page source. This keeps a declaration from becoming a
  * client-bundle tax merely because it exists in app/islands/.
  */
+/**
+ * The server-renderable module roots the CSS discovery pass walks (S-C1.4).
+ *
+ * Route/page/layout sources are SERVER-renderable roots and have nothing to do
+ * with browser hydration: this list must never be derived from the island set
+ * (a component whose JavaScript is never admitted to a client bundle still owns
+ * stylesheets that must be emitted). Two authoritative, hydration-independent
+ * sources are unioned with the traversal's own file set:
+ *
+ *  - the production build plan's route modules (`ctx.buildPlan.routes`), which
+ *    exist whenever the build knows a route — including builds where the
+ *    optional route cache the traversal reads is empty;
+ *  - the configured layout shells (`layout` / `layouts`), which render on the
+ *    server for every route but are not route modules themselves.
+ */
+function serverRenderedSeedFiles(
+  ctx: OpenElementBuildContext,
+  root: string,
+  scanned: ReadonlySet<string>,
+): string[] {
+  const seeds = new Set(scanned);
+  for (const route of ctx.buildPlan?.routes ?? []) {
+    const file = resolve(root, route.filePath);
+    if (existsSync(file)) seeds.add(file);
+  }
+  const shells = [ctx.phase3.layout, ...Object.values(ctx.phase3.layouts ?? {})];
+  for (const shell of shells) {
+    const source = (shell as { import?: unknown } | null | undefined)?.import;
+    if (typeof source !== 'string') continue;
+    const file = resolve(root, source.startsWith('/') ? source.slice(1) : source);
+    if (existsSync(file)) seeds.add(file);
+  }
+  return [...seeds];
+}
+
 export interface ReachableSourceScan {
   /** The admitted island tags observable in the rendered site or page sources. */
   readonly tags: Set<string>;
@@ -811,7 +846,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       // the SAME emission plugin above — so a server-only sheet is emitted,
       // hashed and named exactly like an island's, and no server-only
       // JavaScript enters any client bundle.
-      serverRenderedStyleEdgesPlugin([...reachableScan.sourceFiles]),
+      serverRenderedStyleEdgesPlugin(serverRenderedSeedFiles(ctx, root, reachableScan.sourceFiles)),
       {
         name: 'open:exclude-preact-rts',
         resolveId(id: string) {

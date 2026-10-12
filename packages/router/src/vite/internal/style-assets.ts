@@ -64,6 +64,7 @@ import { readFile } from 'node:fs/promises';
 import type { Plugin, ViteDevServer } from 'vite';
 import {
   compileElementModule,
+  readCompiledArtifactStyles,
   getStyleRequest,
   hasStyleImporter,
   lightRootScopeTag,
@@ -81,6 +82,7 @@ import {
   STYLE_SHEET_READY,
   STYLE_SHEET_URL,
 } from '@openelement/protocol/style-sheet';
+import { createLogger } from '@openelement/element';
 import { buildError, ClientBuildErrorCode } from '../../internal/error-codes.ts';
 import { scopeLightRootCss } from './light-css-scope.ts';
 import { dirname as posixDirname, relative as posixRelative } from 'pathe';
@@ -486,6 +488,11 @@ export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) =>
     resolveId: styleEdgeResolveId,
     async load(id) {
       const registryKey = styleAssetRegistryKey(id);
+      if (registryKey !== undefined && registryKey.includes('open-button')) {
+        log.warn(
+          `[css-discovery] emission load for open-button: request=${getStyleRequest(registryKey) !== undefined}`,
+        );
+      }
       if (registryKey === undefined) return null;
       const request = getStyleRequest(registryKey);
       if (!request) {
@@ -600,10 +607,17 @@ async function admitServerRenderedStyleEdges(
   },
   seeds: readonly string[],
 ): Promise<void> {
-  if (seeds.length === 0) return;
+  if (seeds.length === 0) {
+    log.warn('[css-discovery] no server-renderable seeds; nothing to discover');
+    return;
+  }
   const root = serverRenderRoot ?? process.cwd();
   const workspaceRoot = findBuildWorkspaceRoot(root) ?? undefined;
+  log.warn(`[css-discovery] seeds=${seeds.length}`);
   const walk = await walkModuleGraph(this, seeds);
+  log.warn(
+    `[css-discovery] walked=${walk.files.length} packed=${walk.files.filter((f) => f.includes('node_modules')).length}`,
+  );
   if (walk.truncated) {
     this.warn(
       'Server-rendered module discovery stopped at its module bound; some server-only ' +
@@ -625,8 +639,18 @@ async function admitServerRenderedStyleEdges(
     } catch {
       continue;
     }
-    if (compiled === null) continue;
-    registerStyleEdges(file, compiled.styleRequests ?? [], lightRootScopeTag(compiled.program));
+    if (compiled !== null) {
+      registerStyleEdges(file, compiled.styleRequests ?? [], lightRootScopeTag(compiled.program));
+      continue;
+    }
+    // A SHIPPED (already compiled) module — a package consumed from node_modules
+    // — has no authored grammar left to compile, but its `.css` edges are the
+    // same edges: recovered through the same read the build-time transform uses
+    // and registered through the same writer.
+    const artifact = readCompiledArtifactStyles(source, file);
+    if (artifact === undefined) continue;
+    registerStyleEdges(file, artifact.requests, artifact.scopeTag);
+    log.debug(`[css-discovery] packed artifact edges ${artifact.requests.length} from ${file}`);
   }
   const edges = new Map<string, string>();
   for (const file of walk.files) {
@@ -657,6 +681,9 @@ function withinRoot(candidate: string, root: string): boolean {
   const base = root.endsWith('/') ? root : `${root}/`;
   return candidate === root || candidate.startsWith(base);
 }
+
+/** The discovery pass's own diagnostics (visible without a debug flag). */
+const log = createLogger('router-style-discovery');
 
 /** Vite's asset reference placeholder, as its CSS text carries it. */
 const ASSET_PLACEHOLDER_PREFIX = '__VITE_ASSET__';
