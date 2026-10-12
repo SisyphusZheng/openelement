@@ -258,7 +258,7 @@ test('the SSR half fails closed when the sheet file is missing', async () => {
   expect(error.code).toEqual(ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED);
 });
 
-test('the dev plugin serves the inline adapter from the authored file, fail-closed', async () => {
+test('the dev plugin serves the resource-URL adapter, fail-closed', async () => {
   const plugin = devStyleAssetPlugin();
   const resolveId = plugin.resolveId as (
     this: unknown,
@@ -280,14 +280,31 @@ test('the dev plugin serves the inline adapter from the authored file, fail-clos
   );
   expect(error.code).toEqual(ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED);
 
-  // The dev adapter rides the module (no emitted asset to fetch): element's
-  // cross-realm StyleSheet + replaceSync with the authored bytes, no
-  // document-head sink.
+  // The client half carries the dev resource URL and the live-sheet holder —
+  // never the authored bytes, never a `replaceSync` of text, never a node.
   const load = plugin.load as (this: unknown, id: string) => Promise<string | null>;
-  const adapter = (await load.call({}, styleAssetGraphId(registryKey))) as string;
-  expect(adapter).toContain("import { StyleSheet } from '@openelement/element';");
-  expect(adapter).toContain(`sheet.replaceSync(${JSON.stringify(SHEET)});`);
-  expect(adapter).toContain('export default sheet;');
-  expect(adapter).not.toContain('appendChild');
-  expect(adapter).not.toContain('await fetch(');
+  const clientAdapter = (await load.call(
+    { environment: { name: 'client' } },
+    styleAssetGraphId(registryKey),
+  )) as string;
+  expect(clientAdapter).toContain('fetch(');
+  expect(clientAdapter).toMatch(/\/\.openElement\/authored-css\.[0-9a-f]{16}\.css/);
+  expect(clientAdapter).toContain('__openElementDevStyleSheets');
+  expect(clientAdapter, 'the live flag makes an edit reach connected roots').toContain(
+    '__openElementStyleSheetLive',
+  );
+  expect(clientAdapter, 'no authored CSS text rides the module').not.toContain(SHEET);
+  expect(clientAdapter).not.toContain('replaceSync');
+  expect(clientAdapter).not.toContain('appendChild');
+  expect(clientAdapter).toContain('export default sheet;');
+
+  // The server half declares the same resource and never fetches it: its
+  // delivery is the parser-visible link the DSD template / head carries.
+  const serverAdapter = (await load.call({}, styleAssetGraphId(registryKey))) as string;
+  expect(serverAdapter).toContain("import { StyleSheet } from '@openelement/element';");
+  expect(serverAdapter).toMatch(
+    /sheet\['__openElementStyleSheetUrl'\] = "\/\.openElement\/authored-css\.[0-9a-f]{16}\.css";/,
+  );
+  expect(serverAdapter, 'no authored CSS text rides the shim').not.toContain(SHEET);
+  expect(serverAdapter).not.toContain('fetch(');
 });

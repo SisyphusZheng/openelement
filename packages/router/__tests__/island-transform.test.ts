@@ -15,6 +15,23 @@ describe('island-transform - islandTransformPlugin', () => {
     expect(typeof plugin.transform).toEqual('function');
   });
 
+  test('a non-script module under the islands dir is never an island source', () => {
+    // The scanner admits `*.ts|tsx|js|jsx`; the transform mirrors it. An
+    // authored `.css` that happens to live in the islands directory is
+    // content: appending JS markers to it corrupted the module's own text, so
+    // a `.css?inline` read served the stylesheet with the markers inside it
+    // (S-C1.3 dev authored-CSS resource).
+    const transform = plugin.transform as unknown as TransformFn;
+    for (const id of [
+      '/project/app/islands/card.css',
+      '/project/app/islands/card.css?inline',
+      '/project/app/islands/card.png',
+      '/project/app/islands/data.json',
+    ]) {
+      expect(transform('.card { color: red }', id), id).toEqual(null);
+    }
+  });
+
   test('injects __island marker and __tagName for island files', () => {
     const transform = plugin.transform as unknown as TransformFn;
     const result = transform(

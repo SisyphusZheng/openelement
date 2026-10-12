@@ -373,7 +373,13 @@ test('with no tailwind key the dev document is unchanged (#1582 constraint)', as
   const doc = await fetchDoc(withPlugin);
   const controlDoc = await fetchDoc(control);
   expect(doc, 'tailwind-less dev document carries no entry artifact').not.toContain('tailwind.css');
-  expect(doc).not.toMatch(/<link rel="stylesheet"/);
+  // The document's stylesheet links belong to the AUTHORED components' dev
+  // resources (S-C1.3); this plugin contributes none of them, and the
+  // byte-identical comparison below is the statement that it contributes
+  // nothing at all.
+  expect(doc.match(/<link rel="stylesheet"[^>]*>/g) ?? [], 'no entry link').toEqual(
+    controlDoc.match(/<link rel="stylesheet"[^>]*>/g) ?? [],
+  );
   expect(doc, 'OFF stays OFF: byte-identical document').toEqual(controlDoc);
 });
 
