@@ -42,6 +42,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -610,22 +611,68 @@ function copyPackageDir(src: string, dest: string): void {
  * staged package whose source reaches a vite-engine peer (the router's
  * tailwind preset since C2) cannot resolve at all.
  */
+/**
+ * The staging install argv.
+ *
+ * `--include=dev` is REQUIRED, not cosmetic: the staging pins its toolchain
+ * (`vite-plus` and the aliased vite-plus core) in `devDependencies` on purpose,
+ * so the toolchain can never leak into a published package's runtime deps — and
+ * npm derives `omit=dev` from an ambient `NODE_ENV=production` (a common CI /
+ * shell setting). Without the explicit include, npm installs successfully while
+ * silently skipping the toolchain, and the failure only surfaces later as an
+ * ENOENT spawn of `<staging>/node_modules/.bin/vp`. The staging install must
+ * therefore state its own environment instead of inheriting the caller's.
+ */
+export const VP_STAGING_INSTALL_ARGS: readonly string[] = [
+  'install',
+  '--include=dev',
+  '--ignore-scripts',
+  '--no-audit',
+  '--no-fund',
+  '--legacy-peer-deps',
+];
+
+/** The staged CLI `vp pack` runs; the host needs no global vp installation. */
+export function vpStagingCliPath(stagingRoot: string): string {
+  return `${stagingRoot}/node_modules/.bin/vp`;
+}
+
+/**
+ * Fail fast with an actionable message when the staging toolchain did not land.
+ * A missing binary must never reach the pack assembler as a bare spawn ENOENT.
+ */
+export function assertVpStagingCli(stagingRoot: string, installOutput = ''): void {
+  const cli = vpStagingCliPath(stagingRoot);
+  let usable = false;
+  try {
+    usable = statSync(cli).isFile() || statSync(cli).isSymbolicLink();
+  } catch {
+    usable = false;
+  }
+  if (usable) return;
+  throw new Error(
+    `[vp-pack] the staging toolchain CLI ${cli} is missing after npm install. ` +
+      'The staging manifest declares vite-plus and the aliased vite-plus core in devDependencies, ' +
+      'so an inherited production npm environment (NODE_ENV=production -> omit=dev) would skip them; ' +
+      `the install must include dev dependencies.${installOutput ? `\n${installOutput}` : ''}`,
+  );
+}
+
 export async function installVpStagingWorkspace(
   staged: VpStagedWorkspace,
   members: readonly PackageInfo[],
 ): Promise<void> {
-  const install = await runWithOutput(
-    'npm',
-    ['install', '--ignore-scripts', '--no-audit', '--no-fund', '--legacy-peer-deps'],
-    {
-      cwd: staged.stagingRoot,
-    },
-  );
+  const install = await runWithOutput('npm', [...VP_STAGING_INSTALL_ARGS], {
+    cwd: staged.stagingRoot,
+  });
   if (!install.success) {
     throw new Error(
       `[vp-pack] npm install failed in the vp staging workspace:\n${install.stdout}\n${install.stderr}`,
     );
   }
+  // Fail fast, before the tarball assembler: a silently-skipped toolchain must
+  // read as a toolchain error, not as an ENOENT from a later spawn.
+  assertVpStagingCli(staged.stagingRoot, `${install.stdout}\n${install.stderr}`);
   const scopeDir = `${staged.stagingRoot}/node_modules/@openelement`;
   mkdirSync(scopeDir, { recursive: true });
   for (const member of members) {
@@ -647,7 +694,7 @@ export async function installVpStagingWorkspace(
  * the host needs no global vp installation.
  */
 export async function runVpPack(staged: VpStagedWorkspace): Promise<string> {
-  const vp = `${staged.stagingRoot}/node_modules/.bin/vp`;
+  const vp = vpStagingCliPath(staged.stagingRoot);
   const result = await runWithOutput(vp, ['pack'], { cwd: staged.packDir });
   const output = `${result.stdout}\n${result.stderr}`;
   if (!result.success) {

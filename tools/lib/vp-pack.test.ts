@@ -19,6 +19,9 @@ import {
   VP_TOOLCHAIN,
   vpPackConfigFile,
   vpPackEntries,
+  VP_STAGING_INSTALL_ARGS,
+  assertVpStagingCli,
+  vpStagingCliPath,
 } from './vp-pack.ts';
 import type { PackageInfo } from './package-graph.ts';
 
@@ -635,5 +638,45 @@ test('runtime extraction fails closed when the runtimeModulePath helper is missi
     expect(problems[0]).toContain('runtime-module-path.ts');
   } finally {
     await rm(root, { recursive: true });
+  }
+});
+
+// ─── S-C1.4 toolchain recovery: the staging install must state its own env ──
+
+test('the staging install includes dev dependencies regardless of the caller environment', () => {
+  // RED before the fix: npm derives `omit=dev` from an ambient
+  // NODE_ENV=production, and the staging toolchain (vite-plus + the aliased
+  // vite-plus core) lives in devDependencies by design — so the install
+  // succeeded while silently skipping the toolchain, and the failure surfaced
+  // later as an ENOENT spawn of <staging>/node_modules/.bin/vp.
+  expect(VP_STAGING_INSTALL_ARGS).toContain('--include=dev');
+  // The rest of the recipe is unchanged: lifecycle scripts stay off, the peer
+  // check stays relaxed for the vite alias, and nothing becomes online-only.
+  expect(VP_STAGING_INSTALL_ARGS).toContain('--ignore-scripts');
+  expect(VP_STAGING_INSTALL_ARGS).toContain('--legacy-peer-deps');
+  expect(VP_STAGING_INSTALL_ARGS).not.toContain('--omit=dev');
+});
+
+test('a staging root without the toolchain CLI fails fast with an actionable error', async () => {
+  const stagingRoot = await mkdtemp(join(tmpdir(), 'vp-staging-guard-'));
+  try {
+    // RED before the fix: this condition reached the pack assembler as a bare
+    // spawn ENOENT with no explanation of the staging root or the cause.
+    const error = assertThrowsIncludes(
+      () => assertVpStagingCli(stagingRoot, 'npm install (exit 0)'),
+      Error,
+    );
+    expect(error.message).toContain('staging toolchain CLI');
+    expect(error.message).toContain(stagingRoot);
+    expect(error.message).toContain('include dev dependencies');
+
+    // GREEN: an installed CLI (file or link) satisfies the guard.
+    const binDir = join(stagingRoot, 'node_modules', '.bin');
+    mkdirSync(binDir, { recursive: true });
+    writeFileSync(join(binDir, 'vp'), '#!/bin/sh\nexit 0\n', 'utf8');
+    expect(() => assertVpStagingCli(stagingRoot)).not.toThrow();
+    expect(vpStagingCliPath(stagingRoot)).toEqual(join(binDir, 'vp'));
+  } finally {
+    await rm(stagingRoot, { recursive: true, force: true });
   }
 });
