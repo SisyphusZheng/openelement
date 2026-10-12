@@ -227,7 +227,7 @@ export const ContextErrorCode = {
 /** Compiled-style application failures (phase `csr`). */
 export const StyleErrorCode = {
   /** The target root (shadow root or document) has no `adoptedStyleSheets` support. */
-  ADOPTED_STYLES_UNSUPPORTED: 'OE_STYLES_ADOPTED_SHEETS_UNSUPPORTED',
+  ADOPTED_STYLES_UNSUPPORTED: 'OE_STYLES_ADOPTED_STYLES_UNSUPPORTED',
   /** A generated sheet adapter could not fill its sheet (request or replace failed). */
   SHEET_LOAD_FAILED: 'OE_STYLES_SHEET_LOAD_FAILED',
   /**
@@ -236,6 +236,14 @@ export const StyleErrorCode = {
    * document head and a DSD template) enforce.
    */
   INVALID_STYLE_HREF: 'OE_STYLES_INVALID_HREF',
+  /**
+   * A URL-less (author-owned in-memory, or shim) stylesheet's rules could not
+   * be read while serializing server output (phase `ssr`): the sheet is
+   * skipped and reported, and the renderer never invents an external URL for
+   * author-owned data. A cross-origin `CSSStyleSheet` handed to
+   * `static styles` is the reachable cause.
+   */
+  SHEET_RULES_UNREADABLE: 'OE_STYLES_SHEET_RULES_UNREADABLE',
 } as const;
 
 /**

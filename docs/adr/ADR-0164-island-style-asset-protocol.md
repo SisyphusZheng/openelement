@@ -671,3 +671,27 @@ those modules cannot emit their bytes. A truly URL-less, author-owned in-memory
 `CSSStyleSheet` is untouched and unchanged in kind: no file, no edge, no URL —
 externalizing it would need a runtime-to-file serialization pipeline this
 protocol deliberately does not have.
+
+**Amendment (2026-10-12): the URL-less memory-sheet contract (S-C2/S-10).** The
+two sheet classes are split by ONE fact — whether the sheet object carries an
+external identity (`STYLE_SHEET_URL`, recorded only by a build/dev adapter). An
+author-owned in-memory sheet (or the SSR shim) has none, and then:
+
+- **SSR** serializes its rules verbatim as the marked
+  `<style data-oe-static-styles>` text node — the one legitimate inline path,
+  author data rather than framework delivery — and never invents an external URL
+  for it. A *light* root's URL-less sheet follows the same rule: its bytes are
+  the author's, and the renderer has no mandate to scope them.
+- **CSR** keeps the standard native semantics: the sheet object is adopted
+  through `adoptedStyleSheets` like any other, with no node, no request and no
+  second copy.
+- **Unreadable** rules (the reachable case is a cross-origin `CSSStyleSheet`
+  taken from the document and handed to `static styles`, whose `cssRules` throws)
+  are SKIPPED and REPORTED with the catalogued
+  `OE_STYLES_SHEET_RULES_UNREADABLE` (phase `ssr`) naming the component — never
+  a silent drop, never a render crash, and never a fabricated URL standing in
+  for bytes the build does not own.
+
+Consumer form: `packages/element/__tests__/compiled-server/memory-sheet-policy.test.ts`
+(the inline text with no `<link>`, the URL-carrying boundary sheet that is linked
+and never inlined, and the unreadable sheet's report).

@@ -39,6 +39,19 @@ export default class LightProbePage extends OpenElement {
             asset, so the asset's `@import` and `url()` resolution is what the
             shadow tree styles depend on. */}
         <probe-shadow-card></probe-shadow-card>
+        {/* The CSS-semantics probe (S-C2/S-11): its sheet carries nesting, a
+            keyframe animation, a registered @property and a ::slotted rule. The
+            slotted child below is light DOM the shadow sheet may only reach
+            through `::slotted()`, and `p.nested-target` is the light-DOM twin of
+            the shadow sheet's nested selector — it must NOT match. */}
+        <semantics-probe>
+          <span slot='label' class='probe-slot'>slotted label</span>
+        </semantics-probe>
+        <p class='nested-target'>light twin</p>
+        {/* Document-scope `@property` registration probes (S-C2/S-11): this
+            sheet is a document link, so the registration must be effective. */}
+        <span class='doc-ratio-default'>doc ratio default</span>
+        <span class='doc-ratio-invalid'>doc ratio invalid</span>
         <light-probe-runtime-carrier hidden></light-probe-runtime-carrier>
       </main>
     );

@@ -20,7 +20,14 @@ import type {
   CompiledPropertyMetadata,
   PartProgram,
 } from '@openelement/protocol/part-program';
-import { FacadeErrorCode, OpenElementError, raiseFrameworkError } from './internal/core/errors.ts';
+import {
+  FacadeErrorCode,
+  frameworkError,
+  OpenElementError,
+  raiseFrameworkError,
+  reportError,
+  StyleErrorCode,
+} from './internal/core/errors.ts';
 import {
   MAX_COMPOSITION_DEPTH,
   STREAM_MAX_FIELDS,
@@ -182,15 +189,37 @@ function collectStaticStyleCss(ctor: CompiledComponentConstructor): string | und
   let css = '';
   for (const sheet of sheets) {
     if (sheetResourceUrls(sheet).length > 0) continue; // delivered by a link
-    const rules = (sheet as { cssRules?: ArrayLike<{ cssText: string }> } | undefined)?.cssRules;
-    if (!rules) continue;
+    // The property ACCESS is part of the read, not setup: a cross-origin sheet
+    // object throws from `cssRules` itself, and that must not take the whole
+    // render down (alpha15 S lane, S-C2/S-10).
     try {
+      const rules = (sheet as { cssRules?: ArrayLike<{ cssText: string }> } | undefined)?.cssRules;
+      if (!rules) continue;
       for (const rule of Array.from(rules)) css += rule.cssText + '\n';
-    } catch {
-      // Cross-origin or otherwise unreadable sheets are skipped.
+    } catch (cause) {
+      // Reported, never silent (S-C2/S-10): author-owned URL-less data whose
+      // bytes this renderer cannot read is SKIPPED with a diagnostic — the
+      // renderer must not invent an external URL for it, and a page must not
+      // fail because one component's sheet object is unreadable.
+      reportError(
+        frameworkError(
+          StyleErrorCode.SHEET_RULES_UNREADABLE,
+          `[compiled-styles] the URL-less style sheet of ${tagNameOf(ctor)} could not be read ` +
+            `for server rendering and is skipped: ${
+              cause instanceof Error ? cause.message : String(cause)
+            }`,
+          { phase: 'ssr', cause: cause instanceof Error ? cause : undefined },
+        ),
+      );
     }
   }
   return css === '' ? undefined : css;
+}
+
+/** The compiled tag a diagnostic names, or `<unknown>` for a foreign class. */
+function tagNameOf(ctor: CompiledComponentConstructor): string {
+  const tag = (ctor as { __partProgram?: { tag?: unknown } }).__partProgram?.tag;
+  return typeof tag === 'string' && tag !== '' ? `<${tag}>` : '<unknown>';
 }
 
 /**
