@@ -424,6 +424,22 @@ test('tryStatic cache-control: content-hashed assets immutable, HTML rechecked o
     expect(asset).toBeTruthy();
     expect(asset.headers.get('cache-control')).toEqual('public, max-age=31536000, immutable');
 
+    // The style-asset protocol's bare content address (alpha15 S lane,
+    // S-C2/S-14): an emitted sheet is named `assets/<12-hex>.css`, and it is a
+    // content-addressed resource like any other — a duplicate request (a client
+    // adapter's synchronous sheet creation can coincide with the declared
+    // link's parse) must be a cache hit, not a revalidation.
+    await writeFile(join(root, 'assets', 'd94222edbb02.css'), ':host{display:block}');
+    const sheet = tryStatic(root, '/assets/d94222edbb02.css');
+    expect(sheet).toBeTruthy();
+    expect(sheet.headers.get('cache-control')).toEqual('public, max-age=31536000, immutable');
+
+    // A short, human-named asset is NOT a content address: it must revalidate.
+    await writeFile(join(root, 'assets', 'admin.css'), 'body{}');
+    const named = tryStatic(root, '/assets/admin.css');
+    expect(named).toBeTruthy();
+    expect(named.headers.get('cache-control')).toEqual('no-cache');
+
     const html = tryStatic(root, '/');
     expect(html).toBeTruthy();
     expect(html.headers.get('cache-control')).toEqual('no-cache');

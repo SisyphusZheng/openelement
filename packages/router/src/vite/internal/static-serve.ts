@@ -35,13 +35,21 @@ export function contentTypeFor(filePath: string): string {
   return type.startsWith('text/') ? `${type}; charset=UTF-8` : type;
 }
 
-const CONTENT_HASHED_ASSET_RE = /(?:^|\/)assets\/[^/]*-[0-9a-zA-Z_-]{8,}\.[^/]+$/;
+const CONTENT_HASHED_ASSET_RE = /(?:^|\/)assets\/(?:[^/]*-[0-9a-zA-Z_-]{8,}|[0-9a-f]{12})\.[^/]+$/;
 
 /**
  * Cache-Control baseline for static output: content-hashed build assets are
  * immutable; HTML is the deployment boundary and must be rechecked. Every
  * other (unhashed) file — including the framework's own client runtime —
  * can change across deploys under the same URL, so it must be revalidated.
+ *
+ * Two content-addressed name shapes are recognized: the bundler's
+ * `<name>-<hash>` form, and the style-asset protocol's bare content address
+ * (`assets/<12-hex>.css`, the emitted sheet's own hash — alpha15 S lane,
+ * S-C2/S-14). A sheet may legitimately be requested twice (a client adapter
+ * creates its sheet `CSSStyleSheet` synchronously, so its fetch can coincide
+ * with the declared link's parse); without the second shape the duplicate paid
+ * a network revalidation instead of a cache hit.
  */
 export function cacheControlFor(filePath: string): string | null {
   if (CONTENT_HASHED_ASSET_RE.test(filePath.replaceAll(SEP, '/'))) {

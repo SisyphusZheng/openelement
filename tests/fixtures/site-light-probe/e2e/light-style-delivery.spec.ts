@@ -192,6 +192,39 @@ test('upgraded islands create no style node and do not re-deliver the linked she
   expect(await computedColor(page, CARD_TAG, '.probe-shared')).toBe(CARD_COLOR);
 });
 
+test('every emitted sheet is served under the immutable cache contract (S-C2/S-14)', async ({
+  page,
+}) => {
+  // Duplicate-delivery audit. The sheet object a client adapter hands back is
+  // created SYNCHRONOUSLY (the WebKit race fix), so its fetch can coincide with
+  // the declared link's own parse: the resource may legitimately be requested
+  // twice — but it is CONTENT-ADDRESSED, so both the delivery and the cache
+  // contract must make the second one free. A hashed `.css` asset served with
+  // `no-cache` would pay a network round trip per coincidence, which is the
+  // defect this pins (the static-serve immutable rule must recognize the style
+  // assets' name shape).
+  const responses: Array<{ href: string; cacheControl: string }> = [];
+  page.on('response', (response) => {
+    const url = new URL(response.url());
+    if (url.pathname.startsWith('/client/assets/') && url.pathname.endsWith('.css')) {
+      responses.push({
+        href: url.pathname,
+        cacheControl: response.headers()['cache-control'] ?? '',
+      });
+    }
+  });
+  await page.goto('/');
+  await page.waitForLoadState('load');
+  expect(responses.length, 'the page loads its declared sheets').toBeGreaterThan(0);
+  for (const { href, cacheControl } of responses) {
+    expect(href, 'every requested stylesheet is a content-addressed asset').toMatch(
+      /^\/client\/assets\/[0-9a-f]{12}\.css$/,
+    );
+    expect(cacheControl, `${href} must be immutable`).toContain('immutable');
+    expect(cacheControl, `${href} must not require revalidation`).not.toContain('no-cache');
+  }
+});
+
 test('once the link is gone a reconnect adopts the sheet, keeping styles and adding no node', async ({
   page,
 }) => {
