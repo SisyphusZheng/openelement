@@ -11,9 +11,9 @@ import {
 test('vite gate accepts the unified Vite 8 baseline', () => {
   expect(
     checkManifests([
-      { path: 'deno.json', imports: { vite: 'npm:vite@8.0.16' } },
+      { path: 'package.json', imports: { vite: 'npm:vite@8.0.16' } },
       {
-        path: 'packages/router/deno.json',
+        path: 'packages/router/package.json',
         imports: { vite: 'npm:vite@8.0.16' },
         peerDependencies: { vite: 'npm:vite@^8.0.0' },
       },
@@ -27,11 +27,20 @@ test('vite gate accepts the unified Vite 8 baseline', () => {
 
 test('vite gate rejects legacy vite majors and transitional paths', () => {
   const violations = checkManifests([
-    { path: 'examples/open-element-in-fresh/deno.json', imports: { vite: 'npm:vite@^7.1.4' } },
-    { path: 'x/deno.json', imports: { 'rolldown-vite': 'npm:rolldown-vite@1.0.0' } },
-    { path: 'y/deno.json', imports: { plugin: 'npm:@openelement/adapter-vite@1.0.0' } },
-    { path: 'z/deno.json', imports: { terser: 'npm:@rollup/plugin-terser@1.0.0' } },
-    { path: 'p/deno.json', peerDependencies: { vite: 'npm:vite@8.0.16' } },
+    { path: 'tests/fixtures/legacy-example/package.json', imports: { vite: 'npm:vite@^7.1.4' } },
+    {
+      path: 'packages/legacy-x/package.json',
+      imports: { 'rolldown-vite': 'npm:rolldown-vite@1.0.0' },
+    },
+    {
+      path: 'packages/legacy-y/package.json',
+      imports: { plugin: 'npm:@openelement/adapter-vite@1.0.0' },
+    },
+    {
+      path: 'packages/legacy-z/package.json',
+      imports: { terser: 'npm:@rollup/plugin-terser@1.0.0' },
+    },
+    { path: 'packages/legacy-p/package.json', peerDependencies: { vite: 'npm:vite@8.0.16' } },
   ]);
   expect(violations.length).toEqual(5);
 });
@@ -60,7 +69,7 @@ test('vite gate holds the starter template to the ${v.vite} token and anchors it
   expect(
     checkTemplateViteText(tmpl, '"dependencies": { "vite": "npm:vite@8.0.16" }').length,
   ).toEqual(1);
-  expect(checkTemplateViteText('packages/router/deno.json', 'npm:vite@8.0.16')).toEqual([]);
+  expect(checkTemplateViteText('packages/router/package.json', 'npm:vite@8.0.16')).toEqual([]);
   // The embedded copy the packed CLI stamps into generated starters is
   // anchored to the canonical pin.
   expect(checkStarterVitePin(`export const VITE_STARTER_PIN = '${VITE_DEV_PIN}';\n`)).toEqual([]);

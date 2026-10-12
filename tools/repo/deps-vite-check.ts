@@ -344,12 +344,7 @@ if (import.meta.main) {
       records.push(manifestRecordFromPackageJson(path, manifest));
       continue;
     }
-    const manifest = await readJsonFile<ManifestRecord>(path);
-    if (!manifest) {
-      failures.push({ where: path, message: 'manifest missing or unparseable' });
-      continue;
-    }
-    records.push({ path, imports: manifest.imports, peerDependencies: manifest.peerDependencies });
+    failures.push({ where: path, message: 'unrecognized manifest path' });
   }
   failures.push(...checkManifests(records));
   failures.push(...checkStarterVitePin(await readFile('packages/create/src/version.ts', 'utf8')));
