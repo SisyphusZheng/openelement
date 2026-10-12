@@ -489,7 +489,11 @@ function escapeRegExp(value: string): string {
 /** Resolve a `--packages` name list to PACKAGE_CONFIGS paths (T7 per-package mode). */
 export function resolvePackageSubset(names: readonly string[]): string[] {
   const byShort = new Map(PACKAGE_CONFIGS.map((path) => [path.split('/')[1], path] as const));
-  const byFull = new Map(
+  // Explicit <string, string> keys: the lookup value is a user-typed `--packages`
+  // name, so the map must accept any string — the inferred
+  // `@openelement/${string}` key type made `get(name)` a type error while the
+  // runtime lookup (and its error message below) is exactly this general.
+  const byFull = new Map<string, string>(
     PACKAGE_CONFIGS.map((path) => [`@openelement/${path.split('/')[1]}`, path] as const),
   );
   const resolved: string[] = [];
