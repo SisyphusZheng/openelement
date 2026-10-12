@@ -171,6 +171,36 @@ export interface CompiledElementPluginOptions {
 }
 
 /**
+ * Register one module's style edges (the registry's one write path, S-C1.4).
+ *
+ * The importing component's root scope is part of every edge it registers
+ * (alpha15 S lane, S-C1.2): a light-root component's sheets leave the build
+ * wrapped in `@scope (<tag>)`, so the tag travels to the intercept through the
+ * registry key. A shipped artifact states the same fact in its Part Program
+ * literal.
+ *
+ * The Vite transform is the caller for a module the bundler processes; a build
+ * host that admits a module for its ADMISSION FACTS alone (a Page or Layout the
+ * server renders and no island imports) calls the same step with the same
+ * compiled program — no second writer, no second registry.
+ */
+export function registerStyleEdges(
+  id: string,
+  specifiers: readonly string[],
+  scopeTag: string | undefined,
+): void {
+  for (const specifier of specifiers) {
+    registerStyleRequest({
+      moduleId: styleRequestModuleId(id, specifier, scopeTag),
+      importer: id,
+      specifier,
+      file: styleRequestFile(id, specifier),
+      ...(scopeTag === undefined ? {} : { scopeTag }),
+    });
+  }
+}
+
+/**
  * The `open:compiled-element` Vite plugin: runs at `enforce: 'pre'` so the
  * compiler sees authored TSX before Vite's own TS/JSX lowering, compiles every
  * module with a canonically bound `@element` decorator, and leaves all other
@@ -211,21 +241,11 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
         // never writes files or reads sheet bytes; the host build owns the
         // emitted artifacts from here.
         if (styleRequests !== undefined) {
-          // The importing component's root scope is part of every edge it
-          // registers (alpha15 S lane, S-C1.2): a light-root component's
-          // sheets leave the build wrapped in `@scope (<tag>)`, so the tag
-          // travels to the intercept through the registry key. A shipped
-          // artifact states the same fact in its Part Program literal.
-          const scopeTag = compiled ? lightRootScopeTag(compiled.program) : artifact?.scopeTag;
-          for (const specifier of styleRequests) {
-            registerStyleRequest({
-              moduleId: styleRequestModuleId(id, specifier, scopeTag),
-              importer: id,
-              specifier,
-              file: styleRequestFile(id, specifier),
-              ...(scopeTag === undefined ? {} : { scopeTag }),
-            });
-          }
+          registerStyleEdges(
+            id,
+            styleRequests,
+            compiled ? lightRootScopeTag(compiled.program) : artifact?.scopeTag,
+          );
         }
         // The compiled component's statically admitted class tokens (alpha15 S
         // lane) travel through the candidate registry: the host build hands

@@ -610,3 +610,50 @@ referenced from such a sheet lands as a source-relative path in the emitted
 asset; the same fonts are delivered correctly by the document entry's
 stylesheet, so no page regresses. That is a different emitter (the Tailwind peer
 compile owns the text), recorded for the S lane rather than changed here.
+
+## Amendment (2026-10-12): server-rendered components join discovery (#1609, S-C1.4)
+
+The S-C1.2 boundary was structural, not a missing feature in the protocol: the
+client build's graph contains the islands and only the islands, so a Page,
+Layout or nested component that the SERVER renders and no island imports never
+had its authored `.css` edges registered in that build. The SSR build registered
+them, found no emitted asset, and fell back to a framework-generated inline
+`<style>` — written where the component rendered (inside the Light DOM subtree,
+or the DSD template), invisible to the document head collection, and outside the
+one-resource-one-delivery contract. In the WWW build that affected the page and
+layout layers.
+
+**Discovery extends the facts the build already had.** The client build already
+walks the route/page/layout sources the server renders (the same traversal that
+selects island delivery: `findReachableIslandTags`), and it now keeps the file
+set that traversal visited and hands it to `serverRenderedStyleEdgesPlugin`
+(`router/vite/internal/style-assets.ts`). That pass asks the COMPILER for each
+module's program — `compileElementModule` + the registry's one write path,
+`registerStyleEdges`, the very step the transform calls — and then loads every
+registered edge through `clientStyleAssetPlugin`: the same plugin instance, the
+same Vite CSS processing, the same content addressing, the same manifest record
+and the same adapters an island's sheet gets, in the same client build. The
+modules are READ, never imported: no server-only JavaScript reaches the client
+bundle, and there is no emission for tree shaking to drop. Registration happens
+in the module-LOADING phase (a plugin `load` hook), because reaching a sheet's
+text through Vite's `?inline` CSS module is only possible while the toolchain is
+loading modules.
+
+**The fallback is retired for the URL-addressable category.** The SSR half no
+longer inlines text for a registered edge: an in-root sheet with no emitted
+asset now THROWS a coded diagnostic (`OE_CLIENT_BUILD_STYLE_ASSET_UNREGISTERED`)
+instead of silently producing an inline `<style>`. The one remaining inline
+path is explicit and reported: an out-of-root (package) sheet that never entered
+any client graph logs a warning naming the file and the `packageIslands` remedy,
+because a build that never sees those modules cannot emit their bytes. Every
+component sheet the build can address is external, and the document head
+declares it exactly once, in deterministic order, for JavaScript-enabled and
+JavaScript-disabled renders alike.
+
+**URL-less author-owned sheets are untouched and unchanged in kind.** A sheet
+that is an in-memory `CSSStyleSheet` (author data) has no file, no registry
+edge and no resource URL: it never reaches `serverStyleAssetPlugin`, so nothing
+in this amendment externalizes it and nothing regresses it — the serializer's
+inline `<style>` remains its delivery, as ADR-0164 already recorded. Turning
+runtime objects into files would need a serialization pipeline this protocol
+does not have and does not want.
