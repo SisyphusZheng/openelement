@@ -1,0 +1,12 @@
+{
+  "name": "@openelement/fixture-router-base-path",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node ../../../packages/router/src/cli/build.ts",
+    "e2e": "playwright test --config e2e/playwright.config.ts --project=chromium",
+    "e2e:browsers": "playwright test --config e2e/playwright.config.ts",
+    "gate": "node ../../../tools/repo/gate.ts @openelement/fixture-router-base-path#build @openelement/fixture-router-base-path#e2e:browsers"
+  }
+}
