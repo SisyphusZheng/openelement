@@ -140,7 +140,19 @@ export function buildPlugin(
       // compile inside the client build, so a declared entry is itself a
       // reason to run Phase 2 even when the app carries no islands.
       const tailwindOptions = resolveTailwindOptions(options.tailwind);
-      if (totalIslands > 0 || hasEnhancedForms || tailwindOptions) {
+      // S-C2/S-12: an app whose components are all server-rendered (no islands,
+      // no enhanced forms, no Tailwind) still needs Phase 2 — the client build
+      // is the ONE owner of the emitted style assets, and a server-rendered
+      // component's authored `.css` edge is declared by the SSR build as a URL
+      // (the inline fallback retired with S-C1.4). Without this term such an
+      // app skipped Phase 2 entirely and Phase 3 failed closed on every one of
+      // its sheets. buildClient's own shortcuts keep the "zero client JS"
+      // contract: it runs the emission stage and removes the delivery
+      // artifacts when the app turned out to own no sheet at all.
+      const hasServerRenderedPages = (ctx.phase1.cachedRoutes ?? []).some(
+        (route) => route.type === 'page',
+      );
+      if (totalIslands > 0 || hasEnhancedForms || tailwindOptions || hasServerRenderedPages) {
         await runClientIslandBuild(ctx);
       }
 

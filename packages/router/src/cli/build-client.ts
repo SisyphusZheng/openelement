@@ -394,8 +394,9 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   // the style-request registry's bookkeeping is this build's
   // lifetime — the SSR build clears and re-registers through its own
   // transforms, and a stale entry from an earlier build in this process must
-  // never answer a request this build's graph did not produce.
-  clearStyleRequests();
+  // never answer a request this build's graph did not produce. The clear runs
+  // AFTER the server-rendered-edges read below, which asks the Phase 1 graph's
+  // registrations whether this app owns server-only sheets at all (S-C2/S-12).
   const root = ctx.phase3.root || process.cwd();
   const outDir = ctx.phase3.outDir || DEFAULT_OUT_DIR;
   const islandsDir = ctx.phase3.islandsDir || DEFAULT_ISLANDS_DIR;
@@ -480,18 +481,6 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const componentSheetSpecifier =
     shadowCandidates.length > 0 ? COMPONENT_SHEET_SPECIFIER : undefined;
 
-  if (
-    localIslands.length === 0 &&
-    packageIslandDecls.length === 0 &&
-    compilerBehaviorDecls.length === 0 &&
-    !enhancedForms &&
-    !tailwindOptions
-  ) {
-    await removeClientDeliveryArtifacts(root, outDir);
-    log.info('No islands found - zero client JS output');
-    return null;
-  }
-
   const localDeliveryTags = localIslands.flatMap((tagName) =>
     deliveryTagsForLocal(
       tagName,
@@ -504,6 +493,38 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     ...new Set([...localDeliveryTags, ...compilerDeliveryTags, ...packageDeliveryTags]),
   ];
   const reachableScan = findReachableIslandTags(ctx, root, outDir, candidateTags);
+
+  // The server-rendered roots this build must serve (S-C1.4). They are the
+  // reason the emission stage runs even when the app has nothing to deliver to
+  // the browser: a server-rendered component's authored `.css` edge is declared
+  // by the SSR build as a URL, and the retired inline fallback is not an
+  // answer. Without this term the zero-client-JS shortcuts below would return
+  // before the client build and an app with no islands, no enhanced forms and
+  // no Tailwind — but with server-rendered components that own sheets — would
+  // emit no asset at all, failing the SSR build closed on every one of its
+  // sheets (reproduced on the non-root-base fixture, S-C2/S-12).
+  const seeds = serverRenderedSeeds(ctx, root, reachableScan.sourceFiles, {
+    localTagNames: localIslands,
+    localFiles: localIslandFiles,
+    packageDecls: packageIslandDecls,
+  });
+  const hasServerRenderedRoots = seeds.files.length > 0 || seeds.specifiers.length > 0;
+  // This build's own registry lifetime starts here.
+  clearStyleRequests();
+
+  if (
+    localIslands.length === 0 &&
+    packageIslandDecls.length === 0 &&
+    compilerBehaviorDecls.length === 0 &&
+    !enhancedForms &&
+    !tailwindOptions &&
+    !hasServerRenderedRoots
+  ) {
+    await removeClientDeliveryArtifacts(root, outDir);
+    log.info('No islands found - zero client JS output');
+    return null;
+  }
+
   const reachableTags = reachableScan.tags;
   const selectedLocal = localIslands
     .map((tagName, index) => ({ tagName, index }))
@@ -532,16 +553,33 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   ctx.phase1.packageIslandDecls = selectedPackageDecls;
   ctx.phase1.compilerBehaviorDecls = selectedCompilerBehaviorDecls;
 
+  // S-C2/S-12: an app with server-rendered sheets but nothing to deliver to
+  // the browser still needs this build — for the emission stage alone. The
+  // generated entry is the island-free placeholder (`generateClientEntry`), so
+  // the build ships styles and no client JavaScript.
+  const styleOnlyEmission =
+    hasServerRenderedRoots &&
+    selectedLocalTags.length === 0 &&
+    selectedPackageDecls.length === 0 &&
+    selectedCompilerBehaviorDecls.length === 0 &&
+    !enhancedForms &&
+    !tailwindOptions;
+
   if (
     selectedLocalTags.length === 0 &&
     selectedPackageDecls.length === 0 &&
     selectedCompilerBehaviorDecls.length === 0 &&
     !enhancedForms &&
-    !tailwindOptions
+    !tailwindOptions &&
+    !hasServerRenderedRoots
   ) {
     await removeClientDeliveryArtifacts(root, outDir);
     log.info('No admitted reachable islands - zero client JS output');
     return null;
+  }
+
+  if (styleOnlyEmission) {
+    log.info('Server-rendered style edges found - style-only client build, zero client JS');
   }
 
   const totalIslands =
@@ -891,14 +929,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       // the SAME emission plugin above — so a server-only sheet is emitted,
       // hashed and named exactly like an island's, and no server-only
       // JavaScript enters any client bundle.
-      serverRenderedStyleEdgesPlugin(
-        serverRenderedSeeds(ctx, root, reachableScan.sourceFiles, {
-          localTagNames: localIslands,
-          localFiles: localIslandFiles,
-          packageDecls: packageIslandDecls,
-        }),
-        styleAssetEmission,
-      ),
+      serverRenderedStyleEdgesPlugin(seeds, styleAssetEmission),
       {
         name: 'open:exclude-preact-rts',
         resolveId(id: string) {
@@ -994,8 +1025,10 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     // element runtime, so the emitted graph must group runtime modules into
     // the shared chunk — zero matches is a structural failure (per-island
     // runtime copies would ship silently), not a degraded chunk layout. Lit
-    // builds are element-free by design (#1339) and skip the guard.
-    if (ctx.options.renderer !== 'lit') {
+    // builds are element-free by design (#1339) and skip the guard; a
+    // style-only build's entry imports nothing at all (S-C2/S-12), so there is
+    // no runtime to group.
+    if (ctx.options.renderer !== 'lit' && !styleOnlyEmission) {
       requireElementRuntimeChunk(collectClientBuildChunks(outputs), elementRuntimeIdentity);
     }
 
@@ -1061,6 +1094,30 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
 
     const { printBuildManifest } = await import('../vite/build-manifest.ts');
     printBuildManifest({ root, outDir, phase: 2, budget: ctx.phase3.manifestBudget });
+
+    // S-C2/S-12: the style-only build emitted no client bundle worth shipping —
+    // its generated entry was the island-free placeholder. Drop the JS half so
+    // the zero-client-JS contract holds exactly as it does on the shortcut
+    // paths; the emitted style assets stay (that is the whole point of the
+    // pass), and nothing references the removed files (no island entry exists
+    // to be script-tagged).
+    if (styleOnlyEmission) {
+      await rm(join(clientOutDir, 'islands'), { recursive: true, force: true }).catch(() => {});
+      if (styleAssetRecords.size === 0) {
+        // No sheet on any server-rendered root either: this app is the pinned
+        // zero-JS shape after all, so leave no trace.
+        await removeClientDeliveryArtifacts(root, outDir);
+        log.info('No server-rendered style edges - zero client JS output');
+      } else {
+        log.info(
+          `Style-only emission complete: ${styleAssetRecords.size} style asset(s), zero client JS`,
+        );
+      }
+      // No client deliverable exists, so no client asset manifest is handed
+      // back — exactly as the shortcut paths behave. Phase 3's script-tag and
+      // island-manifest passes key off the manifest, and this app has neither.
+      return null;
+    }
   } catch (error) {
     log.error(`Client build failed: ${formatError(error)}`);
     throw error;
