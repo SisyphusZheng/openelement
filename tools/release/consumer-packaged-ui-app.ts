@@ -463,7 +463,10 @@ async function main(): Promise<void> {
         ['/ui-lab', '<open-dialog'],
         ['/ui-lab', '<open-code-block'],
         ['/ui-lab', 'data-oe-static-styles'],
-        ['/ui-lab', '.control {'],
+        // S-C1.3/S-C1.4 contract: a package component's file-backed sheet is
+        // served as an EXTERNAL dev resource and declared by a marked link —
+        // its authored text is never inlined into the HTML.
+        ['/ui-lab', '.openElement/authored-css.'],
       ],
     );
 
@@ -498,7 +501,13 @@ async function main(): Promise<void> {
       throw new Error('Packed UI appliance build did not prerender the /ui-lab page');
     }
     const uiLabBody = await readFile(uiLabHtml, 'utf8');
-    for (const marker of ['<open-button', '<open-dialog', '<open-code-block', '.control {']) {
+    for (const marker of [
+      '<open-button',
+      '<open-dialog',
+      '<open-code-block',
+      'data-oe-static-styles',
+      '/client/assets/',
+    ]) {
       if (!uiLabBody.includes(marker)) {
         throw new Error(`Packed UI appliance dist/ui-lab/index.html missing marker: ${marker}`);
       }
@@ -564,7 +573,8 @@ async function main(): Promise<void> {
     await exerciseServer('Packed UI appliance start server', () => ['run', 'start'], starter, [
       ['/', 'Rendered before JavaScript arrives'],
       ['/ui-lab', '<open-button'],
-      ['/ui-lab', '.control {'],
+      ['/ui-lab', '/client/assets/'],
+      ['/ui-lab', 'data-oe-static-styles'],
     ]);
   } finally {
     await rm(tmp, { recursive: true }).catch(() => undefined);
