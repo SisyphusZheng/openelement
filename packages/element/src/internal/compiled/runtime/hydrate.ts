@@ -21,6 +21,7 @@ import { ClaimErrorCode, OpenElementError, RuntimeErrorCode } from '@openelement
 import { THEME_ATTRIBUTE } from '../../../open-element-theme.ts';
 // Canonical each-Block item-key derivation (#1374) — single source shared
 // with the server serializer; do not reintroduce a private copy.
+import { isExpectedStyleResource, styleResourceIdentity } from '../style-identity.ts';
 import { eachItemKey } from '../each-key.ts';
 import { normalizePartProgram } from '../runtime-program.ts';
 import type { LifetimeScope } from '../lifetime-scope.ts';
@@ -672,6 +673,11 @@ function isStaticStyleFallbackNode(node: Node | undefined): boolean {
   );
 }
 
+/** The document base an observed or expected resource URL resolves against. */
+function documentBaseURI(): string {
+  return typeof document === 'undefined' ? 'http://localhost/' : document.baseURI;
+}
+
 /**
  * The count of marked static-style nodes the serializer emitted as the
  * template's leading children. The scan skips exactly these; the claim keeps
@@ -694,12 +700,16 @@ function leadingStaticStyleNodeCount(
   while (isStaticStyleNode(root.childNodes[count])) {
     const node = root.childNodes[count];
     if (isElement(node) && node.tagName.toLowerCase() === 'link') {
-      const href = resourceIdentity(node.getAttribute('href') ?? '');
-      const expected = (options.expectedStyleLinks ?? []).map(resourceIdentity);
-      if (expected.length > 0 && !expected.includes(href)) {
+      const href = node.getAttribute('href') ?? '';
+      const expected = options.expectedStyleLinks;
+      if (
+        expected !== undefined &&
+        expected.length > 0 &&
+        !isExpectedStyleResource(href, expected, { baseURI: documentBaseURI() })
+      ) {
         hydrateFailure(
           'template',
-          `unexpected static stylesheet resource ${JSON.stringify(href)} (expected ${JSON.stringify(expected)})`,
+          `unexpected static stylesheet resource ${JSON.stringify(styleResourceIdentity(href, { baseURI: documentBaseURI() }))}`,
           owner,
         );
       }
@@ -707,17 +717,6 @@ function leadingStaticStyleNodeCount(
     count++;
   }
   return count;
-}
-
-/** One resource's identity: path + query, origin- and spelling-independent. */
-function resourceIdentity(url: string): string {
-  try {
-    const base = typeof document === 'undefined' ? 'http://localhost/' : document.baseURI;
-    const parsed = new URL(url, base);
-    return `${parsed.pathname}${parsed.search}`;
-  } catch {
-    return url;
-  }
 }
 
 /**
