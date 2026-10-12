@@ -51,13 +51,15 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { existsSync, readdirSync } from 'node:fs';
-import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { runProcess } from './consumer-packaged-shared.ts';
 import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { readPackages } from '../lib/package-graph.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
 import { CREATE_BIN } from './npm-manifest.ts';
+import { compileElementModule } from '@openelement/compiler';
+import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { CREATE_VERSION } from '../../packages/create/src/version.ts';
 
 async function readJson<T = unknown>(path: string | URL): Promise<T> {
@@ -207,6 +209,121 @@ async function exerciseServer(
   }
 }
 
+// ─── The dependency-only utility probe (S-C2/S-13) ──────────────────────────
+//
+// A component library whose ONLY styling is Tailwind utility classes — no
+// authored `.css` file, no `static styles` — built into a package tarball and
+// installed into the appliance from that tarball. The utilities it uses are
+// referenced by NO application source, so the component stylesheet proving them
+// can only come from the dependency's compiled class candidates travelling
+// through packaging (S5-B) into the consumer build's official Tailwind compile.
+
+const UTILITY_WIDGET_TAG = 'utility-widget';
+/** The widget's utility classes — the ONLY rules the component sheet may hold. */
+const UTILITY_WIDGET_CANDIDATES = ['p-8', 'font-semibold', 'rotate-45'] as const;
+/** Utilities nothing in the appliance mentions: a full utility bundle would
+ * carry them, a per-candidate compile cannot. */
+const ABSENT_UTILITY_PROBES = ['rotate-90', 'p-96', 'underline'] as const;
+/** The light root's own utility: its rules belong to the DOCUMENT stylesheet. */
+const LIGHT_ROOT_UTILITY = 'p-4';
+
+const UTILITY_WIDGET_COMPONENT = `/**
+ * S-C2/S-13 probe: a shadow-root component whose only styling is Tailwind
+ * utility classes (no authored .css file, no static styles).
+ */
+import { element, OpenElement } from '@openelement/element';
+
+@element('${UTILITY_WIDGET_TAG}', { root: 'shadow-open' })
+export default class UtilityWidget extends OpenElement {
+  render() {
+    return <span class='${UTILITY_WIDGET_CANDIDATES.join(' ')}'>utility widget</span>;
+  }
+}
+`;
+
+/**
+ * Compile the probe component with the workspace compiler (the same emission
+ * the release pack pipeline stages), write it as a real package and pack it
+ * with npm — the appliance installs that tarball, never workspace source.
+ */
+async function packUtilityWidget(dir: string): Promise<string> {
+  const compiled = compileElementModule(UTILITY_WIDGET_COMPONENT, 'utility-widget.tsx', {
+    staticSidecars: [ISLAND_ADMISSION],
+  });
+  if (compiled === null) {
+    throw new Error('the utility-widget probe did not compile as an openElement island module');
+  }
+  const pkgDir = join(dir, 'acme-utility-widget');
+  await writeFile(
+    join(pkgDir, 'package.json'),
+    `${JSON.stringify(
+      {
+        name: '@acme/utility-widget',
+        version: '1.0.0',
+        type: 'module',
+        exports: {
+          '.': './src/utility-widget.js',
+          './manifest': './src/manifest.js',
+          './utility-widget': './src/utility-widget.js',
+        },
+        files: ['src'],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await mkdir(join(pkgDir, 'src'), { recursive: true });
+  await writeFile(join(pkgDir, 'src', 'utility-widget.js'), compiled.code);
+  await writeFile(
+    join(pkgDir, 'src', 'manifest.js'),
+    `export const manifest = ${JSON.stringify(
+      {
+        schemaVersion: '1.0.0',
+        packageName: '@acme/utility-widget',
+        version: '1.0.0',
+        description:
+          'Packed utility-candidate probe for the alpha15 S lane (S-C2/S-13): a shadow component styled only by Tailwind utilities.',
+        declarations: [
+          {
+            tagName: UTILITY_WIDGET_TAG,
+            className: 'UtilityWidget',
+            superclassName: 'OpenElement',
+            description: 'Shadow-root component styled only by Tailwind utility classes.',
+            attributes: [],
+            events: [],
+            slots: [{ name: '' }],
+            cssParts: [],
+            openElement: {
+              ssr: true,
+              dsd: true,
+              hydrate: 'load',
+              status: 'experimental',
+              module: '@acme/utility-widget/utility-widget',
+              export: 'UtilityWidget',
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    )};\n`,
+  );
+  const packed = await run(
+    'npm',
+    ['pack', '--pack-destination', dir],
+    pkgDir,
+    NPM_INSTALL_TIMEOUT_MS,
+  );
+  if (!packed.success) {
+    throw new Error(`Packing @acme/utility-widget failed:\n${packed.output}`);
+  }
+  const tarball = join(dir, 'acme-utility-widget-1.0.0.tgz');
+  if (!existsSync(tarball)) {
+    throw new Error(`npm pack produced no tarball at ${tarball}:\n${packed.output}`);
+  }
+  return tarball;
+}
+
 // ─── The appliance sources ──────────────────────────────────────────────────
 //
 // The prerendered page renders all three exercised UI components by tag; the
@@ -222,6 +339,7 @@ const UI_LAB_COMPONENT = `/**
  */
 import { element, OpenElement } from '@openelement/element';
 import '@openelement/ui/open-button';
+import '@acme/utility-widget/utility-widget';
 import '@openelement/ui/open-dialog';
 import '@openelement/ui/open-code-block';
 
@@ -229,7 +347,7 @@ import '@openelement/ui/open-code-block';
 export default class UiLab extends OpenElement {
   render() {
     return (
-      <div class='ui-lab'>
+      <div class='ui-lab ${LIGHT_ROOT_UTILITY}'>
         <h1>Packed UI appliance</h1>
         <open-button variant='primary'>packed button</open-button>
         <open-dialog>
@@ -239,6 +357,7 @@ export default class UiLab extends OpenElement {
         <open-code-block>
           <pre><code>const packed = true;</code></pre>
         </open-code-block>
+        <utility-widget></utility-widget>
       </div>
     );
   }
@@ -335,6 +454,10 @@ async function main(): Promise<void> {
       );
     }
 
+    // The dependency-only utility probe (S-C2/S-13): compiled + packed here,
+    // installed into the appliance as a tarball.
+    const widgetTarball = await packUtilityWidget(tmp);
+
     // --- Appliance 1: the ui dependency + the framework declaration ---
     const starter = join(tmp, 'starter');
     const manifestPath = join(starter, 'package.json');
@@ -354,6 +477,8 @@ async function main(): Promise<void> {
     manifest.dependencies['@openelement/element'] = pathToFileURL(elementTarball).href;
     // The appliance's own dependency: the package the README's recipe teaches.
     manifest.dependencies['@openelement/ui'] = pathToFileURL(uiTarball).href;
+    // The dependency-only utility probe: installed from ITS OWN fresh tarball.
+    manifest.dependencies['@acme/utility-widget'] = pathToFileURL(widgetTarball).href;
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
     // The scaffold's own pnpm-workspace.yaml is load-bearing for the Vite+
@@ -434,7 +559,10 @@ async function main(): Promise<void> {
     }
     await writeFile(
       configPath,
-      config.replace(CONFIG_ANCHOR, `${CONFIG_ANCHOR}\n  packageIslands: ['@openelement/ui'],`),
+      config.replace(
+        CONFIG_ANCHOR,
+        `${CONFIG_ANCHOR}\n  packageIslands: ['@openelement/ui', '@acme/utility-widget'],`,
+      ),
     );
 
     await writeFile(join(starter, 'app', 'components', 'ui-lab.tsx'), UI_LAB_COMPONENT);
@@ -578,6 +706,68 @@ async function main(): Promise<void> {
         );
       }
     }
+    // The dependency-only utility probe (S-C2/S-13): the component stylesheet
+    // must carry the widget's unnoticed utility classes — they exist only in
+    // the installed package's compiled candidates — and nothing else.
+    const componentSheet = emittedTexts.find(({ css }) => css.includes('.p-8'));
+    if (componentSheet === undefined) {
+      throw new Error(
+        'Packed UI appliance emitted no component stylesheet carrying the dependency-only ' +
+          `utility candidates (${UTILITY_WIDGET_CANDIDATES.join(', ')}) — the packaged candidate ` +
+          "facts did not reach the consumer build's Tailwind compile",
+      );
+    }
+    for (const candidate of UTILITY_WIDGET_CANDIDATES) {
+      if (!componentSheet.css.includes(`.${candidate}`)) {
+        throw new Error(
+          `Component stylesheet ${componentSheet.name} is missing the unseen utility .${candidate} ` +
+            `(dependency-only candidate):\n${componentSheet.css.slice(0, 400)}`,
+        );
+      }
+    }
+    // No full utility bundle: rules for utilities nothing references cannot be
+    // in a per-candidate compile.
+    for (const absent of ABSENT_UTILITY_PROBES) {
+      if (componentSheet.css.includes(`.${absent}`)) {
+        throw new Error(
+          `Component stylesheet ${componentSheet.name} carries .${absent}, which no source ` +
+            'references — the component sheet is compiling more than the admitted candidates',
+        );
+      }
+    }
+    // Scope routing: the LIGHT root's utility belongs to the document sheet, and
+    // must not be duplicated into the shadow components' component sheet.
+    const documentSheets = emittedTexts.filter(({ css }) => css.includes(`.${LIGHT_ROOT_UTILITY}`));
+    if (documentSheets.length === 0) {
+      throw new Error(
+        `No emitted stylesheet carries the light root's utility .${LIGHT_ROOT_UTILITY} — the ` +
+          'document entry must compile the page-level classes',
+      );
+    }
+    if (componentSheet.css.includes(`.${LIGHT_ROOT_UTILITY}`)) {
+      throw new Error(
+        `Component stylesheet ${componentSheet.name} carries the light root's .${LIGHT_ROOT_UTILITY} ` +
+          "— a light root's classes belong to the document entry, not to the shadow component sheet",
+      );
+    }
+    // The widget's DSD template declares that component sheet as a marked link:
+    // a shadow tree is styled by its own resource, never by a document node.
+    const widgetMarkup = new RegExp(
+      `<${UTILITY_WIDGET_TAG}>[\\s\\S]*?<link rel="stylesheet" href="([^"]+)" data-oe-static-styles \\/>`,
+    ).exec(uiLabBody);
+    if (widgetMarkup === null) {
+      throw new Error(
+        `<${UTILITY_WIDGET_TAG}> carries no marked stylesheet link in its DSD template — the ` +
+          'shadow component was not styled by its own component sheet',
+      );
+    }
+    if (!widgetMarkup[1]!.includes(componentSheet.name)) {
+      throw new Error(
+        `<${UTILITY_WIDGET_TAG}> declares ${widgetMarkup[1]} as its sheet, but the component ` +
+          `stylesheet is ${componentSheet.name}`,
+      );
+    }
+
     // Package island attribution: the client build's identity join produced a
     // chunk per exercised component (fail-closed in the build; asserted here
     // as the consumer form).
