@@ -32,8 +32,8 @@ function asStyleList(component?: StyleSheetLike | StyleSheetLike[]): StyleSheetL
 /**
  * The readiness promises of sheets that are still filling. The generated client
  * adapter records its promise on the sheet under
- * {@linkcode STYLE_SHEET_READY}; a sheet without one — the dev inline adapter,
- * the SSR shim, a plain sheet — is ready by definition.
+ * {@linkcode STYLE_SHEET_READY}; a sheet without one — the SSR shim, an
+ * author-provided in-memory sheet — is ready by definition.
  */
 export function pendingSheetReadiness(
   styles?: StyleSheetLike | StyleSheetLike[],

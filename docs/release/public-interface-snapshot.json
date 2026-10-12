@@ -29,7 +29,7 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "e332a8da2b58b30d15872636a47436c655db10c633146b04d0eafd8f7cddb22d",
+          "publicShapeSha256": "5a1322736e543ac579644aa4519d2b981d17d95db870e2b404d80159ca7d6ab8",
           "publicSymbols": [
             "ACTION_FETCH_HEADER=value:\"x-openelement-action\"",
             "Action=type:{call:(ctx:{env:Env;formData:FormData;params:Record<string, string>;platform:union(Platform|undefined);request:Request;responseHeaders:Headers;route:Route})=>union(Promise<T>|T)}",
@@ -189,6 +189,7 @@
             "STREAM_MAX_PAYLOAD_LENGTH=value:number",
             "STREAM_MAX_SEED_PROPERTIES=value:64",
             "STREAM_TIMEOUT_MS=value:30000",
+            "STYLE_SHEET_LIVE=value:\"__openElementStyleSheetLive\"",
             "STYLE_SHEET_READY=value:\"__openElementStyleReady\"",
             "STYLE_SHEET_URL=value:\"__openElementStyleSheetUrl\"",
             "SafeHtml=type:intersection(string&{readonly __safeHtml:typeof __safeHtml})",
@@ -529,8 +530,9 @@
           ]
         },
         "./style-sheet": {
-          "publicShapeSha256": "70c774200bcf94cd00f4a7c2dbef4d86e15e61c8fc8f4bcf38f005681af4419f",
+          "publicShapeSha256": "2eedefa015e06e155584e76b1382530127f1a124a40d533283dd4f5a7aed815f",
           "publicSymbols": [
+            "STYLE_SHEET_LIVE=value:\"__openElementStyleSheetLive\"",
             "STYLE_SHEET_READY=value:\"__openElementStyleReady\"",
             "STYLE_SHEET_URL=value:\"__openElementStyleSheetUrl\"",
             "StyleSheetLike=type:{readonly cssRules:array({cssText:string});replaceSync:{call:(text:string)=>void}}",

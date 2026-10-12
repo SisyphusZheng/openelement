@@ -1,4 +1,8 @@
-import { STYLE_SHEET_URL, type StyleSheetLike } from '@openelement/protocol/style-sheet';
+import {
+  STYLE_SHEET_LIVE,
+  STYLE_SHEET_URL,
+  type StyleSheetLike,
+} from '@openelement/protocol/style-sheet';
 import { STATIC_STYLES_MARKER } from '@openelement/protocol/part-program';
 import {
   isExpectedStyleResource,
@@ -33,8 +37,14 @@ function resourceBase(target: StyleAdoptionTarget): StyleResourceBase {
  * {@linkcode STYLE_SHEET_URL} (alpha15 S lane). Such a root keeps the
  * declarative reference as the single delivery and must NOT adopt a second
  * constructable copy — duplicate application would parse and apply the same
- * rules twice. Sheets without a URL (dev inline adapters, the SSR shim) are
- * never link-delivered.
+ * rules twice. Sheets without a URL (the SSR shim, an author-provided
+ * in-memory sheet) are never link-delivered.
+ *
+ * A sheet flagged {@linkcode STYLE_SHEET_LIVE} is never treated as delivered
+ * (S-C1.3): its bytes belong to a mutable dev resource that re-fills the sheet
+ * object through `replace()`, so the ADOPTED object is what an edit reaches —
+ * the declarative link is the first-paint / no-JavaScript delivery, not the
+ * last word.
  *
  * The href is compared through the S-C1.1 canonical identity (origin +
  * pathname + search, resolved against the document base), not as raw text:
@@ -42,6 +52,8 @@ function resourceBase(target: StyleAdoptionTarget): StyleResourceBase {
  * bundler-resolved URL, and the two name one resource.
  */
 function sheetDeliveredByLink(target: StyleAdoptionTarget, sheet: StyleSheetLike): boolean {
+  const live = (sheet as { [STYLE_SHEET_LIVE]?: unknown })[STYLE_SHEET_LIVE];
+  if (live === true) return false;
   const url = (sheet as { [STYLE_SHEET_URL]?: unknown })[STYLE_SHEET_URL];
   if (typeof url !== 'string' || url === '') return false;
   const base = resourceBase(target);

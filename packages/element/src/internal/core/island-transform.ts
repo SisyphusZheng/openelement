@@ -27,6 +27,16 @@ export function transformIslandSource(
   if (!normalizedPath.startsWith('/')) {
     normalizedPath = '/' + normalizedPath;
   }
+  // Only SCRIPT modules are island sources — the same file set the build's
+  // island scanner admits (`*.ts|tsx|js|jsx`, query/hash stripped). A `.css`,
+  // `.json` or any other asset that happens to sit under the islands
+  // directory is content, not a component: appending JS markers to it would
+  // corrupt the module's own text (a `.css?inline` read then carries the
+  // markers INSIDE the stylesheet), and no marker of it could ever be read.
+  const modulePath = normalizedPath.split(/[?#]/, 1)[0]!;
+  if (!/\.(?:ts|tsx|js|jsx)$/.test(modulePath)) {
+    return { code: source, islands: [] };
+  }
   const normalizedIslandsDir = normalizeSeparators(islandsDir).replace(/^\/+|\/+$/g, '');
 
   // Only transform files in the islands directory. The needle is

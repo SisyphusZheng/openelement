@@ -42,3 +42,23 @@ export const STYLE_SHEET_READY = '__openElementStyleReady';
  * cannot drift because the adapter generator interpolates this exact name.
  */
 export const STYLE_SHEET_URL = '__openElementStyleSheetUrl';
+
+/**
+ * The one key marking a sheet whose bytes are a LIVE resource rather than an
+ * immutable one (alpha15 S lane, S-C1.3).
+ *
+ * The dev server serves an authored sheet from a mutable endpoint that
+ * hot-updates: the sheet object is the copy the live resource re-fills through
+ * `replace()`, so every root that adopted it re-renders on an edit. A root
+ * whose serialized markup declares the same URL therefore still ADOPTS this
+ * sheet — the declarative `<link>` stays the first-paint / no-JavaScript
+ * delivery, and the adopted object is the one an edit reaches. Without that,
+ * a CSS-only edit could only be delivered by re-fetching the link, which is a
+ * DOM write this protocol does not perform.
+ *
+ * Production sheets never carry this key: their URL is content-addressed, so
+ * the link and the sheet can never disagree and one delivery is the whole
+ * story. Build-time and runtime cannot drift because the dev adapter generator
+ * interpolates this exact name.
+ */
+export const STYLE_SHEET_LIVE = '__openElementStyleSheetLive';

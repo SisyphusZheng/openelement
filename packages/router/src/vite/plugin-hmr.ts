@@ -25,7 +25,25 @@ import {
   styleRequestModuleId,
 } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
+import { styleAssetGraphId } from './internal/style-assets.ts';
 import type { OpenPluginState } from './plugin-config.ts';
+
+/**
+ * The URL a client knows a module by — what an HMR update payload must name.
+ *
+ * A module the browser fetched carries its fetched URL. A module whose graph
+ * entry was instead created from its `\0`-virtual id (the style-asset graph
+ * id: the transform of the importing island resolves it, and the SSR render
+ * loads it) carries the RAW id, which no client can match. The browser-facing
+ * form is Vite's own encoding of that id — `<base>@id/__x00__<id minus NUL>`
+ * (the placeholder Vite substitutes so the null byte can ride a URL).
+ */
+function clientModuleUrl(module: { id: string | null; url: string }, base: string): string {
+  const id = module.id;
+  if (id === null || module.url !== id || !id.startsWith('\0')) return module.url;
+  const prefix = base.endsWith('/') ? base : `${base}/`;
+  return `${prefix}@id/__x00__${id.slice(1)}`;
+}
 
 /**
  * Create the `transform`/`handleHotUpdate` hooks of `open:core` over the
@@ -122,12 +140,40 @@ export function createCompilerHooks(
     },
 
     async handleHotUpdate(hmr) {
-      // A sheet file edit changes the inline adapter's content, not the
-      // Part Program shape — the dev module's bytes would go stale (the
-      // virtual graph id is not a watched file). Full reload re-fetches
-      // everything fresh; the registry re-registers on the next transform.
+      // A sheet file edit moves the RESOURCE's bytes; it does not change the
+      // Part Program shape and must not reload the page (S-C1.3). The edge's
+      // adapter is re-evaluated: its hot-accept refetches the dev resource and
+      // `replace()`s the same live sheet object, so every root that holds it
+      // re-renders. The server half is invalidated too, so the next document
+      // render declares the same resource with the new bytes behind it.
       if (/\.css$/.test(hmr.file) && styleEdgesForFile(hmr.file).length > 0) {
-        hmr.server.ws.send({ type: 'full-reload' });
+        const base = hmr.server.config.base ?? '/';
+        for (const edge of styleEdgesForFile(hmr.file)) {
+          const graphId = styleAssetGraphId(edge.moduleId);
+          for (const environment of Object.values(hmr.server.environments)) {
+            const loaded = environment.moduleGraph.idToModuleMap.get(graphId);
+            if (loaded === undefined) continue;
+            const url = clientModuleUrl(loaded, base);
+            environment.moduleGraph.invalidateModule(loaded);
+            // The client module is the one a browser holds: hand it the update
+            // so its hot-accept refetches. Sending an update for a module the
+            // client never loaded would make Vite fall back to a full reload,
+            // which this lane must never be the cause of.
+            if (environment.name === 'client' && url !== undefined) {
+              environment.hot.send({
+                type: 'update',
+                updates: [
+                  {
+                    type: 'js-update',
+                    path: url,
+                    acceptedPath: url,
+                    timestamp: Date.now(),
+                  },
+                ],
+              });
+            }
+          }
+        }
         return [];
       }
       if (!/\.tsx$/.test(hmr.file)) return;

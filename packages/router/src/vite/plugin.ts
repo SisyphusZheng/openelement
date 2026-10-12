@@ -77,8 +77,9 @@ export function createOpenPlugin(
     mdxPlugin({ routesDir: state.resolvedOptions.routesDir }),
     corePlugin,
     // the dev half of the island style asset protocol — the
-    // compiled-element transform above activates the protocol, and this
-    // plugin serves the sheet adapters (inline form; no emitted asset in dev).
+    // compiled-element transform above activates the protocol, and this plugin
+    // serves each authored edge as a real `text/css` dev resource plus the
+    // URL-carrying adapters (S-C1.3; no CSS text ever rides a dev module).
     devStyleAssetPlugin(),
     // the dev half of the Tailwind entry: the same generated entry the client
     // build compiles, served as a module through the lazily-mounted
