@@ -259,27 +259,54 @@ test('the native adapter form is the import-attribute shape and stays behind the
   expect(sheetAdapterForm()).toEqual('fetch');
 });
 
-test('the SSR half embeds the authored file bytes — one fact, no reconciliation', async () => {
-  const plugin = serverStyleAssetPlugin();
+test("the SSR half declares the client build's emitted asset, never its text", async () => {
+  const plugin = serverStyleAssetPlugin({
+    files: new Map([[registryKey, 'assets/0123456789ab.css']]),
+    base: '/sub/',
+  });
   const load = plugin.load as (this: unknown, id: string) => Promise<string | null>;
   const adapter = (await load.call({}, styleAssetGraphId(registryKey))) as string;
-  // The sheet text is the authored file's own bytes — the same bytes the
-  // client build emitted content-hashed — so the DSD text cannot drift from
-  // the client sheet.
-  expect(adapter).toContain(`sheet.replaceSync(${JSON.stringify(SHEET)});`);
-  expect(adapter).toContain("import { StyleSheet } from '@openelement/element';");
+  // One resource, one delivery: the server half names the emitted asset under
+  // the configured base and carries NO sheet text — the DSD template then
+  // declares a parser-visible link instead of an inline stylesheet.
+  expect(adapter).toContain('/sub/client/assets/0123456789ab.css');
+  expect(adapter).not.toContain('replaceSync');
+  expect(adapter).not.toContain(SHEET.trim());
   expect(adapter).not.toContain('document.head');
 });
 
-test('the SSR half fails closed when the sheet file is missing', async () => {
-  await rm(sheetFile);
+test('a registered in-root edge with no emitted asset fails closed', async () => {
   const plugin = serverStyleAssetPlugin();
   const load = plugin.load as (this: unknown, id: string) => Promise<string | null>;
+  // Discovery walks every server-rendered source through the bundler resolver,
+  // so an in-root sheet without an emitted asset is a build defect: it is
+  // reported with a stable code instead of being inlined.
+  const context = {
+    environment: { config: { root: sheetDir } },
+    warn(): void {},
+  };
   const error = await assertRejectsIncludes(
-    () => load.call({}, styleAssetGraphId(registryKey)),
+    () => load.call(context, styleAssetGraphId(registryKey)),
     OpenElementError,
   );
   expect(error.code).toEqual(ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED);
+  expect(error.message).toContain('has no emitted asset');
+});
+
+test('an out-of-root package sheet keeps the diagnosed text path', async () => {
+  const plugin = serverStyleAssetPlugin();
+  const load = plugin.load as (this: unknown, id: string) => Promise<string | null>;
+  const warnings: string[] = [];
+  const context = {
+    // A root that does NOT contain the sheet: the package case.
+    environment: { config: { root: join(sheetDir, 'elsewhere') } },
+    warn(message: string): void {
+      warnings.push(message);
+    },
+  };
+  const adapter = (await load.call(context, styleAssetGraphId(registryKey))) as string;
+  expect(adapter).toContain('replaceSync');
+  expect(warnings.join('\n')).toContain('outside the project root');
 });
 
 test('the dev plugin serves the resource-URL adapter, fail-closed', async () => {

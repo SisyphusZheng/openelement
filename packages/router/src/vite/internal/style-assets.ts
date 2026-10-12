@@ -63,11 +63,19 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Plugin, ViteDevServer } from 'vite';
 import {
+  compileElementModule,
   getStyleRequest,
   hasStyleImporter,
+  lightRootScopeTag,
   type RegisteredStyleRequest,
+  registerStyleEdges,
+  stableModuleId,
   styleRequestModuleId,
+  styleRequestsForImporter,
 } from '@openelement/compiler';
+import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
+import { walkModuleGraph } from './module-graph-walk.ts';
+import { findBuildWorkspaceRoot } from '../workspace-alias.ts';
 import {
   STYLE_SHEET_LIVE,
   STYLE_SHEET_READY,
@@ -537,6 +545,119 @@ export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) =>
   };
 };
 
+/**
+ * The server-rendered style-edge pass (S-C1.4, #1609).
+ *
+ * The client build's graph contains the islands and only the islands, so a
+ * Page, Layout or component that the server renders alone never entered it —
+ * and neither did the authored `.css` edge it declares. The build already knows
+ * the ROUTE/PAGE/LAYOUT sources the server renders (the traversal that selects
+ * island delivery); this pass walks their static module graph through the
+ * bundler's own resolver (`walkModuleGraph`: relative, `#imports`, alias and
+ * package export paths alike), asks the compiler for each module's admission
+ * facts, and loads every registered edge through `clientStyleAssetPlugin` — the
+ * same plugin instance, Vite CSS processing, content address, manifest record
+ * and adapters an island's sheet gets, in the same client build. Modules are
+ * read, never imported: no server-only JavaScript reaches a client bundle.
+ */
+export function serverRenderedStyleEdgesPlugin(seeds: readonly string[]): Plugin {
+  let admitted = false;
+  return {
+    name: 'open:server-rendered-style-edges',
+    enforce: 'pre',
+    apply: 'build',
+    // The module-LOADING phase: reaching a sheet's text through Vite's `?inline`
+    // CSS module is only possible while the toolchain is loading modules (a
+    // build's plugin context has no transform-phase equivalent). The pass runs
+    // once, at the first module the graph asks for.
+    async load() {
+      // Re-entrance guard, set BEFORE the work: the pass loads modules through
+      // this same context, so its own hook runs again for each of them.
+      if (admitted) return null;
+      admitted = true;
+      await admitServerRenderedStyleEdges.call(this, seeds);
+      return null;
+    },
+  };
+}
+
+/** The client build's root, recorded by the plugin's `configResolved`. */
+let serverRenderRoot: string | undefined;
+
+/**
+ * Discovery (resolver-driven walk) + admission (compiler program) + emission
+ * (edge load through the one style-asset plugin).
+ */
+async function admitServerRenderedStyleEdges(
+  this: {
+    load(options: { id: string }): Promise<unknown>;
+    resolve(
+      specifier: string,
+      importer?: string,
+    ): Promise<{ id: string; external?: boolean | 'absolute' | 'relative' } | null>;
+    info(message: string): void;
+    warn(message: string): void;
+  },
+  seeds: readonly string[],
+): Promise<void> {
+  if (seeds.length === 0) return;
+  const root = serverRenderRoot ?? process.cwd();
+  const workspaceRoot = findBuildWorkspaceRoot(root) ?? undefined;
+  const walk = await walkModuleGraph(this, seeds);
+  if (walk.truncated) {
+    this.warn(
+      'Server-rendered module discovery stopped at its module bound; some server-only ' +
+        'sheets may not be emitted (reported, never silent).',
+    );
+  }
+  for (const file of walk.files) {
+    let source: string;
+    try {
+      source = await readFile(file, 'utf8');
+    } catch {
+      continue;
+    }
+    let compiled;
+    try {
+      compiled = compileElementModule(source, stableModuleId(file, root, workspaceRoot), {
+        staticSidecars: [ISLAND_ADMISSION],
+      });
+    } catch {
+      continue;
+    }
+    if (compiled === null) continue;
+    registerStyleEdges(file, compiled.styleRequests ?? [], lightRootScopeTag(compiled.program));
+  }
+  const edges = new Map<string, string>();
+  for (const file of walk.files) {
+    for (const request of styleRequestsForImporter(file)) {
+      edges.set(styleAssetGraphId(request.moduleId), request.file);
+    }
+  }
+  for (const [graphId, file] of edges) {
+    try {
+      await this.load({ id: graphId });
+    } catch (error) {
+      // The SSR half owns the diagnostic for an unemitted sheet; a failure here
+      // must not abort the whole build.
+      this.warn(
+        `Server-rendered sheet ${file} could not be emitted through Vite's CSS pipeline: ` +
+          `${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  this.info(
+    `Server-rendered discovery walked ${walk.files.length} module(s) and declared ${edges.size} ` +
+      'stylesheet edge(s) for emission',
+  );
+}
+
+/** Whether `candidate` lives inside `root` (the project whose sheets this build owns). */
+function withinRoot(candidate: string, root: string): boolean {
+  const base = root.endsWith('/') ? root : `${root}/`;
+  return candidate === root || candidate.startsWith(base);
+}
+
 /** Vite's asset reference placeholder, as its CSS text carries it. */
 const ASSET_PLACEHOLDER_PREFIX = '__VITE_ASSET__';
 const assetPlaceholderRE = /__VITE_ASSET__([\w$]+)__(?:\$_(.*?)__)?/g;
@@ -600,8 +721,28 @@ export function serverStyleAssetPlugin(options?: {
           '// template carries a parser-visible `<link>` and never inlines the CSS.',
         ]);
       }
-      // No client asset (an island-free build): the text shim keeps the
-      // component styled instead of shipping a link to a missing file.
+      // A registered FILE edge with no emitted asset (S-C1.4, #1609). Every
+      // URL-addressable sheet the client build can reach is emitted, so this is
+      // either a sheet that build could not process or a defect of discovery.
+      // It is never answered by inlining an in-root component's CSS: the render
+      // fails closed with a stable, actionable diagnostic.
+      if (withinRoot(request.file, this.environment.config.root)) {
+        throw buildError(
+          ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,
+          `The server-rendered style edge ${request.file} has no emitted asset: the client ` +
+            'build must emit every URL-addressable authored sheet (island or server-only) ' +
+            'before the SSR build declares it. Discovery walks the server-rendered sources ' +
+            'through the bundler resolver, so an in-root sheet reported here is a defect of ' +
+            'that walk or of the module itself — never a reason to inline CSS.',
+        );
+      }
+      // Out-of-root (package) sheets that never entered a client graph are the
+      // one remaining class this build cannot emit: reported, never silent.
+      this.warn(
+        `Style sheet ${request.file} is outside the project root and no client build emitted ` +
+          'it (a package component no client graph contains); its authored text is inlined for ' +
+          'this render. Give the owning package a client entry (packageIslands) to externalize it.',
+      );
       const text = await readAuthoredEdgeCss(request);
       return [
         '// <generated by open:style-assets — SSR style sheet adapter; do not edit>',

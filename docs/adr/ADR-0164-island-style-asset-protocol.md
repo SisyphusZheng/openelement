@@ -610,3 +610,47 @@ referenced from such a sheet lands as a source-relative path in the emitted
 asset; the same fonts are delivered correctly by the document entry's
 stylesheet, so no page regresses. That is a different emitter (the Tailwind peer
 compile owns the text), recorded for the S lane rather than changed here.
+
+## Amendment (2026-10-12): server-only components join discovery (#1609, S-C1.4)
+
+The S-C1.2 boundary was structural: the client build's graph contains the
+islands and only the islands, so a Page, Layout or component the SERVER renders
+and no island imports never had its authored `.css` edges registered in that
+build. The SSR build registered them, found no emitted asset, and answered with
+a framework-generated inline `<style>` written where the component rendered —
+outside the document head collection and outside one-resource-one-delivery.
+
+**Discovery is resolver-driven and specifier-complete.** The build already knows
+the route/page/layout sources the server renders (the traversal that selects
+island delivery); `serverRenderedStyleEdgesPlugin` now walks their static module
+graph through the BUNDLER's resolver (`walkModuleGraph`: `this.resolve` with the
+importing module, deduplicated by resolved identity, deterministic order,
+bounded and reported). Specifiers come from the compiler's own analysis
+(`analyzeModuleSemantics`, with `collectSpecifiers` opted in so no other
+consumer's facts change). That covers the forms a dot-relative scan cannot see:
+`package.json` `imports` subpaths (`#site-ui/open-artifact-panel.tsx` — the
+WWW failure that stopped the previous attempt), configured aliases, and package
+export paths. Deliberate boundaries are counted, never glossed: `.css` belongs
+to the compiler's edge registry, `external` resolutions are the resolver's own
+verdict, virtual ids have no file, and a dynamic-only dependency is outside the
+static contract — the SSR half diagnoses that case instead of guessing.
+
+**Admission and emission reuse the existing owners.** Each discovered module is
+handed to the compiler (`compileElementModule`) and its edges recorded through
+the registry's one write path, `registerStyleEdges` — now shared with the Vite
+transform, so there is still exactly one writer. Every registered edge is then
+loaded through `clientStyleAssetPlugin`: the same plugin instance, Vite CSS
+processing, content addressing, manifest record and adapters an island's sheet
+gets, in the same client build. Modules are read, never imported — no
+server-only JavaScript reaches a client bundle and tree shaking cannot drop an
+emission that was never an import.
+
+**The URL-addressable fallback is retired.** A registered in-root edge with no
+emitted asset THROWS the coded `OE_CLIENT_BUILD_STYLE_ASSET_UNREGISTERED`
+diagnostic instead of inlining. The one remaining inline path is explicit: an
+out-of-root (package) sheet that never entered a client graph logs a warning
+naming the file and the `packageIslands` remedy, because a build that never sees
+those modules cannot emit their bytes. A truly URL-less, author-owned in-memory
+`CSSStyleSheet` is untouched and unchanged in kind: no file, no edge, no URL —
+externalizing it would need a runtime-to-file serialization pipeline this
+protocol deliberately does not have.

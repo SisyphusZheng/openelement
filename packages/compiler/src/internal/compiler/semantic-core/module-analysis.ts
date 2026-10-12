@@ -11,6 +11,14 @@ import ts from 'typescript';
  */
 export interface ModuleSemanticFacts {
   relativeImports: string[];
+  /**
+   * Every static import/export specifier the module spells, relative or not —
+   * present only when the caller asks for it (`collectSpecifiers`), because a
+   * host that walks a module graph through its own resolver (S-C1.4's
+   * server-rendered style-edge pass) needs the aliased and package specifiers
+   * too, while every other consumer's facts stay exactly as they were.
+   */
+  moduleSpecifiers?: string[];
   compiledElementDecorator: boolean;
   /**
    * Set when a class decorator spells the `element` intrinsic through
@@ -99,6 +107,8 @@ export interface ModuleSemanticsOptions {
    * the host injects its descriptor.
    */
   readonly vocabulary?: readonly ModuleVocabularyDescriptor[];
+  /** Collect {@link ModuleSemanticFacts.moduleSpecifiers} (opt-in). */
+  readonly collectSpecifiers?: boolean;
 }
 
 /**
@@ -475,14 +485,17 @@ export function analyzeModuleSemantics(
     (descriptor) => descriptor.kind === 'element-registration',
   );
   const relativeImports = new Set<string>();
+  const moduleSpecifiers = new Set<string>();
   for (const statement of sourceFile.statements) {
     if (
       (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) &&
       statement.moduleSpecifier &&
-      ts.isStringLiteral(statement.moduleSpecifier) &&
-      statement.moduleSpecifier.text.startsWith('.')
-    )
-      relativeImports.add(statement.moduleSpecifier.text);
+      ts.isStringLiteral(statement.moduleSpecifier)
+    ) {
+      moduleSpecifiers.add(statement.moduleSpecifier.text);
+      if (statement.moduleSpecifier.text.startsWith('.'))
+        relativeImports.add(statement.moduleSpecifier.text);
+    }
   }
 
   let exportedTagName: string | undefined;
@@ -668,6 +681,7 @@ export function analyzeModuleSemantics(
 
   return {
     relativeImports: [...relativeImports],
+    ...(options.collectSpecifiers === true ? { moduleSpecifiers: [...moduleSpecifiers] } : {}),
     compiledElementDecorator,
     ...(unsupportedElementDecorator === undefined ? {} : { unsupportedElementDecorator }),
     ...(exportedTagName === undefined ? {} : { exportedTagName }),

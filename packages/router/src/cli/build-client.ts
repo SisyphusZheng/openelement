@@ -68,7 +68,11 @@ import {
   compiledElementPlugin,
 } from '@openelement/compiler';
 import { ELEMENT_RUNTIME_MESSAGES_DEFINE } from '../vite/internal/element-error-messages.ts';
-import { type StyleAssetRecord, clientStyleAssetPlugin } from '../vite/internal/style-assets.ts';
+import {
+  type StyleAssetRecord,
+  clientStyleAssetPlugin,
+  serverRenderedStyleEdgesPlugin,
+} from '../vite/internal/style-assets.ts';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { ROUTER_MODULE_VOCABULARY } from '@openelement/protocol/module-vocabulary';
 import { compilerBehaviorDeclarations } from '../vite/internal/ssg/client-admission.ts';
@@ -189,12 +193,24 @@ function resolveConfiguredSource(root: string, importPath: string): string | nul
  * or in a request-time page source. This keeps a declaration from becoming a
  * client-bundle tax merely because it exists in app/islands/.
  */
+export interface ReachableSourceScan {
+  /** The admitted island tags observable in the rendered site or page sources. */
+  readonly tags: Set<string>;
+  /**
+   * Every local source file the traversal visited — the route/page/layout
+   * modules the server renders and everything they import. It is the SEED set
+   * of the server-rendered style-edge pass (S-C1.4, #1609), which then walks
+   * the static module graph through the bundler's own resolver.
+   */
+  readonly sourceFiles: Set<string>;
+}
+
 export function findReachableIslandTags(
   ctx: OpenElementBuildContext,
   root: string,
   outDir: string,
   candidates: string[],
-): Set<string> {
+): ReachableSourceScan {
   const plan = ctx.phase1.ssrAdmissionPlan;
   const admitted = plan
     ? new Set([...plan.renderableTags, ...plan.clientOnlyTags])
@@ -273,9 +289,9 @@ export function findReachableIslandTags(
   // (used by adapter integrations). In that case preserve admitted entries;
   // normal app builds always have HTML or route sources to establish reachability.
   if ((ctx.phase1.cachedRoutes ?? []).length === 0 && reachable.size === 0) {
-    return new Set(allowed);
+    return { tags: new Set(allowed), sourceFiles: visitedSourceFiles };
   }
-  return reachable;
+  return { tags: reachable, sourceFiles: visitedSourceFiles };
 }
 
 async function removeClientDeliveryArtifacts(root: string, outDir: string): Promise<void> {
@@ -410,7 +426,8 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const candidateTags = [
     ...new Set([...localDeliveryTags, ...compilerDeliveryTags, ...packageDeliveryTags]),
   ];
-  const reachableTags = findReachableIslandTags(ctx, root, outDir, candidateTags);
+  const reachableScan = findReachableIslandTags(ctx, root, outDir, candidateTags);
+  const reachableTags = reachableScan.tags;
   const selectedLocal = localIslands
     .map((tagName, index) => ({ tagName, index }))
     .filter(({ tagName }) =>
@@ -787,6 +804,14 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       // vite's CSS plugin, emits the real `.css` assets, and hands the sheet
       // adapters back to the module graph.
       clientStyleAssetPlugin(styleAssetRecords),
+      // S-C1.4 (#1609): the sources the SERVER renders are part of the same
+      // asset build. The pass walks their static module graph through this
+      // build's resolver, asks the compiler for each module's admission facts
+      // (the registry's one write path) and loads every resulting edge through
+      // the SAME emission plugin above — so a server-only sheet is emitted,
+      // hashed and named exactly like an island's, and no server-only
+      // JavaScript enters any client bundle.
+      serverRenderedStyleEdgesPlugin([...reachableScan.sourceFiles]),
       {
         name: 'open:exclude-preact-rts',
         resolveId(id: string) {
