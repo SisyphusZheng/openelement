@@ -474,9 +474,36 @@ function scopeEdgeCss(request: RegisteredStyleRequest, authored: string): string
  * emission into `records` for the client asset manifest's `styles` field, and
  * hands the sheet adapter back to the module graph.
  */
-export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) => Plugin = (
-  records,
-) => {
+export interface StyleAssetEmission {
+  /** The Vite plugin (the graph's normal path). */
+  readonly plugin: Plugin;
+  /**
+   * Emit one registered edge's asset through this build's ONE emission state
+   * (S-C1.4). The server-rendered discovery pass calls this directly instead of
+   * awaiting the virtual style module's own `load` hook: that nesting is the
+   * reentrant load Rolldown documents as a deadlock hazard, and for a packed
+   * sheet it never settled — leaving records and assets absent while the build
+   * advanced and the SSR phase failed closed.
+   *
+   * `context` must be a plugin context, not the plugin object: the `?inline`
+   * read and `emitFile` both belong to the calling hook's context.
+   */
+  emit(
+    context: StyleAssetEmitContext,
+    request: RegisteredStyleRequest,
+  ): Promise<{ css: string; fileName: string; referenceId: string }>;
+}
+
+/** The plugin-context surface the shared emission needs. */
+export interface StyleAssetEmitContext {
+  load(options: { id: string }): Promise<unknown>;
+  getModuleInfo(id: string): { code?: string | null } | null;
+  emitFile(file: { type: 'asset'; fileName: string; source: string }): string;
+}
+
+export const clientStyleAssetPlugin: (
+  records: Map<string, StyleAssetRecord>,
+) => Plugin & Pick<StyleAssetEmission, 'emit'> = (records) => {
   // Emission dedup keyed by the content-addressed file name: identical sheet
   // bytes from several islands emit ONE asset; every adapter rewrites the
   // same file-URL reference to the same hashed URL (reproduced on
@@ -502,22 +529,15 @@ export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) =>
             'disappeared between resolution and load',
         );
       }
-      const css = await readEdgeCss(this, request);
-      const hash = styleAssetHash(css);
-      const fileName = styleAssetFileName(css);
-      records.set(registryKey, { fileName, hash });
-      // Both forms consume the same emitted asset; the verdict selects only
-      // the adapter module handed back to the graph.
-      let referenceId = emitted.get(fileName);
-      if (referenceId === undefined) {
-        referenceId = this.emitFile({ type: 'asset', fileName, source: css });
-        emitted.set(fileName, referenceId);
-      }
+      // One emission operation, shared with the discovery pass (below).
+      const { referenceId } = await emitStyleAsset(this, request, records, emitted);
       if (sheetAdapterForm() === 'native-css-module') {
         return nativeSheetAdapterModule(`import.meta.ROLLUP_FILE_URL_${referenceId}`);
       }
       return fetchSheetAdapterModule(referenceId);
     },
+    emit: (context: StyleAssetEmitContext, request: RegisteredStyleRequest) =>
+      emitStyleAsset(context, request, records, emitted),
 
     /**
      * Vite's CSS processing emits the files a sheet references (an image, a
@@ -567,7 +587,10 @@ export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) =>
  * and adapters an island's sheet gets, in the same client build. Modules are
  * read, never imported: no server-only JavaScript reaches a client bundle.
  */
-export function serverRenderedStyleEdgesPlugin(seeds: readonly string[]): Plugin {
+export function serverRenderedStyleEdgesPlugin(
+  seeds: readonly string[],
+  emission: Pick<StyleAssetEmission, 'emit'>,
+): Plugin {
   let admitted = false;
   return {
     name: 'open:server-rendered-style-edges',
@@ -582,7 +605,7 @@ export function serverRenderedStyleEdgesPlugin(seeds: readonly string[]): Plugin
       // this same context, so its own hook runs again for each of them.
       if (admitted) return null;
       admitted = true;
-      await admitServerRenderedStyleEdges.call(this, seeds);
+      await admitServerRenderedStyleEdges.call(this, seeds, emission);
       return null;
     },
   };
@@ -606,6 +629,7 @@ async function admitServerRenderedStyleEdges(
     warn(message: string): void;
   },
   seeds: readonly string[],
+  emission: Pick<StyleAssetEmission, 'emit'>,
 ): Promise<void> {
   if (seeds.length === 0) {
     log.warn('[css-discovery] no server-renderable seeds; nothing to discover');
@@ -658,22 +682,50 @@ async function admitServerRenderedStyleEdges(
       edges.set(styleAssetGraphId(request.moduleId), request.file);
     }
   }
-  for (const [graphId, file] of edges) {
-    try {
-      await this.load({ id: graphId });
-    } catch (error) {
-      // The SSR half owns the diagnostic for an unemitted sheet; a failure here
-      // must not abort the whole build.
-      this.warn(
-        `Server-rendered sheet ${file} could not be emitted through Vite's CSS pipeline: ` +
-          `${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
+  // Emit through the shared operation — never by awaiting the virtual module's
+  // own `load` hook, which nests one load inside another (the cycle that left
+  // packed sheets unemitted). The await happens inside this hook, so the work
+  // is owned by the build rather than detached from it.
+  for (const registryKey of edges.keys()) {
+    const request = getStyleRequest(registryKey);
+    if (request === undefined) continue;
+    await emission.emit(this as unknown as StyleAssetEmitContext, request);
   }
   this.info(
     `Server-rendered discovery walked ${walk.files.length} module(s) and declared ${edges.size} ` +
       'stylesheet edge(s) for emission',
   );
+}
+
+/**
+ * Emit one registered edge's asset through the build's ONE emission state.
+ *
+ * Mechanical extraction of what the virtual style module's `load` hook always
+ * did: process the sheet through Vite's CSS pipeline, derive the canonical
+ * identity, compute the content-addressed file name, deduplicate, emit through
+ * the same owner and record it in the same styles map. Two callers share it —
+ * the graph path and the server-rendered discovery pass — so there is still one
+ * emitter, one hash, one dedup map and one manifest.
+ */
+async function emitStyleAsset(
+  context: StyleAssetEmitContext,
+  request: RegisteredStyleRequest,
+  records: Map<string, StyleAssetRecord>,
+  emitted: Map<string, string>,
+): Promise<{ css: string; fileName: string; referenceId: string }> {
+  const css = await readEdgeCss(context, request);
+  const hash = styleAssetHash(css);
+  const fileName = styleAssetFileName(css);
+  records.set(styleAssetRegistryKey(styleAssetGraphId(request.moduleId)) ?? request.moduleId, {
+    fileName,
+    hash,
+  });
+  let referenceId = emitted.get(fileName);
+  if (referenceId === undefined) {
+    referenceId = context.emitFile({ type: 'asset', fileName, source: css });
+    emitted.set(fileName, referenceId);
+  }
+  return { css, fileName, referenceId };
 }
 
 /** Whether `candidate` lives inside `root` (the project whose sheets this build owns). */

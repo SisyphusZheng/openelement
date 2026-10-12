@@ -647,6 +647,9 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   // artifacts. The emission records feed the manifest's `styles` field and
   // the Phase 3 SSR read.
   const styleAssetRecords = new Map<string, StyleAssetRecord>();
+  // One emission state for this build: the graph path and the server-rendered
+  // discovery pass share it (S-C1.4 packed fix).
+  const styleAssetEmission = clientStyleAssetPlugin(styleAssetRecords);
 
   const clientConfig: ViteInlineConfigWithManifest = {
     configFile: false,
@@ -838,7 +841,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       // intercepts the compiled modules' authored `.css` imports before
       // vite's CSS plugin, emits the real `.css` assets, and hands the sheet
       // adapters back to the module graph.
-      clientStyleAssetPlugin(styleAssetRecords),
+      styleAssetEmission,
       // S-C1.4 (#1609): the sources the SERVER renders are part of the same
       // asset build. The pass walks their static module graph through this
       // build's resolver, asks the compiler for each module's admission facts
@@ -846,7 +849,10 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       // the SAME emission plugin above — so a server-only sheet is emitted,
       // hashed and named exactly like an island's, and no server-only
       // JavaScript enters any client bundle.
-      serverRenderedStyleEdgesPlugin(serverRenderedSeedFiles(ctx, root, reachableScan.sourceFiles)),
+      serverRenderedStyleEdgesPlugin(
+        serverRenderedSeedFiles(ctx, root, reachableScan.sourceFiles),
+        styleAssetEmission,
+      ),
       {
         name: 'open:exclude-preact-rts',
         resolveId(id: string) {
