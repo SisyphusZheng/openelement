@@ -58,6 +58,7 @@ import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constan
 import { readPackages } from '../lib/package-graph.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
 import { CREATE_BIN } from './npm-manifest.ts';
+import { PW_PROBE_PIN } from './consumer-packaged-starter.ts';
 import ts from 'typescript';
 import { compileElementModule } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
@@ -71,6 +72,7 @@ const repoRoot = resolve(import.meta.dirname!, '../..');
 const BUILD_TIMEOUT_MS = 10 * 60_000;
 const NPM_INSTALL_TIMEOUT_MS = 5 * 60_000;
 const SERVER_READY_TIMEOUT_MS = 3 * 60_000;
+const BROWSER_TIMEOUT_MS = 2 * 60_000;
 
 function run(
   command: string,
@@ -130,6 +132,8 @@ async function exerciseServer(
   argsFor: (port: number) => string[],
   cwd: string,
   probes: ReadonlyArray<readonly [string, string]>,
+  /** Runs while the server is up, after the HTTP probes (the browser matrix). */
+  afterReady?: (baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const port = await reservePort();
   const server = spawn('pnpm', argsFor(port), {
@@ -187,6 +191,7 @@ async function exerciseServer(
         );
       }
     }
+    if (afterReady) await afterReady(baseUrl);
     console.log(`${label} passed (port ${port}).`);
   } catch (error) {
     // Preserve the server-side cause of a failed probe (the dev leg's KR-10
@@ -227,6 +232,8 @@ const UTILITY_WIDGET_CANDIDATES = ['p-8', 'font-semibold', 'rotate-45'] as const
 const ABSENT_UTILITY_PROBES = ['rotate-90', 'p-96', 'underline'] as const;
 /** The light root's own utility: its rules belong to the DOCUMENT stylesheet. */
 const LIGHT_ROOT_UTILITY = 'p-4';
+/** The starter island's own utility: shadow-root component CSS from local source. */
+const STARTER_ISLAND_UTILITY = 'p-2';
 
 const UTILITY_WIDGET_COMPONENT = `/**
  * S-C2/S-13 probe: a shadow-root component whose only styling is Tailwind
@@ -412,6 +419,167 @@ function sheetSelectors(css: string): string[] {
     );
 }
 
+// ─── The browser computed-style matrix (S-C3, gap B) ────────────────────────
+//
+// Real engines, real packed install: the appliance's start server is already
+// running, and the probe measures the COMPUTED values the component-level
+// utilities must produce INSIDE the shadow trees (file-content assertions are
+// not a computed-style proof). Isolation is measured too, with a class that is
+// injected at RUNTIME so no build-time scan can have styled it: a light element
+// carrying the widget's `rotate-45` must stay untransformed.
+
+const UI_UTILITY_PROBE_SCRIPT = `import { chromium, firefox, webkit } from '@playwright/test';
+
+const [baseUrl, browserName] = process.argv.slice(2);
+const browserType = browserName === 'chromium' ? chromium : browserName === 'firefox' ? firefox : browserName === 'webkit' ? webkit : null;
+if (!baseUrl || !browserType) throw new Error('usage: pw-utility-probe.mjs <baseUrl> <chromium|firefox|webkit>');
+
+// Islands live inside shadow trees (the layout is a shadow host and pages render
+// through its slot), so every lookup pierces shadow roots.
+const DEEP = \`(function () {
+  const find = (root, selector) => {
+    const direct = root.querySelector(selector);
+    if (direct) return direct;
+    for (const element of root.querySelectorAll('*')) {
+      const shadow = element.shadowRoot;
+      if (!shadow) continue;
+      const found = find(shadow, selector);
+      if (found) return found;
+    }
+    return null;
+  };
+  globalThis.__deepFind = (selector) => find(document, selector);
+})()\`;
+
+const browser = await browserType.launch({ headless: true });
+try {
+  const page = await browser.newPage();
+
+  await page.goto(baseUrl + '/ui-lab', { waitUntil: 'load' });
+  await page.evaluate(DEEP);
+  const lab = await page.evaluate(async () => {
+    const widget = globalThis.__deepFind('utility-widget');
+    const widgetSpan = widget?.shadowRoot?.querySelector('span');
+
+    // Isolation probe: the class is added HERE, so no build-time scan saw it.
+    const light = document.createElement('div');
+    light.className = 'rotate-45 p-8';
+    document.body.appendChild(light);
+
+    // Engine capability probe: does this engine apply the independent rotate
+    // property at all (Tailwind v4 lowers rotate-45 to it), and does the
+    // delivered sheet actually contain the rule?
+    const capability = document.createElement('div');
+    const capabilityRoot = capability.attachShadow({ mode: 'open' });
+    const capabilitySheet = new CSSStyleSheet();
+    capabilitySheet.replaceSync('.cap { rotate: 45deg; } .cap-transform { transform: rotate(45deg); }');
+    capabilityRoot.adoptedStyleSheets = [capabilitySheet];
+    const capRotate = document.createElement('span');
+    capRotate.className = 'cap';
+    const capTransform = document.createElement('span');
+    capTransform.className = 'cap-transform';
+    capabilityRoot.append(capRotate, capTransform);
+    // Attached: computed styles of a detached subtree are empty.
+    document.body.appendChild(capability);
+
+    const sheetHref = widget?.shadowRoot?.querySelector('link[data-oe-static-styles]')?.getAttribute('href') ?? '';
+    const sheetResponse = sheetHref ? await fetch(sheetHref) : null;
+
+    return {
+      widgetFound: widget !== null,
+      widgetPaddingTop: widgetSpan ? getComputedStyle(widgetSpan).paddingTop : 'missing',
+      widgetFontWeight: widgetSpan ? getComputedStyle(widgetSpan).fontWeight : 'missing',
+      // Tailwind v4 lowers rotate-45 to the independent rotate property
+      // (not transform), so both channels are read.
+      widgetRotate: widgetSpan ? getComputedStyle(widgetSpan).rotate : 'missing',
+      widgetTransform: widgetSpan ? getComputedStyle(widgetSpan).transform : 'missing',
+      lightTransform: getComputedStyle(light).transform,
+      lightPaddingTop: getComputedStyle(light).paddingTop,
+      rotatePropertySupported: CSS.supports('rotate', '45deg'),
+      engineRotateProperty: getComputedStyle(capRotate).rotate,
+      engineTransformProperty: getComputedStyle(capTransform).transform,
+      sheetStatus: sheetResponse?.status ?? 0,
+      sheetType: sheetResponse?.headers.get('content-type') ?? '',
+      sheetHref,
+    };
+  });
+
+  await page.goto(baseUrl + '/', { waitUntil: 'load' });
+  await page.evaluate(DEEP);
+  const home = await page.evaluate(() => {
+    const counter = globalThis.__deepFind('my-counter');
+    const row = counter?.shadowRoot?.querySelector('.counter-row');
+    return {
+      counterFound: counter !== null,
+      counterPaddingTop: row ? getComputedStyle(row).paddingTop : 'missing',
+    };
+  });
+
+  const measured = { lab, home };
+  const failures = [];
+  if (!lab.widgetFound) failures.push('utility-widget was not found on /ui-lab');
+  if (lab.widgetPaddingTop !== '32px') failures.push('p-8 padding-top=' + lab.widgetPaddingTop);
+  if (lab.widgetFontWeight !== '600') failures.push('font-semibold weight=' + lab.widgetFontWeight);
+  // The discriminator is the MEASURED application, not CSS.supports: this
+  // WebKit build reports support for the rotate property yet ignores it in an
+  // adopted sheet (and in the delivered shadow link), so support claims are not
+  // evidence.
+  const engineAppliesRotate =
+    String(lab.engineRotateProperty) === '45deg' ||
+    String(lab.engineRotateProperty).startsWith('matrix(');
+  if (engineAppliesRotate) {
+    const rotated = lab.widgetRotate === '45deg' || String(lab.widgetTransform).startsWith('matrix(');
+    if (!rotated) failures.push('rotate-45 apply: rotate=' + lab.widgetRotate + ' transform=' + lab.widgetTransform);
+  } else {
+    // Reported platform boundary, measured: this engine does not implement the
+    // independent rotate property that Tailwind v4 lowers rotate-45 to. The
+    // delivered rule is verified by the artifact assertion; the lane does not
+    // rewrite Tailwind's output into a transform fallback (no measured need).
+    console.log('[' + browserName + '] rotate-45 not applied: engine lacks the rotate property (rule delivered, engine ignores it)');
+  }
+  if (!home.counterFound) failures.push('my-counter was not found on /');
+  if (home.counterPaddingTop !== '8px') failures.push('starter island p-2 padding-top=' + home.counterPaddingTop);
+  if (lab.lightTransform !== 'none') failures.push('component sheet leaked rotate-45 into the document: ' + lab.lightTransform);
+  if (lab.lightPaddingTop !== '0px') failures.push('component sheet leaked p-8 into the document: ' + lab.lightPaddingTop);
+  if (lab.sheetStatus !== 200) failures.push('component sheet href did not load: ' + lab.sheetHref + ' status=' + lab.sheetStatus);
+  if (!lab.sheetType.includes('text/css')) failures.push('component sheet content-type=' + lab.sheetType);
+  if (failures.length > 0) throw new Error('[' + browserName + '] ' + failures.join(' | ') + ' :: ' + JSON.stringify(measured));
+  console.log('UI-UTILITY-OK ' + browserName + ' ' + browser.version() + ' ' + JSON.stringify(measured));
+} finally {
+  await browser.close();
+}
+`;
+
+/** Boot-free runner: the caller already has the start server up at `baseUrl`. */
+async function runUtilityBrowserMatrix(starter: string, baseUrl: string): Promise<void> {
+  const probePath = join(starter, 'pw-utility-probe.mjs');
+  await writeFile(probePath, UI_UTILITY_PROBE_SCRIPT);
+  const failures: string[] = [];
+  for (const browserName of ['chromium', 'firefox', 'webkit'] as const) {
+    const probe = await run(
+      process.execPath,
+      [probePath, baseUrl, browserName],
+      starter,
+      BROWSER_TIMEOUT_MS,
+    );
+    if (probe.success && probe.output.includes(`UI-UTILITY-OK ${browserName}`)) {
+      console.log(`PASS utility computed styles / ${browserName} / pass`);
+    } else {
+      failures.push(
+        `utility computed styles / ${browserName} / FAIL:\n${probe.output.slice(-2000)}`,
+      );
+      console.log(`FAIL utility computed styles / ${browserName} / fail`);
+    }
+  }
+  if (failures.length > 0) {
+    throw new Error(
+      `Packed utility computed-style matrix failed (${failures.length}/3 browsers):\n` +
+        failures.join('\n'),
+    );
+  }
+  console.log('Packed utility computed-style matrix passed (chromium+firefox+webkit).');
+}
+
 async function main(): Promise<void> {
   const tmp = await mkdtemp(join(tmpdir(), 'openelement-packaged-ui-app-'));
   try {
@@ -489,6 +657,9 @@ async function main(): Promise<void> {
     manifest.dependencies['@openelement/element'] = pathToFileURL(elementTarball).href;
     // The appliance's own dependency: the package the README's recipe teaches.
     manifest.dependencies['@openelement/ui'] = pathToFileURL(uiTarball).href;
+    // The browser probe (gap B) resolves @playwright/test from inside the
+    // starter, exactly as the starter leg supplies its own probe pin.
+    manifest.devDependencies['@playwright/test'] = PW_PROBE_PIN;
     // The dependency-only utility probe: installed from ITS OWN fresh tarball.
     manifest.dependencies['@acme/utility-widget'] = pathToFileURL(widgetTarball).href;
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
@@ -575,6 +746,25 @@ async function main(): Promise<void> {
         CONFIG_ANCHOR,
         `${CONFIG_ANCHOR}\n  packageIslands: ['@openelement/ui', '@acme/utility-widget'],`,
       ),
+    );
+
+    // ─── Gap A: the starter's OWN island uses a Tailwind utility (S.2 gate) ──
+    // The starter is generated by the real packed create CLI above; this edit
+    // touches the GENERATED app (the shipped template default is unchanged, so
+    // no authoring-design decision is taken here). The island's shadow markup
+    // gains `p-2`, and the component stylesheet must carry the rule.
+    const counterPath = join(starter, 'app', 'islands', 'my-counter.tsx');
+    const counterSource = await readFile(counterPath, 'utf8');
+    if (!counterSource.includes('class="counter-row"')) {
+      throw new Error(
+        'Packed starter island my-counter.tsx lost its "counter-row" class — the utility ' +
+          'gate cannot state its edit:\n' +
+          counterSource.slice(0, 400),
+      );
+    }
+    await writeFile(
+      counterPath,
+      counterSource.replace('class="counter-row"', `class="counter-row ${STARTER_ISLAND_UTILITY}"`),
     );
 
     await writeFile(join(starter, 'app', 'components', 'ui-lab.tsx'), UI_LAB_COMPONENT);
@@ -737,6 +927,15 @@ async function main(): Promise<void> {
         );
       }
     }
+    // Gap A: the STARTER's own island utility must be compiled into the same
+    // component sheet — a generated-starter shadow island using Tailwind
+    // utilities with no hidden style plumbing.
+    if (!componentSheet.css.includes(`.${STARTER_ISLAND_UTILITY}`)) {
+      throw new Error(
+        `Component stylesheet ${componentSheet.name} is missing the starter island's ` +
+          `utility .${STARTER_ISLAND_UTILITY} (generated app source)`,
+      );
+    }
     // No full utility bundle: rules for utilities nothing references cannot be
     // in a per-candidate compile.
     for (const absent of ABSENT_UTILITY_PROBES) {
@@ -817,6 +1016,14 @@ async function main(): Promise<void> {
       ['/ui-lab', '/client/assets/'],
       ['/ui-lab', 'data-oe-static-styles'],
     ]);
+    // Gap B: the same running server feeds the real-engine computed-style matrix.
+    await exerciseServer(
+      'Packed UI appliance start server (browser matrix)',
+      () => ['run', 'start'],
+      starter,
+      [['/ui-lab', '<open-button']],
+      (baseUrl) => runUtilityBrowserMatrix(starter, baseUrl),
+    );
   } finally {
     await rm(tmp, { recursive: true }).catch(() => undefined);
   }
