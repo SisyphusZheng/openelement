@@ -84,17 +84,26 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
   变成"现在删"。
 - 处置：条件到即删（(a)）；(b) 批准则立即删原生形态一侧。
 
-### 4. dev/SSR 内联 sheet 适配器——条件到即删
+### 4. dev/SSR 内联 sheet 适配器——dev 半边已删除（S-C1.3），SSR 文本形态保留为边界
 
-- 所有者：router（`inlineSheetAdapterModule` / `serverStyleAssetPlugin`，
-  同在 `style-assets.ts`）。
+- 历史所有者：router（`inlineSheetAdapterModule`（已删除）/
+  `serverStyleAssetPlugin`（保留），同在原 `style-assets.ts`）。
 - 方向：dev server / SSR build → 模块图内联的 sheet 文本。
-- 存在原因：dev 与 SSR 没有可供 fetch 的已产出资产；内联是这两个通道的
-  过渡形态。
-- 退役条件（已写在 `style-assets.ts:181-184`）：#3 的原生判定翻转，或
-  dev 学会用 HTTP 服务协议资产——届时 dev 通道塌缩进生产适配器形态，
-  本生成器随同一判定删除。
-- 处置：条件到即删（与 #3 同一批执行）。
+- 退役条件之一已经兑现（alpha15 S-C1.3，"dev 学会用 HTTP 服务协议资产"）：
+  dev 通道现在把每条 authored 边服务为真实的 `text/css` 资源
+  （`<base>.openElement/authored-css.<digest>.css`，字节 = Vite 自身
+  `?inline` 处理后再做 S-C1.2 作用域投影），客户端适配器只携带 URL 并
+  `fetch()` + `replace()` 到按 realm/边持有的共享 `CSSStyleSheet`
+  （`STYLE_SHEET_LIVE` 使其在 markup 已声明同一链接时仍被 adopt，HMR 才能
+  就地更新已连接的根）。`inlineSheetAdapterModule` 与其
+  `replaceSync(<内联 CSS>)` 生成物、以及 `.css` 编辑触发的 full-reload
+  分支都随之删除。
+- 仍保留的一侧：SSR 构建对"没有产出资产的 sheet"（客户端图看不见的组件，
+  如非 island 的页面组件；应用自带的内存 sheet）继续内联其文本
+  —— 这是 S-C1.2 记录的边界，不是 dev 通道的退路，且文本本身就是构建期
+  `@scope` 投影。dev 下这类 sheet 不再内联（dev 端点覆盖每条 edge）。
+- 处置：dev 半边已删（S-C1.3）；SSR 文本形态保持"保留为边界"，其删除
+  条件是 server-only CSS 资产发现（剩余 S 收口项）。
 
 ### 5. `ShimStyleSheet`（SSR 侧 CSSStyleSheet）——保留为平台边缘
 

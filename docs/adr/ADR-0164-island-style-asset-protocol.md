@@ -434,3 +434,80 @@ lightningcss and css-tree are all unresolvable from `@openelement/router`; the
 installed Tailwind toolchain exposes only its own compiler and minifier). When a
 CSS AST becomes resolvable, `light-css-scope.ts` is the single seam to swap —
 the asset contract above does not change.
+
+## Amendment (2026-10-12): Dev serves authored CSS as a real resource (S-C1.3)
+
+Development used to carry the authored sheet's TEXT inside the generated
+adapter (`StyleSheet` + `replaceSync(<css>)`) and, because that sheet had no
+URL, the dev SSR markup inlined the same text in a `<style>` node. Dev now
+delivers the identical facts production delivers, from the dev server.
+
+**The resource.** Every registered edge gets one endpoint,
+`<base>.openElement/authored-css.<digest>.css`, served `text/css` with
+`Cache-Control: no-store`. The digest is a hash of the registry key, so the
+authored path and the component scope never appear in the URL and two edges
+cannot collide. The bytes are Vite's OWN processing of the authored file —
+`server.environments.client.transformRequest(file + '?inline')`, the documented
+"import a CSS file as a string" form: the project's PostCSS chain runs,
+`@import` dependencies resolve, and every relative `url()` is rewritten to a
+base-absolute dev URL — followed by the same `@scope (<tag>)` projection the
+build applies (`scopeEdgeCss`, one scope decision for every half). No second
+CSS compiler, no second asset manifest, no disk staging: the endpoint reads the
+same authored bytes the build reads.
+
+**Why `?inline`, specifically.** A relative reference inside a stylesheet
+resolves against the STYLESHEET's URL in a `<link>` delivery but against the
+DOCUMENT's base in a constructed (`replace()`d) sheet — the one semantic
+difference between the two deliveries this protocol uses. Rewriting the
+reference to a base-absolute URL at serve time removes the difference: both
+deliveries name the same resource, and a public asset referenced as
+`url('/x.png')` is delivered unchanged in dev and after a build. The dev
+endpoint fails closed on any module shape it cannot read (a 500 with the
+reason), never falling back to unrelated text.
+
+**The adapter.** The generated dev edge module carries the URL and nothing
+else: `fetch()` into ONE realm-held, per-edge `CSSStyleSheet`
+(`globalThis.__openElementDevStyleSheets`, keyed by the edge digest) with
+`STYLE_SHEET_READY`/`STYLE_SHEET_URL` as before, plus a per-evaluation revision
+so an older in-flight response can never overwrite a newer sheet. The server
+half of the same edge is a URL-only shim, so the dev DSD template and the dev
+document head declare `<link rel="stylesheet" data-oe-static-styles>` for the
+authored edges — parser-visible, no JavaScript needed, no inline CSS — exactly
+the shape production produces.
+
+**Live sheets and HMR.** A dev sheet carries the new protocol key
+`STYLE_SHEET_LIVE`: a root adopts it even when its markup declares the same
+URL, because the adopted object is the copy an edit re-fills. That is the one
+deliberate dev/production difference, and it is what makes a CSS-only edit
+reach connected roots without a DOM write: the edit invalidates the edge module
+in every environment, invalidates nothing else, and sends ONE `js-update` for
+the module's browser-facing id — `<base>@id/__x00__<graph id minus NUL>`, the
+form Vite's client matches (the graph entry carries the raw virtual id when it
+was created from the id rather than from a request). No full reload, no
+node, and `replace()` keeps the sheet identity every root already holds. The
+dev resource's first-paint delivery stays the markup link, so a JavaScript-less
+document is styled by the same links a built site uses.
+
+**Retired machinery (verified deletion).** `inlineSheetAdapterModule` and its
+`replaceSync(<css text>)` emission; the dev `?inline`-less byte path
+(`readEdgeFile` in the dev half); the `full-reload` branch that a `.css` edit
+of a tracked edge used to take (its replacement is the js-update above); and
+the `style-assets.test.ts` assertions that pinned the inline adapter text
+(rewritten to pin the resource-URL adapter and the URL-only shim).
+
+**Boundary, stated rather than hidden.** An authored sheet's relative
+references are resolved by Vite in DEV; the BUILD's emitted asset is still the
+authored file's own bytes, so a relative `url()` inside a component sheet is
+resolved against the emitted asset's URL there (`assets/<hash>.css` →
+`assets/<name>`), not against the source tree. Public assets referenced with a
+base-absolute URL are unaffected in both. Making the built asset carry
+Vite-resolved URLs is the same seam (`readEdgeCss` → Vite's CSS pipeline) but a
+separate change to the client build's emission; it is recorded as outstanding
+work rather than smuggled into this amendment.
+
+**Incidental fix.** `transformIslandSource` appended its `__island`/`__tagName`
+markers to ANY file under the islands directory, including `card.css` — which
+corrupted the `.css?inline` text the dev endpoint serves (the markers became
+part of the stylesheet). The transform now admits only the script modules the
+island scanner admits (`*.ts|tsx|js|jsx`, query/hash stripped), so the two
+halves of island admission state one rule.
