@@ -18,15 +18,21 @@ import { SSR_REGISTRY_STUB_MARKER } from '@openelement/protocol/registry-markers
  * HTMLElement and customElements are in output.banner (build-ssg.ts)
  * because they must execute BEFORE any ESM import is evaluated.
  * CSSStyleSheet lives here because it needs `import { StyleSheet }`.
+ *
+ * The global is element's cross-realm `StyleSheet` itself — the same
+ * in-memory implementation the runtime contract names (`StyleSheetLike`:
+ * `replaceSync` + `cssRules`), NOT a second stub. A divergent stub whose
+ * `replaceSync` dropped its argument and whose `cssRules` always returned []
+ * silently discarded every URL-less author sheet constructed through the
+ * global: the SSR serializer reads rules back through `cssRules`, so the
+ * sheet vanished from the server-rendered document (alpha15 N-2B). The
+ * guard never overwrites a runtime that provides the platform API.
  */
 export function generateSsrPolyfillBanner(): string {
   return `\
 import { StyleSheet } from '@openelement/element';
 if (typeof globalThis.CSSStyleSheet === 'undefined') {
-  globalThis.CSSStyleSheet = class {
-    replaceSync(_css) {}
-    get cssRules() { return []; }
-  };
+  globalThis.CSSStyleSheet = StyleSheet;
 }
 `;
 }
