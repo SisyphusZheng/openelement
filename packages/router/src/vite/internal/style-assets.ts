@@ -573,22 +573,35 @@ export const clientStyleAssetPlugin: (
 };
 
 /**
+ * The server-rendered graph's roots (S-C1.4): the module FILES the discovery
+ * walk starts from, plus the module SPECIFIERS the generated SSR entry imports
+ * for its islands. A specifier resolves through the bundler — the same
+ * resolution the entry's own import gets — so a seed can never name a different
+ * module than the SSR build bundles.
+ */
+export interface ServerRenderedSeeds {
+  readonly files: readonly string[];
+  readonly specifiers: readonly string[];
+}
+
+/**
  * The server-rendered style-edge pass (S-C1.4, #1609).
  *
  * The client build's graph contains the islands and only the islands, so a
  * Page, Layout or component that the server renders alone never entered it —
  * and neither did the authored `.css` edge it declares. The build already knows
- * the ROUTE/PAGE/LAYOUT sources the server renders (the traversal that selects
- * island delivery); this pass walks their static module graph through the
- * bundler's own resolver (`walkModuleGraph`: relative, `#imports`, alias and
- * package export paths alike), asks the compiler for each module's admission
- * facts, and loads every registered edge through `clientStyleAssetPlugin` — the
- * same plugin instance, Vite CSS processing, content address, manifest record
- * and adapters an island's sheet gets, in the same client build. Modules are
- * read, never imported: no server-only JavaScript reaches a client bundle.
+ * the SERVER-rendered graph's roots (the route/page/layout sources, and the
+ * island modules the generated SSR entry imports); this pass walks their static
+ * module graph through the bundler's own resolver (`walkModuleGraph`: relative,
+ * `#imports`, alias and package export paths alike), asks the compiler for each
+ * module's admission facts, and loads every registered edge through
+ * `clientStyleAssetPlugin` — the same plugin instance, Vite CSS processing,
+ * content address, manifest record and adapters an island's sheet gets, in the
+ * same client build. Modules are read, never imported: no server-only
+ * JavaScript reaches a client bundle.
  */
 export function serverRenderedStyleEdgesPlugin(
-  seeds: readonly string[],
+  seeds: ServerRenderedSeeds,
   emission: Pick<StyleAssetEmission, 'emit'>,
 ): Plugin {
   let admitted = false;
@@ -628,17 +641,31 @@ async function admitServerRenderedStyleEdges(
     info(message: string): void;
     warn(message: string): void;
   },
-  seeds: readonly string[],
+  seeds: ServerRenderedSeeds,
   emission: Pick<StyleAssetEmission, 'emit'>,
 ): Promise<void> {
-  if (seeds.length === 0) {
+  const roots = [...seeds.files];
+  for (const specifier of seeds.specifiers) {
+    // The island modules the SSR entry imports, resolved exactly as that
+    // import resolves. A specifier the resolver cannot answer is left to the
+    // SSR build's own failure: it imports the same specifier.
+    let resolved: { id: string; external?: boolean | 'absolute' | 'relative' } | null;
+    try {
+      resolved = await this.resolve(specifier);
+    } catch {
+      continue;
+    }
+    if (resolved === null || resolved.external === true) continue;
+    roots.push(resolved.id.split('?', 1)[0]!);
+  }
+  if (roots.length === 0) {
     log.warn('[css-discovery] no server-renderable seeds; nothing to discover');
     return;
   }
   const root = serverRenderRoot ?? process.cwd();
   const workspaceRoot = findBuildWorkspaceRoot(root) ?? undefined;
-  log.warn(`[css-discovery] seeds=${seeds.length}`);
-  const walk = await walkModuleGraph(this, seeds);
+  log.warn(`[css-discovery] seeds=${roots.length}`);
+  const walk = await walkModuleGraph(this, roots);
   log.warn(
     `[css-discovery] walked=${walk.files.length} packed=${walk.files.filter((f) => f.includes('node_modules')).length}`,
   );

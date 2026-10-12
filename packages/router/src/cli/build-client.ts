@@ -69,6 +69,7 @@ import {
 } from '@openelement/compiler';
 import { ELEMENT_RUNTIME_MESSAGES_DEFINE } from '../vite/internal/element-error-messages.ts';
 import {
+  type ServerRenderedSeeds,
   type StyleAssetRecord,
   clientStyleAssetPlugin,
   serverRenderedStyleEdgesPlugin,
@@ -197,22 +198,38 @@ function resolveConfiguredSource(root: string, importPath: string): string | nul
  * The server-renderable module roots the CSS discovery pass walks (S-C1.4).
  *
  * Route/page/layout sources are SERVER-renderable roots and have nothing to do
- * with browser hydration: this list must never be derived from the island set
- * (a component whose JavaScript is never admitted to a client bundle still owns
- * stylesheets that must be emitted). Two authoritative, hydration-independent
- * sources are unioned with the traversal's own file set:
+ * with browser hydration: this list must never be NARROWED to the island set
+ * the client bundle admits (a component whose JavaScript is never admitted to a
+ * client bundle still owns stylesheets that must be emitted). Three
+ * authoritative, hydration-independent sources are unioned with the traversal's
+ * own file set:
  *
  *  - the production build plan's route modules (`ctx.buildPlan.routes`), which
  *    exist whenever the build knows a route — including builds where the
  *    optional route cache the traversal reads is empty;
  *  - the configured layout shells (`layout` / `layouts`), which render on the
- *    server for every route but are not route modules themselves.
+ *    server for every route but are not route modules themselves;
+ *  - every SSR-RENDERABLE island module, which is exactly the set the generated
+ *    SSR entry imports: the entry registers each admitted tag so any of them
+ *    can appear in server-rendered markup, whether or not a page references it.
+ *    A package island no page references (the packed consumer's installed
+ *    `@openelement/ui/open-input`) is such a root — its `.css` edge is loaded by
+ *    the SSR build like any other, and the client build owns that emitted asset.
+ *
+ * Island modules are returned as SPECIFIERS: a package island is addressable
+ * only through the bundler's own resolution, and the discovery pass resolves
+ * them exactly as the entry's import does.
  */
-function serverRenderedSeedFiles(
+function serverRenderedSeeds(
   ctx: OpenElementBuildContext,
   root: string,
   scanned: ReadonlySet<string>,
-): string[] {
+  declared: {
+    readonly localTagNames: readonly string[];
+    readonly localFiles: readonly string[];
+    readonly packageDecls: readonly IslandDecl[];
+  },
+): ServerRenderedSeeds {
   const seeds = new Set(scanned);
   for (const route of ctx.buildPlan?.routes ?? []) {
     const file = resolve(root, route.filePath);
@@ -225,7 +242,32 @@ function serverRenderedSeedFiles(
     const file = resolve(root, source.startsWith('/') ? source.slice(1) : source);
     if (existsSync(file)) seeds.add(file);
   }
-  return [...seeds];
+  // The SSR entry's island imports, read from the same two facts the entry
+  // generator reads: the DECLARED islands (the client bundle's reachability
+  // selection runs later and must not narrow this) and the admission plan's
+  // renderable set. A `hydrate: 'only'` island renders no server markup and is
+  // excluded by that set, so its sheets never become a build tax.
+  const renderableTags =
+    ctx.phase1.ssrAdmissionPlan === null
+      ? undefined
+      : new Set(ctx.phase1.ssrAdmissionPlan.renderableTags);
+  const isRenderable = (tags: readonly string[]): boolean =>
+    renderableTags === undefined || tags.some((tag) => renderableTags.has(tag));
+  const islandsDir = ctx.phase3.islandsDir || DEFAULT_ISLANDS_DIR;
+  declared.localTagNames.forEach((tagName, index) => {
+    const meta = ctx.phase1.islandMeta[tagName] as Partial<DeliveryIslandRecord> | undefined;
+    if (!isRenderable(deliveryTagsForLocal(tagName, meta))) return;
+    const islandFile = declared.localFiles[index];
+    if (!islandFile) return;
+    const file = resolve(root, islandsDir, islandFile);
+    if (existsSync(file)) seeds.add(file);
+  });
+  const specifiers = new Set<string>();
+  for (const island of declared.packageDecls) {
+    if (!isRenderable(deliveryTagsForPackage(island))) continue;
+    specifiers.add(island.modulePath);
+  }
+  return { files: [...seeds], specifiers: [...specifiers] };
 }
 
 export interface ReachableSourceScan {
@@ -850,7 +892,11 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       // hashed and named exactly like an island's, and no server-only
       // JavaScript enters any client bundle.
       serverRenderedStyleEdgesPlugin(
-        serverRenderedSeedFiles(ctx, root, reachableScan.sourceFiles),
+        serverRenderedSeeds(ctx, root, reachableScan.sourceFiles, {
+          localTagNames: localIslands,
+          localFiles: localIslandFiles,
+          packageDecls: packageIslandDecls,
+        }),
         styleAssetEmission,
       ),
       {

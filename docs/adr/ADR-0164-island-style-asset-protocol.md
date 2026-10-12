@@ -635,6 +635,23 @@ to the compiler's edge registry, `external` resolutions are the resolver's own
 verdict, virtual ids have no file, and a dynamic-only dependency is outside the
 static contract — the SSR half diagnoses that case instead of guessing.
 
+**The walk's roots include the SSR entry's island imports (follow-up,
+2026-10-12).** Route/page/layout sources are not the whole server-rendered
+graph: the generated entry statically imports EVERY SSR-renderable island module
+— local and package alike, whether or not a page references the tag — because it
+registers each admitted tag so any of them can render in server markup. Such a
+module's `.css` edge is therefore loaded by the SSR build, which fails closed at
+the lookup when the client build emitted no asset for it. The packed consumer
+found exactly that: the appliance rendered three of the installed package's six
+declared islands, and `@openelement/ui/open-input`, `…/open-dropdown` and
+`…/open-theme-toggle` — imported by the entry, referenced by no page — left three
+`OE_CLIENT_BUILD_STYLE_ASSET_UNREGISTERED` failures. The roots are now the union
+of the route/layout/traversal files and those island modules (declared islands
+∩ the admission plan's renderable set, so a `hydrate: 'only'` island adds
+nothing), the island modules as SPECIFIERS the pass resolves exactly as the
+entry's own import does. Admission stays resource-level: the asset exists, and a
+declarative `<link>` still appears only where a component actually renders.
+
 **Admission and emission reuse the existing owners.** Each discovered module is
 handed to the compiler (`compileElementModule`) and its edges recorded through
 the registry's one write path, `registerStyleEdges` — now shared with the Vite
