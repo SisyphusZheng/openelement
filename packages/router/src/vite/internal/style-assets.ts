@@ -75,15 +75,6 @@ import {
 } from '@openelement/protocol/style-sheet';
 import { buildError, ClientBuildErrorCode } from '../../internal/error-codes.ts';
 import { scopeLightRootCss } from './light-css-scope.ts';
-import {
-  compileElementModule,
-  lightRootScopeTag,
-  registerStyleEdges,
-  stableModuleId,
-  styleRequestsForImporter,
-} from '@openelement/compiler';
-import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
-import { findBuildWorkspaceRoot } from '../workspace-alias.ts';
 import { dirname as posixDirname, relative as posixRelative } from 'pathe';
 
 /**
@@ -546,12 +537,6 @@ export const clientStyleAssetPlugin: (records: Map<string, StyleAssetRecord>) =>
   };
 };
 
-/** Whether `candidate` lives inside `root` (the project whose sheets this build owns). */
-function withinRoot(candidate: string, root: string): boolean {
-  const base = root.endsWith('/') ? root : `${root}/`;
-  return candidate === root || candidate.startsWith(base);
-}
-
 /** Vite's asset reference placeholder, as its CSS text carries it. */
 const ASSET_PLACEHOLDER_PREFIX = '__VITE_ASSET__';
 const assetPlaceholderRE = /__VITE_ASSET__([\w$]+)__(?:\$_(.*?)__)?/g;
@@ -568,106 +553,6 @@ function cssAssetUrl(base: string, cssFileName: string, emittedFileName: string)
   }
   return `${base.endsWith('/') ? base : `${base}/`}${emittedFileName}`;
 }
-
-/**
- * The server-rendered style-edge pass (S-C1.4, #1609).
- *
- * The client build's graph contains the islands, and only the islands: a Page
- * or Layout component that the server renders and no island imports never
- * entered it, so its authored `.css` edges were registered by NOTHING in this
- * build and the SSR half had no emitted asset to declare — the sheet fell back
- * to framework-generated inline CSS. The one thing missing was reach: the
- * compiler's style-edge registry is written by the compiled-element transform,
- * and the build already knows every local source the server renders (the same
- * route/page/layout traversal that selects island delivery). Loading those
- * modules here runs that transform, which registers each module's edges (and,
- * transitively, every local component they import), and each registered edge is
- * then loaded through {@linkcode clientStyleAssetPlugin} — the SAME emission
- * authority, content addressing, Vite CSS processing and adapter handback an
- * island's sheet gets, in the same client build and the same manifest.
- *
- * Nothing is imported by any entry: the modules are loaded for their edges, so
- * no server-only JavaScript reaches the client bundle, and tree shaking cannot
- * drop an emission that was never an import.
- */
-export function serverRenderedStyleEdgesPlugin(files: ReadonlySet<string>): Plugin {
-  let admitted = false;
-  return {
-    name: 'open:server-rendered-style-edges',
-    enforce: 'pre',
-    apply: 'build',
-    // The module-LOADING phase, not `buildStart`: reaching a sheet's text
-    // through Vite's `?inline` CSS module and reading the transformed module
-    // back is only possible while the toolchain is loading modules (the plugin
-    // context exposes no transform-phase equivalent in a build). The pass runs
-    // once, at the first module the graph asks for, and every module it needs
-    // is loaded through the same context the build itself uses.
-    configResolved(config) {
-      serverRenderRoot = config.root;
-    },
-    async load() {
-      // Re-entrance guard, set BEFORE the work: the pass loads modules through
-      // this same context, so its own hook runs again for each of them.
-      if (admitted) return null;
-      admitted = true;
-      await admitServerRenderedEdges.call(this, files);
-      return null;
-    },
-  };
-}
-
-/**
- * Admission (pass 1) and emission (pass 2) for the modules the server renders.
- *
- * Pass 1 asks the COMPILER for each module's program — the same facts the
- * transform asks for, through the registry's one write path
- * (`registerStyleEdges`), because these modules are in nobody's import graph.
- * Pass 2 loads every registered edge through `open:style-assets`, so the sheet
- * gets the same Vite CSS processing, content address, manifest record and
- * adapter an island's sheet gets, from the same plugin instance.
- */
-async function admitServerRenderedEdges(
-  this: {
-    load(options: { id: string }): Promise<unknown>;
-    info(message: string): void;
-  },
-  files: ReadonlySet<string>,
-): Promise<void> {
-  if (files.size === 0) return;
-  const root = serverRenderRoot ?? process.cwd();
-  const workspaceRoot = findBuildWorkspaceRoot(root) ?? undefined;
-  for (const file of files) {
-    if (!/\.(ts|tsx|js|jsx|mts|mjs)$/.test(file)) continue;
-    let source: string;
-    try {
-      source = await readFile(file, 'utf8');
-    } catch {
-      continue;
-    }
-    const compiled = compileElementModule(source, stableModuleId(file, root, workspaceRoot), {
-      staticSidecars: [ISLAND_ADMISSION],
-    });
-    if (compiled === null) continue;
-    registerStyleEdges(file, compiled.styleRequests ?? [], lightRootScopeTag(compiled.program));
-  }
-  const edges = new Map<string, string>();
-  for (const file of files) {
-    for (const request of styleRequestsForImporter(file)) {
-      edges.set(styleAssetGraphId(request.moduleId), request.file);
-    }
-  }
-  for (const graphId of edges.keys()) await this.load({ id: graphId });
-  const emitted = [...new Set(edges.values())];
-  if (emitted.length > 0) {
-    this.info(
-      `Server-rendered components declared ${emitted.length} stylesheet edge(s) for ` +
-        `emission: ${emitted.map((file) => file.split('/').pop()).join(', ')}`,
-    );
-  }
-}
-
-/** The client build's root, recorded by the plugin's `configResolved`. */
-let serverRenderRoot: string | undefined;
 
 /**
  * The SSR-build plugin: serves the server half of the protocol. The sheet
@@ -715,28 +600,6 @@ export function serverStyleAssetPlugin(options?: {
           '// template carries a parser-visible `<link>` and never inlines the CSS.',
         ]);
       }
-      // A registered FILE edge with no emitted asset is a defect of the
-      // emission side, never a reason to inline: the client build loads every
-      // local source the server renders (serverRenderedStyleEdgesPlugin), so an
-      // in-root sheet without an asset means the traversal missed it.
-      if (withinRoot(request.file, this.environment.config.root)) {
-        // Thrown (not this.error) so the stable code survives to the caller.
-        throw buildError(
-          ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,
-          `The server-rendered style edge ${request.file} has no emitted asset: the client ` +
-            'build must emit every URL-addressable authored sheet (island or server-only) ' +
-            'before the SSR build declares it. An inline fallback would hide this, so the ' +
-            'render fails closed instead.',
-        );
-      }
-      // Out-of-root (package) sheets that never entered a client graph at all
-      // are the one remaining class: their bytes are the only source the
-      // renderer can reach. Reported, never silent.
-      this.warn(
-        `Style sheet ${request.file} is outside the project root and no client build emitted it ` +
-          '(a package component the client graph never contains); its text is inlined for this ' +
-          'render. Give the owning package a client entry (packageIslands) to externalize it.',
-      );
       // No client asset (an island-free build): the text shim keeps the
       // component styled instead of shipping a link to a missing file.
       const text = await readAuthoredEdgeCss(request);

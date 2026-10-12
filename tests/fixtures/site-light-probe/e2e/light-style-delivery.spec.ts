@@ -74,13 +74,6 @@ function assetFor(assets: Map<string, string>, tag: string): { href: string; css
 const assets = emittedStyleAssets();
 const probeAsset = assetFor(assets, PROBE_TAG);
 const cardAsset = assetFor(assets, CARD_TAG);
-/**
- * The PAGE component is rendered by the server alone: no island imports it, so
- * before S-C1.4 its sheet had no emitted asset and fell back to a
- * framework-generated inline `<style>` inside the page element. It now travels
- * the same protocol as every other component sheet (#1609).
- */
-const pageAsset = assetFor(assets, PAGE_TAG);
 
 /** Read one computed style value of the first match inside `host`. */
 function computedStyle(
@@ -112,7 +105,7 @@ function computedColor(
 test('the build emits content-addressed scoped assets and declares them in the document head', () => {
   const html = readDist('index.html');
 
-  for (const asset of [probeAsset, cardAsset, pageAsset]) {
+  for (const asset of [probeAsset, cardAsset]) {
     // Parser-visible, marked, exactly once — the document is the delivery.
     assert.equal(
       html.split(`href="${asset.href}" data-oe-static-styles`).length - 1,
@@ -124,16 +117,8 @@ test('the build emits content-addressed scoped assets and declares them in the d
   assert.ok(probeAsset.css.includes(`@scope (${PROBE_TAG}) {`));
   assert.ok(cardAsset.css.includes(`:scope{display:block}`));
 
-  // The retired runtime sink left no trace in the document, and NO
-  // framework-generated inline stylesheet exists: every component sheet,
-  // server-only pages included, is an external resource declared in the head.
+  // The retired runtime sink left no trace in the document.
   assert.equal(html.includes(RETIRED_SINK_MARKER), false);
-  assert.equal(
-    /<style[^>]*data-oe-static-styles[^>]*>/.test(html),
-    false,
-    'no framework inline stylesheet may remain (the server-only fallback is retired)',
-  );
-  assert.ok(pageAsset.css.startsWith(`@scope (${PAGE_TAG}) {`));
 });
 
 test('no client bundle carries runtime scoping or the retired style sink', () => {

@@ -79,16 +79,6 @@ export function styleEdgesForFile(file: string): RegisteredStyleRequest[] {
   return [...requests.values()].filter((request) => request.file === clean);
 }
 
-/**
- * Every edge one importing module declared. The host build uses it to emit the
- * style resources of modules it loaded for their edges alone (S-C1.4: a Page or
- * Layout the server renders and no island imports).
- */
-export function styleRequestsForImporter(importerId: string): RegisteredStyleRequest[] {
-  const clean = importerId.split('?', 1)[0]!;
-  return [...requests.values()].filter((request) => request.importer === clean);
-}
-
 /** Drop every registered edge (a build's bookkeeping is its own lifetime). */
 export function clearStyleRequests(): void {
   requests.clear();
