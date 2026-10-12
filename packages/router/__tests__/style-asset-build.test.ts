@@ -52,6 +52,11 @@ const SHARED_SHEET = `:host { display: grid; }
 const C_SHEET = `:host { display: block; }
 .c-rule { color: blue; }
 `;
+/** The unreferenced island's sheet — distinct bytes, so its asset cannot be
+ * confused with a sheet some page already reaches (S-C1.4, #1609). */
+const UNREFERENCED_SHEET = `:host { display: inline; }
+.d-rule { color: green; }
+`;
 
 const fixtureRoots: string[] = [];
 
@@ -78,6 +83,34 @@ function islandSource(tag: string): string {
     '  static override styles = [sheet];',
     '  render() {',
     `    return <div class='${tag === 'oe-style-c' ? 'c-rule' : 'shared-rule'}'>${tag}</div>;`,
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+}
+
+/**
+ * An island the fixture DECLARES and no page references (S-C1.4, #1609): the
+ * generated SSR entry imports its module — the entry registers every admitted
+ * tag, so the tag can render in server markup — which puts its `.css` edge in
+ * the SSR build's graph. The client build must therefore emit its sheet
+ * (external, content-addressed, recorded in the manifest), while the rendered
+ * page declares NO link for it: nothing rendered the tag.
+ */
+function unreferencedIslandSource(): string {
+  return [
+    '/** Declared island no page references (S-C1.4, #1609). */',
+    "import { defineIslandConfig } from '@openelement/router';",
+    "import { element, OpenElement } from '@openelement/element';",
+    "import sheet from './oe-style-d.css';",
+    '',
+    "export const openElement = defineIslandConfig({ hydrate: 'idle', ssr: true });",
+    '',
+    "@element('oe-style-d', { root: 'shadow-open' })",
+    'export default class OeStyleD extends OpenElement {',
+    '  static override styles = [sheet];',
+    '  render() {',
+    "    return <div class='d-rule'>oe-style-d</div>;",
     '  }',
     '}',
     '',
@@ -116,6 +149,8 @@ async function buildFixture(): Promise<string> {
   await write(join(appDir, 'app', 'islands', 'oe-style-a.tsx'), islandSource('oe-style-a'));
   await write(join(appDir, 'app', 'islands', 'oe-style-b.tsx'), islandSource('oe-style-b'));
   await write(join(appDir, 'app', 'islands', 'oe-style-c.tsx'), islandSource('oe-style-c'));
+  await write(join(appDir, 'app', 'islands', 'oe-style-d.css'), UNREFERENCED_SHEET);
+  await write(join(appDir, 'app', 'islands', 'oe-style-d.tsx'), unreferencedIslandSource());
   await write(
     join(appDir, 'app', 'components', 'proof-page.tsx'),
     [
@@ -248,7 +283,8 @@ test('the emitted .css assets carry the authored rules at content-addressed name
   // name is the hash of the bytes the asset actually serves (the emitted text
   // is Vite's own processing of the authored sheet — imports resolved, urls
   // rewritten — so the address describes the served resource, not the source).
-  expect(cssFiles).toHaveLength(2);
+  // The third is the declared-but-unreferenced island's sheet (S-C1.4, #1609).
+  expect(cssFiles).toHaveLength(3);
   const bodies = await Promise.all(cssFiles.map((file) => readFile(join(assetsDir, file), 'utf8')));
   for (const [index, body] of bodies.entries()) {
     expect(
@@ -266,6 +302,34 @@ test('the emitted .css assets carry the authored rules at content-addressed name
   expect(shared!.replace(/\s+/g, '')).toContain(':host{display:grid}');
 });
 
+/**
+ * The RED consumer for the discovery gap S-C1.4 shipped with (#1609, packed
+ * `@openelement/ui` consumer): an island module the generated SSR entry imports
+ * but no page references. Its `.css` edge is in the SSR build's graph, so the
+ * asset must exist — and it must NOT be declared in the rendered page, because
+ * nothing rendered the tag: admission is resource-level, the declarative
+ * `<link>` stays per rendered instance.
+ */
+test('an island the SSR entry imports but no page references still emits its sheet', async () => {
+  const assetsDir = join(appDir, 'dist', 'client', 'assets');
+  const cssFiles = (await readdir(assetsDir)).filter((file) => file.endsWith('.css'));
+  const bodies = await Promise.all(cssFiles.map((file) => readFile(join(assetsDir, file), 'utf8')));
+  const unreferenced = bodies.find((body) => body.includes('.d-rule'));
+  expect(unreferenced, 'the unreferenced island sheet is emitted').toBeDefined();
+
+  const moduleText = await readFile(join(appDir, 'dist', 'server', 'client-assets.js'), 'utf8');
+  const body = moduleText.replace('export const clientAssets', 'const clientAssets');
+  const manifest = new Function(`${body}; return clientAssets;`)() as { styles: string[] };
+  const emittedHref = `/sub/client/${styleAssetFileName(unreferenced!)}`;
+  expect(manifest.styles, 'the emitted asset is recorded in the manifest').toContain(emittedHref);
+
+  const html = await readFile(join(appDir, 'dist', 'index.html'), 'utf8');
+  expect(
+    html,
+    'no page rendered the tag, so the resource is admitted but not declared',
+  ).not.toContain(emittedHref);
+});
+
 test('the client asset manifest records the deduplicated styles preload URLs', async () => {
   const moduleText = await readFile(join(appDir, 'dist', 'server', 'client-assets.js'), 'utf8');
   const body = moduleText.replace('export const clientAssets', 'const clientAssets');
@@ -274,9 +338,10 @@ test('the client asset manifest records the deduplicated styles preload URLs', a
     styles: string[];
   };
   expect(manifest.entry).toBe('/sub/client/islands/client.js');
-  // Two distinct sheets, one URL each — the shared sheet appears once — and
-  // every URL is base-prefixed and present on disk.
-  expect(manifest.styles).toHaveLength(2);
+  // Three distinct sheets (the shared sheet appears once, and the
+  // declared-but-unreferenced island's sheet is admitted like any other), one
+  // URL each — every URL base-prefixed and present on disk.
+  expect(manifest.styles).toHaveLength(3);
   for (const href of manifest.styles) {
     expect(href).toMatch(/^\/sub\/client\/assets\/[0-9a-f]{12}\.css$/);
     await readFile(join(appDir, 'dist', href.slice('/sub/'.length)), 'utf8');
