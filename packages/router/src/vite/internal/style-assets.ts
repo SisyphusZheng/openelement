@@ -722,7 +722,7 @@ async function emitStyleAsset(
   const fileName = styleAssetFileName(css);
   if (request.moduleId.includes('node_modules')) {
     log.warn(
-      `[dbg-key] CLIENT_RECORD_KEY=${request.moduleId}\n[dbg-key] CLIENT_FILE=${request.file}`,
+      `[dbg-key] CLIENT_RECORD_KEY=${JSON.stringify(request.moduleId)}\n[dbg-key] CLIENT_FILE=${JSON.stringify(request.file)}`,
     );
   }
   records.set(request.moduleId, { fileName, hash });
@@ -811,7 +811,9 @@ export function serverStyleAssetPlugin(options?: {
       // either a sheet that build could not process or a defect of discovery.
       // It is never answered by inlining an in-root component's CSS: the render
       // fails closed with a stable, actionable diagnostic.
-      log.warn(`[dbg-key] SSR_LOOKUP_KEY=${registryKey}\n[dbg-key] SSR_FILE=${request.file}`);
+      log.warn(
+        `[dbg-key] SSR_LOOKUP_KEY=${JSON.stringify(registryKey)}\n[dbg-key] SSR_FILE=${JSON.stringify(request.file)}`,
+      );
       if (withinRoot(request.file, this.environment.config.root)) {
         throw buildError(
           ClientBuildErrorCode.STYLE_ASSET_UNREGISTERED,
