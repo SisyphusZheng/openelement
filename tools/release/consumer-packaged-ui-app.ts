@@ -30,11 +30,13 @@
  *            packed UI declarations
  *   build    real SSG build; must emit dist/ui-lab/index.html carrying the
  *            component sheets, the package island chunks, and the sheets as
- *            real content-addressed .css assets byte-equal to the installed
- *            package's own files — and the emitted client JS must contain no
- *            component CSS text (the KR-10(b) detector: without the style-edge
- *            intake the build fails at MISSING_EXPORT; a silent inline would
- *            fail the zero-inline scan instead)
+ *            real content-addressed .css assets whose rules are the installed
+ *            package's own (Vite's CSS pipeline is the ONE processing path, so
+ *            a production build's CSS minifier has run over them) — and the
+ *            emitted client JS must contain no component CSS text (the KR-10(b)
+ *            detector: without the style-edge intake the build fails at
+ *            MISSING_EXPORT; a silent inline would fail the zero-inline scan
+ *            instead)
  *   start    the `start` script (the router's `oe` bin) serves the
  *            appliance page over HTTP
  *
@@ -44,7 +46,6 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -257,8 +258,23 @@ const CONFIG_ANCHOR = 'export default defineConfig({';
 
 const UI_SHEET_MARKERS = ['.control:focus-visible', '.btn[hidden]'] as const;
 
-function sha256(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+/**
+ * The rule selectors of a component sheet, normalized for comparison against
+ * the build-processed copy: comments dropped, whitespace collapsed, attribute
+ * quotes removed (a CSS minifier normalizes `[size='sm']` to `[size=sm]`).
+ * The minifier preserves selector text — it rewrites declarations — so the
+ * selector set is what survives as the sheet's provenance.
+ */
+function sheetSelectors(css: string): string[] {
+  return css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('{')
+    .slice(0, -1)
+    .map((part) => (part.split('}').pop() ?? '').replace(/\s+/g, ' ').trim())
+    .filter((selector) => selector !== '' && !selector.startsWith('@'))
+    .map((selector) =>
+      selector.replace(/\[([^\]]*)\]/g, (_, body: string) => `[${body.replace(/['"]/g, '')}]`),
+    );
 }
 
 async function main(): Promise<void> {
@@ -524,21 +540,40 @@ async function main(): Promise<void> {
         `Packed UI appliance build emitted no client css assets under ${clientAssetsDir}`,
       );
     }
-    const emittedHashes = new Set(
-      await Promise.all(
-        emittedSheets.map(async (name) =>
-          sha256(await readFile(join(clientAssetsDir, name), 'utf8')),
-        ),
-      ),
+    // Identity is asserted by PROVENANCE, not by byte-equality: Vite's CSS
+    // pipeline is the ONE processing path for a sheet's text (ADR-0164,
+    // S-C1.3 follow-up), and a production build runs its CSS minifier over the
+    // emitted asset, so the asset is the PROCESSED sheet (`blue` becomes
+    // `#00f`, comments and whitespace are gone) and can never equal the
+    // authored file. An emitted asset must instead carry every rule SELECTOR
+    // the installed sheet declares — an inlined copy or a framework-generated
+    // sheet cannot — and a shadow component's sheet must ship unscoped.
+    const installedSelectors = sheetSelectors(uiSheet);
+    const emittedTexts = await Promise.all(
+      emittedSheets.map(async (name) => ({
+        name,
+        css: await readFile(join(clientAssetsDir, name), 'utf8'),
+      })),
     );
-    if (!emittedHashes.has(sha256(uiSheet))) {
+    const provenance = emittedTexts.filter(({ css }) => {
+      const selectors = sheetSelectors(css);
+      return installedSelectors.every((selector) => selectors.includes(selector));
+    });
+    if (provenance.length === 0) {
       throw new Error(
-        'Packed UI appliance build emitted no client css asset byte-equal to the installed ' +
-          `@openelement/ui open-button sheet (${uiSheetPath}) — the package sheet did not ` +
-          'travel the style asset protocol',
+        'Packed UI appliance build emitted no client css asset carrying the installed ' +
+          `@openelement/ui open-button sheet's rules (${uiSheetPath}) — the package sheet ` +
+          'did not travel the style asset protocol',
       );
     }
-
+    for (const { name, css } of provenance) {
+      if (css.includes('@scope (')) {
+        throw new Error(
+          `Packed UI appliance sheet asset ${name} is @scope-wrapped — a shadow-root ` +
+            "component's sheet ships unscoped",
+        );
+      }
+    }
     // Package island attribution: the client build's identity join produced a
     // chunk per exercised component (fail-closed in the build; asserted here
     // as the consumer form).
