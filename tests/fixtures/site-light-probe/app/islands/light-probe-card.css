@@ -1,0 +1,9 @@
+:host{display:block}
+
+/* The card's own color for the shared class name — distinct from the probe
+   island's and from the document element's (S-C1.2 scope isolation). */
+.probe-shared{color:rgb(0,128,0)}
+
+.card-shell{padding:2px 4px}
+
+.card-mark{font-style:italic}

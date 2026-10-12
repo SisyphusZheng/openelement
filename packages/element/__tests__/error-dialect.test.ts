@@ -330,7 +330,8 @@ test('#1386: lifecycle raisers carry their own family codes', async () => {
   }
   expect(typeof AuthoringErrorCode.INVALID_TAG_NAME).toEqual('string');
   expect(typeof KernelErrorCode.DISPOSED).toEqual('string');
-  expect(typeof StyleErrorCode.LIGHT_SINK_WITHOUT_DOCUMENT).toEqual('string');
+  expect(typeof StyleErrorCode.ADOPTED_STYLES_UNSUPPORTED).toEqual('string');
+  expect(typeof StyleErrorCode.INVALID_STYLE_HREF).toEqual('string');
   expect(typeof FacadeErrorCode.PROGRAM_MISSING).toEqual('string');
 });
 

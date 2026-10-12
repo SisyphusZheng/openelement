@@ -66,7 +66,10 @@ function __isOpenElementRedirect(e) { return e && e.__openRedirect === true; }
 function __isOpenElementNotFound(e) { return e && e.__openNotFound === true; }
 function __statusHtml(title, message) { return "<main><h1>" + title + "</h1><p>" + message + "</p></main>"; }
 function wrapInDocument(content, opts) {
-  return "<!DOCTYPE html><html lang=\\"" + opts.lang + "\\\"><head><title>" + opts.title + "</title></head><body>" + content + "</body></html>";
+  const styleLinks = (opts.styleLinks || [])
+    .map((href) => '<link rel="stylesheet" href="' + href + '" data-oe-static-styles />')
+    .join("");
+  return "<!DOCTYPE html><html lang=\\"" + opts.lang + "\\"><head><title>" + opts.title + "</title>" + styleLinks + "</head><body>" + content + "</body></html>";
 }
 function __ssr(tag, props) { return tag + (props.context.locale ? ":" + props.context.locale : ""); }
 function __pageProps(routeModule, context) { return { context: context }; }
@@ -86,6 +89,16 @@ function __resolvePageDocument(head, context, clientScripts) {
   return doc;
 }
 function __renderLayout(pageHtml, routePath) { ${options.renderLayoutBody} }
+// Faithful miniature of Element's document stylesheet collection (alpha15 S
+// lane, S-C1.2): one per render, deduplicated in discovery order, serialized
+// by the wrap above. The page render reports light-root sheets into it.
+function createDocumentStyleResources() {
+  const links = [];
+  return {
+    get links() { return links; },
+    add(urls) { for (const url of urls) if (!links.includes(url)) links.push(url); },
+  };
+}
 `;
 
   const mod = await import(

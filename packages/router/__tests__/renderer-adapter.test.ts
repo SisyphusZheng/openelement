@@ -76,13 +76,22 @@ const routes: RouteEntry[] = [
 // `createDeferredPageShell`→`createStreamPageShell` (-1) does not appear in
 // this stream-less probe. Native server only: 15990→16000, native/lit delta
 // 113→103 (lit carries no native serializer import). Client bytes untouched.
+// Server pins moved once more for alpha15 S-C1.2 (light-root CSS delivery):
+// each document render now also creates its stylesheet collection
+// (`const __documentStyles = createDocumentStyleResources();` beside
+// `__doc`), the page renders report light-root sheets into it, and the wrap
+// declares them (`styleLinks: __documentStyles.links`). Both server modes carry
+// the identical four additions, so the native/lit delta stays 103 — the
+// cross-mode invariant holds. Client bytes are untouched: the collection is a
+// server-render channel and no client emission changed. Native server:
+// 16043→16637, lit server: 16146→16740.
 const expected = {
   native: {
-    server: [16043, 'fd84460be81cd6de9b870e0de1ac1d5fad0adbcddbc7e1f17e70f282553da1dd'],
+    server: [16637, 'd6c0b1799d28cf075f590c2cc81b0b1764203525c8f054f896d2325d44d827a3'],
     client: [2004, 'dbd5414e1f2a392a26e98cdce1a2b7c2dc69d4305228c6b7d199b4af6ce00d6f'],
   },
   lit: {
-    server: [16146, '7b75de0aeb5d38733ea7b8f5b22d99b2d9d82beac45c8b1e03ed834561b2b635'],
+    server: [16740, 'e2a2b45c3a64b4bfb55db5312cbea9dd00f6f98b49f17a44f8207b6c7475e289'],
     client: [3167, '7dcb18fd659ffe53b039adfc5139a2496e1b4c02b5d4322ed6c216606511f418'],
   },
 } as const;

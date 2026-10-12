@@ -141,7 +141,7 @@ test('compiled kernel claims a supplied existing closed root and reports claim m
   kernel.dispose();
 });
 
-test('compiled kernel keeps light-DOM styles outside the claimed template', () => {
+test('compiled kernel adopts light-DOM styles on the document, injecting no node', () => {
   const document = new TestDocument();
   const element = document.createElement('oe-kernel-test');
   const message = signal('light');
@@ -157,13 +157,17 @@ test('compiled kernel keeps light-DOM styles outside the claimed template', () =
   });
 
   kernel.connect();
-  expect(document.head.childNodes.length).toEqual(1);
-  expect((document.head.childNodes[0] as unknown as { textContent: string }).textContent).toEqual(
-    '@scope (oe-kernel-test) {\noe-light-test { color: red; }\n}',
-  );
+  // alpha15 S lane, S-C1.2: a light root's sheet is ADOPTED on the document
+  // that holds its DOM. The scoped rules reached this sheet from the build, so
+  // the runtime neither snapshots them nor creates a node to hold them.
+  expect(document.adoptedStyleSheets).toEqual([sheet]);
+  expect(document.head.childNodes.length, 'no runtime style node is created').toEqual(0);
   expect(element.childNodes.length).toEqual(1);
   kernel.disconnect();
-  expect(document.head.childNodes.length).toEqual(0);
+  expect(
+    document.adoptedStyleSheets,
+    'the document owns the sheet — a disconnect removes nothing',
+  ).toEqual([sheet]);
 });
 
 test('compiled kernel applies styles into open and closed shadow roots', () => {

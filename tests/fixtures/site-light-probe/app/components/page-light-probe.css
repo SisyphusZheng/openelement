@@ -1,0 +1,7 @@
+:host{display:block}
+
+/* The page's own scoped rules: the page is a light root too, so its sheet is
+   a distinct emitted asset in the same document head (S-C1.2). */
+.light-probe-page{font-family:system-ui,sans-serif}
+
+.document-probe{color:rgb(64,64,64)}

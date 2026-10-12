@@ -219,7 +219,7 @@ test('renderEntry: produces valid module code', () => {
   // v0.44 (ADR-0143): the sync compiled renderToString is the only serializer
   // import — the legacy VNode tree renderer is gone.
   expect(code).toContain(
-    "import { createStreamShellExecutor, renderToString, trustedHtml, escapeHtml, wrapInDocument } from '@openelement/element'",
+    "import { createDocumentStyleResources, createStreamShellExecutor, renderToString, trustedHtml, escapeHtml, wrapInDocument } from '@openelement/element'",
   );
   expect(code.includes('renderToStringTree')).toEqual(false);
   expect(code).toContain('export default app');

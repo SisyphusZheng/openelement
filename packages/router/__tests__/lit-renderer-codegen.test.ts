@@ -29,7 +29,12 @@ test('lit renderer: descriptor forks imports and rejects a compiled layout', () 
   const barrelImport = desc.imports.find((imp) => imp.from === '@openelement/element');
   expect(barrelImport).toEqual(undefined);
   const htmlImport = desc.imports.find((imp) => imp.from === '@openelement/element/html');
-  expect(htmlImport?.names).toEqual(['trustedHtml', 'escapeHtml', 'wrapInDocument']);
+  expect(htmlImport?.names).toEqual([
+    'createDocumentStyleResources',
+    'trustedHtml',
+    'escapeHtml',
+    'wrapInDocument',
+  ]);
   const litImport = desc.imports.find((imp) => imp.from === '@openelement/router/lit-ssr');
   expect(litImport?.names).toEqual(['renderLitPageToHtml']);
 

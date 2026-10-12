@@ -1,6 +1,7 @@
 import process from 'node:process';
 import { expect, test } from 'vitest';
 import {
+  createDocumentStyleResources,
   createStreamShellExecutor,
   documentStreamParts,
   escapeAttr,
@@ -124,8 +125,8 @@ async function handler(timeoutMs?: number, streamManifest?: StreamRouteManifest)
   renderActionRoute(post, route, [], config, false);
   expect(!post.join('\n').includes('__streamBody(')).toBeTruthy();
   const source = `
-    const { routeModule, manifest, createStreamShellExecutor, documentStreamParts,
-      escapeAttr, escapeHtml, wrapInDocument } = deps;
+    const { routeModule, manifest, createDocumentStyleResources, createStreamShellExecutor,
+      documentStreamParts, escapeAttr, escapeHtml, wrapInDocument } = deps;
     const __mergeChannelHeaders = deps.mergeChannelHeaders;
     const __streamHeaderChannel = deps.createStreamHeaderChannel;
     const __streamRequestScope = deps.createStreamRequestScope;
@@ -189,6 +190,7 @@ async function handler(timeoutMs?: number, streamManifest?: StreamRouteManifest)
   const deps = {
     routeModule,
     manifest: route.streamManifest,
+    createDocumentStyleResources,
     createStreamShellExecutor,
     createStreamPageShell,
     documentStreamParts,

@@ -60,7 +60,10 @@ test('K-Final-2: a failed resume leaves no partially reconciled text node', () =
   kernel.connect();
   const div = element.childNodes[0] as TestElement;
   expect(toHtml(div)).toEqual('<div><!--oe:p0-->one<p>tail</p></div>');
-  expect(document.head.childNodes.length, 'the light scope owns its style node').toBe(1);
+  expect(document.head.childNodes.length, 'the light scope creates no style node').toBe(0);
+  expect(document.adoptedStyleSheets, 'the light root adopts its sheet on the document').toEqual([
+    SHEET,
+  ]);
   const valueNode = div.childNodes[1] as TestText;
   const tail = div.childNodes[2];
 
@@ -84,7 +87,11 @@ test('K-Final-2: a failed resume leaves no partially reconciled text node', () =
   expect(toHtml(div)).toEqual('<div><!--oe:p0-->one</div>');
   expect(kernel.active, 'the failed resume leaves the kernel inactive').toBe(false);
   expect(attemptScope.disposed, 'the failed resume disposes its scope').toBe(true);
-  expect(document.head.childNodes.length, 'the style scope is disconnected').toBe(0);
+  expect(document.head.childNodes.length, 'no runtime style node exists to remove').toBe(0);
+  expect(
+    document.adoptedStyleSheets,
+    'the document keeps the adopted sheet — shared, document-lifetime state',
+  ).toEqual([SHEET]);
 
   // No subscription may survive the failure: a later write reaches nothing.
   message.value = 'three';
