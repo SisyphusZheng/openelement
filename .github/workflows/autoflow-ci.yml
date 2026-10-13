@@ -3,24 +3,104 @@ name: AutoFlow CI
 # Redesigned 2026-10-07 (#1566). PR layer: 6 parallel jobs, target 10 min.
 # Main push layer: +3 jobs (full e2e, cold install, consumer matrix).
 # Full audit trail: PR #1567 review + issue #1566.
+#
+# Two-tier qualification (alpha15 consolidation, Q-CI):
+#   Base CI — the four base jobs (lint, test, e2e, pack) run on every push
+#              (main and alpha15-consolidation) and on PRs. On a plain
+#              alpha15-consolidation push the five heavy jobs stay skipped
+#              *by design*: that run is Base CI, not full qualification.
+#   Full qualification — a main push still runs all nine (unchanged), and
+#              workflow_dispatch with full_qualification=true runs all nine
+#              on the dispatched ref's SHA, re-runnably. Pass the candidate
+#              SHA in expected_sha to bind the run to it; the sha-guard job
+#              fails closed on a mismatch before any other job starts, so a
+#              dispatch can never qualify a different SHA.
+#
+# Qualification contract: the run conclusion is not the evidence. The
+# contract is the nine jobs' individual conclusions — lint, test, e2e, pack,
+# e2e-full, bfcache, node-serve-smoke, packed-consumer-matrix, fresh-install
+# all `success` on the candidate SHA. A green run with the five heavy jobs
+# skipped is Base CI only; a skipped job is a *skipped conclusion* and must
+# never be read as a success (GitHub's run-level green can hide it, so read
+# the nine job conclusions, never the run conclusion alone).
 
 on:
   push:
-    branches: [main]
+    # main keeps its existing layer; alpha15-consolidation is the Base CI
+    # branch for the alpha15 line. No path filters: they would create
+    # evidence gaps on exactly the changes that need the proof.
+    branches: [main, alpha15-consolidation]
   pull_request:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      full_qualification:
+        description: 'Run all nine jobs (full qualification); false = four base jobs only'
+        required: false
+        type: boolean
+        default: false
+      expected_sha:
+        description: 'Candidate SHA to bind this dispatch to (empty = accept github.sha)'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # One lane per (ref, qualification mode). The mode is the same predicate the
+  # five heavy jobs use below, so a Base run and a Full run on one ref can
+  # never cancel each other: a full_qualification dispatch on
+  # alpha15-consolidation lands in ci-…-full while the running Base CI push
+  # stays in ci-…-base (and the reverse), instead of the old single
+  # ci-${{ github.ref }} lane destroying one another's evidence. Correct for
+  # both events: push never reads a dispatch input (mode = full on main, base
+  # elsewhere, matching the heavy-job gate), dispatch uses full_qualification.
+  # Same-mode runs on a ref (push→push, or dispatch→dispatch of one mode) keep
+  # today's cancel-in-progress semantics — the newer run supersedes the older
+  # one in its own lane only.
+  group: >-
+    ci-${{ github.ref }}-${{
+      ((github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && inputs.full_qualification == true))
+      && 'full' || 'base'
+    }}
   cancel-in-progress: true
 
 jobs:
+  # ── Job 0: Exact-SHA guard (runs before every other job, every event) ──
+  # Deliberately has no `if:` — it must be scheduled on every event so it can
+  # never be skipped by a condition. All nine real jobs `needs` it and use a
+  # plain `if:` (no always()/status function), so a failed or skipped guard
+  # skips them all: no job can report success unless the guard concluded
+  # success. It fails closed only when a dispatch supplies expected_sha that
+  # differs from github.sha; on push/PR `inputs.expected_sha` is empty and it
+  # passes as a no-op (the nine-job conditions are unchanged by that).
+  sha-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Bind the run to the expected candidate SHA (fail closed)
+        env:
+          EXPECTED_SHA: ${{ inputs.expected_sha }}
+          RUN_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "${EXPECTED_SHA}" ]; then
+            echo "No expected_sha supplied (push/PR or unbound dispatch); run SHA is ${RUN_SHA}."
+            exit 0
+          fi
+          if [ "${EXPECTED_SHA}" != "${RUN_SHA}" ]; then
+            echo "::error::Refusing to run: expected_sha=${EXPECTED_SHA} != github.sha=${RUN_SHA}"
+            exit 1
+          fi
+          echo "Bound to candidate SHA ${RUN_SHA}."
+
   # ── Job 1: Lint, Security & Governance ────────────────────────────────
   lint:
+    needs: [sha-guard]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -74,6 +154,7 @@ jobs:
 
   # ── Job 2: Unit Tests + Browser Gate (3 engines) ──────────────────────
   test:
+    needs: [sha-guard]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     permissions:
@@ -111,6 +192,7 @@ jobs:
 
   # ── Job 3: Site E2E (chromium-only in PR; full on main) ───────────────
   e2e:
+    needs: [sha-guard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -146,6 +228,7 @@ jobs:
   # install, SSG build and the bfcache probe; shared runners need 2-3x the
   # local wall clock (runs timed out at exactly 15, then at 25).
   pack:
+    needs: [sha-guard]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -173,9 +256,15 @@ jobs:
       - name: Starter smoke (needs packed workspace)
         run: vp run --fail-if-no-match @openelement/e2e-starter-smoke#gate
 
-  # ── Main push only: Full E2E + BFCache + Node Smoke + Cold Install ────
+  # ── Heavy qualification layer (5 jobs) ────────────────────────────────
+  # Runs on a main push (unchanged) and on a workflow_dispatch with
+  # full_qualification=true (the re-runnable Full qualification path on the
+  # dispatched SHA). A plain push to alpha15-consolidation skips all five by
+  # design: that push is Base CI. Every job needs sha-guard, so none of them
+  # can run — let alone report success — without the guard's success.
   e2e-full:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [sha-guard]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full_qualification == true)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -204,7 +293,8 @@ jobs:
           vp run --fail-if-no-match @openelement/fixture-router-nitro#proof:workers
 
   bfcache:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [sha-guard]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full_qualification == true)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -226,7 +316,8 @@ jobs:
         run: xvfb-run -a vp run --fail-if-no-match @openelement/e2e-starter-smoke#test:bfcache
 
   node-serve-smoke:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [sha-guard]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full_qualification == true)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -250,7 +341,8 @@ jobs:
         run: node tools/release/consumer-packaged-node-serve.ts node
 
   packed-consumer-matrix:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [sha-guard]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full_qualification == true)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
@@ -279,7 +371,8 @@ jobs:
         run: vp run --fail-if-no-match @openelement/tools-release#consumer:packaged
 
   fresh-install:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [sha-guard]
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full_qualification == true)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
