@@ -766,8 +766,12 @@ const assetPlaceholderRE = /__VITE_ASSET__([\w$]+)__(?:\$_(.*?)__)?/g;
  * The URL a CSS asset gives a file the build emitted, following Vite's own CSS
  * rule: a base-absolute URL under an absolute base (the client build's
  * `/client/`), and a path relative to the CSS asset when the base is relative.
+ *
+ * Shared with the Tailwind component sheet's `url()` rebase (tailwind.ts): a
+ * sheet emitted outside Vite's CSS graph still addresses the files that graph
+ * emitted, and the URL rule has exactly one spelling for both emitters.
  */
-function cssAssetUrl(base: string, cssFileName: string, emittedFileName: string): string {
+export function cssAssetUrl(base: string, cssFileName: string, emittedFileName: string): string {
   if (base === '' || base === './') {
     const relative = posixRelative(posixDirname(cssFileName), emittedFileName);
     return relative.startsWith('.') ? relative : `./${relative}`;

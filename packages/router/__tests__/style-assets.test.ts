@@ -220,6 +220,58 @@ test('identical sheet bytes deduplicate into one emission (multi-island reuse)',
   expect(secondUrl).toEqual(firstUrl);
 });
 
+test('the asset placeholder grammar is the installed Vite writer`s own (bare and postfix forms)', () => {
+  // Verified against the installed toolchain, not a comment: Vite 8.0.16
+  // writes `__VITE_ASSET__${referenceId}__${postfix ? `$_${postfix}__` : ``}`
+  // (node_modules/.pnpm/vite@8.0.16…/vite/dist/node/chunks/node.js:19285) and
+  // reads it back with /__VITE_ASSET__([\w$]+)__(?:\$_(.*?)__)?/g (node.js:19078)
+  // — the same literal this module carries. A reader that required a different
+  // trailing spelling would leave the placeholder in the shipped sheet.
+  const plugin = clientStyleAssetPlugin(new Map<string, StyleAssetRecord>());
+  const bundle: Record<string, { type: string; source: string }> = {
+    'assets/sheet.css': {
+      type: 'asset',
+      source:
+        "@font-face { src: url(__VITE_ASSET__ref$1__) format('woff2'); }\n" +
+        "@font-face { src: url(__VITE_ASSET__ref$2__$_?v=2__) format('woff2'); }\n",
+    },
+  };
+  const generateBundle = plugin.generateBundle as (
+    this: unknown,
+    options: unknown,
+    bundle: unknown,
+  ) => void;
+  const names = new Map([
+    ['ref$1', 'assets/proof-a1b2c3.woff2'],
+    ['ref$2', 'assets/proof-d4e5f6.woff2'],
+  ]);
+  generateBundle.call(
+    {
+      environment: { config: { base: '/client/' } },
+      getFileName: (referenceId: string) => names.get(referenceId),
+    },
+    {},
+    bundle,
+  );
+  expect(bundle['assets/sheet.css'].source).toContain('url(/client/assets/proof-a1b2c3.woff2)');
+  // The writer's postfix rides after the mapped file name, exactly as Vite's
+  // own CSS pass appends it.
+  expect(bundle['assets/sheet.css'].source).toContain('url(/client/assets/proof-d4e5f6.woff2?v=2)');
+  expect(bundle['assets/sheet.css'].source).not.toContain('__VITE_ASSET__');
+
+  // The relative-base spelling is the other half of the same rule: the URL is
+  // the emitted file's path relative to the sheet's own directory.
+  const relative: Record<string, { type: string; source: string }> = {
+    'assets/sheet.css': { type: 'asset', source: 'a{background:url(__VITE_ASSET__ref$3__)}' },
+  };
+  generateBundle.call(
+    { environment: { config: { base: '' } }, getFileName: () => 'assets/font-aa.woff2' },
+    {},
+    relative,
+  );
+  expect(relative['assets/sheet.css'].source).toEqual('a{background:url(./font-aa.woff2)}');
+});
+
 test('the fetch adapter exports the sheet synchronously and records readiness', () => {
   const adapter = fetchSheetAdapterModule('ref-1');
   expect(adapter).toContain('import.meta.ROLLUP_FILE_URL_ref-1');

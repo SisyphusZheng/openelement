@@ -603,13 +603,21 @@ stale response, and a fixed size — re-evaluating an edge adds nothing. Both
 properties have regressions in the dev suite. No fix was needed; the audit
 replaced an assumption with a test.
 
-**Outstanding, measured in the same runs.** The Tailwind-compiled sheet
-(`componentStyleSheetPlugin`) reaches its `url()` targets through the official
+**Closed (alpha15 Q-CI).** The Tailwind-compiled sheet
+(`componentStyleSheetPlugin`) reached its `url()` targets through the official
 compiler's own rebasing rather than through Vite's asset graph, so a font
-referenced from such a sheet lands as a source-relative path in the emitted
-asset; the same fonts are delivered correctly by the document entry's
-stylesheet, so no page regresses. That is a different emitter (the Tailwind peer
-compile owns the text), recorded for the S lane rather than changed here.
+referenced from such a sheet landed as a source-relative path in the emitted
+asset — a 404 once the sheet was served from `client/assets/` (the Site's
+`@fontsource` faces did exactly that). The build now rebases every relative
+`url()` target onto an asset it emits itself (`emitFile`) and resolves a
+content-digest placeholder to that asset's URL in `generateBundle` through
+Vite's own `getFileName` mapping, under the one URL rule the style-edge sheets
+use (`cssAssetUrl`). Emitting the referenced bytes here — rather than joining on
+an asset the document pipeline happened to emit — is what covers the
+`assetsInlineLimit` case: a small font is inlined into the document sheet and
+has no emitted asset to borrow, yet the component sheet must still address a
+resource this build owns. Regression:
+`packages/router/__tests__/tailwind-component-sheet-urls.test.ts`.
 
 ## Amendment (2026-10-12): server-only components join discovery (#1609, S-C1.4)
 
