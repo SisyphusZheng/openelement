@@ -2,12 +2,12 @@
  *
  * The button's element-level presentation (flex box, size, radius, cursor,
  * ink, hover ink, focus ring, transition) is authored as Tailwind utilities on
- * the button in open-theme-toggle.tsx. What stays here cannot be a class
- * utility:
+ * the button in open-theme-toggle.tsx. What stays here, and why
+ * (CUSTOMIZATION.md -> "Why the residue is CSS"):
  *   - the two-colour derived border/background/inset-shadow (the house
- *     surface recipe),
+ *     surface recipe): one owned formula over role pairs,
  *   - the icon display swap, whose `display` is driven by the BUTTON's
- *     `[data-theme]` attribute — a descendant-scoped selector, so it owns
+ *     `[data-theme]` attribute — one descendant-scoped pair of rules that owns
  *     `display` for both icons exclusively,
  *   - the host box.
  * One owner per property: nothing here is also authored as a utility. */

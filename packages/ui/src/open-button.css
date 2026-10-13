@@ -6,17 +6,19 @@
  * compiler admits those static tokens and the build's component stylesheet
  * carries the generated rules into this shadow root.
  *
- * What stays here cannot be a class utility:
+ * What stays here, and why (CUSTOMIZATION.md → "Why the residue is CSS"): every
+ * block below HAS a utility spelling — `[:host([size='sm'])_&]:p-1` compiles,
+ * measured — and the sheet keeps it because the utility form costs an escaped
+ * ancestor selector per utility, per branch, on both rendered controls: ≈6.5×
+ * the bytes for the same three size branches, and far less legible.
  *   - the host box and the `[hidden]` display rule (a shadow-tree element's
  *     `hidden` attribute needs an explicit rule once `display` is set);
- *   - the SIZE treatments, selected by the HOST's `size` attribute — a utility
- *     cannot select an ancestor's attribute from inside the shadow root, and
- *     the compiler admits only single two-branch conditionals;
- *   - the VARIANT surfaces and their hovers, selected the same way (the
- *     conditional-class grammar would need one condition per variant);
+ *   - the SIZE treatments, selected by the HOST's `size` attribute;
+ *   - the VARIANT surfaces and their hovers, selected the same way;
  *   - the derived two-colour base surface (popover/border mixes and the inset
- *     highlight) and the primary hover's brand mix, which are computed from
- *     pairs of role variables rather than read from one;
+ *     highlight) and the primary hover's brand mix, computed from pairs of role
+ *     variables — one owned formula instead of a repeated escaped arbitrary
+ *     value;
  *   - `:host(:state(disabled))`, the form-associated custom state.
  * One owner per property: nothing here is also authored as a utility.
  */

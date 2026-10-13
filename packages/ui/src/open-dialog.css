@@ -5,16 +5,21 @@
  * open-dialog.tsx: the compiler admits those static tokens and the build's
  * component stylesheet carries the generated rules into this shadow root.
  *
- * What stays here cannot be a class utility:
- *   - the host box and the trigger slot's cursor (`::slotted`, which no
- *     element-level utility can reach);
+ * What stays here, and why (CUSTOMIZATION.md → "Why the residue is CSS"): the
+ * residue is either a structural limit of the platform or one owned rule that
+ * reads better than its utility spelling.
+ *   - the host box;
+ *   - the trigger slot's cursor (`::slotted`);
  *   - the dialog's DERIVED surface: the foreground/border/primary triple mix of
  *     its frame, the popover mix of its background, the inset highlight plus
- *     the `--shadow-2xl` scale value, and the close button's primary-mixed
- *     hover background;
+ *     the `--shadow-2xl` scale value, and the close button's primary-mixed hover
+ *     background — each one formula over role pairs rather than a repeated
+ *     escaped arbitrary value;
  *   - the NATIVE top-layer presentation: `::backdrop` and its scrim, and the
- *     entry/exit transitions with `@starting-style` + `allow-discrete`, which
- *     the platform owns for a `<dialog>`;
+ *     entry/exit transitions. The transition CONFIGURATION (`@starting-style` +
+ *     `transition-behavior: allow-discrete`) is the one genuine limit: an
+ *     at-rule plus transition semantics is not a declaration on an element, so
+ *     no utility carries it;
  *   - the forced-colors and reduced-motion degradations of those transitions;
  *   - `:host(:state(open))`, the host's attached state.
  * One owner per property: nothing here is also authored as a utility.

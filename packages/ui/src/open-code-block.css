@@ -3,9 +3,11 @@
  * The chip's presentation is authored as Tailwind utilities on the button in
  * open-code-block.tsx: the compiler admits every static class token and the
  * build compiles the component stylesheet (theme + utilities) into the shadow
- * root. Only what a class utility cannot express stays here: the host box, and
- * the `:state()`-scoped copy feedback — state lives on the HOST, so no element
- * variant can express it. Both feedback rules read role table colors, so they
+ * root. What stays here, and why (CUSTOMIZATION.md -> "Why the residue is CSS"):
+ * the host box, and the `:state()`-scoped copy feedback — the state lives on the
+ * HOST, so the `:host(:state(...))` selector is what ties the rule to it (its
+ * utility spelling, `[:host(:state(copied))_&]:text-success`, compiles, and the
+ * owned rule reads better). Both feedback rules read role table colors, so they
  * follow a consumer's retheme and re-seat in forced-colors. */
 :host {
   display: block;

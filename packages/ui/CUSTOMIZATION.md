@@ -17,20 +17,57 @@ to the 1.0.0-alpha.8 baseline.
   removing a `var()` reference in a recipe is a deliberate surface change: the
   guard fails until the pin and this document are updated in the same change.
 - Component internals are authored as **Tailwind utilities** wherever a class
-  utility can express the property. The compiler admits every static class
-  token and the build's shadow component stylesheet (theme + utilities) carries
-  the generated rules into the component's shadow root. What a class utility
-  cannot express stays in the component's `.css` sheet: the host box,
-  `:host()` / `:state()` / attribute-scoped rules, and the derived two-colour
-  surfaces. **This makes a Tailwind entry a requirement of the consuming app**
-  (`tailwind: { theme: [...] }` in `openelement.config.ts` — the scaffold's
-  single default form): without that entry the component stylesheet is not
-  emitted and the utilities are not delivered.
+  utility is the clearest form. The compiler admits every static class token and
+  the build's shadow component stylesheet (theme + utilities) carries the
+  generated rules into the component's shadow root. What stays in the
+  component's `.css` sheet is what reads better as one owned rule — see
+  [Why the residue is CSS](#why-the-residue-is-css). **This makes a Tailwind
+  entry a requirement of the consuming app** (`tailwind: { theme: [...] }` in
+  `openelement.config.ts` — the scaffold's single default form): without that
+  entry the component stylesheet is not emitted and the utilities are not
+  delivered.
 - Colours still come from this role table, never from a literal — either a role
   variable in the sheet or a utility generated from a role (`bg-primary/14`
   compiles to `color-mix` on `--color-primary`). The guard fails on a raw
   colour literal in a declaration, because a literal escapes the light, dark
   and forced-colors seats the roles guarantee.
+
+### Why the residue is CSS
+
+An earlier revision of this document and of the component sheets said the
+retained rules "cannot be a class utility": a utility could not select the
+host's attribute from inside the shadow root, the compiler admitted only
+two-branch conditionals, and `color-mix` over role pairs was out of reach. That
+is **not true of the official engine**, and it is not a good reason to keep
+anything. Measured with the installed `tailwindcss` (the same compiler the build
+mounts), every one of those shapes has a real utility spelling:
+
+| Shape | Utility spelling | Compiles to |
+|---|---|---|
+| host attribute | `[:host([size='sm'])_&]:p-1` | `:host([size='sm']) .[…]\/\:p-1 { padding: var(--spacing) }` |
+| form-associated state | `[:host(:state(invalid))_&]:border-destructive` | `:host(:state(invalid)) .[…]\/\:border-destructive { border-color: var(--color-destructive) }` |
+| derived role mix | `bg-[color-mix(in_srgb,var(--color-popover)_78%,transparent)]` | the mix, with `var(--color-popover)` kept in the supported branch |
+| pseudo-class | `focus:border-primary` | `.focus\:border-primary:focus { border-color: var(--color-primary) }` |
+
+What the residue actually rests on is **readability and size**, measured on
+open-button's size matrix rather than asserted:
+
+- the retained sheet block: **444 bytes**;
+- the equivalent utilities: **998 bytes** of class attribute — the same tokens
+  are needed on both rendered controls (the anchor branch and the button
+  branch) — plus **1,881 bytes** of generated rules, each selector a mangled
+  escape (`:host(:not([size])) .\[\:host\(\:not\(\[size\]\)\)_\&\]\:min-h-\[38px\]`);
+- total **≈ 6.5×**, for the same three branches.
+
+One genuine limit remains, and it is structural rather than a capability claim: a
+transition's entry/exit **configuration** (`@starting-style`,
+`transition-behavior: allow-discrete`) is an at-rule plus transition semantics,
+not a declaration on an element, so no utility carries it. Everything else in
+these sheets is a deliberate choice to keep one owned, reviewable rule where the
+utility form would be longer and less legible — and the guards hold both sides
+to that: every generated colour must resolve to a declared role
+(`__tests__/utility-colour-roles.test.ts`) and every class a sheet selects must
+be carried by its own markup (`__tests__/customization-surface.test.ts`).
 
 ### What is NOT part of this contract
 
@@ -195,11 +232,11 @@ custom properties.
   white-space), the focus ring and the disabled / aria-disabled states are
   authored as Tailwind utilities (alpha15 S lane). The sheet keeps the host
   box, the `[hidden]` rule, the size and variant surfaces (host-attribute
-  scoped: a utility cannot select an ancestor's attribute from inside the
-  shadow root, and the compiler admits only single two-branch conditionals),
-  the derived base surface, and the form-associated disabled state. Variant
-  `primary`/`accent` fill with `--color-primary` over
-  `--color-primary-foreground`.
+  scoped: the utility spelling exists — `[:host([size='sm'])_&]:p-1` compiles —
+  and costs ≈6.5× the bytes for the same branches; see
+  [Why the residue is CSS](#why-the-residue-is-css)), the derived base surface,
+  and the form-associated disabled state. Variant `primary`/`accent` fill with
+  `--color-primary` over `--color-primary-foreground`.
 
 ### `open-code-block`
 
