@@ -16,10 +16,12 @@
  *     background — each one formula over role pairs rather than a repeated
  *     escaped arbitrary value;
  *   - the NATIVE top-layer presentation: `::backdrop` and its scrim, and the
- *     entry/exit transitions. The transition CONFIGURATION (`@starting-style` +
- *     `transition-behavior: allow-discrete`) is the one genuine limit: an
- *     at-rule plus transition semantics is not a declaration on an element, so
- *     no utility carries it;
+ *     entry/exit transitions. The transition configuration IS expressible
+ *     (`starting:opacity-0` compiles into `@starting-style`,
+ *     `transition-discrete` into `transition-behavior: allow-discrete`); the
+ *     sheet keeps it because the whole top-layer choreography — backdrop,
+ *     scrim, starting style, discrete behavior and its forced-colors /
+ *     reduced-motion degradations — reads as one owned block;
  *   - the forced-colors and reduced-motion degradations of those transitions;
  *   - `:host(:state(open))`, the host's attached state.
  * One owner per property: nothing here is also authored as a utility.

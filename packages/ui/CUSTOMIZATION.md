@@ -23,9 +23,12 @@ to the 1.0.0-alpha.8 baseline.
   component's `.css` sheet is what reads better as one owned rule — see
   [Why the residue is CSS](#why-the-residue-is-css). **This makes a Tailwind
   entry a requirement of the consuming app** (`tailwind: { theme: [...] }` in
-  `openelement.config.ts` — the scaffold's single default form): without that
-  entry the component stylesheet is not emitted and the utilities are not
-  delivered.
+  `openelement.config.ts` — the scaffold's single default form): without it the
+  component stylesheet is not emitted and the utilities are not delivered. That
+  is the MANUAL path. A package that declares its own requirement admits the
+  entry by itself in automatic mode — this package does exactly
+  that, which is why a consumer that admits `@openelement/ui` needs no
+  `tailwind` key at all.
 - Colours still come from this role table, never from a literal — either a role
   variable in the sheet or a utility generated from a role (`bg-primary/14`
   compiles to `color-mix` on `--color-primary`). The guard fails on a raw
@@ -59,13 +62,14 @@ open-button's size matrix rather than asserted:
   escape (`:host(:not([size])) .\[\:host\(\:not\(\[size\]\)\)_\&\]\:min-h-\[38px\]`);
 - total **≈ 6.5×**, for the same three branches.
 
-One genuine limit remains, and it is structural rather than a capability claim: a
-transition's entry/exit **configuration** (`@starting-style`,
-`transition-behavior: allow-discrete`) is an at-rule plus transition semantics,
-not a declaration on an element, so no utility carries it. Everything else in
-these sheets is a deliberate choice to keep one owned, reviewable rule where the
-utility form would be longer and less legible — and the guards hold both sides
-to that: every generated colour must resolve to a declared role
+There is no capability limit left to claim. The transition configuration this
+document used to call one — `@starting-style` and
+`transition-behavior: allow-discrete` — is expressible too, and was measured:
+`starting:opacity-0` compiles into an `@starting-style` block and
+`transition-discrete` into `transition-behavior: allow-discrete`. What the
+sheets keep is therefore a deliberate choice of clarity, size or single
+ownership in every case, never an "impossible". The guards hold both sides to
+that: every generated colour must resolve to a declared role
 (`__tests__/utility-colour-roles.test.ts`) and every class a sheet selects must
 be carried by its own markup (`__tests__/customization-surface.test.ts`).
 
@@ -73,10 +77,17 @@ be carried by its own markup (`__tests__/customization-surface.test.ts`).
 
 The declared surface is the two lists above: **`::part` names and the consumed
 role variables.** Everything else a component class exposes on its type — its
-internal class hooks, its computed signals, its methods — is implementation,
-and the experimental disclaimer on each component (owner ruling C1, #1468)
-covers changes to it before 1.0. Two consequences worth spelling out, because
-they have both already happened once:
+internal class hooks, its computed signals, its methods — sits OUTSIDE those
+lists, which is not the same as being ungoverned. Every one of them is a
+published type shape: the package's retained-interface baseline (a checked-in
+snapshot, verified by the repository's `interface:snapshot` task) fails on any
+change until the
+decision is made and the baseline is regenerated in the same change, and the
+experimental disclaimer (owner ruling C1, #1468) is what lets such a decision be
+"removed" rather than "kept forever". There is no blanket rule that exported
+types may churn; there is a per-change decision, recorded and pinned. The two
+cases below are exactly that — individual decisions, not precedents that make
+the next one free:
 
 - **Internal class hooks are not a contract.** A class a sheet selects
   (`open-button`'s `btn`, `open-input`'s `control`) is internal: an element in a

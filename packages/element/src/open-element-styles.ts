@@ -70,20 +70,30 @@ function isShadowRoot(root: CompiledStyleRoot): root is ShadowRoot {
 
 /**
  * The adoption target one compiled root's sheets belong to: the root itself
- * for a shadow-root component, the root's OWN document for a light-root
- * component (alpha15 S lane, S-C1.2).
+ * for a shadow-root component; for a light-root component, the tree the
+ * element is actually IN — its `getRootNode()`, which is the document for a
+ * document-level component and the ENCLOSING SHADOW ROOT when a parent
+ * component's DSD template owns the subtree.
  *
- * The document is resolved from the element at each connect, never cached: an
- * element can be adopted into another document between two connections, and
- * the sheets must land in the document the element is in NOW.
+ * `ownerDocument` was wrong for that second case, and wrong in a way no
+ * object-level check could see: a document stylesheet never matches elements
+ * inside a shadow tree, so the sheets were adopted into a tree that could not
+ * reach their subject. The tree is resolved from the element at each connect,
+ * never cached: an element can be adopted into another document — or moved
+ * into another shadow root — between two connections, and the sheets must land
+ * in the tree the element is in NOW.
  */
 function adoptionTargetOf(root: CompiledStyleRoot): StyleAdoptionTarget {
   if (isShadowRoot(root)) return root;
+  const tree = root.getRootNode();
+  if (tree && 'adoptedStyleSheets' in tree) return tree as StyleAdoptionTarget;
+  // A detached element whose root cannot adopt still falls back to its owner
+  // document: the failure that matters is reported below, once, for both.
   const owned = root.ownerDocument;
   if (owned && 'adoptedStyleSheets' in owned) return owned;
   fail(
     StyleErrorCode.ADOPTED_STYLES_UNSUPPORTED,
-    '[compiled-styles] a light root needs an owner document that supports adoptedStyleSheets',
+    '[compiled-styles] a light root needs a containing tree that supports adoptedStyleSheets',
   );
 }
 

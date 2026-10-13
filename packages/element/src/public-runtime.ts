@@ -35,6 +35,7 @@ import {
   STREAM_MAX_SEED_PROPERTIES,
 } from '@openelement/protocol/policy';
 import { signal } from './internal/signal/index.ts';
+import { serializeStyleLinks } from './internal/compiled/server/index.ts';
 import type { CompiledProgramHost } from './internal/compiled/server/index.ts';
 import { type TrustedHtml, trustedHtmlValue } from './internal/core/security.ts';
 
@@ -257,6 +258,14 @@ export interface RenderToStringOptions {
 interface InternalRenderToStringOptions extends Omit<RenderToStringOptions, 'projectedChildren'> {
   hostAttrs?: readonly (readonly [string, unknown])[];
   projectedChildren?: ReadonlyMap<string, string>;
+  /**
+   * Whether the markup being rendered lands inside a SHADOW TREE — the DSD
+   * template of an ancestor component. A light-root component's sheets are
+   * delivered by the tree its content lands in, and a document-head link
+   * cannot reach a shadow tree, so the nested call carries the fact instead of
+   * assuming `ownerDocument`.
+   */
+  enclosingShadowRoot?: boolean;
 }
 
 function classNameOf(ctor: object): string {
@@ -758,13 +767,18 @@ function renderToStringAtDepth(
         : 'closed';
   const host: CompiledProgramHost = { signals, handlers: {} };
   const staticStyleCss = collectStaticStyleCss(resolvedClass);
-  // A light root's external sheets are the DOCUMENT's resources (S-C1.2):
-  // report them to this render's collection, whose owner writes them into the
-  // head. The component's own subtree carries no link and no scoped text —
-  // `collectStaticStyleCss` already skips every sheet that has a URL, and the
-  // URL-less sheets that remain are the in-memory/dev shims, whose bytes the
-  // build (or the author) already scoped.
-  options.documentStyles?.add(documentStyleResourcesOf(resolvedClass, mode));
+  // A light root's external sheets are the resources of the TREE its content
+  // lands in (S-C1.2): the document for a document-level component, whose owner
+  // writes them into the head — or the ENCLOSING SHADOW ROOT when an ancestor's
+  // DSD template owns the subtree, where the head link cannot reach them and the
+  // nested render declares them inside that template instead (see
+  // `renderNestedElement`). Either way the component's own subtree carries no
+  // scoped text: `collectStaticStyleCss` already skips every sheet that has a
+  // URL, and the URL-less sheets that remain are the in-memory/dev shims, whose
+  // bytes the build (or the author) already scoped.
+  if (!(mode === 'light' && options.enclosingShadowRoot === true)) {
+    options.documentStyles?.add(documentStyleResourcesOf(resolvedClass, mode));
+  }
   const admitted = new Set(options.ssrRenderableTags ?? []);
   /** Serialize this element's program once (re-run by the boundary capture below). */
   const serializeOnce = (): string =>
@@ -833,12 +847,28 @@ function renderToStringAtDepth(
                   hostAttrs: passthrough,
                   projectedChildren: nestedMode === 'light' ? nested.projectedChildren : undefined,
                   // A nested light-root component's sheets belong to the same
-                  // render's document as its parent's (S-C1.2).
+                  // render's sink as its parent's (S-C1.2) — unless this parent
+                  // is itself a shadow template, in which case the child's
+                  // content lands in a tree the document head cannot reach and
+                  // its links are emitted below.
                   documentStyles: options.documentStyles,
+                  enclosingShadowRoot: mode !== 'light',
                 },
                 depth + 1,
               );
-              if (nestedMode === 'light') return rendered;
+              if (nestedMode === 'light') {
+                // This parent renders into a DSD template, so the child's
+                // content is shadow-tree content: declare its sheets as marked
+                // links INSIDE that template, the one place a stylesheet can
+                // reach it. Same link shape as every other component sheet, so
+                // the client's delivery check recognizes the resource and does
+                // not adopt a second copy.
+                if (mode === 'light') return rendered;
+                const nestedLinks = serializeStyleLinks(sheetResourceUrls(nestedClass.styles));
+                if (nestedLinks === '') return rendered;
+                const nestedClosing = `</${nested.tag}>`;
+                return rendered.slice(0, -nestedClosing.length) + nestedLinks + nestedClosing;
+              }
               const closing = `</${nested.tag}>`;
               return nested.children === ''
                 ? rendered

@@ -175,3 +175,63 @@ test('a rejected sheet is reported once, and only for its own connection', async
   ]);
   live.dispose();
 });
+
+test('a light root inside an enclosing shadow root adopts into THAT tree, not the document', () => {
+  // The delivery root is the tree the element is IN. A document stylesheet
+  // never matches elements inside a shadow tree, so adopting on the document
+  // (what `ownerDocument` returned) delivered nothing — and no object-level
+  // assertion on the document could see it.
+  const document = new TestDocument();
+  const host = document.createElement('oe-shadow-host');
+  const shadow = host.attachShadow({ mode: 'open' });
+  const element = document.createElement('oe-light-adopt');
+  shadow.appendChild(element);
+
+  const sheet = { replaceSync() {}, cssRules: [] };
+  const kernel = new CompiledElementKernel(element as unknown as HTMLElement, PROGRAM, {
+    signals: {},
+    handlers: {},
+    rootMode: 'light',
+    styles: sheet as never,
+  });
+  kernel.connect();
+
+  expect(shadow.adoptedStyleSheets, 'the enclosing shadow tree owns the sheet').toEqual([sheet]);
+  expect(document.adoptedStyleSheets, 'the document must not adopt it').toEqual([]);
+
+  // The enclosing shadow root is SHARED: another light component in the same
+  // template needs the sheet, so a disconnect removes nothing.
+  kernel.dispose();
+  expect(shadow.adoptedStyleSheets, 'a disconnect never clears a shared tree').toEqual([sheet]);
+});
+
+test('the same component type in two trees gets one adoption per tree', () => {
+  const document = new TestDocument();
+  const outer = document.createElement('oe-shadow-host');
+  const outerShadow = outer.attachShadow({ mode: 'open' });
+  const inner = document.createElement('oe-shadow-host');
+  const innerShadow = inner.attachShadow({ mode: 'open' });
+  outerShadow.appendChild(inner);
+
+  const sheet = { replaceSync() {}, cssRules: [] };
+  const inOuter = document.createElement('oe-light-adopt');
+  const inInner = document.createElement('oe-light-adopt');
+  outerShadow.appendChild(inOuter);
+  innerShadow.appendChild(inInner);
+
+  for (const element of [inOuter, inInner]) {
+    const kernel = new CompiledElementKernel(element as unknown as HTMLElement, PROGRAM, {
+      signals: {},
+      handlers: {},
+      rootMode: 'light',
+      styles: sheet as never,
+    });
+    kernel.connect();
+  }
+
+  expect(outerShadow.adoptedStyleSheets, 'the shallower tree adopts').toEqual([sheet]);
+  expect(innerShadow.adoptedStyleSheets, 'the nested tree adopts for its own scope').toEqual([
+    sheet,
+  ]);
+  expect(document.adoptedStyleSheets, 'neither is the document').toEqual([]);
+});

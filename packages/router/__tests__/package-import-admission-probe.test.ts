@@ -10,10 +10,17 @@
  * it". This suite decides that claim on two REAL builds of the same app, one
  * config key apart, and pins the diagnostic that replaced the silence.
  *
+ * The diagnostic keys off PACKAGE IDENTITY, never off "the path is inside the
+ * project root": a dependency installed under the app's own `node_modules/` is
+ * a dependency (the ordinary install layout), and the same package reached
+ * through a workspace link must be reported the same way. Both layouts are
+ * built here, plus the pnpm store layout and a real tarball install, so a
+ * regression to a path test fails on the ordinary layout immediately.
+ *
  * Set OE_KEEP_FIXTURE=1 to keep the temp apps for inspection.
  */
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { cpSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import {
   mkdir,
   mkdtemp,
@@ -43,8 +50,67 @@ async function write(joinedPath: string, content: string): Promise<void> {
   await writeFile(joinedPath, content, 'utf8');
 }
 
+/** How a dependency reaches the app's resolution: the four layouts that matter. */
+type InstallLayout = 'symlink' | 'copy' | 'pnpm' | 'tarball';
+
+/**
+ * Install `@openelement/ui` into `appDir` in one real layout. All four land the
+ * package's own `package.json` (its real identity) in the graph; they differ
+ * only in the path the resolver reports, which is exactly the axis the
+ * diagnostic must not care about.
+ */
+async function installUi(appDir: string, layout: InstallLayout): Promise<void> {
+  const source = join(REPO_ROOT, 'packages', 'ui');
+  const scoped = join(appDir, 'node_modules', '@openelement');
+  mkdirSync(scoped, { recursive: true });
+  const dest = join(scoped, 'ui');
+  if (layout === 'symlink') {
+    await symlink(source, dest);
+    return;
+  }
+  if (layout === 'copy') {
+    cpSync(source, dest, { recursive: true });
+    return;
+  }
+  if (layout === 'pnpm') {
+    // The pnpm store shape: `.pnpm/<name>@<version>/node_modules/<name>` with
+    // the inner directory being the real package and the outer one the
+    // resolver's path.
+    const store = join(
+      appDir,
+      'node_modules',
+      '.pnpm',
+      '@openelement+ui@1.0.0-alpha.14',
+      'node_modules',
+      '@openelement',
+      'ui',
+    );
+    mkdirSync(store, { recursive: true });
+    cpSync(source, store, { recursive: true });
+    await symlink(store, dest);
+    return;
+  }
+  // tarball: really pack the package and unpack it, so the installed tree is
+  // the published member list rather than the working directory.
+  const staging = await mkdtemp(join(tmpdir(), 'oe-ui-pack-'));
+  try {
+    execFileSync('npm', ['pack', '--pack-destination', staging, '--silent'], {
+      cwd: source,
+      stdio: 'pipe',
+    });
+    const tarball = (await readdir(staging)).find((name) => name.endsWith('.tgz'));
+    if (tarball === undefined) throw new Error('npm pack produced no tarball');
+    mkdirSync(dest, { recursive: true });
+    execFileSync('tar', ['xzf', join(staging, tarball), '--strip-components=1', '-C', dest], {
+      stdio: 'pipe',
+    });
+  } finally {
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
 /** One app, written twice: with and without the admission key. */
-async function writeProbeApp(admitted: boolean): Promise<string> {
+async function writeProbeApp(admitted: boolean, layout: InstallLayout): Promise<string> {
   const created = await mkdtemp(join(tmpdir(), 'oe-package-import-probe-'));
   const root = await realpath(created);
   fixtureRoots.push(created);
@@ -110,12 +176,13 @@ async function writeProbeApp(admitted: boolean): Promise<string> {
   );
 
   await mkdir(join(appDir, 'node_modules', '@openelement'), { recursive: true });
-  for (const name of ['router', 'element', 'ui']) {
+  for (const name of ['router', 'element']) {
     await symlink(
       join(REPO_ROOT, 'packages', name),
       join(appDir, 'node_modules', '@openelement', name),
     );
   }
+  await installUi(appDir, layout);
   await symlink(join(REPO_ROOT, 'node_modules', 'vite'), join(appDir, 'node_modules', 'vite'));
   await symlink(
     join(REPO_ROOT, 'packages', 'router', 'node_modules', 'hono'),
@@ -131,8 +198,9 @@ async function writeProbeApp(admitted: boolean): Promise<string> {
 /** Build one probe app; returns the app dir plus the build's own output. */
 async function buildProbeApp(
   admitted: boolean,
+  layout: InstallLayout = 'symlink',
 ): Promise<{ appDir: string; logs: string; code: number }> {
-  const appDir = await writeProbeApp(admitted);
+  const appDir = await writeProbeApp(admitted, layout);
   const build = spawn(process.execPath, [ROUTER_BUILD_CLI], { cwd: appDir });
   let logs = '';
   build.stdout.on('data', (chunk) => (logs += chunk));
@@ -178,6 +246,21 @@ test('an ordinary package import does NOT deliver a component — and never sile
   expect(logs, 'the diagnostic names the package').toContain('@openelement/ui');
   expect(logs, 'the diagnostic names the fix').toContain('packageIslands');
 }, 240_000);
+
+test('the diagnostic keys off package identity, not the path: every install layout reports', async () => {
+  // The layouts a real consumer produces. The ordinary `node_modules` install
+  // and the pnpm store layout both sit INSIDE the project root, so a path test
+  // ("skip everything under root") silently lost the report exactly where it
+  // matters most; a workspace link sits outside the root and used to be the
+  // only layout that reported.
+  for (const layout of ['copy', 'pnpm', 'tarball'] as const) {
+    const { logs, code } = await buildProbeApp(false, layout);
+    expect(code, `${layout}: build failed:\n${logs}`).toEqual(0);
+    expect(logs, `${layout}: the unadmitted package must be reported`).toContain(
+      'The component package "@openelement/ui" is imported by this app but not admitted',
+    );
+  }
+}, 600_000);
 
 test('admitting the package delivers the component: DSD and its stylesheet link', async () => {
   // The other side of the boundary: the same app plus one config key, measured

@@ -791,13 +791,23 @@ function reportUnadmittedComponentPackages(
   admittedPackages: ReadonlySet<string>,
   root: string,
 ): void {
-  const rootPrefix = root.endsWith('/') ? root : `${root}/`;
+  const appPackageName = packageNameAt(root);
   const offenders = new Set<string>();
   for (const file of elementFiles) {
-    // Only packages: a module inside the app root is the application's own
-    // component, which needs no admission.
-    if (file.startsWith(rootPrefix)) continue;
     const packageName = owningPackageName(file);
+    // The application's OWN component: the nearest package.json is the app's
+    // own manifest. This is a PACKAGE-IDENTITY test, never a path test — a
+    // dependency installed under `node_modules/` inside the project root is a
+    // package like any other (the ordinary `npm install` layout, the pnpm
+    // store layout, and a workspace link all resolve to the dependency's own
+    // name). An app manifest with no `name` cannot make the identification, so
+    // the path test is the conservative fallback there.
+    if (appPackageName === undefined) {
+      const rootPrefix = root.endsWith('/') ? root : `${root}/`;
+      if (file.startsWith(rootPrefix)) continue;
+    } else if (packageName === undefined || packageName === appPackageName) {
+      continue;
+    }
     if (packageName === undefined || admittedPackages.has(packageName)) continue;
     offenders.add(packageName);
   }
@@ -813,9 +823,14 @@ function reportUnadmittedComponentPackages(
 
 /** The name of the nearest enclosing package.json, walking up from `file`. */
 function owningPackageName(file: string): string | undefined {
-  let dir = posixDirname(file);
+  return packageNameAt(posixDirname(file));
+}
+
+/** The package name of the nearest package.json at or above `dir`. */
+function packageNameAt(dir: string): string | undefined {
+  let current = dir;
   for (let depth = 0; depth < 12; depth++) {
-    const manifest = join(dir, 'package.json');
+    const manifest = join(current, 'package.json');
     if (existsSync(manifest)) {
       try {
         const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: unknown };
@@ -824,9 +839,9 @@ function owningPackageName(file: string): string | undefined {
         // An unreadable package.json is not a package root; keep walking.
       }
     }
-    const parent = posixDirname(dir);
-    if (parent === dir) break;
-    dir = parent;
+    const parent = posixDirname(current);
+    if (parent === current) break;
+    current = parent;
   }
   return undefined;
 }

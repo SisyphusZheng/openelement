@@ -468,7 +468,15 @@ function serializeCompiledSnapshot(
  * markup). The shape rule itself is shared with the document head's
  * stylesheet-link sink (`isComponentStyleHref`): one rule, two sinks.
  */
-function serializeStyleLinks(links: readonly string[] | undefined): string {
+/**
+ * The marked `<link rel="stylesheet" data-oe-static-styles>` tags for a set of
+ * component stylesheet URLs. Exported because the DSD serializer is not its
+ * only writer: a LIGHT-root component nested inside another component's shadow
+ * template delivers its sheets from the template too (the document head cannot
+ * reach a shadow tree), and it must use this one shape so the client's delivery
+ * check recognizes the resource.
+ */
+export function serializeStyleLinks(links: readonly string[] | undefined): string {
   if (!links || links.length === 0) return '';
   let markup = '';
   for (const href of links) {
