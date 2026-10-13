@@ -112,10 +112,14 @@ function computedColor(
 test('the build emits content-addressed scoped assets and declares them in the document head', () => {
   const html = readDist('index.html');
 
+  const head = html.slice(0, html.indexOf('</head>'));
   for (const asset of [probeAsset, cardAsset, pageAsset]) {
-    // Parser-visible, marked, exactly once — the document is the delivery.
+    // Parser-visible, marked, exactly once IN THE HEAD — the document is the
+    // delivery for document-level light roots. The same asset may also be
+    // declared inside a shadow template: content inside a shadow tree is
+    // reached only from there, and that is the sibling assertion below.
     assert.equal(
-      html.split(`href="${asset.href}" data-oe-static-styles`).length - 1,
+      head.split(`href="${asset.href}" data-oe-static-styles`).length - 1,
       1,
       `${asset.href} must be declared exactly once in the document head`,
     );
@@ -153,6 +157,40 @@ test('no client bundle carries runtime scoping or the retired style sink', () =>
       `${name} carries runtime @scope generation`,
     );
   }
+});
+
+test('a light root inside a shadow template is declared, and styled, in THAT tree', async ({
+  page,
+}) => {
+  // Audit C: the delivery root is the tree the content lands in. A document
+  // stylesheet never matches elements inside a shadow tree, so a nested light
+  // root must be reached from its ancestor's template — and the sheet it
+  // declares there is the SAME marked link shape the document head uses.
+  await page.goto('/');
+  const observed = await page.evaluate(() => {
+    const host = document.querySelector('probe-shadow-card');
+    const shadow = host?.shadowRoot ?? null;
+    const nested = shadow?.querySelector('light-probe-card.nested-light-card') ?? null;
+    const inner = nested?.querySelector('.probe-shared') ?? null;
+    return {
+      hasShadow: shadow !== null,
+      hasNested: nested !== null,
+      nestedRendered: nested === null ? null : nested.getAttribute('count'),
+      nestedColor: inner === null ? null : getComputedStyle(inner).color,
+      shadowLinks:
+        shadow === null
+          ? 0
+          : shadow.querySelectorAll('link[data-oe-static-styles][rel="stylesheet"]').length,
+    };
+  });
+  assert.equal(observed.hasShadow, true, 'the shadow component rendered its DSD');
+  assert.equal(observed.hasNested, true, 'the light-root child is inside the shadow tree');
+  assert.ok(observed.shadowLinks > 0, 'the shadow template declares the sheets its content needs');
+  assert.equal(
+    observed.nestedColor,
+    CARD_COLOR,
+    'the scoped light sheet matched content inside the shadow tree',
+  );
 });
 
 test('two component types and an unrelated element keep their own rules', async ({ page }) => {

@@ -24,6 +24,11 @@ export default class ProbeShadowCard extends OpenElement {
     return (
       <article class='shadow-card'>
         <span class='probe-shadow-imported'>shadow</span>
+        {/* A LIGHT-root component INSIDE this component's shadow tree: its
+            content lands in the shadow tree, so its scoped sheets must be
+            declared in THIS template — a document-head link cannot match
+            content inside a shadow root (audit C). */}
+        <light-probe-card class='nested-light-card' count='3'></light-probe-card>
       </article>
     );
   }
