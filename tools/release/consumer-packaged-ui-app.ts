@@ -225,8 +225,19 @@ async function exerciseServer(
 // through packaging (S5-B) into the consumer build's official Tailwind compile.
 
 const UTILITY_WIDGET_TAG = 'utility-widget';
-/** The widget's utility classes — the ONLY rules the component sheet may hold. */
-const UTILITY_WIDGET_CANDIDATES = ['p-8', 'font-semibold', 'rotate-45'] as const;
+/**
+ * The widget's utility classes — the ONLY rules the component sheet may hold.
+ * `bg-probe` is a role from THIS PACKAGE's declared theme source (ADR-0167): the
+ * appliance declares no Tailwind configuration at all, so the rule can only
+ * exist because the package declared both the requirement and the source.
+ */
+const UTILITY_WIDGET_CANDIDATES = ['p-8', 'font-semibold', 'rotate-45', 'bg-probe'] as const;
+/** The package-owned theme role the widget paints with. */
+const PROBE_ROLE = '--color-probe';
+/** The role's declared value: a distinctive colour no default scale carries. */
+const PROBE_ROLE_VALUE = 'oklch(0.62 0.19 275)';
+/** The widget's declared theme source (package-relative, shipped in the tarball). */
+const PROBE_THEME_SOURCE = './src/theme.css';
 /** Utilities nothing in the appliance mentions: a full utility bundle would
  * carry them, a per-candidate compile cannot. */
 const ABSENT_UTILITY_PROBES = ['rotate-90', 'p-96', 'underline'] as const;
@@ -319,6 +330,11 @@ async function packUtilityWidget(dir: string): Promise<string> {
               status: 'experimental',
               module: '@acme/utility-widget/utility-widget',
               export: 'UtilityWidget',
+              // ADR-0167: the package declares that its component cannot be
+              // styled without the Tailwind compile and owns the theme source
+              // that compile needs. The appliance therefore carries NO Tailwind
+              // configuration: this declaration alone enables the pipeline.
+              tailwind: { required: true, sources: [PROBE_THEME_SOURCE] },
             },
           },
         ],
@@ -326,6 +342,11 @@ async function packUtilityWidget(dir: string): Promise<string> {
       null,
       2,
     )};\n`,
+  );
+  // The package-owned theme source, shipped in the tarball (`files: ['src']`).
+  await writeFile(
+    join(pkgDir, 'src', 'theme.css'),
+    `@theme {\n  ${PROBE_ROLE}: ${PROBE_ROLE_VALUE};\n}\n`,
   );
   const packed = await run(
     'npm',
@@ -565,6 +586,10 @@ try {
       widgetFound: widget !== null,
       widgetPaddingTop: widgetSpan ? getComputedStyle(widgetSpan).paddingTop : 'missing',
       widgetFontWeight: widgetSpan ? getComputedStyle(widgetSpan).fontWeight : 'missing',
+      // ADR-0167: the package-OWNED theme role. The appliance declares no
+      // Tailwind configuration naming this source, so a non-transparent
+      // background here is the declared-source path doing its job.
+      widgetBackground: widgetSpan ? getComputedStyle(widgetSpan).backgroundColor : 'missing',
       // Tailwind v4 lowers rotate-45 to the independent rotate property
       // (not transform), so both channels are read.
       widgetRotate: widgetSpan ? getComputedStyle(widgetSpan).rotate : 'missing',
@@ -598,6 +623,13 @@ try {
   if (!lab.widgetFound) failures.push('utility-widget was not found on /ui-lab');
   if (lab.widgetPaddingTop !== '32px') failures.push('p-8 padding-top=' + lab.widgetPaddingTop);
   if (lab.widgetFontWeight !== '600') failures.push('font-semibold weight=' + lab.widgetFontWeight);
+  // The declared theme source reached the component sheet: the bg-probe role
+  // painted a real colour inside the shadow tree. The computed value is
+  // engine-normalized oklch, so this asserts "a real colour", while the
+  // sheet-text assertion in the harness pins the exact role declaration.
+  if (/^(?:rgba?\\(0, 0, 0, 0\\)|transparent)$/.test(lab.widgetBackground)) {
+    failures.push('the declared package theme role did not paint: ' + lab.widgetBackground);
+  }
   // The discriminator is the MEASURED application, not CSS.supports: this
   // WebKit build reports support for the rotate property yet ignores it in an
   // adopted sheet (and in the delivered shadow link), so support claims are not
@@ -1024,6 +1056,21 @@ async function main(): Promise<void> {
     }
     // No full utility bundle: rules for utilities nothing references cannot be
     // in a per-candidate compile.
+    // ADR-0167: the package's DECLARED theme source compiled into the sheet —
+    // the role declaration and the `bg-probe` rule that reads it. No
+    // application source names this sheet; only the probe package does.
+    if (!componentSheet.css.includes(`${PROBE_ROLE}:`)) {
+      throw new Error(
+        `Component stylesheet ${componentSheet.name} is missing the declared package role ` +
+          `${PROBE_ROLE} — the declaration's source did not compile:\n${componentSheet.css.slice(0, 400)}`,
+      );
+    }
+    if (!componentSheet.css.includes('bg-probe') || !componentSheet.css.includes(PROBE_ROLE)) {
+      throw new Error(
+        `Component stylesheet ${componentSheet.name} carries no bg-probe rule over ${PROBE_ROLE}:\n` +
+          componentSheet.css.slice(0, 400),
+      );
+    }
     for (const absent of ABSENT_UTILITY_PROBES) {
       if (componentSheet.css.includes(`.${absent}`)) {
         throw new Error(

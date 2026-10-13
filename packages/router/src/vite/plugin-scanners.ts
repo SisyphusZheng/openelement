@@ -120,7 +120,7 @@ async function scanRoutesAndStaticComponents(state: OpenPluginState): Promise<Ro
  * The ONE owner of "which packages are admitted, and what do their manifests
  * declare": the build/dev `buildStart` calls it, and so does the dev server
  * phase (`configureServer`), which Vite runs BEFORE `buildStart` — the Tailwind
- * dev channels must answer a declared compilation requirement (ADR-0167) in
+ * dev channels must answer a declared compilation requirement in
  * their own `configureServer`, and the manifest scan is the only thing that
  * makes that requirement visible. Both callers run the same function over the
  * same package list, so running it twice is idempotent, not a second scanner.

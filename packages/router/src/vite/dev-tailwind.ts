@@ -123,7 +123,7 @@ export function devTailwindPlugin(state: OpenPluginState): Plugin {
     configResolved(config) {
       // The entry's identity is known now; whether the pipeline EXISTS is
       // decided in `configureServer` below, where a declared package
-      // requirement (ADR-0167) is visible — the manifest scan runs in
+      // requirement is visible — the manifest scan runs in
       // `open:core`'s configureServer, which Vite calls before this plugin's.
       entryRoot = config.root ?? process.cwd();
       resolvedConfig = config;

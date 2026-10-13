@@ -107,7 +107,7 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
   let root = process.cwd();
   let base = '/';
   /**
-   * The pipeline plan (ADR-0167), resolved lazily and memoized: demand may come
+   * The pipeline plan, resolved lazily and memoized: demand may come
    * from an admitted package declaration, which the manifest scan (run in
    * `open:core`'s buildStart, before any request) makes visible — not from
    * `configResolved`, which runs before that scan.

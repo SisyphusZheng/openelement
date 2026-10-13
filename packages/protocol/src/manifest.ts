@@ -42,7 +42,8 @@ export interface OpenElementCssPart {
 
 /**
  * A declaration's Tailwind compilation requirement and the package-owned style
- * sources that requirement compiles (ADR-0167).
+ * sources that requirement compiles (the declared-compilation contract; see
+ * the router's `tailwind-plan` module for the resolution rules).
  *
  * `required` is the mandatory-compilation dependency: the component's
  * presentation cannot be delivered without the compile, so an application that

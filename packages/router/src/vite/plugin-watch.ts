@@ -26,7 +26,7 @@ export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 
       // Vite runs this hook BEFORE `buildStart`, and the Tailwind dev channels
       // resolve their plan in their own `configureServer` — so the package
       // manifest scan runs here first: a declared compilation requirement
-      // (ADR-0167) must be visible before those hooks decide whether the
+      // (a declared package requirement) must be visible before those hooks decide
       // pipeline exists. Same function as buildStart's scan (idempotent).
       await scanPackageIslandsInto(state);
       const absoluteRoutesDir = resolve(process.cwd(), state.resolvedOptions.routesDir!);

@@ -106,7 +106,7 @@ export function expandIslandDeliveryDecl(island: IslandDecl): IslandDecl[] {
 export type DeliveryIslandDecl = IslandDecl & IslandDeliveryMeta;
 
 /**
- * The admitted declarations' Tailwind facts (ADR-0167).
+ * The admitted declarations' Tailwind facts (the declared-compilation contract).
  *
  * "Admitted" is this scan's own verdict: the package is on the scan list, its
  * manifest was readable, and the declaration carries the `openElement.module`

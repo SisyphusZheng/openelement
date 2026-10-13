@@ -1,5 +1,5 @@
 /**
- * The Tailwind pipeline plan (ADR-0167): WHO enabled the compile, and which
+ * The Tailwind pipeline plan: WHO enabled the compile, and which
  * style sources it carries.
  *
  * Demand is a DECLARED fact, never a guess: an admitted package declaration

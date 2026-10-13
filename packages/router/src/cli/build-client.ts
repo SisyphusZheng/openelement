@@ -427,7 +427,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     (route) => route.type === 'page' && route.hasEnhancedForms === true,
   );
 
-  // The Tailwind entry (alpha15 S lane; declared demand since ADR-0167): the
+  // The Tailwind entry (alpha15 S lane; demand is DECLARED): the
   // pipeline exists when the application declares it OR an admitted package
   // declaration requires/offers it. With no declaration at all nothing here
   // resolves, no peer is loaded, no entry is generated and no resource is
