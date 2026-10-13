@@ -18,19 +18,7 @@ import { readdir } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
 import { spawnCommand } from './node-command.ts';
-
-const RETIRED = [
-  '@openelement/app',
-  '@openelement/adapter-vite',
-  'adapter-vite',
-  '@openelement/core',
-  '@openelement/signal',
-  '@openelement/protocol',
-  '@openelement/content',
-  '@openelement/ssg',
-  '/preact',
-  'preact-render-to-string',
-];
+import { RETIRED_API_TOKENS } from './retired-api-tokens.ts';
 
 const SCAN_DIRS = [
   'www/content/docs/guide',
@@ -181,7 +169,7 @@ for (const file of files) {
       logical.push(line);
     }
   }
-  for (const token of RETIRED) {
+  for (const token of RETIRED_API_TOKENS) {
     if (text.includes(token)) {
       // A retired list that names the token as retired is documentation,
       // not teaching: allow "Retired:" / "已退役" lines only.
