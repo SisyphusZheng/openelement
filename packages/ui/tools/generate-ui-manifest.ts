@@ -372,6 +372,18 @@ function buildDeclaration(meta: ComponentMeta): OpenElementDeclaration {
       status: meta.status,
       module: `@openelement/ui/${meta.file.replace(/\.tsx$/, '')}`,
       export: meta.className,
+      // ADR-0167: every component's internals author Tailwind utilities
+      // directly (alpha15 S lane), so the compile is a REQUIREMENT of this
+      // package — the component stylesheet is what carries the utilities into
+      // the shadow roots — and the package owns the theme source that compile
+      // needs. A consumer that admits this package declares NO Tailwind
+      // configuration and still gets styled components; a consumer that
+      // disables the entry fails closed with a coded diagnostic instead of
+      // shipping unstyled components.
+      tailwind: {
+        required: true,
+        sources: ['./src/theme.css'],
+      },
     },
   };
 }

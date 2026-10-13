@@ -62,8 +62,10 @@ export default defineConfig({
   // the same compile at /.openElement/tailwind.css, the build emits it as the
   // content-hashed /client/assets/<hash>.css the head links.
   //
-  // The theme source is the ui package's real @theme role table (C3 made the
-  // recipes and the site read the role names directly).
+  // ADR-0167: the ui package's own theme source is no longer repeated here —
+  // admitting @openelement/ui brings its declared requirement and its
+  // package-owned role sheet into this plan automatically. What remains
+  // application-owned is the font layer.
   //
   // The self-hosted @font-face faces (www/site-fonts.ts, the H lane's
   // replacement for #1554's four jsDelivr stylesheet links) ride the same
@@ -73,7 +75,7 @@ export default defineConfig({
   // same-origin stylesheet carries theme + fonts, so no font request can leave
   // the origin and no CDN outage can stall first paint.
   tailwind: {
-    theme: ['@openelement/ui/theme.css', ...SITE_FONT_SOURCES],
+    theme: [...SITE_FONT_SOURCES],
   },
   speculation: true,
   // One shared official-Site SLO (www/site-budget.ts): the build manifest

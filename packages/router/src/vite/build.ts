@@ -24,7 +24,7 @@ import {
   pageChunkMap,
   postProcessClientIslandBuild,
 } from './internal/ssg/index.ts';
-import { resolveTailwindOptions } from './tailwind.ts';
+import { tailwindPlanForApp } from './internal/tailwind-plan.ts';
 import { stylesheetLinkTag } from './head-injection.ts';
 import {
   collectBuildArtifacts,
@@ -136,10 +136,15 @@ export function buildPlugin(
       const hasEnhancedForms = (ctx.phase1.cachedRoutes ?? []).some(
         (route) => route.type === 'page' && route.hasEnhancedForms === true,
       );
-      // The Tailwind entry (alpha15 S lane): the app's declared style sources
-      // compile inside the client build, so a declared entry is itself a
-      // reason to run Phase 2 even when the app carries no islands.
-      const tailwindOptions = resolveTailwindOptions(options.tailwind);
+      // The Tailwind entry (alpha15 S lane; declared demand since ADR-0167):
+      // the pipeline exists when the application declares it OR an admitted
+      // package declaration requires/offers it — so a declared requirement is
+      // itself a reason to run Phase 2 even when the app carries no islands.
+      const tailwindOptions = tailwindPlanForApp(
+        ctx,
+        ctx.phase3.root || process.cwd(),
+        options.tailwind,
+      );
       // S-C2/S-12: an app whose components are all server-rendered (no islands,
       // no enhanced forms, no Tailwind) still needs Phase 2 — the client build
       // is the ONE owner of the emitted style assets, and a server-rendered

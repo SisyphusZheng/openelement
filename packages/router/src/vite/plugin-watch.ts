@@ -13,7 +13,7 @@ import { createLogger, formatError } from '@openelement/element';
 import { relative, resolve } from 'pathe';
 import { DEFAULT_ISLANDS_DIR } from './internal/paths.ts';
 import { RESOLVED_CLIENT_ENTRY_ID } from './dev-island-client.ts';
-import { rescanIslands, rescanRoutes } from './plugin-scanners.ts';
+import { rescanIslands, rescanRoutes, scanPackageIslandsInto } from './plugin-scanners.ts';
 import { RESOLVED_ENTRY_ID } from './plugin-virtual-modules.ts';
 import type { OpenPluginState } from './plugin-config.ts';
 
@@ -22,7 +22,13 @@ const log = createLogger('router-vite');
 /** Create the `configureServer` hook of `open:core` over the shared state. */
 export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 'configureServer'> {
   return {
-    configureServer(server: ViteDevServer) {
+    async configureServer(server: ViteDevServer) {
+      // Vite runs this hook BEFORE `buildStart`, and the Tailwind dev channels
+      // resolve their plan in their own `configureServer` — so the package
+      // manifest scan runs here first: a declared compilation requirement
+      // (ADR-0167) must be visible before those hooks decide whether the
+      // pipeline exists. Same function as buildStart's scan (idempotent).
+      await scanPackageIslandsInto(state);
       const absoluteRoutesDir = resolve(process.cwd(), state.resolvedOptions.routesDir!);
       const absoluteIslandsDir = resolve(
         process.cwd(),

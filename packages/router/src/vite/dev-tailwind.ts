@@ -28,17 +28,17 @@
  */
 
 import process from 'node:process';
-import type { Plugin } from 'vite';
+import type { Plugin, ResolvedConfig } from 'vite';
 import { createLogger } from '@openelement/element';
 import {
   renderTailwindEntry,
-  resolveTailwindOptions,
   tailwindEntryModuleId,
   tailwindEntryUrl,
   tailwindPlugins,
   type ResolvedTailwindOptions,
 } from './tailwind.ts';
 import { setFrameworkStylesheets, type OpenPluginState } from './plugin-config.ts';
+import { tailwindPlanForApp } from './internal/tailwind-plan.ts';
 
 const log = createLogger('router-vite:tailwind-dev');
 
@@ -100,15 +100,16 @@ async function callPeerHook(
 /**
  * The dev pipeline's half of the Tailwind entry. Always present in the plugin
  * list (the list is fixed at `openElement()` call time while the `tailwind`
- * key may live in `openelement.config.ts`, resolved later), and inert until
- * {@linkcode resolveTailwindOptions} answers with options — so a
- * Tailwind-less app pays one resolved-options read and nothing else, and the
- * optional peer is never loaded.
+ * key may live in `openelement.config.ts`, and a package declaration is only
+ * visible after the manifest scan), and inert until the resolved PLAN exists —
+ * so a Tailwind-less app pays one plan read and nothing else, and the optional
+ * peer is never loaded.
  */
 export function devTailwindPlugin(state: OpenPluginState): Plugin {
   let peer: Plugin[] | undefined;
   let entryRoot: string | undefined;
   let entryOptions: ResolvedTailwindOptions | undefined;
+  let resolvedConfig: ResolvedConfig | undefined;
   const loadPeer = async (mode: string): Promise<Plugin[]> =>
     (peer ??= applicablePlugins(await tailwindPlugins(), mode));
 
@@ -119,25 +120,13 @@ export function devTailwindPlugin(state: OpenPluginState): Plugin {
     // Vite's own css plugin reads it; the wrapper takes the same seat.
     enforce: 'pre',
 
-    async configResolved(config) {
-      const options = resolveTailwindOptions(state.resolvedOptions.tailwind);
-      if (!options) return;
-      // Request-time delivery, decided here because only `configResolved`
-      // sees the resolved options: the entry's identity is a virtual path
-      // inside the project root and its text is produced on every load, so
-      // the dev channel owns no file on disk.
+    configResolved(config) {
+      // The entry's identity is known now; whether the pipeline EXISTS is
+      // decided in `configureServer` below, where a declared package
+      // requirement (ADR-0167) is visible — the manifest scan runs in
+      // `open:core`'s configureServer, which Vite calls before this plugin's.
       entryRoot = config.root ?? process.cwd();
-      entryOptions = options;
-      // Fail closed at dev start rather than on the first css request: a
-      // Tailwind-enabled dev server that cannot compile is an error, never a
-      // silently unstyled page (the #1582 symptom).
-      const plugins = await loadPeer(config.mode);
-      // The link rides the structured stylesheet channel, so the framework's
-      // one `<link>` serializer builds it and the href passes the protocol
-      // blocklist. Idempotent across Vite's config re-resolution: the setter
-      // re-points the framework's own link instead of accumulating one.
-      setFrameworkStylesheets(state, [tailwindEntryUrl(config.base ?? '/')]);
-      await callPeerHook(plugins, 'configResolved', this, [config]);
+      resolvedConfig = config;
     },
 
     /**
@@ -170,14 +159,32 @@ export function devTailwindPlugin(state: OpenPluginState): Plugin {
     },
 
     async configureServer(server) {
-      if (!peer) return;
+      if (resolvedConfig === undefined || entryRoot === undefined) return;
+      // The package manifest scan already ran (`open:core`'s configureServer,
+      // which Vite calls before this hook), so a declared requirement is
+      // visible here. Only a real plan loads the optional peer, contributes the
+      // head link and proxies the peer's own dev hooks; a Tailwind-less app
+      // pays one plan read and nothing else.
+      const options = tailwindPlanForApp(state.ctx, entryRoot, state.resolvedOptions.tailwind);
+      if (!options) return;
+      entryOptions = options;
+      // Fail closed at dev start rather than on the first css request: a
+      // Tailwind-enabled dev server that cannot compile is an error, never a
+      // silently unstyled page (the #1582 symptom).
+      const plugins = await loadPeer(server.config.mode);
+      // The link rides the structured stylesheet channel, so the framework's
+      // one `<link>` serializer builds it and the href passes the protocol
+      // blocklist. Idempotent across Vite's config re-resolution: the setter
+      // re-points the framework's own link instead of accumulating one.
+      setFrameworkStylesheets(state, [tailwindEntryUrl(server.config.base ?? '/')]);
+      await callPeerHook(plugins, 'configResolved', this, [server.config]);
       // The channel verdict, stated where a dev run shows it.
       log.info(
         `tailwind entry active — the compiled stylesheet is served at ${tailwindEntryUrl(
           server.config.base ?? '/',
         )} and linked in the document head`,
       );
-      await callPeerHook(peer, 'configureServer', this, [server]);
+      await callPeerHook(plugins, 'configureServer', this, [server]);
     },
 
     async transform(code, id) {

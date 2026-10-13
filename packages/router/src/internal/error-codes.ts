@@ -291,6 +291,8 @@ export const PackageIslandErrorCode = {
   DELIVERY_WITHOUT_MEDIA: 'OE_PACKAGE_ISLAND_DELIVERY_WITHOUT_MEDIA',
   /** A package on the scan list is not installed (its import misses entirely). */
   PACKAGE_MISSING: 'OE_PACKAGE_ISLAND_PACKAGE_MISSING',
+  /** A declaration's `openElement.tailwind` block is malformed (ADR-0167). */
+  TAILWIND_SHAPE: 'OE_PACKAGE_ISLAND_TAILWIND_SHAPE',
 } as const;
 
 /**
@@ -318,6 +320,17 @@ export const RouteScanErrorCode = {
 export const PresetErrorCode = {
   /** The entry is enabled but `@tailwindcss/vite` is not resolvable. */
   TAILWIND_UNRESOLVABLE: 'OE_PRESET_TAILWIND_UNRESOLVABLE',
+  /**
+   * The application disabled the entry (`tailwind: false`) while an admitted
+   * component declaration requires the compile (ADR-0167). Fails closed: the
+   * alternative is a component that ships without its presentation.
+   */
+  TAILWIND_REQUIRED_DISABLED: 'OE_PRESET_TAILWIND_REQUIRED_DISABLED',
+  /**
+   * A declaration's declared source is not package-relative, or names a file
+   * the installed package does not carry (ADR-0167).
+   */
+  TAILWIND_SOURCE_UNRESOLVED: 'OE_PRESET_TAILWIND_SOURCE_UNRESOLVED',
 } as const;
 
 /**

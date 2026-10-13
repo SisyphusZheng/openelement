@@ -73,7 +73,13 @@
         "hydrate": "load",
         "status": "stable",
         "module": "@openelement/ui/open-button",
-        "export": "OpenButton"
+        "export": "OpenButton",
+        "tailwind": {
+          "required": true,
+          "sources": [
+            "./src/theme.css"
+          ]
+        }
       }
     },
     {
@@ -172,7 +178,13 @@
         "hydrate": "load",
         "status": "experimental",
         "module": "@openelement/ui/open-input",
-        "export": "OpenInput"
+        "export": "OpenInput",
+        "tailwind": {
+          "required": true,
+          "sources": [
+            "./src/theme.css"
+          ]
+        }
       }
     },
     {
@@ -215,7 +227,13 @@
         "hydrate": "load",
         "status": "stable",
         "module": "@openelement/ui/open-theme-toggle",
-        "export": "OpenThemeToggle"
+        "export": "OpenThemeToggle",
+        "tailwind": {
+          "required": true,
+          "sources": [
+            "./src/theme.css"
+          ]
+        }
       }
     },
     {
@@ -242,7 +260,13 @@
         "hydrate": "idle",
         "status": "stable",
         "module": "@openelement/ui/open-code-block",
-        "export": "OpenCodeBlock"
+        "export": "OpenCodeBlock",
+        "tailwind": {
+          "required": true,
+          "sources": [
+            "./src/theme.css"
+          ]
+        }
       }
     },
     {
@@ -313,7 +337,13 @@
         "hydrate": "idle",
         "status": "experimental",
         "module": "@openelement/ui/open-dialog",
-        "export": "OpenDialog"
+        "export": "OpenDialog",
+        "tailwind": {
+          "required": true,
+          "sources": [
+            "./src/theme.css"
+          ]
+        }
       }
     },
     {
@@ -348,7 +378,13 @@
         "hydrate": "load",
         "status": "experimental",
         "module": "@openelement/ui/open-dropdown",
-        "export": "OpenDropdown"
+        "export": "OpenDropdown",
+        "tailwind": {
+          "required": true,
+          "sources": [
+            "./src/theme.css"
+          ]
+        }
       }
     }
   ]

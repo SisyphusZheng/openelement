@@ -7,6 +7,7 @@ import { createLogger } from '@openelement/element';
 import { normalizeSeparators, pathToTagName } from '@openelement/element/build-utils';
 import { hasControlCharacter } from '../../../internal/control-characters.ts';
 import { buildError, PackageIslandErrorCode } from '../../../internal/error-codes.ts';
+import type { DeclaredTailwindSource } from '../tailwind-plan.ts';
 import { join } from 'pathe';
 import { safeReadDir, safeReadFile, safeStat } from './route-scanner-fs.ts';
 import {
@@ -103,6 +104,67 @@ export function expandIslandDeliveryDecl(island: IslandDecl): IslandDecl[] {
 
 /** Package island declaration with delivery aliases resolved. */
 export type DeliveryIslandDecl = IslandDecl & IslandDeliveryMeta;
+
+/**
+ * The admitted declarations' Tailwind facts (ADR-0167).
+ *
+ * "Admitted" is this scan's own verdict: the package is on the scan list, its
+ * manifest was readable, and the declaration carries the `openElement.module`
+ * the island pipeline admits. Reachability narrows DELIVERY, not admission, so
+ * a listed package's requirement is honoured for every build of that app —
+ * conservative, and independent of which page happens to render first.
+ *
+ * The block's shape is validated here (the scan owns manifest shape): a
+ * malformed `tailwind` block fails the build instead of being silently ignored.
+ * Resolution of the declared sources themselves belongs to the Tailwind plan
+ * (`resolveTailwindPlan`), which knows the app root.
+ */
+export function admittedTailwindDeclarations(
+  packageManifests: readonly OpenElementPackageManifest[],
+  admitted: readonly { readonly tagName: string }[],
+): DeclaredTailwindSource[] {
+  const admittedTags = new Set(admitted.map((decl) => decl.tagName));
+  const facts: DeclaredTailwindSource[] = [];
+  for (const pkg of packageManifests) {
+    for (const declaration of pkg.declarations) {
+      if (!admittedTags.has(declaration.tagName)) continue;
+      const block = declaration.openElement?.tailwind;
+      if (block === undefined) continue;
+      if (block === null || typeof block !== 'object') {
+        throw buildError(
+          PackageIslandErrorCode.TAILWIND_SHAPE,
+          `${pkg.packageName} <${declaration.tagName}> declares openElement.tailwind as ` +
+            `${JSON.stringify(block)}; it must be an object.`,
+        );
+      }
+      const { required, sources } = block as { required?: unknown; sources?: unknown };
+      if (required !== undefined && typeof required !== 'boolean') {
+        throw buildError(
+          PackageIslandErrorCode.TAILWIND_SHAPE,
+          `${pkg.packageName} <${declaration.tagName}> declares openElement.tailwind.required as ` +
+            `${JSON.stringify(required)}; it must be a boolean.`,
+        );
+      }
+      if (
+        sources !== undefined &&
+        (!Array.isArray(sources) || sources.some((source) => typeof source !== 'string'))
+      ) {
+        throw buildError(
+          PackageIslandErrorCode.TAILWIND_SHAPE,
+          `${pkg.packageName} <${declaration.tagName}> declares openElement.tailwind.sources as ` +
+            `${JSON.stringify(sources)}; it must be an array of package-relative paths.`,
+        );
+      }
+      facts.push({
+        packageName: pkg.packageName,
+        tagName: declaration.tagName,
+        required: required === true,
+        sources: (sources as string[] | undefined) ?? [],
+      });
+    }
+  }
+  return facts;
+}
 
 /**
  * Build package island declarations from scanned package manifests.

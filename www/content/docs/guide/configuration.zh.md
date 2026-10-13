@@ -53,6 +53,8 @@ export default defineConfig({
 
 脚手架项目把 token 放在它声明的 `theme.css` 里，于是只有一个 token 来源而不是两个——但这是项目选择，不是框架强制的规则。框架真正强制的是「框架选项只有一个家」：`openelement.config.ts` 已带选项时再往 `openElement()` 内联传选项是硬错误。如果你同时保留 `tokens.css` 约定文件与 `tailwind.theme` 样式表，两者都会生效（都会被内联/编译），保持一致的责任在使用方。
 
+`tailwind` 决定这条管线是否存在，而包也可以自己声明这个需求。省略该键时，只有**被准入的包声明了需求**才会编译 Tailwind：`packageIslands` 列出的包，其 manifest 里的 `openElement.tailwind` 块要么要求编译（`required: true`——此时关闭该入口会让构建以带码诊断失败，而不是发出没有样式的组件），要么提供随它一起编译的包自有样式源（`sources: ['./theme.css']`，包内相对路径，在已安装的包内解析）。使用方无需重复属主的样式源：声明的源先编译，应用自己的 `theme` 条目在其后；同一个文件即使以不同写法出现两次也只编译一次（按解析到的文件去重）。应用本地的 class 不会自行打开这条管线——自己写 utility 的应用要自己声明 `tailwind`。`true` 只编译声明的源、不含应用自己的源；`false` 完全关闭管线（不加载 peer、不编译、不产出样式表），并在被准入组件要求编译时失败关闭。
+
 可接受的键——其余任何键都会以这份列表报错并让构建失败：
 
 - `renderer`——`'native'`（默认，编译后的 Part Program 序列化器）或 `'lit'`。

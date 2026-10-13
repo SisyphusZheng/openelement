@@ -114,6 +114,33 @@ async function scanRoutesAndStaticComponents(state: OpenPluginState): Promise<Ro
   return routes;
 }
 
+/**
+ * Scan the admitted packages' manifests into ctx.
+ *
+ * The ONE owner of "which packages are admitted, and what do their manifests
+ * declare": the build/dev `buildStart` calls it, and so does the dev server
+ * phase (`configureServer`), which Vite runs BEFORE `buildStart` — the Tailwind
+ * dev channels must answer a declared compilation requirement (ADR-0167) in
+ * their own `configureServer`, and the manifest scan is the only thing that
+ * makes that requirement visible. Both callers run the same function over the
+ * same package list, so running it twice is idempotent, not a second scanner.
+ */
+export async function scanPackageIslandsInto(state: OpenPluginState): Promise<void> {
+  const packageNames = state.resolvedOptions.packageIslands;
+  if (!packageNames || packageNames.length === 0) return;
+  state.ctx.phase1.packageManifests = await scanPackageManifests([...packageNames]);
+  const manifests = state.ctx.phase1.packageManifests;
+  if (manifests.length === 0) return;
+  // Extract island declarations from manifests.
+  state.ctx.phase1.packageIslandDecls = buildPackageIslandDecls(
+    manifests,
+    state.resolvedOptions.island?.upgradeStrategy,
+  );
+  log.info(
+    `Package islands: ${state.ctx.phase1.packageIslandDecls.map((i) => i.tagName).join(', ')}`,
+  );
+}
+
 /** Rescan the islands dir into ctx; returns the islands root for later reuse. */
 async function scanIslandsIntoCtx(state: OpenPluginState): Promise<string> {
   const islandsRoot = join(process.cwd(), state.resolvedOptions.islandsDir || DEFAULT_ISLANDS_DIR);
@@ -189,21 +216,7 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
           state.resolvedOptions.packageIslands &&
           state.resolvedOptions.packageIslands.length > 0
         ) {
-          state.ctx.phase1.packageManifests = await scanPackageManifests(
-            state.resolvedOptions.packageIslands,
-          );
-          if (state.ctx.phase1.packageManifests.length > 0) {
-            // Extract island declarations from manifests
-            state.ctx.phase1.packageIslandDecls = buildPackageIslandDecls(
-              state.ctx.phase1.packageManifests,
-              state.resolvedOptions.island?.upgradeStrategy,
-            );
-            log.info(
-              `Package islands: ${state.ctx.phase1.packageIslandDecls
-                .map((i) => i.tagName)
-                .join(', ')}`,
-            );
-          }
+          await scanPackageIslandsInto(state);
         }
 
         // Cache routes for lazy load() regeneration.

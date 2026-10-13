@@ -46,10 +46,10 @@ import {
   readViteClientManifest,
 } from '../vite/client-asset-manifest.ts';
 import { createClassCandidateRegistry } from '@openelement/compiler';
+import { tailwindPlanForApp } from '../vite/internal/tailwind-plan.ts';
 import {
   COMPONENT_SHEET_SPECIFIER,
   componentStyleSheetPlugin,
-  resolveTailwindOptions,
   tailwindEntryPath,
   tailwindEntryPlugin,
   tailwindPlugins,
@@ -427,11 +427,13 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     (route) => route.type === 'page' && route.hasEnhancedForms === true,
   );
 
-  // The Tailwind entry (alpha15 S lane): the app's declared style sources,
-  // compiled by the official @tailwindcss/vite pipeline and emitted as the
-  // document stylesheet asset. Island-free apps still build here — the entry
-  // is the reason.
-  const tailwindOptions = resolveTailwindOptions(ctx.options.tailwind);
+  // The Tailwind entry (alpha15 S lane; declared demand since ADR-0167): the
+  // pipeline exists when the application declares it OR an admitted package
+  // declaration requires/offers it. With no declaration at all nothing here
+  // resolves, no peer is loaded, no entry is generated and no resource is
+  // emitted. `tailwind: false` is authoritative and fails closed when an
+  // admitted component requires the compile.
+  const tailwindOptions = tailwindPlanForApp(ctx, root, ctx.options.tailwind);
 
   // The component stylesheet (alpha15 S lane): the compiler's shadow-root
   // class candidates compiled by the same official peer into one shared,
