@@ -113,7 +113,7 @@ export type {
   PageIslandManifest,
 } from './island-manifest.ts';
 
-export { generateClientEntry } from './entry-client-codegen.ts';
+export { clientEntryNeedsElementRuntime, generateClientEntry } from './entry-client-codegen.ts';
 export {
   islandsMightUseBlocks,
   elementRuntimeBlocksAlias,

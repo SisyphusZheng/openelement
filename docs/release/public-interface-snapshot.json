@@ -1050,9 +1050,10 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "f27414f152930e9ebd366716a3f4633e47e3b6f552fe3746082a3e4263e4c05f",
+          "publicShapeSha256": "85648999c04178678718b72a53c92ac2b8a66ccbf0647bb6fdcb36dbc930348e",
           "publicSymbols": [
             "COMPILED_ELEMENT_MARKER=value:\"@element(\"",
+            "ClassCandidateRegistry=type:{all:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}",
             "CompileElementResult=type:{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}",
             "CompiledElementError=type:{readonly diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number})}|value:{construct:(diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number}))=>{readonly diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number})}}",
             "ElementCompilerDiagnostic=type:{character:number;code:string;end:number;file:string;line:number;message:string;start:number}",
@@ -1064,26 +1065,21 @@
             "RegisteredStyleRequest=type:{readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string}",
             "SemanticCoreOptions=type:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)}",
             "StaticSidecarDescriptor=type:StaticSidecarDescriptor",
-            "allClassCandidates=value:{call:()=>array(string)}",
-            "allShadowClassCandidates=value:{call:()=>array(string)}",
             "analyzeModuleSemantics=value:{call:(source:string,fileName:string,options:{readonly collectSpecifiers?:union(false|true|undefined);readonly vocabulary?:union(array(ModuleVocabularyDescriptor)|undefined)})=>{compiledElementDecorator:union(false|true);compilerInteractionEvents:array(string);defaultCompiledTag?:union(string|undefined);definePage:union(false|true);definedCustomElementTags:array(string);enhancedForm:union(false|true);exportedTagName?:union(string|undefined);moduleSpecifiers?:union(array(string)|undefined);referencedCustomElementTags:array(string);relativeImports:array(string);unsupportedElementDecorator?:union(string|undefined);usesExportedTagName:union(false|true)}}",
-            "classCandidatesForModule=value:{call:(moduleId:string)=>array(string)}",
-            "clearClassCandidates=value:{call:()=>void}",
             "clearStyleRequests=value:{call:()=>void}",
             "compileElementModule=value:{call:(code:string,id:string,options:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)})=>union(null|{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)})}",
             "compileElementProgram=value:{call:(source:string,fileName:string,options:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)})=>{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}}",
             "compiledArtifactClassCandidates=value:{call:(source:string,fileName:string)=>union(array(string)|undefined)}",
             "compiledArtifactStyleRequests=value:{call:(source:string,fileName:string)=>union(array(string)|undefined)}",
-            "compiledElementPlugin=value:{call:(options:{resolutionPaths?:union(Record<string, string[]>|undefined);staticSidecars?:union(array(StaticSidecarDescriptor)|undefined);typeCheckEmitted?:union(false|true|undefined);workspaceRoot?:union(string|undefined)})=>Plugin<any>}",
+            "compiledElementPlugin=value:{call:(options:{candidates?:union(undefined|{all:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}});resolutionPaths?:union(Record<string, string[]>|undefined);staticSidecars?:union(array(StaticSidecarDescriptor)|undefined);typeCheckEmitted?:union(false|true|undefined);workspaceRoot?:union(string|undefined)})=>Plugin<any>}",
+            "createClassCandidateRegistry=value:{call:()=>{all:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}}",
             "emittedModuleTypeChecks=value:{call:(code:string,fileName:string,options:{compilerOptions?:union(CompilerOptions|undefined);extraFiles?:union(Readonly<Record<string, string>>|undefined);paths?:union(Record<string, string[]>|undefined)})=>union(false|true)}",
             "getStyleRequest=value:{call:(moduleId:string)=>union(undefined|{readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string})}",
-            "hasClassCandidates=value:{call:()=>union(false|true)}",
             "hasElementDecoratorApplication=value:{call:(code:string,id:string)=>union(false|true)}",
             "hasStyleImporter=value:{call:(importerId:string)=>union(false|true)}",
             "isCompiledElementModule=value:{call:(code:string,id:string)=>union(false|true)}",
             "lightRootScopeTag=value:{call:(program:unknown)=>union(string|undefined)}",
             "readCompiledArtifactStyles=value:{call:(source:string,fileName:string)=>union(undefined|{readonly requests:array(string);readonly scopeTag?:union(string|undefined)})}",
-            "registerClassCandidates=value:{call:(importerId:string,candidates:array(string),options:{shadow:union(false|true)})=>void}",
             "registerStyleEdges=value:{call:(id:string,specifiers:array(string),scopeTag:union(string|undefined))=>void}",
             "registerStyleRequest=value:{call:(request:{readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string})=>void}",
             "stableModuleId=value:{call:(file:string,root:union(string|undefined),workspaceRoot:union(string|undefined))=>string}",
@@ -1097,9 +1093,9 @@
           ]
         },
         "./vite": {
-          "publicShapeSha256": "f51526a96b41bcb121c8926a336e242ceabb84db597ea252441a0f82618b500e",
+          "publicShapeSha256": "8469f161994a4955521034b9d4b4cf24196615d4c9b678c69ad1febd88c4b28d",
           "publicSymbols": [
-            "element=value:{call:(options:{resolutionPaths?:union(Record<string, string[]>|undefined);staticSidecars?:union(array(StaticSidecarDescriptor)|undefined);typeCheckEmitted?:union(false|true|undefined);workspaceRoot?:union(string|undefined)})=>Plugin<any>}"
+            "element=value:{call:(options:{candidates?:union(undefined|{all:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}});resolutionPaths?:union(Record<string, string[]>|undefined);staticSidecars?:union(array(StaticSidecarDescriptor)|undefined);typeCheckEmitted?:union(false|true|undefined);workspaceRoot?:union(string|undefined)})=>Plugin<any>}"
           ]
         }
       }

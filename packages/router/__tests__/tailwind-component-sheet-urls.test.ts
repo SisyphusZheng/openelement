@@ -115,7 +115,7 @@ test('the component sheet rebases every file url() onto an emitted asset, indepe
     const run = async (idPrefix: string): Promise<{ fileName: string; sheet: string }> => {
       const emitted: EmittedAsset[] = [];
       const record: ComponentStyleSheetRecord = { fileName: undefined };
-      const plugin = componentStyleSheetPlugin(UNIT_FIXTURE, options, ['flex'], record);
+      const plugin = componentStyleSheetPlugin(UNIT_FIXTURE, options, () => ['flex'], record);
       const graphId = (plugin.resolveId as (id: string) => string | null)(
         COMPONENT_SHEET_SPECIFIER,
       );
@@ -195,7 +195,7 @@ test('changing the referenced asset bytes changes the sheet identity — never a
       const plugin = componentStyleSheetPlugin(
         fixture,
         { theme: ['app/theme.css'] },
-        ['flex'],
+        () => ['flex'],
         record,
       );
       const graphId = (plugin.resolveId as (id: string) => string | null)(

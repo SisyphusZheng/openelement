@@ -1,34 +1,34 @@
 /**
- * Shadow candidate collection for the client build (alpha15 S lane).
+ * Shadow candidate collection (alpha15 S lane; defect C ownership).
  *
- * The client build's module graph holds the island modules only: page,
- * layout and static-component modules are compiled later, by the SSR pass, so
- * their statically admitted class candidates would miss the window in which
- * the component stylesheet is compiled and emitted (Phase 2). This pass runs
- * the SAME official compiler (`compileElementModule`) over the module
- * inventory the Phase 1 scanners already produced — routes, islands and static
- * components — and registers the results in the candidate channel. There is no
- * second parser here and no class grammar of our own: the compiler's lowering
- * collects the tokens, and the build layer forwards them to the official
- * Tailwind compiler as explicit candidates.
+ * A component's statically admitted class candidates are a COMPILER fact: the
+ * lowering collects the tokens, and the host build forwards them to the
+ * official Tailwind compiler as explicit candidates. This module is the one
+ * home for "a module's source → its registry facts", shared by both writers —
+ * the dev channel (a changed file is re-registered directly, because the SSR
+ * graph may not have re-transformed it yet) and the client build's
+ * resolver-driven discovery pass (which compiles every module the server
+ * renders and registers the same way).
  *
- * A module that fails to compile is skipped here by design: this pass only
- * feeds the component stylesheet's candidate set, and the authoritative compile
- * (the SSR pass, which transforms every module) is the one that reports its
- * diagnostics and fails the build. Skipping is therefore never a silent
- * acceptance of broken source.
+ * There is no second parser here and no class grammar of our own.
  *
- * Root scope is preserved exactly as the transform path records it
- * ({@linkcode registerClassCandidates}'s `shadow` flag): light-root candidates
- * are registered for measurement but never enter the shadow stylesheet.
+ * A module that fails to compile is skipped by design: this pass only feeds the
+ * component stylesheet's candidate set, and the authoritative compile (the SSR
+ * pass, which transforms every module) is the one that reports its diagnostics
+ * and fails the build. Skipping is therefore never a silent acceptance of
+ * broken source.
+ *
+ * Every registration is AUTHORITATIVE for its module, including "none" — an
+ * emptied module drops its previous facts (defect C) — and every write goes
+ * into the CALLER'S registry, so no two builds share facts.
  */
 
 import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import {
+  type ClassCandidateRegistry,
   compileElementModule,
   compiledArtifactClassCandidates,
-  registerClassCandidates,
 } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { join, resolve } from 'pathe';
@@ -48,14 +48,49 @@ export interface CandidateModule {
 export interface CollectShadowCandidatesOptions {
   /** Project root; module paths resolve against it. */
   readonly root: string;
-  /** The modules to compile, in any order (registration is idempotent). */
+  /** The modules to compile, in any order (registration is per module). */
   readonly modules: readonly CandidateModule[];
+  /** The owner's registry — never a shared one. */
+  readonly candidates: ClassCandidateRegistry;
 }
 
 /**
- * Compile every listed module and register its admitted class candidates.
- * Returns how many modules contributed candidates (diagnostics for the pass's
- * own module set are the SSR pass's to report).
+ * Register one already-compiled module's candidates. The root scope is part of
+ * the fact: only a shadow-root component's classes need the component
+ * stylesheet (light-root classes live in document DOM, where the document
+ * entry's own pipeline already covers them).
+ */
+export function registerCandidatesFromCompiled(
+  file: string,
+  compiled: { classCandidates?: readonly string[]; program: { root: { kind: string } } },
+  candidates: ClassCandidateRegistry,
+): boolean {
+  candidates.register(file, compiled.classCandidates ?? [], {
+    shadow: compiled.program.root.kind !== 'light',
+  });
+  return (compiled.classCandidates ?? []).length > 0;
+}
+
+/**
+ * Register a SHIPPED (already compiled) module's candidates: proven at pack
+ * time and travelling in the module (S5-B), so the packed form is admitted
+ * exactly like the authored one — no second parser over the shipped markup. A
+ * module that carries none registers its absence.
+ */
+export function registerArtifactCandidates(
+  source: string,
+  file: string,
+  candidates: ClassCandidateRegistry,
+): boolean {
+  const recovered = compiledArtifactClassCandidates(source, file);
+  candidates.register(file, recovered ?? [], { shadow: true });
+  return recovered !== undefined;
+}
+
+/**
+ * Compile every listed module and register its admitted class candidates in the
+ * caller's registry. Returns how many modules contributed candidates
+ * (diagnostics for the pass's own module set are the SSR pass's to report).
  */
 export async function collectShadowClassCandidates(
   options: CollectShadowCandidatesOptions,
@@ -83,14 +118,7 @@ export async function collectShadowClassCandidates(
       continue;
     }
     if (!source.includes('@element(')) {
-      // A shipped compiled artifact has no authored grammar left, but it
-      // carries its candidate facts (S5-B) — the pack-time truth, recovered
-      // exactly as the transform bindings recover it.
-      const recovered = compiledArtifactClassCandidates(source, file);
-      if (recovered !== undefined) {
-        registerClassCandidates(file, recovered, { shadow: true });
-        contributed += 1;
-      }
+      if (registerArtifactCandidates(source, file, options.candidates)) contributed += 1;
       continue;
     }
     let compiled: ReturnType<typeof compileElementModule>;
@@ -100,11 +128,11 @@ export async function collectShadowClassCandidates(
       // The authoritative compile reports diagnostics; see the module header.
       continue;
     }
-    if (compiled?.classCandidates === undefined) continue;
-    registerClassCandidates(file, compiled.classCandidates, {
-      shadow: compiled.program.root.kind !== 'light',
-    });
-    contributed += 1;
+    if (compiled === null) {
+      if (registerArtifactCandidates(source, file, options.candidates)) contributed += 1;
+      continue;
+    }
+    if (registerCandidatesFromCompiled(file, compiled, options.candidates)) contributed += 1;
   }
   return contributed;
 }

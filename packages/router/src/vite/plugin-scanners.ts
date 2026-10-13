@@ -29,6 +29,8 @@ import type { EntryDescriptor } from './internal/ssg/index.ts';
 import { buildPackageIslandDecls } from './internal/ssg/island-scanner.ts';
 import { resolveIslandDeliveryTags } from './internal/ssg/delivery.ts';
 import type { OpenPluginState } from './plugin-config.ts';
+import type { ModuleWalkResolver } from './internal/module-graph-walk.ts';
+import { collectShadowClassCandidates } from './internal/collect-shadow-candidates.ts';
 
 const log = createLogger('router-vite');
 
@@ -91,11 +93,23 @@ async function scanRoutesAndStaticComponents(state: OpenPluginState): Promise<Ro
     root: state.viteRoot ?? process.cwd(),
     workspaceRoot: state.workspaceRoot,
   });
+  const resolve = state.resolveModule;
+  if (resolve === undefined) {
+    // The scan's reachability is the BUNDLER's: without its resolver a component
+    // reached through an alias or a `package.json` imports subpath would be
+    // invisible here — the silent DSD loss defect B fixed. Fail closed instead
+    // of falling back to a narrower walk of our own.
+    throw new Error(
+      '[openElement] static component discovery requires the build resolver ' +
+        '(buildStart captures it); refusing to scan with relative imports only',
+    );
+  }
   state.ctx.phase1.staticComponents = await scanStaticComponents({
     root: process.cwd(),
     routesDir: state.resolvedOptions.routesDir!,
     islandsDir: state.resolvedOptions.islandsDir || DEFAULT_ISLANDS_DIR,
     routes,
+    resolve,
   });
   return routes;
 }
@@ -157,6 +171,14 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
   return {
     async buildStart() {
       state.ctx.reset();
+      // This phase owns discovery, so it captures the plugin context's resolver
+      // here: route/static-component reachability must be the BUNDLER's
+      // (relative, `package.json` imports, alias — defect B), and a dev rescan
+      // has no plugin context of its own to ask.
+      state.resolveModule = {
+        resolve: (specifier, importer) =>
+          this.resolve(specifier, importer) as ReturnType<ModuleWalkResolver['resolve']>,
+      };
 
       try {
         const routes = await scanRoutesAndStaticComponents(state);
@@ -186,6 +208,40 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
 
         // Cache routes for lazy load() regeneration.
         state.ctx.phase1.cachedRoutes = routes;
+
+        // The DEV channel's class candidates must be complete before the first
+        // document render: the component sheet's version (and therefore the
+        // `<link>` the DSD template declares) is computed from this registry the
+        // moment the style-links module loads — which happens BEFORE the app's
+        // modules are transformed — so a transform-only registration would leave
+        // the first paint declaring a sheet URL the client adapter disagrees
+        // with, and the shadow roots would adopt nothing (defect C's ordering
+        // requirement; a process-global registry used to hide this by leaking
+        // the previous server's facts). The inventory is the Phase 1 scan's own
+        // (bundler-resolved, defect B): the same discovery the build runs, not a
+        // second scanner. Builds skip it — their client build discovers its own
+        // graph and owns its own registry.
+        if (state.produceMode === 'serve') {
+          await collectShadowClassCandidates({
+            root: process.cwd(),
+            candidates: state.classCandidates,
+            modules: [
+              ...(state.ctx.phase1.staticComponents ?? []).map((decl) => ({
+                path: decl.modulePath.replace(/^\/+/, ''),
+              })),
+              ...(state.ctx.phase1.islandFiles ?? []).map((file) => ({
+                path: `${state.resolvedOptions.islandsDir || DEFAULT_ISLANDS_DIR}/${file}`,
+              })),
+              ...routes
+                .filter((route) => route.type === 'page')
+                .map((route) => ({ path: `${state.resolvedOptions.routesDir}/${route.filePath}` })),
+              ...(state.ctx.phase1.packageIslandDecls ?? []).map((island) => ({
+                path: island.modulePath,
+                resolve: true,
+              })),
+            ],
+          });
+        }
 
         // CEM auto-detection - scan node_modules for custom-elements.json
         // without importing or executing any package code. Runs BEFORE the entry

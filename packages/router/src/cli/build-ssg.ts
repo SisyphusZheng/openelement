@@ -109,6 +109,14 @@ interface BuildSSGOptions {
   islandFiles?: string[];
   islandMeta?: Record<string, Partial<import('@openelement/protocol/ssg').IslandDecl>>;
   staticComponents?: StaticComponentDecl[];
+  /**
+   * The build's own module resolver (`this.resolve`), used only when
+   * `staticComponents` was not supplied by Phase 1: the discovery walk needs the
+   * bundler's reachability (relative, `package.json` imports, alias), and
+   * without it the scan fails closed rather than falling back to a narrower
+   * walk of its own.
+   */
+  resolve?: import('../vite/internal/module-graph-walk.ts').ModuleWalkResolver;
   packageManifests?: OpenElementPackageManifest[];
   /** CEM-derived compatibility classifications from Phase 1 auto-detection. */
   cemClassifications?: CompatibilityClassification[];
@@ -271,12 +279,22 @@ async function buildSSG(
     }));
   const staticComponents =
     options.staticComponents ??
-    (await scanStaticComponents({
-      root,
-      routesDir,
-      islandsDir,
-      routes,
-    }));
+    (await (async () => {
+      if (options.resolve === undefined) {
+        // Reachability must be the BUNDLER's; see BuildSSGOptions.resolve.
+        throw new Error(
+          '[openElement] buildSSG needs staticComponents (Phase 1) or a resolver to ' +
+            'discover them with the bundler’s own reachability',
+        );
+      }
+      return await scanStaticComponents({
+        root,
+        routesDir,
+        islandsDir,
+        routes,
+        resolve: options.resolve,
+      });
+    })());
 
   const islandsRoot = join(root, islandsDir);
   const ssgIslandFiles = options.islandFiles ?? (await scanIslands(islandsRoot));

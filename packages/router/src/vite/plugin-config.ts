@@ -22,6 +22,8 @@ import type { SsgBehaviorOptions } from '@openelement/protocol/ssg';
 
 import { formatError } from '@openelement/element';
 import { createLogger } from '@openelement/element';
+import { type ClassCandidateRegistry, createClassCandidateRegistry } from '@openelement/compiler';
+import type { ModuleWalkResolver } from './internal/module-graph-walk.ts';
 import { hasInlineFrameworkOptions } from '../config.ts';
 import { normalizeViteAliases } from './alias-utils.ts';
 import { detectAppConfigFile, resolveAppConfig } from './app-config.ts';
@@ -161,6 +163,21 @@ export interface OpenPluginState {
   // shared between the emitted virtual entry code (renderEntry) and
   // ctx.phase1.ssrAdmissionPlan, so both carry the same options.
   entryDescriptor: EntryDescriptor | null;
+  /**
+   * This plugin instance's class-candidate registry (alpha15 S lane, defect C).
+   * One per instance — i.e. one per dev server or build — so the compiled
+   * modules' class facts cannot leak between two live projects in one process;
+   * the dev transform is the writer and the dev component-sheet channel the
+   * reader.
+   */
+  readonly classCandidates: ClassCandidateRegistry;
+  /**
+   * The plugin context's own module resolver, captured in `buildStart` (the
+   * phase that owns route/static-component discovery). Reachability follows it
+   * for every specifier form the bundler understands — relative, `package.json`
+   * imports, alias (defect B) — both on the first scan and on a dev rescan.
+   */
+  resolveModule?: ModuleWalkResolver;
 }
 
 function applyResolvedOptions(state: OpenPluginState, merged: FrameworkOptions): void {
@@ -334,6 +351,7 @@ export function createOpenPluginState(
     viteRoot: undefined,
     workspaceRoot,
     entryDescriptor: null,
+    classCandidates: createClassCandidateRegistry(),
   };
 }
 

@@ -34,8 +34,7 @@
 
 import process from 'node:process';
 import type { Plugin, ViteDevServer } from 'vite';
-import { createLogger } from '@openelement/element';
-import { allShadowClassCandidates } from '@openelement/compiler';
+import { createLogger, formatError } from '@openelement/element';
 import { collectShadowClassCandidates } from './internal/collect-shadow-candidates.ts';
 import {
   COMPONENT_SHEET_SPECIFIER,
@@ -118,14 +117,18 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
    */
   let sheetVersion = 0;
 
-  const fingerprint = (): string => allShadowClassCandidates().join(' ');
+  // This plugin instance's own registry (one dev server): the dev transform is
+  // its writer, so the served sheet can never be built from another project's
+  // facts (defect C).
+  const shadowCandidates = (): readonly string[] => state.classCandidates.allShadow();
+  const fingerprint = (): string => shadowCandidates().join(' ');
   const liveVersion = (): string => fingerprintDigest(`${fingerprint()}#${sheetVersion}`);
   const currentCss = async (): Promise<string> => {
     if (options === undefined) return '';
     // Always compile for the CURRENT candidate set: the module id is versioned
     // by the change counter, so Vite calls this exactly once per version and a
     // cache here could only serve a stale sheet.
-    return await compileComponentStyleSheet(root, options, allShadowClassCandidates());
+    return await compileComponentStyleSheet(root, options, shadowCandidates());
   };
   /** A change that may move the admitted candidates or the theme layer. */
   const relevantChange = (file: string): boolean =>
@@ -202,20 +205,18 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
         `tailwind component sheet served at ${devComponentSheetUrl(base, 'current')} ` +
           '(compiled by the official pipeline, adopted as one shared CSSStyleSheet)',
       );
-      const onFile = (file: string): void => {
-        if (!relevantChange(file)) return;
-        // Re-register the edited module's candidates directly: the SSR module
-        // graph may not have re-transformed it yet, and the sheet must see the
-        // new candidate set on its next read. The compile is the same official
-        // compiler the transform runs (one module, not the whole app).
-        if (/\.tsx$/.test(file)) {
-          void collectShadowClassCandidates({ root, modules: [{ path: file }] });
-        }
-        // The candidate set (or a declared theme source) may have moved: drop
-        // the compile cache and hand the client modules their update. The
-        // browser refetches through the adapter's hot-accept, so the sheet
-        // object is re-filled in place — no new nodes, no page reload for the
-        // stylesheet half of the change.
+      /**
+       * Everything that must follow a registration change: the module id's
+       * version moves, the DSD link module is invalidated and the client
+       * adapter (when loaded) is re-evaluated in place.
+       */
+      const afterCandidatesMoved = (): void => {
+        // The candidate set (or a declared theme source) may have moved: hand
+        // the client modules their update. The browser refetches through the
+        // adapter's hot-accept, so the sheet object is re-filled in place — no
+        // new nodes, no page reload for the stylesheet half of the change. The
+        // version is bumped only AFTER the registration completed, so a request
+        // can never be served under a new version built from the old facts.
         sheetVersion += 1;
         // The DSD link text is served by the SSR graph: invalidation alone is
         // enough, because the next document render declares the new version.
@@ -248,8 +249,56 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
           }
         }
       };
-      server.watcher.on('change', onFile);
-      server.watcher.on('add', onFile);
+      /**
+       * A watched file's change/add: re-register the module's CURRENT
+       * candidates and only then move the served version.
+       *
+       * The registration is awaited, not detached: the SSR module graph may not
+       * have re-transformed the module yet, and bumping the version before the
+       * new facts are registered would serve a sheet compiled from the old ones
+       * (the ordering defect C names). Failures are reported, never swallowed —
+       * a silently unregistered edit would leave the served sheet stale.
+       */
+      const onFile = async (file: string): Promise<void> => {
+        if (!relevantChange(file)) return;
+        if (/\.tsx$/.test(file)) {
+          // The compile is the same official compiler the transform runs (one
+          // module, not the whole app).
+          await collectShadowClassCandidates({
+            root,
+            modules: [{ path: file }],
+            candidates: state.classCandidates,
+          });
+        }
+        afterCandidatesMoved();
+      };
+      /**
+       * A watched file's deletion: the module left the graph, so its facts must
+       * leave the registry too — otherwise the deleted component's classes keep
+       * shipping in every subsequent sheet.
+       */
+      const onUnlink = (file: string): void => {
+        if (!relevantChange(file)) return;
+        state.classCandidates.remove(file);
+        afterCandidatesMoved();
+      };
+      server.watcher.on('change', (file) => {
+        void onFile(file).catch((error) => {
+          log.error(
+            `tailwind component sheet: re-registering ${file} failed — the served sheet ` +
+              `keeps the previous facts: ${formatError(error)}`,
+          );
+        });
+      });
+      server.watcher.on('add', (file) => {
+        void onFile(file).catch((error) => {
+          log.error(
+            `tailwind component sheet: registering ${file} failed — the served sheet ` +
+              `keeps the previous facts: ${formatError(error)}`,
+          );
+        });
+      });
+      server.watcher.on('unlink', onUnlink);
     },
   };
 }

@@ -49,7 +49,7 @@ import {
   styleRequestFile,
   styleRequestModuleId,
 } from './style-requests.ts';
-import { registerClassCandidates } from './tailwind-candidates.ts';
+import { type ClassCandidateRegistry } from './tailwind-candidates.ts';
 
 /** The authored substring every compiled element module contains (`@element(`), used as the cheap prefilter. */
 export const COMPILED_ELEMENT_MARKER = '@element(';
@@ -168,6 +168,15 @@ export interface CompiledElementPluginOptions {
    * sidecar policy statement fails closed with OEC9008.
    */
   staticSidecars?: readonly StaticSidecarDescriptor[];
+  /**
+   * The class-candidate registry this plugin instance writes its compiled
+   * modules' statically admitted class tokens into (alpha15 S lane). The
+   * registry is OWNED by the host that created it — one per build, one per dev
+   * server — so two live builds in one process never inherit each other's
+   * facts (defect C). Omitted: this instance collects no candidates, which is
+   * the right shape for a build that consumes none (e.g. the SSR half).
+   */
+  candidates?: ClassCandidateRegistry;
 }
 
 /**
@@ -252,20 +261,28 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
         // them to the OFFICIAL Tailwind compiler as explicit candidates and
         // emits the generated CSS as an external stylesheet asset. The
         // compiler attaches no Tailwind semantics to them (opaque strings).
-        if (compiled?.classCandidates !== undefined) {
-          registerClassCandidates(id, compiled.classCandidates, {
-            // The root scope is part of the fact: only a shadow-root
-            // component's classes need the component stylesheet — light-root
-            // classes live in document DOM and the document entry covers them.
-            shadow: compiled.program.root.kind !== 'light',
-          });
-        } else if (compiled === null) {
-          // An already-compiled artifact (a shipped package module): its
-          // candidates were proven at pack time and travel in the module
-          // (S5-B), so the same registry admits the packed form exactly as the
-          // authored form — no second parser over the shipped markup.
-          const recovered = compiledArtifactClassCandidates(code, id);
-          if (recovered !== undefined) registerClassCandidates(id, recovered, { shadow: true });
+        //
+        // The registration is AUTHORITATIVE for the module, including "none":
+        // a module re-transformed to carry no static class token drops its
+        // previous facts, so an edit that deleted every class cannot leave a
+        // stale candidate in the next stylesheet (defect C).
+        if (options.candidates !== undefined) {
+          if (compiled !== null) {
+            options.candidates.register(id, compiled.classCandidates ?? [], {
+              // The root scope is part of the fact: only a shadow-root
+              // component's classes need the component stylesheet — light-root
+              // classes live in document DOM and the document entry covers them.
+              shadow: compiled.program.root.kind !== 'light',
+            });
+          } else {
+            // An already-compiled artifact (a shipped package module): its
+            // candidates were proven at pack time and travel in the module
+            // (S5-B), so the same registry admits the packed form exactly as the
+            // authored form — no second parser over the shipped markup.
+            options.candidates.register(id, compiledArtifactClassCandidates(code, id) ?? [], {
+              shadow: true,
+            });
+          }
         }
         // The edge registration above is the whole job for an adopted
         // artifact: it ships as its own emitted module, nothing to compile or

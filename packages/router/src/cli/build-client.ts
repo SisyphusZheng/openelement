@@ -18,6 +18,7 @@ import process from 'node:process';
 import { build as viteBuild, type InlineConfig } from 'vite';
 import { dirname, isAbsolute, join, relative, resolve } from 'pathe';
 import {
+  clientEntryNeedsElementRuntime,
   extractCustomElementTags,
   generateClientEntry,
   islandsMightUseBlocks,
@@ -44,7 +45,7 @@ import {
   packageIslandChunkName,
   readViteClientManifest,
 } from '../vite/client-asset-manifest.ts';
-import { collectShadowClassCandidates } from '../vite/internal/collect-shadow-candidates.ts';
+import { createClassCandidateRegistry } from '@openelement/compiler';
 import {
   COMPONENT_SHEET_SPECIFIER,
   componentStyleSheetPlugin,
@@ -62,7 +63,6 @@ import {
   resolveElementRuntimeIdentity,
 } from '../vite/internal/element-runtime-chunk.ts';
 import {
-  allShadowClassCandidates,
   analyzeModuleSemantics,
   clearStyleRequests,
   compiledElementPlugin,
@@ -85,7 +85,6 @@ import {
   CHUNK_SIZE_WARNING_LIMIT_KB,
   DEFAULT_ISLANDS_DIR,
   DEFAULT_OUT_DIR,
-  DEFAULT_ROUTES_DIR,
 } from '../vite/internal/paths.ts';
 
 const log = createLogger('build-client');
@@ -400,9 +399,6 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const root = ctx.phase3.root || process.cwd();
   const outDir = ctx.phase3.outDir || DEFAULT_OUT_DIR;
   const islandsDir = ctx.phase3.islandsDir || DEFAULT_ISLANDS_DIR;
-  // The candidate collection pass resolves route modules the same way the
-  // scanners recorded them: their `filePath` is relative to this root.
-  const candidateRoutesDir = ctx.phase3.routesDir || DEFAULT_ROUTES_DIR;
   const localIslands = ctx.phase1.islandTagNames || [];
   const localIslandFiles = ctx.phase1.islandFiles || [];
   const packageIslandDecls = ctx.phase1.packageIslandDecls || [];
@@ -443,43 +439,27 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   // the SSR build declares it as a marked `<link>` in the DSD templates of the
   // components whose classes were admitted.
   //
-  // The client graph holds islands only, so the pass below compiles the
-  // page/layout/static modules the Phase 1 scanners already inventoried — the
-  // same official compiler, run here so the shadow candidates are known before
-  // this build generates the stylesheet's entry.
-  if (tailwindOptions) {
-    await collectShadowClassCandidates({
-      root,
-      modules: [
-        ...ctx.phase1.staticComponents.map((decl) => ({
-          // The scanner records the declaration path root-relative with a
-          // leading slash; the collector resolves plain project-relative paths.
-          path: decl.modulePath.replace(/^\/+/, ''),
-        })),
-        ...(ctx.phase1.islandTagNames ?? []).map((tagName, index) => ({
-          path: `${islandsDir}/${ctx.phase1.islandFiles[index] ?? `${tagName}.tsx`}`,
-        })),
-        ...(ctx.phase1.cachedRoutes ?? [])
-          .filter((route) => route.type === 'page')
-          .map((route) => ({ path: `${candidateRoutesDir}/${route.filePath}` })),
-        // Package islands (a shipped component library, packed or linked):
-        // their module files carry the pack-time candidate facts (S5-B), so
-        // the sheet covers a dependency's shadow components too. A specifier
-        // the app cannot resolve is skipped here — the authoritative compile
-        // reports it.
-        ...packageIslandDecls.map((island) => ({ path: island.modulePath, resolve: true })),
-      ],
-    });
-  }
-  const shadowCandidates = tailwindOptions ? allShadowClassCandidates() : [];
-  if (shadowCandidates.length > 0) {
-    log.info(
-      `Component stylesheet: ${shadowCandidates.length} statically admitted shadow class candidate(s)`,
-    );
-  }
+  // The candidates are discovered INSIDE this build, from the bundler-resolved
+  // module graph (the server-rendered discovery pass below): the client graph
+  // holds islands only, and an inventory assembled outside the build could not
+  // see a component reached through a `package.json` imports subpath or a
+  // configured alias — the silent loss of defect B. This build OWNS the
+  // registry (defect C): it is created here, written by this build's transform
+  // and discovery pass, read by this build's stylesheet emitter, and it never
+  // sees another build's facts.
+  const shadowCandidateRegistry = createClassCandidateRegistry();
+  const shadowCandidates = (): readonly string[] =>
+    tailwindOptions ? shadowCandidateRegistry.allShadow() : [];
   const componentSheetRecord: ComponentStyleSheetRecord = { fileName: undefined };
-  const componentSheetSpecifier =
-    shadowCandidates.length > 0 ? COMPONENT_SHEET_SPECIFIER : undefined;
+  /**
+   * The component stylesheet's graph specifier, decided from the CURRENT
+   * registry: the generated entry imports the adapter when (and only when) the
+   * build discovered shadow candidates, so the client adopts the one shared
+   * sheet. Asked lazily — the entry module's `load` runs after the discovery
+   * pass registered its facts.
+   */
+  const componentSheetSpecifier = (): string | undefined =>
+    shadowCandidates().length > 0 ? COMPONENT_SHEET_SPECIFIER : undefined;
 
   const localDeliveryTags = localIslands.flatMap((tagName) =>
     deliveryTagsForLocal(
@@ -557,13 +537,14 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   // the browser still needs this build — for the emission stage alone. The
   // generated entry is the island-free placeholder (`generateClientEntry`), so
   // the build ships styles and no client JavaScript.
-  const styleOnlyEmission =
-    hasServerRenderedRoots &&
-    selectedLocalTags.length === 0 &&
-    selectedPackageDecls.length === 0 &&
-    selectedCompilerBehaviorDecls.length === 0 &&
-    !enhancedForms &&
-    !tailwindOptions;
+  //
+  // Defect D: this shape is decided by the ENTRY's own runtime requirement, not
+  // by which feature asked for the build. A Tailwind-enabled app with no islands
+  // and no enhanced forms generates the same island-free (CSS-only) entry, so it
+  // ships styles and no client JavaScript too — and the element-runtime chunk
+  // guard must not demand a runtime module for an entry that never imports one.
+  // The fact comes from the entry generator's own helper (below), so the guard,
+  // the JS drop and the generated code cannot drift apart.
 
   if (
     selectedLocalTags.length === 0 &&
@@ -576,10 +557,6 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     await removeClientDeliveryArtifacts(root, outDir);
     log.info('No admitted reachable islands - zero client JS output');
     return null;
-  }
-
-  if (styleOnlyEmission) {
-    log.info('Server-rendered style edges found - style-only client build, zero client JS');
   }
 
   const totalIslands =
@@ -602,6 +579,18 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     compilerBehaviorDecls: selectedCompilerBehaviorDecls,
     upgradeStrategy: ctx.phase3.upgradeStrategy,
   });
+
+  // The generated entry's own runtime requirement — the one fact the guard and
+  // the JS drop below consume, asked of the generator with the exact inputs it
+  // will be called with (defect D: an entry that imports only the document
+  // stylesheet must not be held to the island entry's runtime contract).
+  const entryNeedsElementRuntime = clientEntryNeedsElementRuntime(islandEntries, {
+    enhancedForms,
+  });
+  const styleOnlyEmission = !entryNeedsElementRuntime;
+  if (styleOnlyEmission) {
+    log.info('Island-free client entry - style-only client build, zero client JS');
+  }
 
   // #1471: island identity comes from this build's own resolver. Each
   // admitted island's declared module specifier — local islands, package
@@ -682,25 +671,35 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       ? elementRuntimeBlocksAlias(root, serializedAlias)
       : undefined;
 
-  const clientEntryCode = generateClientEntry(islandEntries, {
-    enhancedForms,
-    renderer: ctx.options.renderer,
-    // The document stylesheet's module: the generated entry imports the
-    // Tailwind entry so the official pipeline compiles it inside this build's
-    // CSS graph and Vite emits the content-hashed `.css` asset (plus every
-    // `url()` asset the sources reference) into dist/client. No other module
-    // imports it, so the entry chunk's CSS is exactly the document stylesheet.
-    ...(tailwindOptions ? { styleEntry: tailwindEntryPath(root) } : {}),
-    // The component stylesheet's adapter: imported and registered by the entry
-    // (native renderer) when the compiler admitted shadow-root candidates.
-    ...(componentSheetSpecifier === undefined ? {} : { utilitySheet: componentSheetSpecifier }),
-    // Omitted on any doubt: the flag's default (builders installed) is the
-    // entry codegen's own conservative default, not a second copy of it. The
-    // alias bailing out does not flip this flag: the entry subpath resolves
-    // through the package exports regardless of the alias, and keeping the
-    // builders in the entry graph is the safe direction.
-    ...(mightUseBlocks ? {} : { includeBlocksRuntime: false }),
-  });
+  /**
+   * The generated entry's text, built when the module graph asks for the entry
+   * (a `load` hook) rather than when the plugin list is assembled: the
+   * component stylesheet's adapter import depends on the shadow candidates this
+   * build DISCOVERS, and the discovery pass registers them in its own
+   * `buildStart` — before any module loads, but after this closure is created.
+   */
+  const buildClientEntryCode = (): string => {
+    const utilitySheet = componentSheetSpecifier();
+    return generateClientEntry(islandEntries, {
+      enhancedForms,
+      renderer: ctx.options.renderer,
+      // The document stylesheet's module: the generated entry imports the
+      // Tailwind entry so the official pipeline compiles it inside this build's
+      // CSS graph and Vite emits the content-hashed `.css` asset (plus every
+      // `url()` asset the sources reference) into dist/client. No other module
+      // imports it, so the entry chunk's CSS is exactly the document stylesheet.
+      ...(tailwindOptions ? { styleEntry: tailwindEntryPath(root) } : {}),
+      // The component stylesheet's adapter: imported and registered by the entry
+      // (native renderer) when the compiler admitted shadow-root candidates.
+      ...(utilitySheet === undefined ? {} : { utilitySheet }),
+      // Omitted on any doubt: the flag's default (builders installed) is the
+      // entry codegen's own conservative default, not a second copy of it. The
+      // alias bailing out does not flip this flag: the entry subpath resolves
+      // through the package exports regardless of the alias, and keeping the
+      // builders in the entry graph is the safe direction.
+      ...(mightUseBlocks ? {} : { includeBlocksRuntime: false }),
+    });
+  };
 
   // Restore RegExp from serialized noExternal patterns
   const noExternalPatterns = (ctx.phase3.ssrNoExternal || []).map((item) => {
@@ -899,11 +898,27 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       ...(tailwindOptions
         ? [tailwindEntryPlugin(root, tailwindOptions), ...tailwindPeerPlugins]
         : []),
+      // S-C1.4 (#1609) + defect B: the sources the SERVER renders are part of the
+      // same asset build. The pass walks their static module graph through this
+      // build's resolver, asks the compiler for each module's admission facts —
+      // the authored `.css` edges AND the statically admitted class candidates
+      // (defect B) — and registers both. It is mounted FIRST of the two
+      // consumers: its `buildStart` discovery must complete before the
+      // component stylesheet below compiles from those candidates. Emission of
+      // the walked edges happens in the pass's own `load` hook, through the
+      // SAME emission plugin further down — so a server-only sheet is emitted,
+      // hashed and named exactly like an island's, and no server-only
+      // JavaScript enters any client bundle.
+      serverRenderedStyleEdgesPlugin(seeds, styleAssetEmission, shadowCandidateRegistry),
       // The component stylesheet's half of the same seam: it sits AFTER the
       // peer (same `enforce: 'pre'` seat), so its transform receives the
       // compiled CSS, emits the content-addressed asset and hands the graph
-      // the fetch adapter the client entry registers.
-      ...(tailwindOptions && componentSheetSpecifier !== undefined
+      // the fetch adapter the client entry registers. Mounted whenever the
+      // Tailwind entry is on — never gated on a pre-build candidate count,
+      // which is exactly what the aliased-reachability defect made wrong: the
+      // sheet emits when this build DISCOVERED candidates (a candidate-less
+      // build emits nothing).
+      ...(tailwindOptions
         ? [componentStyleSheetPlugin(root, tailwindOptions, shadowCandidates, componentSheetRecord)]
         : []),
       // The compiler is part of the official client build path. The outer
@@ -917,19 +932,15 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         // workspace anchor their absolute ids would land in the source maps.
         workspaceRoot: findBuildWorkspaceRoot(root) ?? undefined,
         staticSidecars: [ISLAND_ADMISSION],
+        // This build's own class-candidate registry (defect C): the transform's
+        // write path and the discovery pass share exactly this instance, and no
+        // other build's facts can reach it.
+        candidates: shadowCandidateRegistry,
       }),
       // intercepts the compiled modules' authored `.css` imports before
       // vite's CSS plugin, emits the real `.css` assets, and hands the sheet
       // adapters back to the module graph.
       styleAssetEmission,
-      // S-C1.4 (#1609): the sources the SERVER renders are part of the same
-      // asset build. The pass walks their static module graph through this
-      // build's resolver, asks the compiler for each module's admission facts
-      // (the registry's one write path) and loads every resulting edge through
-      // the SAME emission plugin above — so a server-only sheet is emitted,
-      // hashed and named exactly like an island's, and no server-only
-      // JavaScript enters any client bundle.
-      serverRenderedStyleEdgesPlugin(seeds, styleAssetEmission),
       {
         name: 'open:exclude-preact-rts',
         resolveId(id: string) {
@@ -960,7 +971,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
           return null;
         },
         load(id) {
-          if (id === RESOLVED_CLIENT_ENTRY_ID) return clientEntryCode;
+          if (id === RESOLVED_CLIENT_ENTRY_ID) return buildClientEntryCode();
         },
       },
       {
@@ -1025,10 +1036,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     // element runtime, so the emitted graph must group runtime modules into
     // the shared chunk — zero matches is a structural failure (per-island
     // runtime copies would ship silently), not a degraded chunk layout. Lit
-    // builds are element-free by design (#1339) and skip the guard; a
-    // style-only build's entry imports nothing at all (S-C2/S-12), so there is
-    // no runtime to group.
-    if (ctx.options.renderer !== 'lit' && !styleOnlyEmission) {
+    // builds are element-free by design (#1339) and skip the guard; an
+    // island-free entry (style-only / CSS-only, S-C2/S-12 and defect D) imports
+    // the document stylesheet and nothing else, so there is no runtime to
+    // group — the requirement is the generated entry's own fact, never a
+    // property of the emission shape.
+    if (ctx.options.renderer !== 'lit' && entryNeedsElementRuntime) {
       requireElementRuntimeChunk(collectClientBuildChunks(outputs), elementRuntimeIdentity);
     }
 
@@ -1077,10 +1090,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       [...styleAssetRecords.entries()].map(([key, record]) => [key, record.fileName]),
     );
 
-    // The component stylesheet (alpha15 S lane): a declared shadow-candidate
+    // The component stylesheet (alpha15 S lane): a discovered shadow-candidate
     // set whose entry emitted no CSS would ship unstyled shadow components —
-    // fail closed instead.
-    if (componentSheetSpecifier !== undefined) {
+    // fail closed instead. The candidates are THIS build's own discovered facts
+    // (defect C: no other build's registry is consulted).
+    const discoveredShadowCandidates = shadowCandidates();
+    if (discoveredShadowCandidates.length > 0) {
       if (componentSheetRecord.fileName === undefined) {
         throw buildError(
           ClientAssetErrorCode.STYLESHEET_MISSING,
@@ -1089,28 +1104,39 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         );
       }
       ctx.componentStyleSheet = { fileName: componentSheetRecord.fileName };
-      log.info(`Tailwind component stylesheet emitted: ${componentSheetRecord.fileName}`);
+      log.info(
+        `Tailwind component stylesheet emitted: ${componentSheetRecord.fileName} ` +
+          `(${discoveredShadowCandidates.length} shadow class candidate(s))`,
+      );
     }
 
     const { printBuildManifest } = await import('../vite/build-manifest.ts');
     printBuildManifest({ root, outDir, phase: 2, budget: ctx.phase3.manifestBudget });
 
-    // S-C2/S-12: the style-only build emitted no client bundle worth shipping —
-    // its generated entry was the island-free placeholder. Drop the JS half so
-    // the zero-client-JS contract holds exactly as it does on the shortcut
-    // paths; the emitted style assets stay (that is the whole point of the
-    // pass), and nothing references the removed files (no island entry exists
-    // to be script-tagged).
+    // S-C2/S-12 (and defect D): an island-free entry emitted no client bundle
+    // worth shipping — its generated entry was the placeholder that imports the
+    // document stylesheet only. Drop the JS half so the zero-client-JS contract
+    // holds exactly as it does on the shortcut paths; every emitted style asset
+    // stays (that is the whole point of the pass — including the Tailwind
+    // document sheet and the shadow components' sheet), and nothing references
+    // the removed files (no island entry exists to be script-tagged).
     if (styleOnlyEmission) {
       await rm(join(clientOutDir, 'islands'), { recursive: true, force: true }).catch(() => {});
-      if (styleAssetRecords.size === 0) {
+      // Every style resource this build emitted, not just the authored `.css`
+      // edges: an app whose only styles are the Tailwind entries must keep them
+      // (the check below decides whether the app owns any style at all).
+      const emittedStyleResources =
+        styleAssetRecords.size +
+        (ctx.clientStyleAssets?.length ?? 0) +
+        (ctx.componentStyleSheet === null ? 0 : 1);
+      if (emittedStyleResources === 0) {
         // No sheet on any server-rendered root either: this app is the pinned
         // zero-JS shape after all, so leave no trace.
         await removeClientDeliveryArtifacts(root, outDir);
         log.info('No server-rendered style edges - zero client JS output');
       } else {
         log.info(
-          `Style-only emission complete: ${styleAssetRecords.size} style asset(s), zero client JS`,
+          `Style-only emission complete: ${emittedStyleResources} style asset(s), zero client JS`,
         );
       }
       // No client deliverable exists, so no client asset manifest is handed

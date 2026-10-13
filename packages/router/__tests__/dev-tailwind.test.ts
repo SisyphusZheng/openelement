@@ -135,7 +135,15 @@ export default definePage(HomePage, { head: { title: 'dev tailwind fixture' } })
 
 /** Write the fixture app; idempotent so a re-run reuses the same tree. */
 function writeFixture(): void {
-  rmSync(FIXTURE_DIR, { recursive: true, force: true });
+  writeFixtureAt(FIXTURE_DIR, 'p-8');
+}
+
+/**
+ * Write one fixture tree at `dir`, with the shadow card's utility as the
+ * discriminating fact (the second-project isolation proof).
+ */
+function writeFixtureAt(dir: string, cardUtility: string): void {
+  rmSync(dir, { recursive: true, force: true });
   const dirs = [
     'app/routes',
     'app/components',
@@ -143,15 +151,19 @@ function writeFixture(): void {
     'app/islands',
     'node_modules/@openelement',
   ];
-  for (const dir of dirs) mkdirSync(join(FIXTURE_DIR, dir), { recursive: true });
-  writeFileSync(join(FIXTURE_DIR, 'app/styles/theme.css'), THEME_CSS, 'utf8');
-  writeFileSync(join(FIXTURE_DIR, 'app/components/page-home.css'), HOME_CSS, 'utf8');
-  writeFileSync(join(FIXTURE_DIR, 'app/components/page-home.tsx'), HOME_TSX, 'utf8');
-  writeFileSync(join(FIXTURE_DIR, 'app/components/dev-card.tsx'), DEV_CARD_TSX, 'utf8');
-  writeFileSync(join(FIXTURE_DIR, 'app/islands/dev-counter.tsx'), DEV_COUNTER_TSX, 'utf8');
-  writeFileSync(join(FIXTURE_DIR, 'app/routes/index.tsx'), INDEX_ROUTE, 'utf8');
+  for (const nested of dirs) mkdirSync(join(dir, nested), { recursive: true });
+  writeFileSync(join(dir, 'app/styles/theme.css'), THEME_CSS, 'utf8');
+  writeFileSync(join(dir, 'app/components/page-home.css'), HOME_CSS, 'utf8');
+  writeFileSync(join(dir, 'app/components/page-home.tsx'), HOME_TSX, 'utf8');
   writeFileSync(
-    join(FIXTURE_DIR, 'package.json'),
+    join(dir, 'app/components/dev-card.tsx'),
+    DEV_CARD_TSX.replaceAll('p-8', cardUtility),
+    'utf8',
+  );
+  writeFileSync(join(dir, 'app/islands/dev-counter.tsx'), DEV_COUNTER_TSX, 'utf8');
+  writeFileSync(join(dir, 'app/routes/index.tsx'), INDEX_ROUTE, 'utf8');
+  writeFileSync(
+    join(dir, 'package.json'),
     JSON.stringify({ name: 'tailwind-dev-delivery-fixture', private: true, type: 'module' }),
     'utf8',
   );
@@ -159,7 +171,7 @@ function writeFixture(): void {
   // `@openelement/router/server-runtime` by package name; the fixture sits
   // inside the router package, so it needs its own resolution edge to it
   // (every fixture under tests/fixtures/ carries the same symlink).
-  symlinkSync('../../../..', join(FIXTURE_DIR, 'node_modules/@openelement/router'), 'dir');
+  symlinkSync('../../../..', join(dir, 'node_modules/@openelement/router'), 'dir');
 }
 
 interface DevHandle {
@@ -170,14 +182,14 @@ interface DevHandle {
 }
 
 /** Boot a real dev server over the fixture, loopback-only (the parity harness). */
-async function bootDev(plugins: Plugin[]): Promise<DevHandle> {
+async function bootDev(plugins: Plugin[], root = FIXTURE_DIR): Promise<DevHandle> {
   const { createServer } = await import('vite');
   const previousCwd = process.cwd();
-  process.chdir(FIXTURE_DIR);
+  process.chdir(root);
   let server: ViteDevServer;
   try {
     server = await createServer({
-      root: FIXTURE_DIR,
+      root,
       logLevel: 'silent',
       configFile: false,
       // The generated entry compiles .tsx route/page modules, so the dev
@@ -208,11 +220,16 @@ async function bootDev(plugins: Plugin[]): Promise<DevHandle> {
   });
   const address = httpServer.address();
   if (address === null || typeof address !== 'object') throw new Error('dev server did not bind');
+  let closed = false;
   return {
     base: `http://127.0.0.1:${address.port}`,
     server,
     hotPayloads,
+    // Idempotent: a test may close its own handle (a sequential two-server
+    // proof) and the shared afterAll closes every handle again.
     close: async () => {
+      if (closed) return;
+      closed = true;
       try {
         await new Promise<void>((resolve, reject) => {
           httpServer.close((error) => (error ? reject(error) : resolve()));
@@ -478,6 +495,83 @@ test('a TSX class edit recompiles the served component sheet (S5-A)', async () =
     expect(after, 'the removed class is gone').not.toMatch(/\.p-8\s*\{/);
   } finally {
     await writeFile(cardPath, original);
+  }
+});
+
+test('a TSX edit that removes every class drops the stale candidate (defect C)', async () => {
+  const handle = await bootDev(openElement(TAILWIND_ON));
+  handles.push(handle);
+  const cardPath = join(FIXTURE_DIR, 'app/components/dev-card.tsx');
+
+  const href = await declaredComponentSheetHref(handle);
+  expect(await fetchEntryCss(handle, '', href), 'the initial sheet carries p-8').toMatch(
+    /\.p-8\s*\{/,
+  );
+
+  const original = await readFile(cardPath, 'utf8');
+  try {
+    // Every utility leaves the module: the registration is authoritative, so
+    // the served sheet must stop shipping the emptied module's rules. A stale
+    // fact here is exactly the defect (the registry used to ignore an empty
+    // registration and keep the previous tokens).
+    await writeFile(cardPath, original.replace(/class='[^']*'/g, ''));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const served = await fetchEntryCss(handle, '', href);
+    expect(served, 'the emptied module keeps no candidate').not.toMatch(/\.p-8\s*\{/);
+    expect(served, 'the other class left with it').not.toMatch(/\.rounded-xl\s*\{/);
+  } finally {
+    await writeFile(cardPath, original);
+  }
+});
+
+test('a deleted component module stops contributing its candidates (defect C)', async () => {
+  const handle = await bootDev(openElement(TAILWIND_ON));
+  handles.push(handle);
+  const cardPath = join(FIXTURE_DIR, 'app/components/dev-card.tsx');
+
+  // Prime through a real render (the versioned URL is a cache-buster; the
+  // middleware recompiles for the CURRENT candidate set on every request).
+  const href = await declaredComponentSheetHref(handle);
+  expect(await fetchEntryCss(handle, '', href), 'the initial sheet carries p-8').toMatch(
+    /\.p-8\s*\{/,
+  );
+
+  const original = await readFile(cardPath, 'utf8');
+  try {
+    rmSync(cardPath);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const served = await fetchEntryCss(handle, '', href);
+    expect(served, 'the deleted module contributes nothing').not.toMatch(/\.p-8\s*\{/);
+    expect(served, 'nor any of its other rules').not.toMatch(/\.rounded-xl\s*\{/);
+  } finally {
+    await writeFile(cardPath, original);
+  }
+});
+
+test('two dev projects in one process keep their own candidates (defect C)', async () => {
+  // Sequential on purpose: each server owns its registry, so the SECOND
+  // project's sheet must contain its own class and none of the first's. Under
+  // the retired process-global registry the first project's facts were still
+  // registered when the second server compiled its sheet — the leak this pins.
+  const secondFixture = join(
+    import.meta.dirname!,
+    '../__test_fixtures__/tailwind-dev-delivery-second',
+  );
+  const first = await bootDev(openElement(TAILWIND_ON));
+  handles.push(first);
+  const firstSheet = await fetchEntryCss(first, '', await declaredComponentSheetHref(first));
+  expect(firstSheet, 'the first project compiles its own class').toMatch(/\.p-8\s*\{/);
+  await first.close();
+
+  writeFixtureAt(secondFixture, 'mt-9');
+  try {
+    const second = await bootDev(openElement(TAILWIND_ON), secondFixture);
+    handles.push(second);
+    const secondSheet = await fetchEntryCss(second, '', await declaredComponentSheetHref(second));
+    expect(secondSheet, 'the second project compiles its own class').toMatch(/\.mt-9\s*\{/);
+    expect(secondSheet, 'the first project’s facts never leak in').not.toMatch(/\.p-8\s*\{/);
+  } finally {
+    rmSync(secondFixture, { recursive: true, force: true });
   }
 });
 

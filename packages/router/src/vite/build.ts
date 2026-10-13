@@ -186,6 +186,15 @@ export function buildPlugin(
             islandFiles: ssgIslandFiles,
             islandMeta: ctx.phase1.islandMeta,
             staticComponents: ctx.phase1.staticComponents,
+            // The SSG fallback scan (only reached when Phase 1 supplied no
+            // static components) uses this build's own resolver, so its
+            // reachability matches Phase 1's — never a narrower walk.
+            resolve: {
+              resolve: (specifier, importer) =>
+                this.resolve(specifier, importer) as ReturnType<
+                  import('./internal/module-graph-walk.ts').ModuleWalkResolver['resolve']
+                >,
+            },
             packageManifests: ctx.phase1.packageManifests,
             cemClassifications: ctx.phase1.cemClassifications,
             foreignTags: ctx.phase1.foreignTags,

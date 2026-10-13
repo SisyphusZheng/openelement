@@ -10,12 +10,22 @@
  * compiler as explicit candidates (`@source inline(…)`), which owns candidate
  * syntax, utility generation, theme compilation and optimization.
  *
- * Root scope is part of the fact (requirement 1): a shadow-root component's
- * classes cannot be styled by the document stylesheet, so its candidates feed
- * the component stylesheet that ships to shadow trees
- * ({@linkcode allShadowClassCandidates}); a light-root component's classes live
- * in document DOM and the document entry's own pipeline already covers them, so
- * they are recorded separately and never inflate the shadow sheet.
+ * Root scope is part of the fact: a shadow-root component's classes cannot be
+ * styled by the document stylesheet, so its candidates feed the component
+ * stylesheet that ships to shadow trees ({@linkcode ClassCandidateRegistry.allShadow});
+ * a light-root component's classes live in document DOM and the document
+ * entry's own pipeline already covers them, so they are recorded separately and
+ * never inflate the shadow sheet.
+ *
+ * OWNERSHIP (defect C): the registry is an explicit object with a lifetime its
+ * owner chooses — one per build, one per dev server — instead of a
+ * process-global map. Two builds (or two dev servers) in one process therefore
+ * cannot inherit each other's facts, and a caller never has to clear shared
+ * state another live build owns. Registering a module's CURRENT facts is
+ * authoritative: a module that now carries no class token drops its previous
+ * facts, so an emptied or edited module cannot leave a stale candidate behind
+ * (and a deleted file is forgotten by registering its absence —
+ * {@linkcode ClassCandidateRegistry.remove}).
  *
  * The registry only carries FACTS the compiler could prove statically. A
  * `class={this.<field>}` binding contributes nothing — the compiler cannot
@@ -29,70 +39,73 @@ interface RegisteredCandidates {
   readonly tokens: readonly string[];
 }
 
-const candidatesByModule = new Map<string, RegisteredCandidates>();
+/**
+ * One owner's class-candidate facts: the build (or dev server) that created it
+ * is the only writer, its stylesheet emitter the only reader.
+ */
+export interface ClassCandidateRegistry {
+  /**
+   * Register ONE module's statically admitted class candidates. The call is
+   * authoritative for that module: an empty list means the module now carries
+   * no statically admitted class token, so its previous facts are dropped
+   * rather than left to inflate the next stylesheet.
+   */
+  register(moduleId: string, candidates: readonly string[], options: { shadow: boolean }): void;
+  /** Forget one module (a deleted file, a module that left the graph). */
+  remove(moduleId: string): void;
+  /** The candidates one module contributed, or an empty list. */
+  forModule(moduleId: string): readonly string[];
+  /** Every candidate registered so far, first-seen ordered and deduplicated. */
+  all(): readonly string[];
+  /** The SHADOW-root candidates only — the component stylesheet's input. */
+  allShadow(): readonly string[];
+  /** True when any module contributed candidates. */
+  has(): boolean;
+}
 
-/** Register one module's statically admitted class candidates (idempotent). */
-export function registerClassCandidates(
-  importerId: string,
-  candidates: readonly string[],
-  options: { shadow: boolean },
-): void {
-  if (candidates.length === 0) return;
-  candidatesByModule.set(cleanModuleId(importerId), {
-    shadow: options.shadow,
-    tokens: [...candidates],
-  });
+/** Create one owner's registry (see the lifetime note above). */
+export function createClassCandidateRegistry(): ClassCandidateRegistry {
+  const byModule = new Map<string, RegisteredCandidates>();
+  const union = (include: (entry: RegisteredCandidates) => boolean): readonly string[] => {
+    const seen = new Set<string>();
+    for (const entry of byModule.values()) {
+      if (!include(entry)) continue;
+      for (const candidate of entry.tokens) seen.add(candidate);
+    }
+    return [...seen];
+  };
+  return {
+    register(moduleId, candidates, options) {
+      const id = cleanModuleId(moduleId);
+      if (candidates.length === 0) {
+        byModule.delete(id);
+        return;
+      }
+      byModule.set(id, { shadow: options.shadow, tokens: [...candidates] });
+    },
+    remove(moduleId) {
+      byModule.delete(cleanModuleId(moduleId));
+    },
+    forModule(moduleId) {
+      return byModule.get(cleanModuleId(moduleId))?.tokens ?? [];
+    },
+    all() {
+      return union(() => true);
+    },
+    allShadow() {
+      return union((entry) => entry.shadow);
+    },
+    has() {
+      return byModule.size > 0;
+    },
+  };
 }
 
 /**
- * The candidates one compiled module contributed, or an empty list. Query
- * suffixes on the module id (dev-time cache busting) are stripped, so the
- * authored and dev-served spellings answer identically.
+ * The module-id normalization every lookup shares: query suffixes on the module
+ * id (dev-time cache busting) are stripped, so the authored and dev-served
+ * spellings answer identically.
  */
-export function classCandidatesForModule(moduleId: string): readonly string[] {
-  return candidatesByModule.get(cleanModuleId(moduleId))?.tokens ?? [];
-}
-
-/**
- * Every candidate contributed by the modules registered so far, in stable
- * (first-seen) order — the build's full union, shadow and light alike. This is
- * the MEASUREMENT view; the shadow sheet consumes
- * {@linkcode allShadowClassCandidates}.
- */
-export function allClassCandidates(): readonly string[] {
-  return unionCandidates(() => true);
-}
-
-/**
- * The candidates contributed by SHADOW-root components only — the build layer's
- * input for the component stylesheet that ships to shadow trees. Light-root
- * candidates are excluded: their classes live in document DOM and the document
- * entry's own pipeline already covers them, so including them would ship unused
- * rules to every shadow root.
- */
-export function allShadowClassCandidates(): readonly string[] {
-  return unionCandidates((entry) => entry.shadow);
-}
-
-function unionCandidates(include: (entry: RegisteredCandidates) => boolean): readonly string[] {
-  const union = new Set<string>();
-  for (const entry of candidatesByModule.values()) {
-    if (!include(entry)) continue;
-    for (const candidate of entry.tokens) union.add(candidate);
-  }
-  return [...union];
-}
-
-/** True when any compiled module contributed candidates. */
-export function hasClassCandidates(): boolean {
-  return candidatesByModule.size > 0;
-}
-
-/** Drop every registered candidate set (a build's bookkeeping is its own lifetime). */
-export function clearClassCandidates(): void {
-  candidatesByModule.clear();
-}
-
 function cleanModuleId(moduleId: string): string {
   return moduleId.split('?', 1)[0]!;
 }

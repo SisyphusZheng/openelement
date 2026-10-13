@@ -54,14 +54,12 @@ export {
 // The statically admitted class-candidate channel (alpha15 S lane): opaque
 // class tokens travel from the compiled-element transform to the host build,
 // which forwards them to the official Tailwind compiler as explicit
-// candidates. The compiler never interprets Tailwind's class grammar.
+// candidates. The compiler never interprets Tailwind's class grammar. The
+// registry is created by its OWNER (one per build, one per dev server), so two
+// live builds in one process never share facts (defect C).
 export {
-  allClassCandidates,
-  allShadowClassCandidates,
-  classCandidatesForModule,
-  clearClassCandidates,
-  hasClassCandidates,
-  registerClassCandidates,
+  type ClassCandidateRegistry,
+  createClassCandidateRegistry,
 } from './internal/compiler/tailwind-candidates.ts';
 export {
   type EmittedModuleDiagnostic,

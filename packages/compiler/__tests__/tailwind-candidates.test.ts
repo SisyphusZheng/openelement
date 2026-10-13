@@ -12,21 +12,18 @@
  *   - what the lowering admits (every compile-time class value contributes);
  *   - what it does NOT admit (a `class={this.<field>}` binding is a runtime
  *     value — no guessing, no partial credit);
- *   - the registry's contract (per-module lookup, the build's union set,
- *     query-suffix-insensitive keys, clear);
+ *   - the registry's contract (per-module lookup, the owner's union set,
+ *     query-suffix-insensitive keys, and the defect-C lifecycle: an emptied
+ *     module drops its stale facts, a removal removes them, and two owners in
+ *     one process never share facts);
  *   - the compiled-element transform as the registry's one writer.
  */
 
-import { beforeEach, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 import { compileElementProgram } from '../src/internal/compiler/semantic-core/compile.ts';
 import { compiledArtifactClassCandidates } from '../src/internal/compiler/compiled-artifact-class-candidates.ts';
 import { compiledElementPlugin } from '../src/internal/compiler/plugin.ts';
-import {
-  allClassCandidates,
-  classCandidatesForModule,
-  clearClassCandidates,
-  hasClassCandidates,
-} from '../src/internal/compiler/tailwind-candidates.ts';
+import { createClassCandidateRegistry } from '../src/internal/compiler/tailwind-candidates.ts';
 
 const MODULE_ID = '/proj/app/components/oe-card.tsx';
 
@@ -47,15 +44,14 @@ function authoredSource(renderBody: string): string {
 const candidatesOf = (renderBody: string): readonly string[] =>
   compileElementProgram(authoredSource(renderBody), MODULE_ID).classCandidates ?? [];
 
-const transformOf = (): ((code: string, id: string) => unknown) => {
-  const plugin = compiledElementPlugin();
+/** The transform of one plugin instance writing into `registry`. */
+const transformOf = (
+  registry = createClassCandidateRegistry(),
+): ((code: string, id: string) => unknown) => {
+  const plugin = compiledElementPlugin({ candidates: registry });
   const transform = plugin.transform as (this: unknown, code: string, id: string) => unknown;
   return (code: string, id: string): unknown => transform.call({}, code, id);
 };
-
-beforeEach(() => {
-  clearClassCandidates();
-});
 
 describe('the lowering admits compile-time class values', () => {
   test('a static class literal contributes every whitespace-separated token', () => {
@@ -179,27 +175,75 @@ describe('candidate facts survive into the artifact (S5-B)', () => {
 
 describe('the candidate registry', () => {
   test('the compiled-element transform registers per module, query-insensitively', () => {
-    const transform = transformOf();
+    const registry = createClassCandidateRegistry();
+    const transform = transformOf(registry);
     transform(authoredSource(`<div class="p-4">x</div>`), MODULE_ID);
-    expect(classCandidatesForModule(MODULE_ID)).toEqual(['p-4']);
+    expect(registry.forModule(MODULE_ID)).toEqual(['p-4']);
     // A dev-time cache-busted id answers identically (query stripped).
-    expect(classCandidatesForModule(`${MODULE_ID}?t=1700000000000`)).toEqual(['p-4']);
-    expect(hasClassCandidates()).toEqual(true);
-    expect(allClassCandidates()).toEqual(['p-4']);
+    expect(registry.forModule(`${MODULE_ID}?t=1700000000000`)).toEqual(['p-4']);
+    expect(registry.has()).toEqual(true);
+    expect(registry.all()).toEqual(['p-4']);
   });
 
   test('the union set is first-seen ordered and deduplicated across modules', () => {
-    const transform = transformOf();
+    const registry = createClassCandidateRegistry();
+    const transform = transformOf(registry);
     transform(authoredSource(`<div class="p-4 flex">x</div>`), '/proj/a.tsx');
     transform(authoredSource(`<div class="flex gap-2">x</div>`), '/proj/b.tsx');
-    expect(allClassCandidates()).toEqual(['p-4', 'flex', 'gap-2']);
+    expect(registry.all()).toEqual(['p-4', 'flex', 'gap-2']);
   });
 
-  test('clear drops the whole registry (a build owns its bookkeeping)', () => {
-    transformOf()(authoredSource(`<div class="p-4">x</div>`), MODULE_ID);
-    clearClassCandidates();
-    expect(classCandidatesForModule(MODULE_ID)).toEqual([]);
-    expect(hasClassCandidates()).toEqual(false);
-    expect(allClassCandidates()).toEqual([]);
+  test('re-transforming a module to carry no class drops its stale facts', () => {
+    // The defect this pins: the first transform registered p-7; the same module
+    // edited to carry no class token must stop contributing it, or the next
+    // compiled stylesheet keeps shipping a rule nothing uses.
+    const registry = createClassCandidateRegistry();
+    const transform = transformOf(registry);
+    transform(authoredSource(`<div class="p-7">x</div>`), MODULE_ID);
+    expect(registry.allShadow()).toEqual(['p-7']);
+
+    transform(authoredSource(`<div>no classes here</div>`), MODULE_ID);
+    expect(registry.forModule(MODULE_ID)).toEqual([]);
+    expect(registry.allShadow()).toEqual([]);
+    expect(registry.has()).toEqual(false);
+  });
+
+  test('re-transforming a module replaces its candidates (never a union of both edits)', () => {
+    const registry = createClassCandidateRegistry();
+    const transform = transformOf(registry);
+    transform(authoredSource(`<div class="p-7">x</div>`), MODULE_ID);
+    transform(authoredSource(`<div class="p-9">x</div>`), MODULE_ID);
+    expect(registry.allShadow()).toEqual(['p-9']);
+  });
+
+  test('a removed module contributes nothing (deleted file)', () => {
+    const registry = createClassCandidateRegistry();
+    const transform = transformOf(registry);
+    transform(authoredSource(`<div class="p-7">x</div>`), MODULE_ID);
+    registry.remove(MODULE_ID);
+    expect(registry.forModule(MODULE_ID)).toEqual([]);
+    expect(registry.allShadow()).toEqual([]);
+  });
+
+  test('two owners in one process never share facts', () => {
+    // The second half of the defect: a second build/plugin instance inheriting
+    // the first project's candidates. Each registry is its owner's own state.
+    const firstProject = createClassCandidateRegistry();
+    const secondProject = createClassCandidateRegistry();
+    transformOf(firstProject)(authoredSource(`<div class="p-7">x</div>`), '/one/a.tsx');
+    transformOf(secondProject)(authoredSource(`<div class="m-3">y</div>`), '/two/b.tsx');
+
+    expect(firstProject.allShadow()).toEqual(['p-7']);
+    expect(secondProject.allShadow()).toEqual(['m-3']);
+    // An empty registration in one owner cannot erase the other's facts.
+    firstProject.register('/one/a.tsx', [], { shadow: true });
+    expect(secondProject.allShadow()).toEqual(['m-3']);
+  });
+
+  test('light-root candidates stay out of the shadow union', () => {
+    const registry = createClassCandidateRegistry();
+    registry.register('/proj/light.tsx', ['p-2'], { shadow: false });
+    expect(registry.all()).toEqual(['p-2']);
+    expect(registry.allShadow()).toEqual([]);
   });
 });

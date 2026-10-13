@@ -16,7 +16,6 @@ import {
   compileElementModule,
   lightRootScopeTag,
   readCompiledArtifactStyles,
-  registerClassCandidates,
   registerStyleRequest,
   stableModuleId,
   stripInlineSourceMapComment,
@@ -92,17 +91,23 @@ export function createCompilerHooks(
         // host binding: the compile's statically admitted class tokens are
         // registered exactly as the style edges are, so the build layer can
         // hand them to the official Tailwind compiler as explicit candidates.
-        if (result?.classCandidates !== undefined) {
-          registerClassCandidates(id, result.classCandidates, {
+        // The registration is authoritative for the module, including "none":
+        // an edit that removed every class drops the previous facts instead of
+        // leaving a stale candidate in the served sheet (defect C). The
+        // registry belongs to this plugin instance (one dev server), so a
+        // second project in the same process never inherits these facts.
+        if (result !== null) {
+          state.classCandidates.register(id, result.classCandidates ?? [], {
             // Only shadow-root classes need the component stylesheet; light
             // classes live in document DOM and the document entry covers them.
             shadow: result.program.root.kind !== 'light',
           });
-        } else if (result === null) {
+        } else {
           // A shipped artifact module carries its candidates (S5-B): the dev
           // binding registers the packed form exactly as the build binding.
-          const recovered = compiledArtifactClassCandidates(code, id);
-          if (recovered !== undefined) registerClassCandidates(id, recovered, { shadow: true });
+          state.classCandidates.register(id, compiledArtifactClassCandidates(code, id) ?? [], {
+            shadow: true,
+          });
         }
         // The edge registration is the whole job for an adopted artifact:
         // it ships as its own module, nothing to compile or hand back.

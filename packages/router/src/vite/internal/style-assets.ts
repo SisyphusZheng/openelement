@@ -63,6 +63,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import type { Plugin, ViteDevServer } from 'vite';
 import {
+  type ClassCandidateRegistry,
   compileElementModule,
   readCompiledArtifactStyles,
   getStyleRequest,
@@ -76,6 +77,10 @@ import {
 } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { walkModuleGraph } from './module-graph-walk.ts';
+import {
+  registerArtifactCandidates,
+  registerCandidatesFromCompiled,
+} from './collect-shadow-candidates.ts';
 import { findBuildWorkspaceRoot } from '../workspace-alias.ts';
 import {
   STYLE_SHEET_LIVE,
@@ -597,22 +602,34 @@ export interface ServerRenderedSeeds {
 export function serverRenderedStyleEdgesPlugin(
   seeds: ServerRenderedSeeds,
   emission: Pick<StyleAssetEmission, 'emit'>,
+  candidates: ClassCandidateRegistry,
 ): Plugin {
   let admitted = false;
+  let edges: Map<string, RegisteredStyleRequest> | undefined;
   return {
     name: 'open:server-rendered-style-edges',
     enforce: 'pre',
     apply: 'build',
+    // The DISCOVERY phase runs in buildStart, which is why this plugin is
+    // mounted BEFORE every consumer of its facts: the compiler facts it
+    // registers — the authored `.css` edges AND the statically admitted class
+    // candidates (defect B) — must be complete before the component stylesheet
+    // compiles, and that happens in another plugin's buildStart.
+    async buildStart() {
+      if (admitted) return;
+      admitted = true;
+      edges = await discoverServerRenderedModules.call(this, seeds, candidates);
+    },
     // The module-LOADING phase: reaching a sheet's text through Vite's `?inline`
     // CSS module is only possible while the toolchain is loading modules (a
-    // build's plugin context has no transform-phase equivalent). The pass runs
-    // once, at the first module the graph asks for.
+    // build's plugin context has no transform-phase equivalent). The emission
+    // runs once, at the first module the graph asks for, from the facts the
+    // discovery above registered.
     async load() {
-      // Re-entrance guard, set BEFORE the work: the pass loads modules through
-      // this same context, so its own hook runs again for each of them.
-      if (admitted) return null;
-      admitted = true;
-      await admitServerRenderedStyleEdges.call(this, seeds, emission);
+      if (edges === undefined) return null;
+      const discovered = edges;
+      edges = undefined;
+      await emitServerRenderedEdges.call(this, discovered, emission);
       return null;
     },
   };
@@ -622,12 +639,13 @@ export function serverRenderedStyleEdgesPlugin(
 let serverRenderRoot: string | undefined;
 
 /**
- * Discovery (resolver-driven walk) + admission (compiler program) + emission
- * (edge load through the one style-asset plugin).
+ * The DISCOVERY half: resolve the seeds through this build's own resolver, walk
+ * their static module graph once, and register every module's compiler facts —
+ * the authored `.css` edges and the statically admitted class candidates —
+ * into the build's registries. Returns the edge facts the emission half needs.
  */
-async function admitServerRenderedStyleEdges(
+async function discoverServerRenderedModules(
   this: {
-    load(options: { id: string }): Promise<unknown>;
     resolve(
       specifier: string,
       importer?: string,
@@ -636,8 +654,8 @@ async function admitServerRenderedStyleEdges(
     warn(message: string): void;
   },
   seeds: ServerRenderedSeeds,
-  emission: Pick<StyleAssetEmission, 'emit'>,
-): Promise<void> {
+  candidates: ClassCandidateRegistry,
+): Promise<Map<string, RegisteredStyleRequest>> {
   const roots = [...seeds.files];
   for (const specifier of seeds.specifiers) {
     // The island modules the SSR entry imports, resolved exactly as that
@@ -661,7 +679,7 @@ async function admitServerRenderedStyleEdges(
       'Server-rendered style discovery found no module roots (no route, layout or ' +
         'SSR-renderable island module); no stylesheet edge was emitted.',
     );
-    return;
+    return new Map();
   }
   const root = serverRenderRoot ?? process.cwd();
   const workspaceRoot = findBuildWorkspaceRoot(root) ?? undefined;
@@ -689,6 +707,11 @@ async function admitServerRenderedStyleEdges(
     }
     if (compiled !== null) {
       registerStyleEdges(file, compiled.styleRequests ?? [], lightRootScopeTag(compiled.program));
+      // The same compile carries the module's statically admitted class
+      // candidates (defect B): the component stylesheet consumes them, and this
+      // walk is the discovery that covers every specifier form the bundler
+      // understands — relative, `#imports`, alias, package exports.
+      registerCandidatesFromCompiled(file, compiled, candidates);
       continue;
     }
     // A SHIPPED (already compiled) module — a package consumed from node_modules
@@ -696,8 +719,15 @@ async function admitServerRenderedStyleEdges(
     // same edges: recovered through the same read the build-time transform uses
     // and registered through the same writer.
     const artifact = readCompiledArtifactStyles(source, file);
-    if (artifact === undefined) continue;
+    if (artifact === undefined) {
+      // Not a compiled artifact either: the module carries no class candidates,
+      // and registering that absence keeps a deleted class from surviving an
+      // edit (defect C).
+      registerArtifactCandidates(source, file, candidates);
+      continue;
+    }
     registerStyleEdges(file, artifact.requests, artifact.scopeTag);
+    registerArtifactCandidates(source, file, candidates);
   }
   // The registered request objects themselves — never a re-derived key. The
   // previous form rebuilt each edge's graph id and decoded it back through
@@ -711,17 +741,30 @@ async function admitServerRenderedStyleEdges(
       edges.set(request.moduleId, request);
     }
   }
-  // Emit through the shared operation — never by awaiting the virtual module's
-  // own `load` hook, which nests one load inside another (the cycle that left
-  // packed sheets unemitted). The await happens inside this hook, so the work
-  // is owned by the build rather than detached from it.
-  for (const request of edges.values()) {
-    await emission.emit(this as unknown as StyleAssetEmitContext, request);
-  }
   this.info(
     `Server-rendered discovery walked ${walk.files.length} module(s) and declared ${edges.size} ` +
       'stylesheet edge(s) for emission',
   );
+  return edges;
+}
+
+/**
+ * The EMISSION half: emit every discovered edge through the build's ONE
+ * emission state. It needs the module-loading phase (a `?inline` load per
+ * sheet), which is why it is the pass's `load` hook and not part of discovery.
+ * Never by awaiting the virtual module's own `load` hook, which nests one load
+ * inside another (the cycle that left packed sheets unemitted) — the await
+ * happens inside this hook, so the work is owned by the build rather than
+ * detached from it.
+ */
+async function emitServerRenderedEdges(
+  this: { load(options: { id: string }): Promise<unknown> },
+  edges: Map<string, RegisteredStyleRequest>,
+  emission: Pick<StyleAssetEmission, 'emit'>,
+): Promise<void> {
+  for (const request of edges.values()) {
+    await emission.emit(this as unknown as StyleAssetEmitContext, request);
+  }
 }
 
 /**

@@ -294,7 +294,7 @@ export interface ComponentStyleSheetRecord {
 export function componentStyleSheetPlugin(
   root: string,
   options: ResolvedTailwindOptions,
-  candidates: readonly string[],
+  candidates: () => readonly string[],
   record: ComponentStyleSheetRecord,
 ): Plugin {
   let compiled: Promise<string> | undefined;
@@ -304,24 +304,57 @@ export function componentStyleSheetPlugin(
    * the sheet carries.
    */
   const assetReferences = new Map<string, string>();
+  /** The sheet's emission, performed exactly once per build. */
+  let sheetReferenceId: string | undefined;
+  /**
+   * Compile the sheet, rebase its `url()` targets, emit it (and the bytes those
+   * targets address) and record its content-addressed file name.
+   *
+   * The emission is a BUILD concern, not a module-graph concern: the sheet is
+   * consumed by the SSR/DSD link channel even when the generated entry never
+   * imports its adapter (the island-free CSS-only shape, defect D), and the
+   * asset's name is its own content hash, so a second emission would be the
+   * same file under the same name. Emitting once, from whichever consumer runs
+   * first, keeps the adapter module and the declared link pointing at one
+   * resource.
+   */
+  const emitSheet = async (context: ComponentSheetEmitContext): Promise<string | undefined> => {
+    if (sheetReferenceId !== undefined) return sheetReferenceId;
+    // Read the candidates NOW, never at plugin construction: the build's
+    // discovery pass registers them in its own `buildStart`, which runs before
+    // this hook — the ordering defect B depends on. No candidates: no sheet
+    // (the registry is the build's own, so "none" means none for THIS build).
+    const admitted = candidates();
+    if (admitted.length === 0) return undefined;
+    compiled ??= compileComponentStyleSheet(root, options, admitted);
+    const css = rebaseComponentSheetUrls(
+      context,
+      componentSheetBase(root),
+      await compiled,
+      assetReferences,
+    );
+    const fileName = styleAssetFileName(css);
+    record.fileName = fileName;
+    sheetReferenceId = context.emitFile({ type: 'asset', fileName, source: css });
+    return sheetReferenceId;
+  };
   return {
     name: 'open:tailwind-components',
     enforce: 'pre',
     resolveId(id) {
       return id === COMPONENT_SHEET_SPECIFIER ? COMPONENT_SHEET_GRAPH_ID : null;
     },
+    async buildStart() {
+      await emitSheet(this);
+    },
     async load(id) {
       if (id !== COMPONENT_SHEET_GRAPH_ID) return null;
-      compiled ??= compileComponentStyleSheet(root, options, candidates);
-      const css = rebaseComponentSheetUrls(
-        this,
-        componentSheetBase(root),
-        await compiled,
-        assetReferences,
-      );
-      const fileName = styleAssetFileName(css);
-      record.fileName = fileName;
-      const referenceId = this.emitFile({ type: 'asset', fileName, source: css });
+      const referenceId = await emitSheet(this);
+      // A graph that imports the adapter with no admitted candidate (every
+      // candidate module left the graph between the entry's generation and the
+      // module load): an empty module keeps the import resolvable without
+      // handing out a sheet that was never emitted.
+      if (referenceId === undefined) return 'export default undefined;\n';
       return fetchSheetAdapterModule(referenceId);
     },
     /**
@@ -441,7 +474,10 @@ function rebaseComponentSheetUrls(
 
 /** The emit half of the plugin context the rebase needs. */
 interface ComponentSheetEmitContext {
+  /** Emit the bytes a rebased `url()` target addresses (named, hashed by Vite). */
   emitFile(file: { type: 'asset'; name: string; source: Uint8Array }): string;
+  /** Emit the sheet itself under its own content address. */
+  emitFile(file: { type: 'asset'; fileName: string; source: string }): string;
 }
 
 /** The specifier the generated client entry imports; the plugin's own id. */

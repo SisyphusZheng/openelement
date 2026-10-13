@@ -253,6 +253,29 @@ interface GenerateClientEntryOptions {
   utilitySheet?: string;
 }
 
+/**
+ * Does the generated client entry need the element runtime at all?
+ *
+ * The island-free entry shapes (zero client JS, and the CSS-only entry a
+ * Tailwind-enabled app without islands or enhanced forms generates) import the
+ * document stylesheet and nothing else — no runtime module is reachable from
+ * them. This is the ONE place that fact is decided: the generator below selects
+ * the island-free branch with it, and the client build's element-runtime chunk
+ * guard consumes it instead of inferring a runtime requirement from the
+ * emission shape (defect D). A `hydrate: 'none'` island is SSR-only and never
+ * enters the client bundle, so it does not require the runtime either.
+ *
+ * The lit renderer's entry is element-free by design (#1339); that is a
+ * separate, renderer-level fact the build already owns.
+ */
+export function clientEntryNeedsElementRuntime(
+  islands: readonly ClientIslandDeliveryInput[],
+  options: GenerateClientEntryOptions = {},
+): boolean {
+  if (options.enhancedForms === true) return true;
+  return expandClientIslandEntries(islands).some((island) => island.strategy !== 'none');
+}
+
 export function generateClientEntry(
   islands: readonly ClientIslandDeliveryInput[],
   options: GenerateClientEntryOptions = {},
@@ -268,7 +291,9 @@ export function generateClientEntry(
       ? ''
       : `import ${quoteGeneratedJavaScriptValue(options.styleEntry)};\n`;
 
-  if (admittedIslands.length === 0 && options.enhancedForms !== true) {
+  // The island-free shapes (clientEntryNeedsElementRuntime owns the decision):
+  // the document stylesheet import is the only import they carry.
+  if (!clientEntryNeedsElementRuntime(islands, options)) {
     if (styleImport !== '') {
       return `// openElement Client Entry - no client islands; the document stylesheet only\n${styleImport}`;
     }
