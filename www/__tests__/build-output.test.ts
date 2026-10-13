@@ -79,12 +79,16 @@ test('build output: artifact scan — no vendored highlighter, no CDN font refer
   };
   walk(DIST);
 
-  // The self-hosted contract (H lane): the face binaries ship, and the linked
-  // style bundle is what references them. A build that drops the font sources
+  // The self-hosted contract (H lane): the face binaries ship, and an emitted
+  // client stylesheet references them. A build that drops the font sources
   // (or rewrites their url() targets wrongly) fails here instead of delivering
-  // fallback glyphs. The bundle is the document stylesheet the emitted head
-  // links — the client build's content-hashed asset (alpha15 S lane: the
-  // official Tailwind pipeline and Vite's own asset graph own emission).
+  // fallback glyphs. Two stylesheet owners exist: the document bundle the
+  // emitted head links, and the component sheets the Tailwind compile emits
+  // into client/assets/ (a component sheet must address its referenced bytes
+  // itself). A face below Vite's inline limit is a data URL in the document
+  // bundle and has NO document-side asset — its shipped file belongs to the
+  // component sheet — so a shipped face must be referenced by one of the
+  // emitted stylesheets, not necessarily the bundle.
   expect(
     fontReferences.size,
     'no woff2 faces shipped under dist — the self-hosted font sources ' +
@@ -96,11 +100,26 @@ test('build output: artifact scan — no vendored highlighter, no CDN font refer
   const bundlePath = join(DIST, stylesheetHref!.replace(/^\//, ''));
   expect(existsSync(bundlePath), `linked style bundle is missing: ${bundlePath}`).toBeTruthy();
   const bundle = readFileSync(bundlePath, 'utf8');
-  for (const face of fontReferences) {
-    expect(bundle.includes(face), `shipped face ${face} is not referenced by ${bundlePath}`).toBe(
-      true,
-    );
+  const emittedSheets = [bundle];
+  for (const file of readdirSync(join(DIST, 'client', 'assets'))) {
+    if (file.endsWith('.css')) {
+      emittedSheets.push(readFileSync(join(DIST, 'client', 'assets', file), 'utf8'));
+    }
   }
+  for (const face of fontReferences) {
+    expect(
+      emittedSheets.some((sheet) => sheet.includes(face)),
+      `shipped face ${face} is not referenced by any emitted stylesheet ` +
+        `(${bundlePath} or an emitted component sheet)`,
+    ).toBe(true);
+  }
+  // The document side still delivers self-hosted faces by name (not only
+  // inlined data URLs): the document stylesheet owns the document entry's
+  // @font-face rules.
+  expect(
+    [...fontReferences].some((face) => bundle.includes(face)),
+    `the linked bundle ${bundlePath} references no shipped face by name`,
+  ).toBe(true);
   expect(bundle.includes('@font-face'), 'the linked bundle carries no @font-face rule').toBe(true);
 
   const islandsDir = join(DIST, 'client', 'islands');
