@@ -206,7 +206,17 @@ jobs:
           # content) — a fresh checkout carries none until this runs.
           vp run --fail-if-no-match @openelement/www#generate:content
           ./node_modules/.bin/vitest run --project tools
-      - name: Element browser gate (full matrix)
+      - name: Compiler tests (independent suite)
+        # The PR layer ran element+router+ui+create+www+tools but never the
+        # compiler's own suite, so a lowering/candidate regression was invisible
+        # until the release train. It is the package the whole compiled-authoring
+        # contract rests on; it gates the PR now.
+        run: vp run --fail-if-no-match @openelement/compiler#test
+      - name: Element browser gate (chromium)
+        # Deliberately the single-engine gate: this is the fast layer. Its name
+        # says which engines it ran — the three-engine matrix is
+        # `browser:gate:full`, wired into the e2e-full job below, and this step
+        # used to be called "full matrix" while running chromium alone.
         run: vp run --fail-if-no-match @openelement/element#browser:gate
 
   # ── Job 3: Site E2E (chromium-only in PR; full on main) ───────────────
@@ -300,6 +310,12 @@ jobs:
         run: vp run --fail-if-no-match site:build
       - name: Site E2E (3 engines)
         run: vp run --fail-if-no-match @openelement/www#e2e:browsers
+      - name: Element browser gate (full matrix, chromium+firefox+webkit)
+        # The qualified candidate needs the browser conformance suite and its
+        # per-engine negative proofs on all three engines. `browser:gate:full`
+        # sets OE_BROWSER_MATRIX=full for both halves; the base layer keeps the
+        # chromium-only `browser:gate`.
+        run: vp run --fail-if-no-match @openelement/element#browser:gate:full
       - name: Fixture gates
         run: |
           vp run --fail-if-no-match @openelement/fixture-router-native-framework#gate
