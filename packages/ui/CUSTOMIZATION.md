@@ -16,8 +16,21 @@ to the 1.0.0-alpha.8 baseline.
 - **Consumed variables are pinned at the C3 role-direct baseline.** Adding or
   removing a `var()` reference in a recipe is a deliberate surface change: the
   guard fails until the pin and this document are updated in the same change.
-- Component internals carry **no utility classes** — the role variables are
-  the entire styling contract.
+- Component internals are authored as **Tailwind utilities** wherever a class
+  utility can express the property. The compiler admits every static class
+  token and the build's shadow component stylesheet (theme + utilities) carries
+  the generated rules into the component's shadow root. What a class utility
+  cannot express stays in the component's `.css` sheet: the host box,
+  `:host()` / `:state()` / attribute-scoped rules, and the derived two-colour
+  surfaces. **This makes a Tailwind entry a requirement of the consuming app**
+  (`tailwind: { theme: [...] }` in `openelement.config.ts` — the scaffold's
+  single default form): without that entry the component stylesheet is not
+  emitted and the utilities are not delivered.
+- Colours still come from this role table, never from a literal — either a role
+  variable in the sheet or a utility generated from a role (`bg-primary/14`
+  compiles to `color-mix` on `--color-primary`). The guard fails on a raw
+  colour literal in a declaration, because a literal escapes the light, dark
+  and forced-colors seats the roles guarantee.
 
 ## Theming model
 
@@ -149,35 +162,41 @@ custom properties.
 
 - Parts: `control`
 - Variables: `--color-border`, `--color-foreground`, `--color-popover`,
-  `--color-primary`, `--color-primary-foreground`, `--color-ring`,
-  `--color-violet-400`, `--color-white`, `--default-transition-duration`,
-  `--ease-out`, `--font-sans`, `--font-weight-extrabold`, `--radius-md`,
+  `--color-primary`, `--color-primary-foreground`, `--color-violet-400`,
+  `--color-white`, `--default-transition-duration`, `--ease-out`,
   `--shadow-sm`, `--spacing`, `--text-base`, `--text-sm`, `--text-xl`
-- Shares the control recipe (below). Variant `primary`/`accent` fill with
-  `--color-primary` over `--color-primary-foreground`.
+- The base treatment (inline flex box, gap, typography, radius, cursor,
+  white-space), the focus ring and the disabled / aria-disabled states are
+  authored as Tailwind utilities (alpha15 S lane). The sheet keeps the host
+  box, the `[hidden]` rule, the size and variant surfaces (host-attribute
+  scoped: a utility cannot select an ancestor's attribute from inside the
+  shadow root, and the compiler admits only single two-branch conditionals),
+  the derived base surface, and the form-associated disabled state. Variant
+  `primary`/`accent` fill with `--color-primary` over
+  `--color-primary-foreground`.
 
 ### `open-code-block`
 
 - Parts: `copy`
-- Variables: `--color-destructive`, `--color-foreground`, `--color-primary`,
-  `--default-transition-duration`, `--ease-in-out`, `--font-sans`,
-  `--font-weight-semibold`, `--radius-md`, `--spacing`, `--text-xs`,
-  `--tracking-wider`
+- Variables: `--color-destructive`, `--color-success`
+- The chip's presentation is authored as Tailwind utilities (alpha15 S lane);
+  the sheet keeps the host box and the `:state(copied)` / `:state(failed)`
+  feedback, which paint the two status roles above.
 - Since #1552 the component owns the copy chip only: the code surface and the
   token inks belong to the host's build-time highlight pipeline and its
   stylesheet, so the former Prism-derived token palette and surface variables
-  left the pinned surface in the same deliberate edit (the chip ink follows
-  the theme-aware `--color-foreground` role).
+  left the pinned surface in the same deliberate edit.
 
 ### `open-dialog`
 
 - Parts: `overlay`, `header`, `close`, `body`, `footer`
-- Variables: `--color-border`, `--color-foreground`,
-  `--color-muted-foreground`, `--color-popover`, `--color-primary`,
-  `--color-white`, `--color-zinc-950`, `--font-sans`,
-  `--font-weight-semibold`, `--leading-normal`, `--leading-tight`,
-  `--radius-md`, `--radius-xl`, `--shadow-2xl`, `--spacing`, `--text-base`,
-  `--text-xl`
+- Variables: `--color-border`, `--color-foreground`, `--color-popover`,
+  `--color-primary`, `--color-white`, `--color-zinc-950`, `--shadow-2xl`,
+  `--spacing`
+- The dialog box and the header / title / close / body / footer presentation
+  are authored as Tailwind utilities (alpha15 S lane). The sheet keeps the
+  host box, the trigger slot's cursor, the derived frame (a
+  foreground/border/primary triple mix) and the close button's hover wash.
 - Shares the overlay recipe (below); the backdrop composes the zinc-950
   scrim in both themes.
 - Entry and exit animate through `transition-behavior: allow-discrete` +
@@ -188,36 +207,42 @@ custom properties.
 ### `open-dropdown`
 
 - Parts: `trigger`, `content`
-- Variables: `--font-sans`, `--spacing`
+- Variables: `--spacing` (the anchor-positioning block's gap; the rest of the
+  content's presentation is authored as Tailwind utilities)
 - Shares the overlay recipe for the popover surface.
 
 ### `open-input`
 
 - Parts: `wrapper`, `label`, `control`, `error`
-- Variables: `--color-border`, `--color-destructive`, `--color-foreground`,
-  `--color-muted`, `--color-muted-foreground`, `--color-popover`,
-  `--color-primary`, `--color-violet-400`, `--font-sans`,
-  `--font-weight-medium`, `--radius-md`, `--spacing`, `--text-base`,
-  `--text-sm`, `--text-xs`, `--tracking-normal`
-- Shares the control recipe; error/invalid states use
+- Variables: `--color-border`, `--color-destructive`, `--color-muted`,
+  `--color-popover`, `--color-primary`, `--color-violet-400`, `--spacing`
+- The wrapper layout, the label's typography, the control's box (width,
+  padding, font, radius, transition, outline) and the error message's ink are
+  authored as Tailwind utilities (alpha15 S lane). The sheet keeps the host
+  box, the control's derived surfaces (the popover/border mixes, the violet
+  hover border, the focus ring's box-shadow) and the disabled / invalid
+  treatments scoped to the host's form state; those states use
   `--color-destructive`.
 
 ### `open-theme-toggle`
 
 - Parts: `toggle`, `icon-sun`, `icon-moon`
-- Variables: `--color-background`, `--color-border`, `--color-foreground`,
-  `--color-muted-foreground`, `--color-popover`, `--color-primary`,
-  `--color-ring`, `--color-violet-400`, `--default-transition-duration`,
-  `--ease-in-out`, `--spacing`
+- Variables: `--color-background`, `--color-border`, `--color-popover`,
+  `--color-primary`, `--color-violet-400`, `--spacing`
+- The button's element-level presentation (flex box, size, radius, cursor,
+  ink, focus ring, transition) is authored as Tailwind utilities (alpha15 S
+  lane); the sheet keeps the derived surface, its hover values and the
+  `[data-theme]` icon display swap.
 
 ### Shared recipes (`component-recipes.ts`)
 
-- `control-recipe.css` (`.control`): `--color-border`, `--color-foreground`,
-  `--color-popover`, `--color-primary`, `--color-ring`, `--color-violet-400`,
-  `--color-white`, `--default-transition-duration`, `--ease-out`,
-  `--radius-md`, `--spacing`
-- `surface-recipe.css` (`.surface`) adds: `--color-card`, `--radius-lg`,
-  `--shadow-2xl`
+- `surface-recipe.css` (`.surface`): `--color-border`, `--color-card`,
+  `--color-foreground`, `--color-popover`, `--color-primary`, `--color-white`,
+  `--radius-lg`, `--shadow-2xl`, `--spacing`
+- The control recipe retired with the alpha15 utility migration: open-button
+  and open-input author their control surface as utilities plus each
+  component's own irreducible residue (above), so there is one owner per
+  property instead of a shared sheet plus overrides.
 - `overlay-recipe.css` (`.overlay`) adds: `--radius-xl`
 
 ## Deep customization

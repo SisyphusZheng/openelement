@@ -18,14 +18,17 @@ test.describe('ui dogfood SSR/DSD output', () => {
     expect(html).toContain(
       '<open-dialog label="Dogfood dialog"><template shadowrootmode="open" shadowrootdelegatesfocus>',
     );
-    expect(html).toContain('<dialog part="overlay"');
+    // The atomic facts, not an attribute-order literal: the native dialog
+    // element carries the documented `overlay` part (its class list is the
+    // alpha15 utility authoring, which may grow).
+    expect(html).toMatch(/<dialog [^>]*part="overlay"/);
     expect(html).toContain('aria-label="Dogfood dialog"');
     // Trigger/footer slots stay in the light DOM (slot projection).
     expect(html).toContain('<button slot="trigger" id="dialog-trigger" type="button">');
     // The SSR-open dialog: host `open` attribute + bool sink opened the inner
     // dialog at render time (#1030 choreography input state).
     expect(html).toContain('<open-dialog id="ssr-open-dialog" open="" label="SSR open dialog">');
-    expect(html).toContain('<dialog part="overlay" open aria-label="SSR open dialog">');
+    expect(html).toMatch(/<dialog [^>]*part="overlay"[^>]*open[^>]*aria-label="SSR open dialog"/);
   });
 
   test('/dropdown emits open-dropdown DSD with a native popover content block', async ({

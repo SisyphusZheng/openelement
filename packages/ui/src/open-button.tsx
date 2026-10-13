@@ -38,7 +38,6 @@ import {
   type StyleSheetLike,
 } from '@openelement/element';
 import { closestFormOf, syncDisabledState } from './component-recipes.ts';
-import controlRecipe from './control-recipe.css';
 import openButtonStyles from './open-button.css';
 
 @element('open-button', {
@@ -47,7 +46,7 @@ import openButtonStyles from './open-button.css';
   formAssociated: true,
 })
 export class OpenButton extends OpenElement {
-  static override styles: StyleSheetLike[] = [controlRecipe, openButtonStyles];
+  static override styles: StyleSheetLike[] = [openButtonStyles];
 
   @property({ reflect: true })
   variant = 'default';
@@ -99,7 +98,7 @@ export class OpenButton extends OpenElement {
     return (
       <span style='display:contents'>
         <a
-          class='control btn'
+          class='btn inline-flex items-center justify-center gap-2 font-sans font-extrabold no-underline cursor-pointer rounded-md whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:pointer-events-none'
           part='control'
           href={this.linkHref}
           target={this.linkTarget}
@@ -111,7 +110,7 @@ export class OpenButton extends OpenElement {
           <slot></slot>
         </a>
         <button
-          class='control btn'
+          class='btn inline-flex items-center justify-center gap-2 font-sans font-extrabold no-underline cursor-pointer rounded-md whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-ring disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none aria-disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:pointer-events-none'
           part='control'
           // oxlint-disable-next-line button-has-type -- type always set from the type prop (default 'button'); only submit/reset act on a form in handleClick
           type={this.type}

@@ -373,15 +373,19 @@ async function packUtilityWidget(dir: string): Promise<string> {
 // files (not copies): the assertions read them back from the installed tree.
 
 const UI_LAB_COMPONENT = `/**
- * UI appliance page for the packed-consumer gate (#1558/KR-10): the three
+ * UI appliance page for the packed-consumer gate (#1558/KR-10): the SIX
  * @openelement/ui components the package README's packageIslands recipe is
- * supposed to deliver.
+ * supposed to deliver — styled here with NO application Tailwind
+ * configuration, on the strength of the packages' own declarations.
  */
 import { element, OpenElement } from '@openelement/element';
 import '@openelement/ui/open-button';
-import '@acme/utility-widget/utility-widget';
-import '@openelement/ui/open-dialog';
+import '@openelement/ui/open-input';
+import '@openelement/ui/open-theme-toggle';
 import '@openelement/ui/open-code-block';
+import '@openelement/ui/open-dialog';
+import '@openelement/ui/open-dropdown';
+import '@acme/utility-widget/utility-widget';
 
 @element('ui-lab', { root: 'light' })
 export default class UiLab extends OpenElement {
@@ -390,10 +394,16 @@ export default class UiLab extends OpenElement {
       <div class='ui-lab ${LIGHT_ROOT_UTILITY}'>
         <h1>Packed UI appliance</h1>
         <open-button variant='primary'>packed button</open-button>
+        <open-input label='Packed input' placeholder='type here'></open-input>
+        <open-theme-toggle></open-theme-toggle>
         <open-dialog>
           <span slot='label'>packed dialog</span>
           <p>dialog body from the packed tarball</p>
         </open-dialog>
+        <open-dropdown>
+          <span slot='trigger'>packed dropdown</span>
+          <p>dropdown content from the packed tarball</p>
+        </open-dropdown>
         <open-code-block>
           <pre><code>const packed = true;</code></pre>
         </open-code-block>
@@ -582,6 +592,41 @@ try {
     const sheetHref = widget?.shadowRoot?.querySelector('link[data-oe-static-styles]')?.getAttribute('href') ?? '';
     const sheetResponse = sheetHref ? await fetch(sheetHref) : null;
 
+    // ── The six @openelement/ui components, styled with NO application
+    // Tailwind configuration: one utility-derived computed value each, read
+    // INSIDE the component's own shadow tree.
+    const styleOf = (selector, inner) => {
+      const host = globalThis.__deepFind(selector);
+      const target = host?.shadowRoot?.querySelector(inner);
+      return target ? getComputedStyle(target) : null;
+    };
+    const components = {
+      buttonControl: (() => {
+        const control = styleOf('open-button', 'button');
+        return control ? { display: control.display, fontFamily: control.fontFamily } : null;
+      })(),
+      inputControl: (() => {
+        const control = styleOf('open-input', 'input');
+        return control ? { paddingTop: control.paddingTop, width: control.width } : null;
+      })(),
+      themeToggle: (() => {
+        const toggle = styleOf('open-theme-toggle', 'button');
+        return toggle ? { width: toggle.width, borderRadius: toggle.borderRadius } : null;
+      })(),
+      codeChip: (() => {
+        const chip = styleOf('open-code-block', '.copy-btn');
+        return chip ? { position: chip.position, top: chip.top } : null;
+      })(),
+      dialogHeader: (() => {
+        const header = styleOf('open-dialog', '.dialog-header');
+        return header ? { display: header.display, marginBottom: header.marginBottom } : null;
+      })(),
+      dropdownContent: (() => {
+        const content = styleOf('open-dropdown', '.content');
+        return content ? { minWidth: content.minWidth, paddingTop: content.paddingTop } : null;
+      })(),
+    };
+
     return {
       widgetFound: widget !== null,
       widgetPaddingTop: widgetSpan ? getComputedStyle(widgetSpan).paddingTop : 'missing',
@@ -590,6 +635,7 @@ try {
       // Tailwind configuration naming this source, so a non-transparent
       // background here is the declared-source path doing its job.
       widgetBackground: widgetSpan ? getComputedStyle(widgetSpan).backgroundColor : 'missing',
+      components,
       // Tailwind v4 lowers rotate-45 to the independent rotate property
       // (not transform), so both channels are read.
       widgetRotate: widgetSpan ? getComputedStyle(widgetSpan).rotate : 'missing',
@@ -629,6 +675,54 @@ try {
   // sheet-text assertion in the harness pins the exact role declaration.
   if (/^(?:rgba?\\(0, 0, 0, 0\\)|transparent)$/.test(lab.widgetBackground)) {
     failures.push('the declared package theme role did not paint: ' + lab.widgetBackground);
+  }
+  // The six @openelement/ui components, in an application with NO Tailwind
+  // configuration: each value below is generated from the migrated utilities
+  // (or from a retained sheet rule) and delivered by the packages' own
+  // declarations.
+  const components = lab.components ?? {};
+  const expectComputed = (label, actual, expected) => {
+    if (actual !== expected) failures.push(label + ' = ' + actual + ' (expected ' + expected + ')');
+  };
+  if (!components.buttonControl) failures.push('open-button was not found on /ui-lab');
+  else {
+    expectComputed('open-button control display', components.buttonControl.display, 'inline-flex');
+    // font-sans: the theme's sans stack, resolved by the engine.
+    if (!String(components.buttonControl.fontFamily).includes('sans-serif')) {
+      failures.push('open-button font-sans utility did not apply: ' + components.buttonControl.fontFamily);
+    }
+  }
+  if (!components.inputControl) failures.push('open-input was not found on /ui-lab');
+  else {
+    expectComputed('open-input control padding-top', components.inputControl.paddingTop, '8px');
+    if (components.inputControl.width === '0px' || components.inputControl.width === 'auto') {
+      failures.push('open-input w-full utility did not apply: ' + components.inputControl.width);
+    }
+  }
+  if (!components.themeToggle) failures.push('open-theme-toggle was not found on /ui-lab');
+  else {
+    expectComputed('open-theme-toggle button width', components.themeToggle.width, '38px');
+    // rounded-full: a pill, so the resolved radius is at least half the 38px box
+    // (engines report 9999px, or a clamped value).
+    const radius = Number.parseFloat(String(components.themeToggle.borderRadius));
+    if (!Number.isFinite(radius) || radius < 19) {
+      failures.push('open-theme-toggle rounded-full did not apply: ' + components.themeToggle.borderRadius);
+    }
+  }
+  if (!components.codeChip) failures.push('open-code-block copy chip was not found on /ui-lab');
+  else {
+    expectComputed('open-code-block chip position', components.codeChip.position, 'absolute');
+    expectComputed('open-code-block chip top', components.codeChip.top, '8px');
+  }
+  if (!components.dialogHeader) failures.push('open-dialog header was not found on /ui-lab');
+  else {
+    expectComputed('open-dialog header display', components.dialogHeader.display, 'flex');
+    expectComputed('open-dialog header margin-bottom', components.dialogHeader.marginBottom, '16px');
+  }
+  if (!components.dropdownContent) failures.push('open-dropdown content was not found on /ui-lab');
+  else {
+    expectComputed('open-dropdown content min-width', components.dropdownContent.minWidth, '192px');
+    expectComputed('open-dropdown content padding-top', components.dropdownContent.paddingTop, '8px');
   }
   // The discriminator is the MEASURED application, not CSS.supports: this
   // WebKit build reports support for the rotate property yet ignores it in an
@@ -865,6 +959,31 @@ async function main(): Promise<void> {
         `${CONFIG_ANCHOR}\n  packageIslands: ['@openelement/ui', '@acme/utility-widget'],`,
       ),
     );
+
+    // ─── The appliance declares NO Tailwind configuration ────────────────────
+    // The acceptance this gate carries (ADR-0167): every component here is
+    // styled because the ADMITTED PACKAGES declare the requirement and own the
+    // theme sources — the application names none of them. The starter's own
+    // `tailwind` key is therefore removed, and the build must still emit the
+    // document sheet, the component sheet, the DSD links and the role the probe
+    // package declares.
+    const withIslands = await readFile(configPath, 'utf8');
+    const stripped = withIslands.replace(/\n\s*tailwind:\s*\{[\s\S]*?\},/, '');
+    if (stripped === withIslands) {
+      throw new Error(
+        'the packed starter openelement.config.ts carries no `tailwind: { … }` block to remove — ' +
+          'the no-configuration appliance cannot state its edit:\n' +
+          withIslands.slice(0, 600),
+      );
+    }
+    if (/^\s*tailwind\s*:/m.test(stripped)) {
+      throw new Error(
+        'the appliance still declares `tailwind` after the edit — the acceptance requires an ' +
+          'application with no Tailwind configuration:\n' +
+          stripped.slice(0, 600),
+      );
+    }
+    await writeFile(configPath, stripped);
 
     // ─── Gap A: the starter's OWN island uses a Tailwind utility (S.2 gate) ──
     // The starter is generated by the real packed create CLI above; this edit
