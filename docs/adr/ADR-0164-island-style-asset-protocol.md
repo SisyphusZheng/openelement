@@ -692,6 +692,17 @@ author-owned in-memory sheet (or the SSR shim) has none, and then:
   a silent drop, never a render crash, and never a fabricated URL standing in
   for bytes the build does not own.
 
+**Construction ordering is outside this contract (fail-closed).** The SSR
+global `CSSStyleSheet` is installed by the generated SSR entry *body*
+(`build-ssg.ts`), after ESM import evaluation — only the `customElements` stub
+is an output banner, because route modules `define()` at top level. A module
+that constructs the sheet through the global at MODULE-EVALUATION time
+(`new CSSStyleSheet()` at a module's top level) therefore fails loudly:
+`ReferenceError: CSSStyleSheet is not defined`, build exit non-zero, no page
+written — never a silent style loss. A module-top-level sheet takes element's
+cross-realm `StyleSheet` (statically the Node shim where no global exists), the
+spelling the legacy artifact path names.
+
 Consumer form: `packages/element/__tests__/compiled-server/memory-sheet-policy.test.ts`
 (the inline text with no `<link>`, the URL-carrying boundary sheet that is linked
 and never inlined, and the unreadable sheet's report).

@@ -35,14 +35,31 @@
  * Recorded on the pre-fix revision (4edf71be3): N-2A renders the truncated
  * rule `oe-n2-a p::before { content: "}` (the closing brace and the second
  * rule's prefix are re-attached to the wrong boundary); N-2B renders no style
- * node at all. The literal module-top-level spelling of N-2B
- * (`const s = new CSSStyleSheet()` in a statically imported module) fails
- * LOUDLY today — `ReferenceError: CSSStyleSheet is not defined`, because the
- * polyfill installs the global in the entry body, after module evaluation —
- * so the reachable silent-loss shape (construction at render time through the
- * same global) is the one pinned here.
+ * node at all. Situation A (the sheet is built after the SSR polyfill
+ * initialized, through the same global) is the reachable silent-loss shape
+ * and is pinned here.
+ *
+ * Situation B — construction at MODULE-EVALUATION time through the global —
+ * is OUTSIDE the promised authoring contract and is pinned as the loud
+ * failure it already is (never a silent style loss):
+ *   - the one documented authoring form arrays `.css` imports in `static
+ *     styles` (www/content/docs/guide/styling.md:21,58) and the compiled
+ *     grammar rejects runtime top-level statements with OEC9008
+ *     (www/content/docs/guide/compiled-grammar.md:20);
+ *   - the SSR global is installed by the generated entry BODY
+ *     (build-ssg.ts:319-323; ssr-polyfills.ts), after ESM import evaluation —
+ *     only `customElements` ships as the output banner that runs before
+ *     imports, because route modules `define()` at top level;
+ *   - the S-C2/S-10 amendment (ADR-0164:675-693) pins the serialization of a
+ *     reachable URL-less sheet, not a construction window, and the
+ *     module-top-level spelling the framework's own server adapters use is
+ *     element's cross-realm `StyleSheet` (style-assets.ts:853-855).
+ * Observable failure, reproduced through this file's build entry:
+ * `ReferenceError: CSSStyleSheet is not defined` and a non-zero build exit
+ * before any page HTML is written (the `Situation B` test below).
  */
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -59,6 +76,10 @@ const N2B_CSS = 'oe-n2-b p { color: rgb(4, 5, 6); }\n';
 
 const N2A_PAGE_TEXT = 'n2a legacy page';
 const N2B_PAGE_TEXT = 'n2b lazy page';
+
+/** Situation B's sheet: ordinary bytes; the failure is the ordering, not the content. */
+const N2C_CSS = 'oe-n2-c p { color: rgb(7, 8, 9); }\n';
+const N2C_PAGE_TEXT = 'n2c loud page';
 
 const fixtureRoots: string[] = [];
 
@@ -131,12 +152,8 @@ async function writeLegacyPackage(
   }
 }
 
-async function buildFixture(): Promise<string> {
-  const created = await mkdtemp(join(tmpdir(), 'oe-n2-ssr-css-'));
-  const root = await realpath(created);
-  fixtureRoots.push(created);
-  const appDir = join(root, 'app');
-
+/** The consumer-shaped app scaffold both fixtures share: manifest, config, links. */
+async function writeAppScaffold(appDir: string): Promise<void> {
   await write(
     join(appDir, 'package.json'),
     JSON.stringify({ name: 'oe-n2-ssr-css-proof', private: true, type: 'module' }),
@@ -151,6 +168,40 @@ async function buildFixture(): Promise<string> {
       '',
     ].join('\n'),
   );
+  // pnpm-style symlinks to the workspace packages (the layout a consumer has).
+  await mkdir(join(appDir, 'node_modules', '@openelement'), { recursive: true });
+  await symlink(
+    join(REPO_ROOT, 'packages', 'router'),
+    join(appDir, 'node_modules', '@openelement', 'router'),
+  );
+  await symlink(
+    join(REPO_ROOT, 'packages', 'element'),
+    join(appDir, 'node_modules', '@openelement', 'element'),
+  );
+  await symlink(join(REPO_ROOT, 'node_modules', 'vite'), join(appDir, 'node_modules', 'vite'));
+  await symlink(
+    join(REPO_ROOT, 'packages', 'router', 'node_modules', 'hono'),
+    join(appDir, 'node_modules', 'hono'),
+  );
+}
+
+/** Spawn the real CLI build in `cwd`; resolve with its exit code and captured output. */
+async function runBuild(cwd: string): Promise<{ code: number; logs: string }> {
+  const build = spawn(process.execPath, [ROUTER_BUILD_CLI], { cwd });
+  let logs = '';
+  build.stdout.on('data', (chunk) => (logs += chunk));
+  build.stderr.on('data', (chunk) => (logs += chunk));
+  const code = await new Promise<number>((resolve) => build.on('exit', (c) => resolve(c ?? -1)));
+  return { code, logs };
+}
+
+async function buildFixture(): Promise<string> {
+  const created = await mkdtemp(join(tmpdir(), 'oe-n2-ssr-css-'));
+  const root = await realpath(created);
+  fixtureRoots.push(created);
+  const appDir = join(root, 'app');
+
+  await writeAppScaffold(appDir);
 
   // N-2A: the sheet is built at module top level by element's cross-realm
   // `StyleSheet` (the SSR shim) and arrayed in the legacy styles member.
@@ -179,9 +230,9 @@ async function buildFixture(): Promise<string> {
 
   // N-2B: the sheet is constructed through the global `CSSStyleSheet` — the
   // constructor the SSR stub owns. Construction at render time (the members
-  // accessor) is the shape that reaches the installed global; the compiled
-  // grammar rejects runtime top-level statements (OEC9008), and a top-level
-  // construction in an artifact fails loudly before the polyfill installs.
+  // accessor) is the shape that reaches the installed global; a top-level
+  // construction fails loudly before the polyfill installs and is pinned as
+  // the out-of-contract situation-B failure below, never as supported.
   await writeLegacyPackage(appDir, 'oe-n2-legacy-b', {
     'index.js': [
       legacyArtifactPage({
@@ -222,20 +273,54 @@ async function buildFixture(): Promise<string> {
     ].join('\n'),
   );
 
-  // pnpm-style symlinks to the workspace packages (the layout a consumer has).
-  await mkdir(join(appDir, 'node_modules', '@openelement'), { recursive: true });
-  await symlink(
-    join(REPO_ROOT, 'packages', 'router'),
-    join(appDir, 'node_modules', '@openelement', 'router'),
-  );
-  await symlink(
-    join(REPO_ROOT, 'packages', 'element'),
-    join(appDir, 'node_modules', '@openelement', 'element'),
-  );
-  await symlink(join(REPO_ROOT, 'node_modules', 'vite'), join(appDir, 'node_modules', 'vite'));
-  await symlink(
-    join(REPO_ROOT, 'packages', 'router', 'node_modules', 'hono'),
-    join(appDir, 'node_modules', 'hono'),
+  return appDir;
+}
+
+/**
+ * Situation B's fixture, built by its own app: the component module's plain
+ * sibling (`sheet.js`) constructs the sheet through the global `CSSStyleSheet`
+ * at MODULE-EVALUATION time — before the SSR entry body's polyfill can run.
+ * One route only, so the expected loud failure leaves no rendered page behind.
+ */
+async function buildLoudFixture(): Promise<string> {
+  const created = await mkdtemp(join(tmpdir(), 'oe-n2-ssr-css-loud-'));
+  const root = await realpath(created);
+  fixtureRoots.push(created);
+  const appDir = join(root, 'app');
+
+  await writeAppScaffold(appDir);
+
+  await writeLegacyPackage(appDir, 'oe-n2-legacy-c', {
+    'index.js': [
+      "import sheet from './sheet.js';",
+      '',
+      legacyArtifactPage({
+        pkgDir: join(appDir, 'node_modules', '@acme', 'oe-n2-legacy-c'),
+        tag: 'oe-n2-c',
+        className: 'OeN2CPage',
+        text: N2C_PAGE_TEXT,
+        stylesMember: '  static styles = [sheet];',
+      }),
+      '',
+    ].join('\n'),
+    'sheet.js': [
+      '// Situation B: construction at module-evaluation time through the global.',
+      'const sheet = new CSSStyleSheet();',
+      `sheet.replaceSync(${JSON.stringify(N2C_CSS)});`,
+      'export default sheet;',
+      '',
+    ].join('\n'),
+  });
+
+  await write(
+    join(appDir, 'app', 'routes', 'defect-c.tsx'),
+    [
+      "import { definePage } from '@openelement/router';",
+      "import LegacyCPage from '@acme/oe-n2-legacy-c';",
+      '',
+      "export default definePage(LegacyCPage, { renderIntent: { mode: 'static' } });",
+      '',
+    ].join('\n'),
   );
   return appDir;
 }
@@ -245,10 +330,8 @@ let buildLogs = '';
 
 beforeAll(async () => {
   appDir = await buildFixture();
-  const build = spawn(process.execPath, [ROUTER_BUILD_CLI], { cwd: appDir });
-  build.stdout.on('data', (chunk) => (buildLogs += chunk));
-  build.stderr.on('data', (chunk) => (buildLogs += chunk));
-  const code = await new Promise<number>((resolve) => build.on('exit', (c) => resolve(c ?? -1)));
+  const { code, logs } = await runBuild(appDir);
+  buildLogs = logs;
   expect(code, `N-2 fixture build failed:\n${buildLogs}`).toEqual(0);
   if (process.env.OE_KEEP_FIXTURE) console.log(`[fixture] ${appDir}`);
 }, 240_000);
@@ -285,3 +368,26 @@ test('N-2B: a sheet constructed through the SSR CSSStyleSheet global keeps its r
     N2B_CSS,
   );
 });
+
+test(
+  'Situation B (outside the contract): module-evaluation-time `new CSSStyleSheet()` ' +
+    'fails the build loudly — never a silent style loss',
+  async () => {
+    const loudDir = await buildLoudFixture();
+    const { code, logs } = await runBuild(loudDir);
+    if (process.env.OE_KEEP_FIXTURE) console.log(`[loud fixture] ${loudDir}`);
+    expect(
+      code,
+      'the module-top-level construction must not be swallowed into a styled-less page:\n' + logs,
+    ).not.toEqual(0);
+    expect(
+      logs,
+      'the loud failure names the uninstalled global (the documented ordering constraint)',
+    ).toContain('ReferenceError: CSSStyleSheet is not defined');
+    expect(
+      existsSync(join(loudDir, 'dist', 'defect-c', 'index.html')),
+      'no page is emitted without the sheet the build refused to lose',
+    ).toBe(false);
+  },
+  240_000,
+);
