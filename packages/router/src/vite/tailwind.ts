@@ -284,7 +284,7 @@ export interface ComponentStyleSheetRecord {
  * The compiler's own `url()` rebasing reaches the referenced FILES (the
  * entry's base), not the emitted asset's URL, so a `url()` target of the
  * compiled text is a project-relative path no browser can resolve from the
- * emitted sheet's own location (the 404 this rebase closes; ADR-0164 recorded
+ * emitted sheet's own location (the 404 this rebase closes; the internal design note recorded
  * it as an outstanding S-lane item). The build therefore rebases every such
  * target onto the asset it emits for the referenced bytes and resolves it to
  * the asset's own URL with the one URL rule the style-edge emitter applies
