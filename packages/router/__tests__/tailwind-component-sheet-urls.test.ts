@@ -43,6 +43,7 @@ import {
   compileComponentStyleSheet,
   type ComponentStyleSheetRecord,
 } from '../src/vite/tailwind.ts';
+import { styleAssetFileName } from '../src/vite/internal/style-assets.ts';
 
 const REPO_ROOT = join(import.meta.dirname!, '..', '..', '..');
 const ROUTER_BUILD_CLI = join(REPO_ROOT, 'packages', 'router', 'src', 'cli', 'build.ts');
@@ -165,6 +166,90 @@ test('the component sheet rebases every file url() onto an emitted asset, indepe
     expect(first.fileName).toMatch(/^assets\/[0-9a-f]{12}\.css$/);
   } finally {
     rmSync(UNIT_FIXTURE, { recursive: true, force: true });
+  }
+});
+
+test('changing the referenced asset bytes changes the sheet identity — never a stale shared sheet or a missing asset', async () => {
+  // The shared-stylesheet contract: a sheet's name is the cache key, so two
+  // different referenced byte sets must never fold into one name, and each
+  // build's final bytes (after URL replacement) must address the asset that
+  // build emitted. Drives the plugin twice over the same authoring bytes with
+  // different font content, then once more with the first content again.
+  const fixture = join(
+    import.meta.dirname!,
+    '../__test_fixtures__/tailwind-component-urls-identity',
+  );
+  const smallFontPath = join(fixture, 'app', 'fonts', 'proof-small.woff2');
+  rmSync(fixture, { recursive: true, force: true });
+  mkdirSync(join(fixture, 'app', 'fonts'), { recursive: true });
+  writeFileSync(join(fixture, 'app', 'theme.css'), THEME_CSS, 'utf8');
+  writeFileSync(join(fixture, 'app', 'fonts', 'proof-large.woff2'), LARGE_FONT);
+  try {
+    const run = async (
+      smallBytes: Buffer,
+      idPrefix: string,
+    ): Promise<{ fileName: string; sheet: string }> => {
+      writeFileSync(smallFontPath, smallBytes);
+      const emitted: EmittedAsset[] = [];
+      const record: ComponentStyleSheetRecord = { fileName: undefined };
+      const plugin = componentStyleSheetPlugin(
+        fixture,
+        { theme: ['app/theme.css'] },
+        ['flex'],
+        record,
+      );
+      const graphId = (plugin.resolveId as (id: string) => string | null)(
+        COMPONENT_SHEET_SPECIFIER,
+      );
+      expect(graphId).toBeTruthy();
+      const emittedNames = new Map([
+        [`${idPrefix}0`, `assets/referenced-${idPrefix}.woff2`],
+        [`${idPrefix}1`, `assets/large-${idPrefix}.woff2`],
+      ]);
+      const context = fakeContext(emitted, idPrefix, emittedNames);
+      const load = plugin.load as (this: unknown, id: string) => Promise<string | null>;
+      await load.call(context, graphId!);
+      const sheet = emitted.find((asset) => asset.fileName !== undefined);
+      expect(sheet, 'the sheet asset is emitted').toBeDefined();
+      // The name is derived from the exact bytes handed to emitFile (the
+      // placeholder-carrying text), so the name's preimage always exists under
+      // its own name in the bundle — no manifest drift in the emission half.
+      expect(record.fileName).toBe(styleAssetFileName(sheet!.source.toString()));
+      // The placeholder digest is the referenced bytes' own digest and the
+      // build emits exactly those bytes: the URL replacement below can never
+      // name an asset this build did not ship.
+      const referenced = emitted.find((asset) => asset.name === 'proof-small.woff2');
+      expect(referenced, 'the referenced bytes are emitted').toBeDefined();
+      expect(Buffer.from(referenced!.source)).toEqual(smallBytes);
+      const bundle: Record<string, { type: string; source: string | Uint8Array }> = {
+        [record.fileName!]: { type: 'asset', source: sheet!.source },
+      };
+      const generateBundle = plugin.generateBundle as (
+        this: unknown,
+        options: unknown,
+        bundle: Record<string, { type: string; source: string | Uint8Array }>,
+      ) => void;
+      generateBundle.call(context, {}, bundle);
+      const resolved = bundle[record.fileName!].source.toString();
+      expect(resolved).not.toContain('__OE_COMPONENT_URL__');
+      expect(resolved).not.toContain('../app/fonts/');
+      // The final bytes address THIS run's emitted font, never a sibling run's.
+      expect(resolved).toContain(`url('/client/assets/referenced-${idPrefix}.woff2')`);
+      return { fileName: record.fileName!, sheet: resolved };
+    };
+
+    const first = await run(SMALL_FONT, 'a');
+    // Same length, different bytes: only the content digest can move the name.
+    const second = await run(Buffer.alloc(SMALL_FONT.length, 9), 'b');
+    expect(second.fileName).not.toEqual(first.fileName);
+    expect(second.sheet).not.toEqual(first.sheet);
+    expect(second.sheet).not.toContain('referenced-a');
+    // Determinism: the identical referenced bytes reproduce the identical
+    // identity, so a cache key never drifts run to run.
+    const again = await run(SMALL_FONT, 'a');
+    expect(again.fileName).toEqual(first.fileName);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
   }
 });
 
