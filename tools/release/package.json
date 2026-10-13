@@ -25,6 +25,9 @@
     "typecheck": "node ../repo/run-in.ts --root ../.. -- tsc --noEmit -p tools/tsconfig.json",
     "test": "node ../repo/run-in.ts --root ../.. -- vitest run --project tools"
   },
+  "dependencies": {
+    "@openelement/protocol": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "26.5.0",
     "typescript": "6.0.3"
