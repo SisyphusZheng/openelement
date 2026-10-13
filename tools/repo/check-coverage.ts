@@ -109,11 +109,15 @@ const COVERAGE_PROJECTS = [
 ] as const;
 
 /** Instrumentation roots: exactly the three threshold scopes. */
-const COVERAGE_INCLUDES = [
-  'packages/element/src/**',
-  'packages/router/src/**',
-  'packages/create/src/**',
-  'packages/ui/src/**',
+export const COVERAGE_INCLUDES = [
+  // Wildcard on purpose: the scope's denominator predicate (isPackageSource)
+  // counts every `packages/<name>/src` source, so a per-package include list
+  // drifts the moment a package is added or split. Protocol and compiler were
+  // counted by the denominator but absent here, so vitest never profiled them
+  // and the gate folded 41 files (3276 estimated lines) in at 0%. The
+  // wildcard makes the include set structurally unable to diverge from the
+  // predicate; check-coverage.test.ts pins that.
+  'packages/*/src/**',
   'tools/lib/**',
   'www/tools/lib/**',
 ] as const;
