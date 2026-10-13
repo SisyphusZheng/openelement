@@ -11,10 +11,12 @@ name: AutoFlow CI
 #              *by design*: that run is Base CI, not full qualification.
 #   Full qualification — a main push still runs all nine (unchanged), and
 #              workflow_dispatch with full_qualification=true runs all nine
-#              on the dispatched ref's SHA, re-runnably. Pass the candidate
-#              SHA in expected_sha to bind the run to it; the sha-guard job
-#              fails closed on a mismatch before any other job starts, so a
-#              dispatch can never qualify a different SHA.
+#              on the dispatched ref's SHA, re-runnably. expected_sha is
+#              REQUIRED for a full dispatch: the sha-guard job refuses an
+#              unbound full qualification before any other job starts, and
+#              refuses a candidate SHA that does not match the SHA the jobs
+#              actually build, so a dispatch can never qualify a different
+#              commit.
 #
 # Qualification contract: the run conclusion is not the evidence. The
 # contract is the nine jobs' individual conclusions — lint, test, e2e, pack,
@@ -35,12 +37,12 @@ on:
   workflow_dispatch:
     inputs:
       full_qualification:
-        description: 'Run all nine jobs (full qualification); false = four base jobs only'
+        description: 'Run all nine jobs (full qualification); requires expected_sha. false = four base jobs only'
         required: false
         type: boolean
         default: false
       expected_sha:
-        description: 'Candidate SHA to bind this dispatch to (empty = accept github.sha)'
+        description: 'Candidate SHA to bind this dispatch to (required when full_qualification=true; must equal the SHA the jobs build)'
         required: false
         type: string
         default: ''
@@ -74,9 +76,20 @@ jobs:
   # never be skipped by a condition. All nine real jobs `needs` it and use a
   # plain `if:` (no always()/status function), so a failed or skipped guard
   # skips them all: no job can report success unless the guard concluded
-  # success. It fails closed only when a dispatch supplies expected_sha that
-  # differs from github.sha; on push/PR `inputs.expected_sha` is empty and it
-  # passes as a no-op (the nine-job conditions are unchanged by that).
+  # success. This job is the single enforcement point for the two fail-closed
+  # SHA rules — the nine jobs carry no copy of them:
+  #   1. full_qualification=true requires expected_sha: an unbound full
+  #      dispatch is refused before any job starts, so "full qualification"
+  #      can never mean "whatever the ref happens to point at".
+  #   2. expected_sha must equal the SHA the jobs will actually build, which
+  #      is `github.event.pull_request.head.sha || github.sha` — exactly the
+  #      base jobs' checkout ref. On a pull_request, github.sha names the
+  #      synthetic merge commit while the jobs build the PR head SHA, so
+  #      comparing against github.sha alone would reject a PR run for the
+  #      wrong reason; on push and workflow_dispatch there is no
+  #      pull_request payload, the expression reduces to github.sha, and the
+  #      guard binds the dispatch to exactly the commit the nine jobs check
+  #      out (a mismatch is refused, never accepted for the wrong commit).
   sha-guard:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -85,18 +98,24 @@ jobs:
     steps:
       - name: Bind the run to the expected candidate SHA (fail closed)
         env:
+          FULL_QUALIFICATION: ${{ inputs.full_qualification }}
           EXPECTED_SHA: ${{ inputs.expected_sha }}
           RUN_SHA: ${{ github.sha }}
+          BUILD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
-          if [ -z "${EXPECTED_SHA}" ]; then
-            echo "No expected_sha supplied (push/PR or unbound dispatch); run SHA is ${RUN_SHA}."
-            exit 0
-          fi
-          if [ "${EXPECTED_SHA}" != "${RUN_SHA}" ]; then
-            echo "::error::Refusing to run: expected_sha=${EXPECTED_SHA} != github.sha=${RUN_SHA}"
+          if [ "${FULL_QUALIFICATION}" = "true" ] && [ -z "${EXPECTED_SHA}" ]; then
+            echo "::error::full_qualification=true requires expected_sha; refusing an unbound full qualification (fail closed)."
             exit 1
           fi
-          echo "Bound to candidate SHA ${RUN_SHA}."
+          if [ -z "${EXPECTED_SHA}" ]; then
+            echo "No expected_sha supplied (push/PR or unbound base dispatch); build SHA is ${BUILD_SHA} (github.sha ${RUN_SHA})."
+            exit 0
+          fi
+          if [ "${EXPECTED_SHA}" != "${BUILD_SHA}" ]; then
+            echo "::error::Refusing to run: expected_sha=${EXPECTED_SHA} != build SHA ${BUILD_SHA} (the SHA the jobs check out)"
+            exit 1
+          fi
+          echo "Bound to candidate SHA ${BUILD_SHA}."
 
   # ── Job 1: Lint, Security & Governance ────────────────────────────────
   lint:
