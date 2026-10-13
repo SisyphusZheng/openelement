@@ -14,7 +14,7 @@
  */
 
 import { localeFromPath } from './page-render.ts';
-import type { PageSsrRenderer, TrustedHtmlValue } from './renderer-runtime.ts';
+import type { DocumentStyleSink, PageSsrRenderer, TrustedHtmlValue } from './renderer-runtime.ts';
 import type { LayoutPlan, ResolvedLayout } from '@openelement/protocol/ssg';
 
 /**
@@ -72,7 +72,18 @@ export interface LayoutRuntime {
   renderLayout(
     pageHtml: unknown,
     routePath: string,
-    options?: { locale?: string; routeMeta?: Record<string, unknown> },
+    options?: {
+      locale?: string;
+      routeMeta?: Record<string, unknown>;
+      /**
+       * The render's document stylesheet collection, forwarded to the layout's
+       * own render. The layout is a light-root component like any other page
+       * component (alpha15 S lane, S-C1.2): its external sheets belong to the
+       * DOCUMENT, so a render that drops the sink never declares them and the
+       * layout ships unstyled.
+       */
+      documentStyles?: DocumentStyleSink;
+    },
   ): string;
 }
 
@@ -122,7 +133,11 @@ export function createLayoutRuntime(deps: LayoutRuntimeDeps): LayoutRuntime {
   function renderLayout(
     pageHtml: unknown,
     routePath: string,
-    options: { locale?: string; routeMeta?: Record<string, unknown> } = {},
+    options: {
+      locale?: string;
+      routeMeta?: Record<string, unknown>;
+      documentStyles?: DocumentStyleSink;
+    } = {},
   ): string {
     const locale = options.locale || localeFromPath(locales, routePath, defaultLocale);
     const routeMeta = options.routeMeta || {};
@@ -147,7 +162,9 @@ export function createLayoutRuntime(deps: LayoutRuntimeDeps): LayoutRuntime {
     return ssr(
       layout.tagName,
       layoutProps,
-      { route: routePath },
+      // The layout's own light-root sheets join the SAME render collection the
+      // page render reports into (S-C1.2): one document, one declaration owner.
+      { route: routePath, documentStyles: options.documentStyles },
       0,
       new Map([['', trustedHtml(content)]]),
     );

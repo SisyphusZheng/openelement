@@ -85,13 +85,24 @@ const routes: RouteEntry[] = [
 // cross-mode invariant holds. Client bytes are untouched: the collection is a
 // server-render channel and no client emission changed. Native server:
 // 16043→16637, lit server: 16146→16740.
+// Server pins moved once more for the alpha15 Q-CI layout style-sink fix:
+// every emitted __renderLayout call site forwards the per-render stylesheet
+// collection (`documentStyles: __documentStyles`, +34 bytes on each of the
+// four layout call sites this probe emits — route success and error boundary,
+// styled-404 success and error boundary), so the layout's light-root sheets
+// (open-layout.css and the sheets of light roots nested inside it) reach the
+// document head and the responsive rules ship with the page. Diffing the
+// dumped entries across the fix shows exactly those four additions per mode
+// and nothing else; the native/lit delta stays 103 — the cross-mode invariant
+// holds. Client bytes are untouched. Native server: 16637→16773, lit server:
+// 16740→16876.
 const expected = {
   native: {
-    server: [16637, 'd6c0b1799d28cf075f590c2cc81b0b1764203525c8f054f896d2325d44d827a3'],
+    server: [16773, '04e5526b2999d71d4a70251bf63283d4c2191fe91850257fbd99adb628df702c'],
     client: [2004, 'dbd5414e1f2a392a26e98cdce1a2b7c2dc69d4305228c6b7d199b4af6ce00d6f'],
   },
   lit: {
-    server: [16740, 'e2a2b45c3a64b4bfb55db5312cbea9dd00f6f98b49f17a44f8207b6c7475e289'],
+    server: [16876, '320a139438dc9b1d6d421c329631899eb5cff657769672ea8e45e0f30a67c724'],
     client: [3167, '7dcb18fd659ffe53b039adfc5139a2496e1b4c02b5d4322ed6c216606511f418'],
   },
 } as const;

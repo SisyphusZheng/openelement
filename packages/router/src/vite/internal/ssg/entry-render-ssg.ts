@@ -126,7 +126,9 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   lines.push('    for (const renderer of __matchingRenderers(routePath)) {');
   lines.push('      content = await renderer.wrap(content, __rendererContext(routePath, params));');
   lines.push('    }');
-  lines.push('    content = __renderLayout(content, routePath, { locale, routeMeta });');
+  lines.push(
+    '    content = __renderLayout(content, routePath, { locale, routeMeta, documentStyles: __documentStyles });',
+  );
   lines.push(
     '    const renderTimeMs = typeof performance !== "undefined" ? performance.now() - startTime : 0;',
   );
@@ -210,7 +212,7 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   // object, same order as the success path.
   lines.push(...documentResolutionSetupLines('page', '__errorPageContext', '        '));
   lines.push(
-    '        const errorContent = __renderLayout(__ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles }), routePath, { locale, routeMeta });',
+    '        const errorContent = __renderLayout(__ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles }), routePath, { locale, routeMeta, documentStyles: __documentStyles });',
   );
   // Per-property og dedup on the boundary re-render: the fresh __doc above
   // re-resolves the route's meta, and the wrap below serializes it.

@@ -401,9 +401,29 @@ test('renderEntry: layout composes the page host through the compiled serializer
         brand: 'acme',
       },
       route: '/guide',
+      // No collection passed: the layout render still runs (an unresolved sink
+      // is the caller's choice), it simply declares nothing.
+      documentStyles: undefined,
     },
   ]);
   expect(code.includes('layoutHtml.slice')).toBeFalsy();
+});
+
+test('renderLayout: the layout render reports into the document style collection (alpha15 Q-CI)', () => {
+  // The layout is a light-root component like any page component (S-C1.2):
+  // its external sheets can only reach the browser through the document head,
+  // so the per-render collection must be forwarded into the layout's own
+  // __ssr call. Dropping the sink shipped the layout unstyled — the desktop
+  // docs sidebar stopped collapsing at mobile widths and the hero media sat
+  // below the fold (alpha15 Q-CI Site E2E failures C/D).
+  const { runtime, ssrCalls } = loadLayoutRuntime({
+    default: { tagName: 'open-layout', props: {} },
+    layouts: {},
+  });
+  const sink = { add() {} };
+  runtime.renderLayout('<page></page>', '/guide', { documentStyles: sink });
+  expect(ssrCalls).toHaveLength(1);
+  expect(ssrCalls[0]?.documentStyles).toBe(sink);
 });
 
 test('renderEntry: unconfigured layout defaults to false (no import)', () => {
@@ -427,6 +447,48 @@ test('renderEntry: layout false renders route content without default layout imp
   const { runtime, ssrCalls } = loadLayoutRuntime({ default: false, layouts: {} });
   expect(runtime.renderLayout('<page></page>', '/')).toEqual('<page></page>');
   expect(ssrCalls).toEqual([]);
+});
+
+test('renderEntry: every emitted __renderLayout call forwards the document style collection (alpha15 Q-CI)', () => {
+  // The layout's light-root sheets are declared by the document head, and the
+  // head is serialized from the render's collection (S-C1.2). Every emitted
+  // call site — SSG success/error boundary, request-time success/error, and
+  // the styled-404 fallback — must hand the layout render the same collection
+  // the page render reports into.
+  const routes: RouteEntry[] = [
+    { path: '/', filePath: 'index.ts', type: 'page', varName: 'pageIndex' },
+    { path: '/404', filePath: '404.tsx', type: 'page', varName: 'page404' },
+  ];
+  const requestTime = renderEntry(buildEntryDescriptor(routes));
+  const staticSite = renderEntry(
+    buildEntryDescriptor(routes, {
+      ssg: true,
+      layout: { tagName: 'open-layout', import: '@acme/components/open-layout' },
+    }),
+  );
+
+  for (const code of [requestTime, staticSite]) {
+    const calls = code.split('__renderLayout(').slice(1);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const call of calls) {
+      expect(
+        call.slice(0, 200),
+        '__renderLayout must forward documentStyles: __documentStyles',
+      ).toContain('documentStyles: __documentStyles');
+    }
+  }
+  expect(staticSite).toContain(
+    'content = __renderLayout(content, routePath, { locale, routeMeta, documentStyles: __documentStyles });',
+  );
+  expect(requestTime).toContain(
+    '__renderLayout(__content, c.req.path || "/", { routeMeta: __routeMetaValue, documentStyles: __documentStyles })',
+  );
+  expect(requestTime).toContain(
+    '__renderLayout(__errorHtml, c.req.path || "/", { routeMeta: __routeMetaValue, documentStyles: __documentStyles })',
+  );
+  expect(requestTime).toContain(
+    '__renderLayout(__content, c.req.path || "/404", { routeMeta: __routeMetaValue, documentStyles: __documentStyles })',
+  );
 });
 
 test('renderEntry: custom layout import and props are generated from config', () => {
@@ -470,13 +532,19 @@ test('renderEntry: route meta layout can select named layouts', () => {
 // runtime (routeMeta + the layout runtime) with the same plan shape the
 // entry binds (ADR-0160 rule a).
 function loadLayoutRuntime(layoutPlan: { default: unknown; layouts: Record<string, unknown> }) {
-  const ssrCalls: Array<{ tag: string; props: Record<string, unknown>; route: string }> = [];
+  const ssrCalls: Array<{
+    tag: string;
+    props: Record<string, unknown>;
+    route: string;
+    documentStyles?: unknown;
+  }> = [];
   const runtime = createLayoutRuntime({
     ssr: (tag, props, sourceInfo) => {
       ssrCalls.push({
         tag,
         props: props ?? {},
         route: sourceInfo?.route ?? '',
+        documentStyles: sourceInfo?.documentStyles,
       });
       return '<shell>' + tag + '</shell>';
     },

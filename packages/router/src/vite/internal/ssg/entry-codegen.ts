@@ -188,7 +188,7 @@ function renderRouteContentLines(
     }
   }
   lines.push(
-    `${indent}const content = __renderLayout(__content, c.req.path || ${pathLiteral}, { routeMeta: __routeMetaValue })`,
+    `${indent}const content = __renderLayout(__content, c.req.path || ${pathLiteral}, { routeMeta: __routeMetaValue, documentStyles: __documentStyles })`,
   );
 }
 
@@ -341,7 +341,7 @@ function renderRouteResponseAndCatch(lines: string[], ctx: RouteHandlerEmitConte
       }
     }
     lines.push(
-      `        const errorContent = __renderLayout(__errorHtml, c.req.path || ${pathLiteral}, { routeMeta: __routeMetaValue })`,
+      `        const errorContent = __renderLayout(__errorHtml, c.req.path || ${pathLiteral}, { routeMeta: __routeMetaValue, documentStyles: __documentStyles })`,
     );
     lines.push(`        return c.html(wrapInDocument(errorContent, {`);
     for (const optionLine of documentWrapOptionsLines({
