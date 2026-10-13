@@ -497,6 +497,20 @@ try {
     light.className = 'rotate-45 p-8';
     document.body.appendChild(light);
 
+    // Document-reset probe (ADR-0167 §5). This appliance declares NO application
+    // 'tailwind' key — an admitted package's requirement enabled the compile — so
+    // the reduced entry must be in force and the document reset must be absent.
+    // The elements are created at RUNTIME in the document (outside every shadow
+    // root and every light-root component), so no authored sheet can reach them:
+    // what they report is the UA default plus whatever the framework injected.
+    // Each value below is exactly what preflight rewrites.
+    const resetH1 = document.createElement('h1');
+    resetH1.textContent = 'document reset probe';
+    const resetList = document.createElement('ul');
+    resetList.appendChild(document.createElement('li'));
+    const resetInput = document.createElement('input');
+    document.body.append(resetH1, resetList, resetInput);
+
     // ── WebKit rotate A/B (bounded): three delivery channels, both properties
     // and a GEOMETRIC read (a 100x100 box rotated 45deg has a ~141.4px bounding
     // box), so the verdict is the visual effect, not a support claim.
@@ -642,6 +656,17 @@ try {
       widgetTransform: widgetSpan ? getComputedStyle(widgetSpan).transform : 'missing',
       lightTransform: getComputedStyle(light).transform,
       lightPaddingTop: getComputedStyle(light).paddingTop,
+      // ADR-0167 §5: preflight's four signatures, read from the runtime-created
+      // document nodes above. A reset would inherit the heading's size and
+      // weight, zero its margin, strip the native control's border and remove
+      // the list marker.
+      resetProbe: {
+        h1FontSize: getComputedStyle(resetH1).fontSize,
+        h1FontWeight: getComputedStyle(resetH1).fontWeight,
+        h1MarginTop: getComputedStyle(resetH1).marginTop,
+        inputBorderTopWidth: getComputedStyle(resetInput).borderTopWidth,
+        listStyleType: getComputedStyle(resetList).listStyleType,
+      },
       engineVersion: navigator.userAgent,
       rotateAb,
       rotatePropertySupported: CSS.supports('rotate', '45deg'),
@@ -745,6 +770,16 @@ try {
   if (home.counterPaddingTop !== '8px') failures.push('starter island p-2 padding-top=' + home.counterPaddingTop);
   if (lab.lightTransform !== 'none') failures.push('component sheet leaked rotate-45 into the document: ' + lab.lightTransform);
   if (lab.lightPaddingTop !== '0px') failures.push('component sheet leaked p-8 into the document: ' + lab.lightPaddingTop);
+  // ADR-0167 §5: the automatic entry must not reset the host document. This
+  // appliance declares no 'tailwind' key, so every UA default below must be the
+  // one the platform gave the runtime-created probe: preflight would have
+  // replaced each with an inherited or zeroed value.
+  const reset = measured.lab.resetProbe;
+  if (reset.h1FontSize === '16px') failures.push('document reset leaked: h1 font-size was inherited (' + reset.h1FontSize + ')');
+  if (reset.h1FontWeight === '400') failures.push('document reset leaked: h1 font-weight was inherited (' + reset.h1FontWeight + ')');
+  if (reset.h1MarginTop === '0px') failures.push('document reset leaked: the h1 margin was zeroed');
+  if (reset.inputBorderTopWidth === '0px') failures.push('document reset leaked: the native input border was stripped');
+  if (reset.listStyleType === 'none') failures.push('document reset leaked: list markers were removed');
   if (lab.sheetStatus !== 200) failures.push('component sheet href did not load: ' + lab.sheetHref + ' status=' + lab.sheetStatus);
   if (!lab.sheetType.includes('text/css')) failures.push('component sheet content-type=' + lab.sheetType);
   if (failures.length > 0) throw new Error('[' + browserName + '] ' + failures.join(' | ') + ' :: ' + JSON.stringify(measured));

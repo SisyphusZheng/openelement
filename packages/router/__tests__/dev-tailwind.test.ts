@@ -637,7 +637,7 @@ async function buildEntry(root: string): Promise<string> {
       logLevel: 'silent',
       publicDir: false,
       plugins: [
-        tailwindEntryPlugin(root, { theme: ['app/styles/theme.css'] }),
+        tailwindEntryPlugin(root, { theme: ['app/styles/theme.css'], documentReset: true }),
         ...(await tailwindPlugins()),
       ],
       build: {

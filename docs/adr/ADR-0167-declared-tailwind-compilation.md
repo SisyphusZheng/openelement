@@ -86,26 +86,60 @@ Distinctions the contract keeps sharp:
 ### 3. Activation (which components make it active)
 
 A declaration is active when its package is on the admitted scan list
-(`packageIslands`) and the declaration is admitted by the same facts that admit
-its component — the island delivery scan. Static components (`hydrate: 'none'`
-declarations), `ssr: true` components, ordinary package imports and nested
-components all ride the same admission: they are admitted when the scanner
-admits them (or, for a component the application imports directly, when the
-client build's resolver-driven discovery walks it — ADR-0167 rides the S-lane
-discovery, it does not add one).
+(`packageIslands`), the declaration is admitted by the same facts that admit its
+component, and the component is reached by the build. `packageIslands` is the
+ONE admission channel; nothing else admits a package's declarations.
+
+**Correction (alpha15 consolidation follow-up).** An earlier revision of this
+ADR claimed that "ordinary package imports and nested components all ride the
+same admission … for a component the application imports directly, when the
+client build's resolver-driven discovery walks it". That is not what the
+implementation does, and it is not what a real build delivers. The
+resolver-driven discovery is real, but it produces **build facts** (the module's
+authored `.css` edges and its statically admitted class candidates) — not
+**admission**. Measured on a build of an app that imports
+`@openelement/ui/open-button` with no `packageIslands`
+(`packages/router/__tests__/package-import-admission-probe.test.ts`, both legs):
+
+| Reached by | DSD for the component | Stylesheet `<link>` in its DSD | Component (utility) sheet | Authored sheet emitted | Declared Tailwind requirement honoured |
+|---|---|---|---|---|---|
+| `packageIslands` (admitted) | yes | yes | yes | yes | yes |
+| ordinary import only | **no** | **no** | **no** | yes, but unreferenced | **no** |
+
+So the support table is deliberately narrow, and each row is a supported
+combination with the evidence named:
+
+| Admission / delivery path | Supported | Evidence |
+|---|---|---|
+| `packageIslands` entry (package components: SSR, DSD, style link, declared sources, externalization) | yes | `package-import-admission-probe.test.ts` (admitted leg); `island-scanner-packages.test.ts`; `tools/release/consumer-packaged-ui-app.ts` |
+| ordinary package import (module facts only: authored sheets travel the asset protocol, class candidates reach the registry) | yes, as **module facts** — never as component delivery | `package-import-admission-probe.test.ts` (unadmitted leg) |
+| static components and `hydrate: 'none'` declarations inside the app | yes | `static-component-scanner.test.ts`, `tailwind-component-discovery.test.ts` |
+| nested package components (a package component inside another package component) | yes | `tailwind-component-discovery.test.ts`, the packed appliance's six-component matrix |
+| application-local components (document Light DOM / DSD shadow) | yes for the module facts and the document entry's own scan; utilities they author in a LIGHT root are compiled into the document sheet | `tools/release/consumer-packaged-ui-app.ts` (light-root `.p-4` in the document sheet) |
+| Light DOM inside Shadow, nested shadow roots, CSR-created roots | yes — the one shared component sheet is adopted/declared per root | `shadow-tailwind.spec.ts`, `site-light-probe` |
+| dev server | yes, same plan, same URL identity | `dev-tailwind.test.ts`, `dev-tailwind-components.ts` |
+| SSG and request-time | yes — one `<link>` per root, from one emitted asset | `tailwind-css-only-build.test.ts`, `wiring` in `build-ssg.ts` |
+
+When the discovery pass reaches a component package that is not admitted, the
+build **warns** and names the package and the fix
+(`style-assets.ts`, `reportUnadmittedComponentPackages`). It is a warning, not a
+failure: importing a package module is legal in its own right, and only the
+application knows whether it meant a component. What the framework will not do
+is degrade in silence — the alternative was an unknown element, no DSD, no
+style link, and an emitted-but-unreferenced CSS asset with no explanation.
 
 ### 4. Configuration semantics
 
 `tailwind` stays `boolean | { theme: string[] }`, with one new meaning for
 `undefined`:
 
-| `tailwind` | Peer loaded | Compile invoked | Sources compiled |
-|---|---|---|---|
-| `undefined` + an active declared requirement | yes | yes | declared sources, deterministic order |
-| `undefined` + no declaration | **no** | **no** | none — no entry, no resource, no payload |
-| `true` | yes | yes | declared sources |
-| `{ theme: [...] }` | yes | yes | declared sources first, then the application's, order preserved |
-| `false` | no | no | none; an active `required: true` fails closed |
+| `tailwind` | Peer loaded | Compile invoked | Sources compiled | Document reset (preflight) |
+|---|---|---|---|---|
+| `undefined` + an active declared requirement | yes | yes | declared sources, deterministic order | **no** |
+| `undefined` + no declaration | **no** | **no** | none — no entry, no resource, no payload | no |
+| `true` | yes | yes | declared sources | yes |
+| `{ theme: [...] }` | yes | yes | declared sources first, then the application's, order preserved | yes |
+| `false` | no | no | none; an active `required: true` fails closed | no |
 
 - **Deterministic order**: declared sources are ordered by package name, then
   declaration tag name, then declared array order — never by scan timing.
@@ -129,28 +163,55 @@ discovery, it does not add one).
 ### 5. What the entry is
 
 Unchanged from the S lane — this ADR only decides *when* and *with which
-sources* it exists:
+sources* it exists. Both entry shapes are the official `@tailwindcss/vite`
+pipeline over ordinary `@import` text:
 
-- The **document** entry is the official `@tailwindcss/vite` pipeline over
-  `@import 'tailwindcss'` plus the resolved sources (`preflight` included: the
-  document is the application's own surface).
-- The **component** (shadow) entry is the reduced entry — `tailwindcss/theme.css`
-  + resolved sources + `tailwindcss/utilities.css` + one `@source inline(…)` per
-  compiler-admitted static candidate. **Document preflight is deliberately
-  absent there**: a reset inside a component's shadow tree would change every
-  existing component's rendering, and preflight's document-wide selectors have
-  no business inside a shadow root.
-- **No unwanted document-wide styling** in automatic mode: enabling the pipeline
-  compiles exactly the sources the packages declared (their `@theme` layer) plus
-  the candidates the compiler admitted; no package can inject document rules
-  through this channel because a declaration names style SOURCES, never a
-  stylesheet that would be applied wholesale.
+| | Application-declared (`true` / `{ theme }`) | Automatic (`undefined` + an admitted declaration) |
+|---|---|---|
+| Document entry | `@import 'tailwindcss'` + resolved sources | **reduced**: `tailwindcss/theme.css` + resolved sources + `tailwindcss/utilities.css` |
+| Component (shadow) entry | `tailwindcss/theme.css` + sources + `tailwindcss/utilities.css` + one `@source inline(…)` per compiler-admitted static candidate | same |
+| Document reset / preflight | **included** — the application is styling its own document | **absent** |
+
+- **The document reset belongs to the application.** An earlier revision of this
+  ADR asserted both that the document entry carried "preflight included" and
+  that automatic mode produced "no unwanted document-wide styling". Those cannot
+  both hold: `@import 'tailwindcss'` carries preflight, so a package's
+  compilation requirement silently restyled every consumer's `h1` margins, list
+  markers and native form controls. The implementation now separates the fact:
+  `ResolvedTailwindOptions.documentReset` is `true` only when the application
+  declared the entry, and automatic mode renders the reduced entry above.
+  Measured in all three engines by the packed appliance
+  (`tools/release/consumer-packaged-ui-app.ts`, runtime-created document probes:
+  heading size/weight/margin, native input border, list marker) and compiled at
+  unit level in `packages/router/__tests__/tailwind-document-reset.test.ts`.
+- **Utilities are not a second switch.** A light-root component's classes have
+  no delivery channel other than the document sheet, so the utilities layer is
+  present whenever the pipeline is on; the reset is the one fact the application
+  owns. There is no new config key.
+- **A declared source is compiled as written — the framework does not filter
+  it.** The earlier justification ("no package can inject document rules,
+  because a declaration names style SOURCES, never a stylesheet applied
+  wholesale") was not sound: a source that authors a plain `body { … }` rule
+  emits it, in both entry shapes. What the framework guarantees is narrower and
+  true: automatic mode adds **no reset of its own**, and a source reaches the
+  document only because the application admitted its package (or named it
+  itself). A package that ships document-level presentation in a declared
+  source is making a deliberate, reviewable choice, not slipping past a filter —
+  and the seam is registered in `docs/architecture/seams.md`.
+- **The component (shadow) entry is unreduced in one respect**: document
+  preflight is deliberately absent there too — a reset inside a component's own
+  shadow tree would change every existing component's rendering, and preflight's
+  document-wide selectors have no business inside a shadow root.
 - **Dark mode / forced-colors / required variables**: role seats are authored
   in the owning package's source (`:root[data-theme='dark'], :host([data-theme='dark'])`
   and the forced-colors tier). Custom properties inherit across shadow
   boundaries, so one compile feeds both the document and every shadow root; the
   component entry re-declares them inside the sheet that shadow roots adopt, so
   a shadow root is styled even when the document sheet is a separate resource.
+  A role table whose consumers are **authored shadow sheets outside the compile**
+  must declare `@theme static` — the engine otherwise emits only the roles some
+  generated utility reads, and the rest compute to nothing
+  (`packages/ui/src/theme.css`, guarded by `theme-delivery.test.ts`).
 - **Dynamic class values** are never guessed: a `class={this.field}` binding
   contributes nothing. Completeness rides the author's explicit Tailwind
   mechanisms in the declared source (`@source inline(…)`, `@source` over files),

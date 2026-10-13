@@ -155,7 +155,14 @@ export function resolveTailwindPlan(input: {
     }
   }
 
-  return { theme };
+  return {
+    theme,
+    // Whose document this is: the application declared the entry itself, or an
+    // admitted package requirement turned it on. It decides the document reset
+    // (preflight), never the theme or the utilities — see
+    // `ResolvedTailwindOptions.documentReset`.
+    documentReset: input.tailwind !== undefined,
+  };
 }
 
 /**

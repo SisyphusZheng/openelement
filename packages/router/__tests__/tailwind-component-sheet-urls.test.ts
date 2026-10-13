@@ -105,7 +105,7 @@ function fakeContext(
 test('the component sheet rebases every file url() onto an emitted asset, independent of emission order', async () => {
   writeUnitFixture();
   try {
-    const options = { theme: ['app/theme.css'] } as const;
+    const options = { theme: ['app/theme.css'], documentReset: true } as const;
     const compiled = await compileComponentStyleSheet(UNIT_FIXTURE, options, ['flex']);
     // Precondition (the failure this test pins): the official compiler writes
     // project-relative FILE targets, unaddressable from the emitted sheet.
@@ -194,7 +194,7 @@ test('changing the referenced asset bytes changes the sheet identity — never a
       const record: ComponentStyleSheetRecord = { fileName: undefined };
       const plugin = componentStyleSheetPlugin(
         fixture,
-        { theme: ['app/theme.css'] },
+        { theme: ['app/theme.css'], documentReset: true },
         () => ['flex'],
         record,
       );

@@ -60,6 +60,7 @@
  */
 
 import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import type { Plugin, ViteDevServer } from 'vite';
 import {
@@ -89,7 +90,7 @@ import {
 } from '@openelement/protocol/style-sheet';
 import { buildError, ClientBuildErrorCode } from '../../internal/error-codes.ts';
 import { scopeLightRootCss } from './light-css-scope.ts';
-import { dirname as posixDirname, relative as posixRelative } from 'pathe';
+import { dirname as posixDirname, join, relative as posixRelative } from 'pathe';
 
 /**
  * The `\0`-virtual graph id prefix. The registry key rides base64url-encoded
@@ -603,6 +604,16 @@ export function serverRenderedStyleEdgesPlugin(
   seeds: ServerRenderedSeeds,
   emission: Pick<StyleAssetEmission, 'emit'>,
   candidates: ClassCandidateRegistry,
+  /**
+   * The packages this app ADMITTED (`packageIslands`, read from the scanned
+   * manifests). The discovery pass uses them for one thing: telling an app that
+   * a component package it merely IMPORTS is not delivered. `packageIslands` is
+   * the admission channel — an ordinary import reaches the package's modules,
+   * but nothing renders them as components (no DSD, no stylesheet link) — and
+   * before this the app saw only an unknown element and, at best, an orphan CSS
+   * asset. Never fatal: the import is legal, it just does not deliver.
+   */
+  admittedPackages: readonly string[] = [],
 ): Plugin {
   let admitted = false;
   let edges: Map<string, RegisteredStyleRequest> | undefined;
@@ -618,7 +629,12 @@ export function serverRenderedStyleEdgesPlugin(
     async buildStart() {
       if (admitted) return;
       admitted = true;
-      edges = await discoverServerRenderedModules.call(this, seeds, candidates);
+      edges = await discoverServerRenderedModules.call(
+        this,
+        seeds,
+        candidates,
+        new Set(admittedPackages),
+      );
     },
     // The module-LOADING phase: reaching a sheet's text through Vite's `?inline`
     // CSS module is only possible while the toolchain is loading modules (a
@@ -655,6 +671,7 @@ async function discoverServerRenderedModules(
   },
   seeds: ServerRenderedSeeds,
   candidates: ClassCandidateRegistry,
+  admittedPackages: ReadonlySet<string>,
 ): Promise<Map<string, RegisteredStyleRequest>> {
   const roots = [...seeds.files];
   for (const specifier of seeds.specifiers) {
@@ -690,6 +707,8 @@ async function discoverServerRenderedModules(
         'sheets may not be emitted (reported, never silent).',
     );
   }
+  /** The compiled ELEMENT modules the walk reached, package ones included. */
+  const elementFiles: string[] = [];
   for (const file of walk.files) {
     let source: string;
     try {
@@ -712,6 +731,7 @@ async function discoverServerRenderedModules(
       // walk is the discovery that covers every specifier form the bundler
       // understands — relative, `#imports`, alias, package exports.
       registerCandidatesFromCompiled(file, compiled, candidates);
+      elementFiles.push(file);
       continue;
     }
     // A SHIPPED (already compiled) module — a package consumed from node_modules
@@ -728,7 +748,9 @@ async function discoverServerRenderedModules(
     }
     registerStyleEdges(file, artifact.requests, artifact.scopeTag);
     registerArtifactCandidates(source, file, candidates);
+    elementFiles.push(file);
   }
+  reportUnadmittedComponentPackages.call(this, elementFiles, admittedPackages, root);
   // The registered request objects themselves — never a re-derived key. The
   // previous form rebuilt each edge's graph id and decoded it back through
   // `getStyleRequest`, a round-trip that does not hold for every registry key
@@ -746,6 +768,67 @@ async function discoverServerRenderedModules(
       'stylesheet edge(s) for emission',
   );
   return edges;
+}
+
+/**
+ * Tell the app that a component package it merely IMPORTS is not admitted.
+ *
+ * `packageIslands` is the admission channel: it is what makes a package's
+ * declarations (SSR/DSD delivery, the style link, the declared Tailwind
+ * requirement) part of the build. An ordinary import still reaches the
+ * package's modules — the resolver walk finds them and emits their authored
+ * sheets — but nothing renders them as components, so the app gets an unknown
+ * element, no DSD, no stylesheet link, and (at best) an orphan CSS asset. The two
+ * deliveries are not the same, and this is the boundary that says so out loud.
+ *
+ * A warning, never a failure: importing a package module is legal in its own
+ * right (a shared helper, a type, an application that styles the raw tag), and
+ * only the app can know which it meant.
+ */
+function reportUnadmittedComponentPackages(
+  this: { warn(message: string): void; info(message: string): void },
+  elementFiles: readonly string[],
+  admittedPackages: ReadonlySet<string>,
+  root: string,
+): void {
+  const rootPrefix = root.endsWith('/') ? root : `${root}/`;
+  const offenders = new Set<string>();
+  for (const file of elementFiles) {
+    // Only packages: a module inside the app root is the application's own
+    // component, which needs no admission.
+    if (file.startsWith(rootPrefix)) continue;
+    const packageName = owningPackageName(file);
+    if (packageName === undefined || admittedPackages.has(packageName)) continue;
+    offenders.add(packageName);
+  }
+  for (const packageName of [...offenders].sort()) {
+    this.warn(
+      `The component package "${packageName}" is imported by this app but not admitted: its ` +
+        'components render as unknown elements (no declarative shadow root, no stylesheet link), ' +
+        `and any Tailwind requirement it declares is not compiled. Add "${packageName}" to ` +
+        '`packageIslands` in openelement.config.ts to admit its declarations.',
+    );
+  }
+}
+
+/** The name of the nearest enclosing package.json, walking up from `file`. */
+function owningPackageName(file: string): string | undefined {
+  let dir = posixDirname(file);
+  for (let depth = 0; depth < 12; depth++) {
+    const manifest = join(dir, 'package.json');
+    if (existsSync(manifest)) {
+      try {
+        const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: unknown };
+        if (typeof parsed.name === 'string' && parsed.name !== '') return parsed.name;
+      } catch {
+        // An unreadable package.json is not a package root; keep walking.
+      }
+    }
+    const parent = posixDirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return undefined;
 }
 
 /**

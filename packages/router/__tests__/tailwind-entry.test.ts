@@ -33,10 +33,13 @@ test('the entry is OFF by default and for every falsy spelling', () => {
 });
 
 test('tailwind: true resolves to an empty source list; an object declares sources', () => {
-  expect(resolveTailwindOptions(true)).toEqual({ theme: [] });
+  // `resolveTailwindOptions` normalizes the APPLICATION's own declaration, so
+  // both spellings report the document reset as on — this helper never sees
+  // package declarations (the plan resolver owns that fact).
+  expect(resolveTailwindOptions(true)).toEqual({ theme: [], documentReset: true });
   const options = { theme: ['@openelement/ui/theme.css'] } as const;
-  expect(resolveTailwindOptions(options)).toEqual(options);
-  expect(resolveTailwindOptions({})).toEqual({ theme: [] });
+  expect(resolveTailwindOptions(options)).toEqual({ ...options, documentReset: true });
+  expect(resolveTailwindOptions({})).toEqual({ theme: [], documentReset: true });
 });
 
 // ─── Source resolution (app-relative paths vs package specifiers) ───
@@ -92,6 +95,7 @@ test('the entry is a plain @import list: Tailwind first, the sources in order', 
   try {
     const entry = renderTailwindEntry(root, {
       theme: ['app/styles/theme.css', '@openelement/ui/theme.css'],
+      documentReset: true,
     });
     // No layer statement, no `layer(components)` wrapping and no scope face:
     // the entry is ordinary CSS the official pipeline compiles.
@@ -111,9 +115,33 @@ test('the entry is a plain @import list: Tailwind first, the sources in order', 
 });
 
 test('an empty source list still compiles the Tailwind default entry', () => {
-  const entry = renderTailwindEntry('/app', { theme: [] });
+  const entry = renderTailwindEntry('/app', { theme: [], documentReset: true });
   expect(entry).toEqual(expect.stringContaining("@import 'tailwindcss';"));
   expect(entry.trimEnd().split('\n')).toHaveLength(2);
+});
+
+test('automatic mode renders the REDUCED entry: no preflight, same theme and utilities', () => {
+  // An admitted package declaration enabled the compile. The application never
+  // asked for a reset, so the entry must not carry one — while still carrying
+  // the theme layer the declared roles come from and the utilities layer a
+  // light-root component's classes are delivered through.
+  const entry = renderTailwindEntry('/app', {
+    theme: ['@openelement/ui/theme.css'],
+    documentReset: false,
+  });
+  expect(entry).not.toContain("@import 'tailwindcss';");
+  expect(entry).toEqual(expect.stringContaining("@import 'tailwindcss/theme.css';"));
+  expect(entry).toEqual(expect.stringContaining("@import '@openelement/ui/theme.css';"));
+  expect(entry).toEqual(expect.stringContaining("@import 'tailwindcss/utilities.css';"));
+  // Order is load-bearing: the theme layer (and the declared `@theme` seats)
+  // must come before the utilities layer, exactly as in the shadow entry.
+  const order = [
+    entry.indexOf("@import 'tailwindcss/theme.css';"),
+    entry.indexOf('@openelement/ui/theme.css'),
+    entry.indexOf("@import 'tailwindcss/utilities.css';"),
+  ];
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  expect(order.every((at) => at > -1)).toEqual(true);
 });
 
 // ─── The entry's module identity and dev URL ───────────────────
@@ -146,7 +174,10 @@ test('the entry plugin resolves and loads exactly its own module', () => {
   mkdirSync(join(root, 'app', 'styles'), { recursive: true });
   writeFileSync(join(root, 'app/styles/theme.css'), '@theme { --color-x: red; }\n', 'utf8');
   try {
-    const plugin = tailwindEntryPlugin(root, { theme: ['app/styles/theme.css'] }) as Plugin;
+    const plugin = tailwindEntryPlugin(root, {
+      theme: ['app/styles/theme.css'],
+      documentReset: true,
+    }) as Plugin;
     const resolveId = plugin.resolveId as (id: string) => string | null | undefined;
     const load = plugin.load as (id: string) => string | null | undefined;
     const file = tailwindEntryPath(root);

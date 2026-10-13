@@ -911,7 +911,15 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       // SAME emission plugin further down — so a server-only sheet is emitted,
       // hashed and named exactly like an island's, and no server-only
       // JavaScript enters any client bundle.
-      serverRenderedStyleEdgesPlugin(seeds, styleAssetEmission, shadowCandidateRegistry),
+      serverRenderedStyleEdgesPlugin(
+        seeds,
+        styleAssetEmission,
+        shadowCandidateRegistry,
+        // Admission is `packageIslands` (read into the scanned manifests): the
+        // discovery pass uses the list to tell the app when a component package
+        // it merely IMPORTS is not delivered. See the plugin's parameter note.
+        (ctx.phase1.packageManifests ?? []).map((manifest) => manifest.packageName),
+      ),
       // The component stylesheet's half of the same seam: it sits AFTER the
       // peer (same `enforce: 'pre'` seat), so its transform receives the
       // compiled CSS, emits the content-addressed asset and hands the graph

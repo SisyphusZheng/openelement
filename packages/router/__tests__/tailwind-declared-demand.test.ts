@@ -10,10 +10,10 @@
  * The matrix this suite pins, on a REAL installed-package layout (temp package
  * dirs + a package.json `files`-style on-disk source):
  *
- *   undefined + declaration      → enabled, declared sources only
+ *   undefined + declaration      → enabled, declared sources only, NO document reset
  *   undefined + no declaration   → undefined: no peer load, no compile, no resource
- *   true                         → enabled, declared sources only
- *   { theme }                    → declared sources first, then the application's
+ *   true                         → enabled, declared sources only, document reset ON
+ *   { theme }                    → declared sources first, then the application's, reset ON
  *   false + no requirement       → undefined
  *   false + required             → fails closed, naming the package and tag
  *   duplicate sources            → one entry (resolved-identity dedup)
@@ -135,6 +135,30 @@ test('undefined + a declared requirement enables the pipeline with the declared 
   expect(plan?.theme, 'the owner’s source compiles, resolved to the installed file').toEqual([
     join(packageRoot, 'src', 'theme.css'),
   ]);
+  expect(
+    plan?.documentReset,
+    'automatic mode is NOT the application’s document: no preflight for a package’s requirement',
+  ).toEqual(false);
+});
+
+test('the application owns the document reset, and only the application', async () => {
+  // The one fact `tailwind` decides beyond enablement: the row where the
+  // application turned the entry on itself gets Tailwind's preflight, and the
+  // row where an admitted package requirement did it does not. The reduced
+  // entry text that follows from it is pinned in tailwind-entry.test.ts.
+  const { root } = await appWithPackage({
+    manifestTailwind: { required: true, sources: ['./src/theme.css'] },
+  });
+  const declarations = await admittedFacts(root);
+  const rows: Array<[boolean | { theme: string[] } | undefined, boolean]> = [
+    [undefined, false],
+    [true, true],
+    [{ theme: [] }, true],
+  ];
+  for (const [tailwind, documentReset] of rows) {
+    const plan = resolveTailwindPlan({ root, tailwind, declarations });
+    expect(plan?.documentReset, `tailwind: ${JSON.stringify(tailwind)}`).toEqual(documentReset);
+  }
 });
 
 test('undefined + no declaration leaves the pipeline off (no peer, no compile, no resource)', async () => {
