@@ -118,7 +118,7 @@ export class OpenInput extends OpenElement {
 
   render(): unknown {
     return (
-      <div class='input-wrapper flex flex-col gap-2' part='wrapper'>
+      <div class='flex flex-col gap-2' part='wrapper'>
         <label
           class='text-sm font-medium text-muted-foreground tracking-normal'
           part='label'
@@ -126,7 +126,7 @@ export class OpenInput extends OpenElement {
           hidden={this.noLabel}
         >
           {this.label}
-          <span class='req'>{this.requiredMark}</span>
+          <span>{this.requiredMark}</span>
         </label>
         <input
           id={this.idAttr}
@@ -134,8 +134,10 @@ export class OpenInput extends OpenElement {
           // compiler admits these STATIC tokens and the build's component
           // stylesheet carries the generated rules into this shadow root. The
           // error state is a `:host(:state(invalid))` rule the sheet owns — one
-          // owner per property, so no dynamic class carries utilities.
-          class='input w-full px-3 py-2 font-sans text-base text-foreground rounded-md outline-none transition-[border-color,box-shadow] duration-200 ease-out placeholder:text-muted-foreground'
+          // owner per property, so no dynamic class carries utilities. The
+          // `control` token is the hook open-input.css selects (it is not a
+          // utility); it must stay spelled as the class the sheet owns.
+          class='control w-full px-3 py-2 font-sans text-base text-foreground rounded-md outline-none transition-[border-color,box-shadow] duration-200 ease-out placeholder:text-muted-foreground'
           part='control'
           type={this.type}
           placeholder={this.placeholder}
@@ -154,7 +156,7 @@ export class OpenInput extends OpenElement {
         <small
           id={this.errorIdAttr}
           role='alert'
-          class='error-message text-xs text-destructive'
+          class='text-xs text-destructive'
           part='error'
           hidden={this.noError}
         >

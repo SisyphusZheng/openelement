@@ -32,6 +32,32 @@ to the 1.0.0-alpha.8 baseline.
   colour literal in a declaration, because a literal escapes the light, dark
   and forced-colors seats the roles guarantee.
 
+### What is NOT part of this contract
+
+The declared surface is the two lists above: **`::part` names and the consumed
+role variables.** Everything else a component class exposes on its type — its
+internal class hooks, its computed signals, its methods — is implementation,
+and the experimental disclaimer on each component (owner ruling C1, #1468)
+covers changes to it before 1.0. Two consequences worth spelling out, because
+they have both already happened once:
+
+- **Internal class hooks are not a contract.** A class a sheet selects
+  (`open-button`'s `btn`, `open-input`'s `control`) is internal: an element in a
+  shadow root can only be reached through its `::part`, so no consumer can
+  address a hook directly. The hook-name guard
+  (`__tests__/customization-surface.test.ts`) keeps the sheet and the markup
+  spelling the same hook, which is what stops a rename from silently killing
+  rules; it does not make the name public.
+- **A retired class-carrying signal is not a compatibility break.** The alpha15
+  S lane deleted `OpenInput.inputClass`, a computed whose only value was the
+  internal class string (`'control input input--error'`) and whose only
+  consumer was the `class=` binding that is now a static literal. It was never
+  an attribute (it could not be set from markup) and never part of the lists
+  above. It is retired rather than restored: re-adding a signal with no
+  behavior would keep a type shape green while telling a consumer nothing true.
+  The same change retired the `input--error` class: `:host(:state(invalid))`
+  owns that border.
+
 ## Theming model
 
 Components read the shadcn-convention role table in

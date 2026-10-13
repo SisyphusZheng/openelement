@@ -51,9 +51,25 @@
    theme-tokens twin is deleted): a consumer without the entry writes its own
    table using these role names — the OFF contract in CUSTOMIZATION.md
    ("Value delivery").
+
+   `@theme static` — load-bearing, not a preference. A plain `@theme` block is
+   emitted only for the variables some generated UTILITY RULE references, and
+   the rules that consume these roles are the components' own authored sheets
+   (`.control`'s `color-mix(in srgb, var(--color-popover) …)`,
+   `:host(:state(disabled)) .control`'s `var(--color-muted)`), which the engine
+   never sees: they are adopted into the shadow root through the style-asset
+   channel, not compiled into the Tailwind entry. Under a plain `@theme` the
+   roles those rules name (popover, border, muted, background, …) were pruned
+   from BOTH entries, so the declarations computed to nothing and the control
+   fell back to the UA surface — the tree-shaking defect the alpha15 S-lane
+   acceptance missed by measuring padding and width only. `static` is the
+   engine's own documented escape hatch for exactly this case ("always include
+   these theme variables in the output"), so the emitted table matches the
+   inventory this document promises, whatever a given build happens to use.
+   Guarded by `__tests__/theme-delivery.test.ts`.
    ═══════════════════════════════════════════════════════════════════════ */
 
-@theme {
+@theme static {
   /* ── shadcn semantic roles (light), over the TW4 default scale.
      Violet-anchored roles (the brand reads violet); neutral surfaces stay
      zinc so the page base keeps its near-neutral paper feel. ── */

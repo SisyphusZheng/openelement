@@ -240,3 +240,70 @@ test('CUSTOMIZATION.md documents exactly the pinned surface', async () => {
     }
   }
 });
+
+/* ─── the internal hook contract: the sheet and the markup spell alike ───────
+   A component's sheet is adopted INSIDE its own shadow root, so a class
+   selector it carries is only live if the component's own markup puts that
+   class on an element. When only one side of the pair is renamed the rule dies
+   silently — the build succeeds, the sheet still ships, and the element just
+   loses its rule. That is the alpha15 S-lane defect this guard exists for:
+   open-input.css selected `.control` while the markup said `input`, so the
+   control's resting surface, hover border, focus ring and disabled treatment
+   all became dead CSS (and with `outline-none` in the class list, the focus
+   ring was the ONLY focus affordance left). */
+
+/**
+ * The class selectors a sheet selects: comments stripped, and only the text
+ * before each `{` is read, so declaration values (`0.25rem`, `url(a.png)`)
+ * can never be mistaken for selectors.
+ */
+const classSelectorsOf = (css: string): Set<string> => {
+  const names = new Set<string>();
+  const chunks = css.replace(/\/\*[\s\S]*?\*\//g, '').split('{');
+  for (const chunk of chunks.slice(0, -1)) {
+    const selector = chunk.slice(chunk.lastIndexOf('}') + 1);
+    for (const match of selector.matchAll(/\.(-?[A-Za-z_][A-Za-z0-9_-]*)/g)) {
+      names.add(match[1]!);
+    }
+  }
+  return names;
+};
+
+/**
+ * The static class tokens a component's markup carries. Fail closed on a
+ * dynamic binding: `class={…}` puts tokens beyond static analysis, so this
+ * guard would silently lose its meaning rather than report a defect.
+ */
+const classTokensOf = (tsx: string, tag: string): Set<string> => {
+  const tokens = new Set<string>();
+  let staticBindings = 0;
+  for (const match of tsx.matchAll(/\bclass=(?:'([^']*)'|"([^"]*)")/g)) {
+    staticBindings++;
+    for (const token of (match[1] ?? match[2] ?? '').split(/\s+/)) {
+      if (token !== '') tokens.add(token);
+    }
+  }
+  const anyBinding = (tsx.match(/\bclass=/g) ?? []).length;
+  expect(
+    staticBindings,
+    `${tag}.tsx carries ${anyBinding - staticBindings} non-literal class binding(s); the hook ` +
+      'guard can only decide literal class attributes',
+  ).toEqual(anyBinding);
+  return tokens;
+};
+
+test('every class hook a component sheet selects is carried by its own markup', async () => {
+  for (const decl of manifest.declarations) {
+    const tag = decl.tagName;
+    const tsx = await readFile(new URL(`../src/${tag}.tsx`, import.meta.url), 'utf8');
+    const css = await readFile(new URL(`../src/${tag}.css`, import.meta.url), 'utf8');
+    const tokens = classTokensOf(tsx, tag);
+    for (const hook of classSelectorsOf(css)) {
+      expect(
+        tokens.has(hook),
+        `${tag}.css selects .${hook}, but no literal class token in ${tag}.tsx carries it — ` +
+          'the rule is dead inside the shadow root',
+      ).toEqual(true);
+    }
+  }
+});
