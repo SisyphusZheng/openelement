@@ -109,8 +109,9 @@ const STARTER_FRAMEWORK_PACKAGES = ['protocol', 'element', 'compiler', 'router']
 
 /**
  * The scaffold default is the ONE showcase template (#1530): no Tailwind
- * variant pair anymore — the starter ships platform CSS (tokens + recipes)
- * and the two showcase islands. The Vite+ toolchain form (alpha.14) replaces
+ * variant pair anymore — the starter ships the @theme token sheet, one `:host`
+ * box rule per component, and utility classes authored directly in the
+ * markup, plus the two showcase islands. The Vite+ toolchain form (alpha.14) replaces
  * the Vite devDependency with the catalog-managed tree: the manifest carries
  * `vite-plus: catalog:` and the workspace file points the whole vite tree at
  * the Vite+ core through the catalog + override pair. The Tailwind pins are
@@ -178,7 +179,7 @@ async function assertShowcaseStarter(manifestPath: string, starterDir: string): 
       );
     }
   }
-  for (const sheet of ['theme.css', 'recipes.css']) {
+  for (const sheet of ['theme.css']) {
     if (!existsSync(join(starterDir, 'app', 'styles', sheet))) {
       throw new Error(`[starter-smoke setup] the generated starter is missing app/styles/${sheet}`);
     }

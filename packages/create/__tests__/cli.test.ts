@@ -165,7 +165,6 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
   const expectedTargets = [
     '.gitignore',
     'README.md',
-    'app/components/badges.css',
     'app/components/page-404.css',
     'app/components/page-404.tsx',
     'app/components/page-about.css',
@@ -183,7 +182,6 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
     'app/routes/about.tsx',
     'app/routes/api/ping.ts',
     'app/routes/index.tsx',
-    'app/styles/recipes.css',
     'app/styles/theme.css',
     'openelement.config.ts',
     'package.json',
@@ -232,8 +230,11 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
   expect(home).toContain('Rendered before JavaScript arrives');
   expect(home).toContain('<my-counter></my-counter>');
   expect(home).toContain('<live-timer></live-timer>');
-  expect(home).toContain('badge-static');
-  expect(home).toContain('badge-island');
+  // The JS-cost badges are utility strings on the span itself (utility-first):
+  // a static section wears the --color-ok pair, an interactive one the brand
+  // pair. Nothing about them lives in a sheet.
+  expect(home).toContain('bg-ok/8');
+  expect(home).toContain('bg-brand-soft');
   expect(home).toContain('The architecture');
   // Nav links across the chrome: home, about, and the API surface. The
   // chrome lives in the layout now — the page itself carries none.
@@ -310,12 +311,18 @@ test('starter islands are single-module compiled classes with declared strategie
   expect(timer.includes('elapsed = '), timer).toBeTruthy();
   expect(timer.includes('data-signal'), timer).toBeFalsy();
 
-  // #1582: the island's sheet and the id it renders are one fact — the sheet
-  // selected `.value` while the class renders <span id="elapsed">, so the
-  // clock lost its brand color and tabular figures.
-  const timerCss = readTemplate('app/islands/live-timer.css');
+  // #1582: the clock's styling and the element it renders are one fact. The
+  // sheet used to select `.value` while the class renders <span
+  // id="elapsed">, so the clock lost its brand color and tabular figures.
+  // The styling is now a utility string ON that span: there is no selector
+  // left that could drift away from the element.
   expect(timer.includes('id="elapsed"'), timer).toBeTruthy();
-  expect(timerCss.includes('#elapsed'), timerCss).toBeTruthy();
+  const clockTag = timer.slice(timer.indexOf('id="elapsed"'));
+  const clockSpan = clockTag.slice(0, clockTag.indexOf('>'));
+  expect(clockSpan, `the clock span carries its styling: ${clockSpan}`).toContain('tabular-nums');
+  expect(clockSpan, `the clock span carries its styling: ${clockSpan}`).toContain('text-brand');
+  const timerCss = readTemplate('app/islands/live-timer.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  expect(timerCss.includes('#elapsed'), timerCss).toBeFalsy();
   expect(/\.value\s*\{/.test(timerCss), `no .value rule: ${timerCss}`).toBeFalsy();
 });
 
@@ -365,19 +372,37 @@ test('the layout owns the site chrome every page renders inside (T2)', () => {
 test('starter pages ship exactly one H1 each (duplicate-H1 regression class)', () => {
   for (const path of ['app/components/page-home.tsx', 'app/components/page-about.tsx']) {
     const page = readTemplate(path);
-    expect(page.split('<h1>').length - 1, path).toEqual(1);
+    expect((page.match(/<h1[\s>]/g) ?? []).length, path).toEqual(1);
   }
 });
 
-test('starter pages own their styles via static styles, not the global baseline', () => {
+test('starter styling is utility-first: the palette in @theme, markup for the rules', () => {
   const tokens = readTemplate('app/styles/theme.css');
-  // The @theme role sheet is the one styling source: roles, palette aliases,
-  // and the document base all ride it; vite.config.ts carries no CSS at all.
-  // Bare `--token:value` declarations at stylesheet top level are dropped by
-  // CSS error recovery and take the following body rule down with them.
+  // The @theme role sheet is the one styling source for VALUES: roles, the
+  // starter palette, and the document base all ride it; vite.config.ts
+  // carries no CSS at all. Bare `--token:value` declarations at stylesheet
+  // top level are dropped by CSS error recovery and take the following body
+  // rule down with them.
+  expect(tokens.includes('@theme static {'), tokens).toBeTruthy();
   expect(tokens.includes(':root {'), tokens).toBeTruthy();
   expect(tokens.includes('body {'), tokens).toBeTruthy();
   expect(tokens.includes('::selection {'), tokens).toBeTruthy();
+  // The palette entries the markup's utilities read are theme variables, so
+  // a `bg-paper`/`text-brand`/`border-line` utility resolves against a
+  // declared role.
+  for (const entry of [
+    '--color-paper:',
+    '--color-surface:',
+    '--color-ink:',
+    '--color-ink-soft:',
+    '--color-line:',
+    '--color-brand:',
+    '--color-brand-ink:',
+    '--color-brand-soft:',
+    '--color-ok:',
+  ]) {
+    expect(tokens.includes(entry), `@theme must declare ${entry}`).toBeTruthy();
+  }
   // The dark palette rides the platform media query (P1), not a runtime.
   expect(tokens.includes('@media (prefers-color-scheme: dark)'), tokens).toBeTruthy();
   for (const tag of ['index-page', 'about-page', 'el-404']) {
@@ -391,23 +416,46 @@ test('starter pages own their styles via static styles, not the global baseline'
     'vite.config.ts must not carry style/CSS strings (#1411)',
   ).toBeFalsy();
 
-  // Page rules live in .css files (#1558 — the one style authoring form):
-  // the shared chrome sheet (arrayed by the layout), the badge vocabulary,
-  // and one sheet per page.
-  for (const sheet of [
+  // The residue is one rule per component: the root box. A custom element is
+  // display:inline by default and the host tag is not authored markup, so no
+  // utility can carry it. Everything else the scaffold renders is a utility
+  // in the markup — a re-introduced presentation rule fails right here.
+  const sheets = [
     'app/components/site-chrome.css',
-    'app/components/badges.css',
     'app/components/page-home.css',
     'app/components/page-about.css',
     'app/components/page-404.css',
-  ]) {
-    expect(readTemplate(sheet).trim().length, `${sheet} carries rules`).toBeTruthy();
+    'app/islands/my-counter.css',
+    'app/islands/live-timer.css',
+  ];
+  for (const sheet of sheets) {
+    const css = readTemplate(sheet)
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .trim();
+    expect(css, `${sheet} carries exactly its host box rule`).toMatch(/^:host\s*\{[^{}]*\}$/);
   }
-  // The badge vocabulary is CSS only and is part of the zero-JS surface.
-  const badges = readTemplate('app/components/badges.css');
-  expect(badges).toContain('.badge');
-  expect(badges).toContain('.badge-static');
-  expect(badges).toContain('.badge-island');
+  // …and the markup actually carries the presentation, on the palette names.
+  const markup = [
+    'app/layout.tsx',
+    'app/components/page-home.tsx',
+    'app/components/page-about.tsx',
+    'app/components/page-404.tsx',
+    'app/islands/my-counter.tsx',
+    'app/islands/live-timer.tsx',
+  ]
+    .map((path) => readTemplate(path))
+    .join('\n');
+  for (const utility of [
+    'max-w-(--content-width)',
+    'text-ink-soft',
+    'text-brand',
+    'border-line',
+    'bg-paper',
+    'rounded-(--radius-m)',
+    'tabular-nums',
+  ]) {
+    expect(markup.includes(utility), `markup must author ${utility}`).toBeTruthy();
+  }
   // No page module carries CSS strings — the sheets are files.
   for (const page of ['page-home.tsx', 'page-about.tsx', 'page-404.tsx']) {
     const source = readTemplate(`app/components/${page}`);
@@ -463,28 +511,36 @@ test('the About route is a static page route; the landing route stays static', (
   expect(home).toContain('Rendered before JavaScript arrives');
 });
 
-test('starter owns a concrete --brand role without a UI package dependency', () => {
-  // Tailwind-ON form: --brand is an alias seated on the --color-primary role,
-  // and the role itself sits on a concrete Tailwind scale step (violet).
+test('starter owns a concrete --color-brand palette entry without a UI package dependency', () => {
+  // Tailwind-ON form: --color-brand seats on the --color-primary role, and
+  // the role itself sits on a concrete Tailwind scale step (violet).
   const theme = readTemplate('app/styles/theme.css');
-  expect(theme).toContain('--brand: var(--color-primary)');
+  expect(theme).toContain('--color-brand: var(--color-primary)');
   expect(theme).toContain('--color-primary: var(--color-violet-700)');
 });
 
-test('dark prefers-color-scheme block re-seats the brand aliases (#1582)', () => {
-  // The dark block redefined only --paper/--surface/--ink/--ink-soft/--line,
-  // so the light violet-700 brand rode into OS dark mode at ≈2.8:1 on
-  // zinc-950. Every alias a sheet consumes for the brand channel re-seats in
-  // the dark block, on a step that clears 4.5:1 (violet-400 on zinc-950:
-  // 6.98:1; violet-950 ink on violet-400: 5.36:1).
+test('dark prefers-color-scheme block re-seats the brand palette (#1582)', () => {
+  // The dark block redefined only the neutral surfaces, so the light
+  // violet-700 brand rode into OS dark mode at ≈2.8:1 on zinc-950. Every
+  // palette entry a utility consumes for the brand channel re-seats in the
+  // dark block, on a step that clears 4.5:1 (violet-400 on zinc-950: 6.98:1;
+  // violet-950 ink on violet-400: 5.36:1). --color-ok re-seats on the dark
+  // *-foreground ink for the same reason: the badge reads it as text on a
+  // low-% tint of itself, and the light ink on a dark page is unreadable.
   const theme = readTemplate('app/styles/theme.css');
   const dark = theme.slice(theme.indexOf('@media (prefers-color-scheme: dark)'));
   expect(dark.length > 0, 'theme.css carries a prefers-color-scheme dark block').toBeTruthy();
-  for (const alias of ['--brand:', '--brand-ink:', '--brand-soft:', '--ok:']) {
-    expect(dark.includes(alias), `dark block must re-seat ${alias}`).toBeTruthy();
+  for (const entry of [
+    '--color-brand:',
+    '--color-brand-ink:',
+    '--color-brand-soft:',
+    '--color-ok:',
+  ]) {
+    expect(dark.includes(entry), `dark block must re-seat ${entry}`).toBeTruthy();
   }
-  expect(dark).toContain('--brand: var(--color-violet-400)');
-  expect(dark).toContain('--brand-ink: var(--color-violet-950)');
+  expect(dark).toContain('--color-brand: var(--color-violet-400)');
+  expect(dark).toContain('--color-brand-ink: var(--color-violet-950)');
+  expect(dark).toContain('--color-ok: var(--color-zinc-100)');
 });
 
 test('TypeScript starter sources are pack-safe template payloads', () => {

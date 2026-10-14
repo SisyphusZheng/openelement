@@ -574,7 +574,7 @@ async function main(): Promise<void> {
         );
       }
     }
-    for (const sheet of ['theme.css', 'recipes.css']) {
+    for (const sheet of ['theme.css']) {
       if (!existsSync(join(starter, 'app', 'styles', sheet))) {
         throw new Error(`Packed starter is missing app/styles/${sheet}`);
       }
@@ -839,9 +839,10 @@ async function main(): Promise<void> {
       );
     }
     // Showcase delivery (#1530 + #1558; alpha15 S lane S-C1.2/S-C1.4): the
-    // authored tokens/recipes sheets ride the build as content-addressed client
-    // assets, and the static page DECLARES them as marked external stylesheet
-    // links — the zero-JS page is styled by those links alone. The inline
+    // build emits the theme sheet and the component sheets as
+    // content-addressed client assets, and the static page DECLARES them as
+    // marked external stylesheet links — the zero-JS page is styled by those
+    // links alone. The inline
     // `<style data-oe-static-styles>` fallback is retired for every
     // URL-addressable sheet (#1609), so this page's marker is a link and never
     // style text. Measured on the built appliance: six marked links, no

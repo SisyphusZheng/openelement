@@ -690,8 +690,8 @@ test('starter template: openelement.config.ts validates against the accepted sch
   // pages own their chrome as light-root markup, so island-free pages (like
   // /about) carry no island hosts at all.
   expect(
-    readTemplate('app/styles/theme.css').includes('--brand'),
-    'theme.css must define --brand',
+    readTemplate('app/styles/theme.css').includes('--color-brand'),
+    'theme.css must define the --color-brand palette entry',
   ).toBeTruthy();
   expect(
     readTemplate('app/islands/my-counter.tsx.tmpl').includes('@element("my-counter"'),

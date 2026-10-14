@@ -102,21 +102,20 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   // overrides one.
   ['openelement.config.ts.tmpl', 'openelement.config.ts'],
   // The @theme role sheet — the ONE styling source (dev serves it directly,
-  // build compiles it through the router's Tailwind entry).
+  // build compiles it through the router's Tailwind entry). Every
+  // presentation value the scaffold renders is a Tailwind utility in markup;
+  // the per-component sheets below hold each root's own box rule, which has
+  // no markup to carry it.
   ['app/styles/theme.css', 'app/styles/theme.css'],
-  // #1557: the retired ui zero-interaction component shapes ship as plain
-  // HTML+CSS recipes the consumer deletes if unused (never an npm dep).
-  ['app/styles/recipes.css', 'app/styles/recipes.css'],
   // alpha.4: the structural document-head convention. The config file carries
   // the structured `head` channel (title/description/favicon/scripts); this
   // module carries what a URL list cannot express (meta tags, preloads).
   ['app/head.tsx.tmpl', 'app/head.tsx'],
-  // #1558: page CSS is .css files — the one style authoring form. Pages
-  // import and array their sheets in `static styles`.
+  // The one authored rule left per component: the root box. Pages array
+  // their own sheet in `static styles`; the layout arrays the chrome sheet.
   ['app/components/page-home.css', 'app/components/page-home.css'],
   ['app/components/page-about.css', 'app/components/page-about.css'],
   ['app/components/page-404.css', 'app/components/page-404.css'],
-  ['app/components/badges.css', 'app/components/badges.css'],
   ['app/components/site-chrome.css', 'app/components/site-chrome.css'],
   ['app/components/page-home.tsx.tmpl', 'app/components/page-home.tsx'],
   ['app/components/page-about.tsx.tmpl', 'app/components/page-about.tsx'],

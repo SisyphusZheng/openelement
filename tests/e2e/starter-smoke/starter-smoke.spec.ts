@@ -10,7 +10,7 @@
  */
 import { expect, test } from '@playwright/test';
 
-// Tailwind-ON form: --paper seats on --color-background = --color-white.
+// Tailwind-ON form: --color-paper seats on --color-background = --color-white.
 const PAPER = 'rgb(255, 255, 255)';
 
 test('computed body background is the design-token paper, not the UA default', async ({ page }) => {
@@ -30,6 +30,25 @@ test('header nav links are spaced apart (not jammed)', async ({ page }) => {
     }),
   );
   expect(about.left - home.right).toBeGreaterThan(4);
+});
+
+test('a page card is styled by its own utility classes inside the layout shadow tree', async ({
+  page,
+}) => {
+  // The layout convention renders every page INSIDE the layout's shadow
+  // template, so a page's utility classes can only reach it through the
+  // component stylesheet — the document sheet is not in that tree. The
+  // measured values are the declarations themselves: `px-7` (1.75rem) and
+  // `rounded-(--radius-l)` (16px), both zero when the sheet stops at the
+  // shadow-root subset.
+  await page.goto('/');
+  const card = page.locator('main section:has(my-counter)').first();
+  const style = await card.evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { padding: cs.paddingLeft, radius: cs.borderTopLeftRadius };
+  });
+  expect(parseFloat(style.padding), 'the page card carries its padding utility').toBeGreaterThan(0);
+  expect(parseFloat(style.radius), 'the page card carries its radius utility').toBeGreaterThan(0);
 });
 
 test('counter island hydrates and responds to clicks', async ({ page }) => {
