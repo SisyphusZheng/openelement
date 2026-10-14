@@ -357,7 +357,9 @@ test.describe('Cinematic homepage', () => {
     await expect
       .poll(() => logo.evaluate((element) => getComputedStyle(element).backgroundImage))
       .toBe('none');
-    const mark = logo.locator('.logo-glyph');
+    // The brand mark is the logo anchor's own glyph box (its first span); the
+    // `.logo-glyph` class went away with the utility-first migration.
+    const mark = logo.locator('span').first();
     await expect(mark).toBeVisible();
     const initialColor = await mark.evaluate((element) => getComputedStyle(element).color);
     // theme-init follows prefers-color-scheme, so the initial theme varies by

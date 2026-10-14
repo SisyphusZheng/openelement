@@ -87,7 +87,10 @@ test.describe('Unified page structure', () => {
     // The 1.0 baseline ships one dispatch; it is the featured band and the
     // stream renders any earlier dispatches. Assert the featured post is real
     // and that every post link on the index resolves.
-    const featured = page.locator('blog-index .featured');
+    // The featured band is the index's only post anchor that carries an h2
+    // (stream rows carry h3); the presentation class it used to be found by
+    // went away with the utility-first migration.
+    const featured = page.locator('blog-index a:has(h2)').first();
     await expect(featured).toHaveAttribute('href', /\/blog\/.+/);
     await expect(featured.locator('h2')).toBeVisible();
     const hrefs = await page
@@ -141,10 +144,13 @@ test.describe('Unified page structure', () => {
     // inside the reference-page's own shadow template are intentionally
     // invisible to it. The remaining 5 are the page's light-DOM frames.
     await expect(frames).toHaveCount(5);
-    await expect(frames.first().locator('.frame .title')).toContainText(
+    await expect(frames.first().locator('h2')).toContainText(
       'Authoring starts at product packages.',
     );
-    await expect(frames.nth(1).locator('.frame .body .registry')).toBeVisible();
+    // The second frame's body is the package registry; `.registry` went away
+    // with the utility-first migration, and the generated rows now carry their
+    // kind as data (the generated anchor id is not stable across packages).
+    await expect(frames.nth(1).locator('[data-kind]').first()).toBeVisible();
   });
 
   test('reference renders the generated export and element reference with stable anchors (#1307)', async ({
@@ -155,18 +161,22 @@ test.describe('Unified page structure', () => {
     // (adapter-vite anchors retired with the package; use a current export.)
     const exportRow = page.locator('#api-element-root-Action');
     await expect(exportRow).toBeVisible();
-    await expect(exportRow.locator('.ref-name')).toHaveText('Action');
+    // The row leads with its name cell; `.ref-name` went away with the
+    // utility-first migration.
+    await expect(exportRow.locator('span').first()).toHaveText('Action');
     const elementRow = page.locator('#ce-open-button');
     await expect(elementRow).toBeVisible();
-    await expect(elementRow.locator('.ce-tag')).toHaveText('<open-button>');
-    expect(await page.locator('.ref-row').count()).toBeGreaterThan(150);
+    await expect(elementRow.locator('span').first()).toHaveText('<open-button>');
+    // Export rows are the generated `api-*` anchors.
+    expect(await page.locator('[id^="api-"]').count()).toBeGreaterThan(150);
     // #1557 retired the four zero-interaction ui components: the element
     // reference table carries the frozen six-component roster.
-    expect(await page.locator('.ce-row').count()).toBe(6);
+    // Element rows are the generated `ce-*` anchors.
+    expect(await page.locator('[id^="ce-"]').count()).toBe(6);
     // zh renders the same generated anchors with zh chrome.
     await page.goto('/zh/reference');
     await expect(page.locator('#ce-open-input')).toBeVisible();
-    await expect(page.locator('.ref-row').first()).toBeVisible();
+    await expect(page.locator('[id^="api-"]').first()).toBeVisible();
   });
 
   test('roadmap standards visual renders through the compiled light root', async ({ page }) => {

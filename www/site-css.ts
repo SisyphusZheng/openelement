@@ -225,19 +225,13 @@ open-code-block pre {
    h2/h3, code, strong, tables — including dark mode, where near-white ink
    would otherwise vanish on paper. The layout's own chrome (header, sidebar,
    mobile menu, footer, the search island) is not enumerated here: each of
-   those elements carries the print:hidden! utility in the layout's markup.
-   What stays enumerated is the reading shell's chrome, which is authored in
-   its own sheet. */
+   those elements carries the print:hidden! utility in its own markup — the
+   layout chrome and the reading shell's breadcrumb/pager/rail alike. */
 @media print {
   :root, :root[data-theme='dark'] {
     --color-foreground: #000; --color-muted-foreground: #000;
     --color-background: #fff; --color-muted: #fff; --color-card: #fff;
     --color-popover: #fff;
-  }
-  aside.rail,
-  nav.breadcrumb,
-  nav.pager {
-    display: none !important;
   }
   body {
     background: #fff !important;
