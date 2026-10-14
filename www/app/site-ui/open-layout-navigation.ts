@@ -178,6 +178,11 @@ export interface SidebarRow {
   label: string;
   current: 'page' | false;
   rel: string | false;
+  /** A section row renders its heading; a link row renders its link. The cell
+   *  the row does not carry is present but `hidden`, so both list sites keep
+   *  one flat row Block and the variant stays a data fact. */
+  headingHidden: boolean;
+  linkHidden: boolean;
 }
 
 export interface FooterLink {
@@ -265,6 +270,8 @@ export function buildSidebarRows(
       label: '',
       current: false,
       rel: false,
+      headingHidden: false,
+      linkHidden: true,
     });
     for (const item of section.items) {
       const raw = item.href || item.path || '';
@@ -283,6 +290,8 @@ export function buildSidebarRows(
         label: localizedLabel(item.label, item.labelZh, locale),
         current: !external && href !== false && href === localizedCurrent ? 'page' : false,
         rel: external ? EXTERNAL_REL : false,
+        headingHidden: true,
+        linkHidden: false,
       });
     }
   }

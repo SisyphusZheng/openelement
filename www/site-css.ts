@@ -223,22 +223,20 @@ open-code-block pre {
    links carry their target so the paper copy stays navigable. Token
    remapping (not selector enumeration) carries the whole prose surface —
    h2/h3, code, strong, tables — including dark mode, where near-white ink
-   would otherwise vanish on paper. */
+   would otherwise vanish on paper. The layout's own chrome (header, sidebar,
+   mobile menu, footer, the search island) is not enumerated here: each of
+   those elements carries the print:hidden! utility in the layout's markup.
+   What stays enumerated is the reading shell's chrome, which is authored in
+   its own sheet. */
 @media print {
   :root, :root[data-theme='dark'] {
     --color-foreground: #000; --color-muted-foreground: #000;
     --color-background: #fff; --color-muted: #fff; --color-card: #fff;
     --color-popover: #fff;
   }
-  .app-header,
-  .docs-sidebar,
-  .sidebar-mobile-panel,
-  .mobile-menu-panel,
   aside.rail,
   nav.breadcrumb,
-  nav.pager,
-  .app-footer,
-  open-search {
+  nav.pager {
     display: none !important;
   }
   body {
