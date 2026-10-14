@@ -215,7 +215,7 @@ export default class ReferencePage extends OpenElement {
       // Without data-pagefind-body the page is absent from the index entirely:
       // pagefind stops indexing every page that lacks the attribute. The shell
       // already renders the one <main> landmark (#main-content).
-      <div data-pagefind-body>
+      <div class='text-foreground' data-pagefind-body>
         <open-reading-shell rail footer metadata={this.metadata} locale={this.locale}>
           <div slot='rail'>
             <open-page-rail items={this.railItems} locale={this.locale}></open-page-rail>
@@ -229,37 +229,67 @@ export default class ReferencePage extends OpenElement {
             <span slot='index'>{this.s2Index}</span>
             <span slot='title'>{this.s2Title}</span>
             <span slot='copy'>{this.s2Copy}</span>
-            <div class='registry'>
-              <div class='registry-head' aria-hidden='true'>
+            <div class='border-t border-border'>
+              <div
+                class='hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_auto] items-start gap-[clamp(1rem,4vw,3rem)] border-b border-border py-3 text-(length:--font-size-micro) font-bold tracking-[0.18em] text-muted-foreground uppercase min-[861px]:grid'
+                aria-hidden='true'
+              >
                 <span>{this.headPackage}</span>
                 <span>{this.headSubpaths}</span>
                 <span>{this.headKind}</span>
               </div>
               {this.packages.map((pkg) => (
-                <div class='pkg-row' id={pkg.id} data-kind={pkg.kind} key={pkg.id}>
+                <div
+                  class='group grid grid-cols-[minmax(0,1fr)] items-start gap-3 border-b border-border py-6 min-[861px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_auto] min-[861px]:gap-[clamp(1rem,4vw,3rem)]'
+                  id={pkg.id}
+                  data-kind={pkg.kind}
+                  key={pkg.id}
+                >
                   <div>
-                    <span class='pkg-name'>{pkg.name}</span>
-                    <span class='pkg-path'>{pkg.importPath}</span>
-                    <p class='pkg-copy'>{pkg.copy}</p>
-                    <span class='pkg-note'>{pkg.note1}</span>
-                    <span class='pkg-note'>{pkg.note2}</span>
-                    <span class='pkg-note'>{pkg.note3}</span>
+                    <span class='block text-primary text-[length:clamp(1.7rem,2.8vw,2.5rem)] font-extrabold leading-none tracking-[-0.03em] group-data-[kind=optional]:text-muted-foreground'>
+                      {pkg.name}
+                    </span>
+                    <span class='mt-2 block text-(length:--text-xs) text-muted-foreground'>
+                      {pkg.importPath}
+                    </span>
+                    <p class='mt-3 mb-0 text-(length:--text-sm) leading-normal text-muted-foreground'>
+                      {pkg.copy}
+                    </p>
+                    <span class='mt-2 block text-(length:--text-xs) leading-normal text-muted-foreground empty:hidden'>
+                      {pkg.note1}
+                    </span>
+                    <span class='mt-2 block text-(length:--text-xs) leading-normal text-muted-foreground empty:hidden'>
+                      {pkg.note2}
+                    </span>
+                    <span class='mt-2 block text-(length:--text-xs) leading-normal text-muted-foreground empty:hidden'>
+                      {pkg.note3}
+                    </span>
                   </div>
-                  <div class='pkg-chips flex flex-wrap gap-2'>
-                    <span class='chip'>{pkg.export1}</span>
-                    <span class='chip'>{pkg.export2}</span>
-                    <span class='chip'>{pkg.export3}</span>
-                    <span class='chip'>{pkg.export4}</span>
-                    <span class='chip'>{pkg.export5}</span>
+                  <div class='flex flex-wrap gap-2'>
+                    <span class='rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {pkg.export1}
+                    </span>
+                    <span class='rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {pkg.export2}
+                    </span>
+                    <span class='rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {pkg.export3}
+                    </span>
+                    <span class='rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {pkg.export4}
+                    </span>
+                    <span class='rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {pkg.export5}
+                    </span>
                   </div>
                   <span class={pkg.kindClass}>{pkg.kindLabel}</span>
                 </div>
               ))}
-              <footer class='footnote'>
-                <p>{this.footnote}</p>
-                <p>
+              <footer class='pt-6 text-(length:--text-xs) leading-normal text-muted-foreground'>
+                <p class='m-0'>{this.footnote}</p>
+                <p class='mt-3 mb-0'>
                   {this.footnoteCheckPre}
-                  <code>pnpm --dir tools/repo run interface:snapshot</code>
+                  <code class='text-primary'>pnpm --dir tools/repo run interface:snapshot</code>
                   {this.footnoteCheckPost}
                 </p>
               </footer>
@@ -269,26 +299,47 @@ export default class ReferencePage extends OpenElement {
             <span slot='index'>{this.s3Index}</span>
             <span slot='title'>{this.s3Title}</span>
             <span slot='copy'>{this.s3Copy}</span>
-            <div class='registry' id='api-reference'>
-              <div class='registry-head' aria-hidden='true'>
+            <div class='border-t border-border' id='api-reference'>
+              <div
+                class='hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_auto] items-start gap-[clamp(1rem,4vw,3rem)] border-b border-border py-3 text-(length:--font-size-micro) font-bold tracking-[0.18em] text-muted-foreground uppercase min-[1101px]:grid'
+                aria-hidden='true'
+              >
                 <span>{this.headExport}</span>
                 <span>{this.headSummary}</span>
                 <span>{this.headSource}</span>
               </div>
               {this.referenceEntries.map((entry) => (
-                <div class='ref-row' id={entry.anchor} key={entry.key}>
+                <div
+                  class='grid grid-cols-[minmax(0,1fr)] items-start gap-2 border-b border-border py-4 min-[1101px]:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)_minmax(0,1.2fr)] min-[1101px]:gap-[clamp(1rem,4vw,3rem)]'
+                  id={entry.anchor}
+                  key={entry.key}
+                >
                   <div>
-                    <span class='ref-name'>{entry.name}</span>
-                    <span class='ref-container'>{entry.container}</span>
-                    <span class='chip'>{entry.kind}</span>
-                    <span class='chip chip-stability'>{entry.stability}</span>
+                    <span class='inline text-primary font-mono text-(length:--text-base) font-bold wrap-anywhere'>
+                      {entry.name}
+                    </span>
+                    <span class='mt-1 block text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                      {entry.container}
+                    </span>
+                    <span class='me-1 rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {entry.kind}
+                    </span>
+                    <span class='me-1 rounded-md bg-transparent px-2 py-1 text-(length:--text-xs) text-primary empty:hidden shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-ring)_55%,transparent)]'>
+                      {entry.stability}
+                    </span>
                   </div>
                   <div>
-                    <p class='ref-summary'>{entry.summary}</p>
-                    <code class='ref-signature'>{entry.signature}</code>
-                    <p class='ref-options'>{entry.options}</p>
+                    <p class='m-0 text-(length:--text-sm) leading-normal text-muted-foreground wrap-anywhere'>
+                      {entry.summary}
+                    </p>
+                    <code class='mt-2 block font-mono text-(length:--text-xs) leading-snug text-primary wrap-anywhere'>
+                      {entry.signature}
+                    </code>
+                    <p class='mt-3 mb-0 wrap-anywhere'>{entry.options}</p>
                   </div>
-                  <span class='ref-source'>{entry.source}</span>
+                  <span class='font-mono text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                    {entry.source}
+                  </span>
                 </div>
               ))}
             </div>
@@ -297,23 +348,40 @@ export default class ReferencePage extends OpenElement {
             <span slot='index'>{this.s5Index}</span>
             <span slot='title'>{this.s5Title}</span>
             <span slot='copy'>{this.s5Copy}</span>
-            <div class='registry' id='config-options'>
-              <div class='registry-head' aria-hidden='true'>
+            <div class='border-t border-border' id='config-options'>
+              <div
+                class='hidden grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)_auto] items-start gap-[clamp(1rem,4vw,3rem)] border-b border-border py-3 text-(length:--font-size-micro) font-bold tracking-[0.18em] text-muted-foreground uppercase min-[1101px]:grid'
+                aria-hidden='true'
+              >
                 <span>{this.headOption}</span>
                 <span>{this.headOptionType}</span>
                 <span>{this.headOptionRequired}</span>
               </div>
               {this.configOptions.map((option) => (
-                <div class='ref-row option-config-row' id={option.key} key={option.key}>
+                <div
+                  class='grid grid-cols-[minmax(0,1fr)] items-start gap-2 border-b border-border py-4 min-[1101px]:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)_minmax(0,1.2fr)] min-[1101px]:gap-[clamp(1rem,4vw,3rem)]'
+                  id={option.key}
+                  key={option.key}
+                >
                   <div>
-                    <span class='ref-name'>{option.name}</span>
-                    <span class='ref-container'>{option.defaultValue}</span>
+                    <span class='inline text-primary font-mono text-(length:--text-base) font-bold wrap-anywhere'>
+                      {option.name}
+                    </span>
+                    <span class='mt-1 block text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                      {option.defaultValue}
+                    </span>
                   </div>
                   <div>
-                    <code class='ref-signature'>{option.type}</code>
-                    <p class='ref-summary'>{option.description}</p>
+                    <code class='mt-2 block font-mono text-(length:--text-xs) leading-snug text-primary wrap-anywhere'>
+                      {option.type}
+                    </code>
+                    <p class='m-0 text-(length:--text-sm) leading-normal text-muted-foreground wrap-anywhere'>
+                      {option.description}
+                    </p>
                   </div>
-                  <span class='ref-source'>{option.required}</span>
+                  <span class='font-mono text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                    {option.required}
+                  </span>
                 </div>
               ))}
             </div>
@@ -322,37 +390,63 @@ export default class ReferencePage extends OpenElement {
             <span slot='index'>{this.s4Index}</span>
             <span slot='title'>{this.s4Title}</span>
             <span slot='copy'>{this.s4Copy}</span>
-            <div class='registry' id='element-reference'>
+            <div class='border-t border-border' id='element-reference'>
               {this.elementEntries.map((element) => (
                 // Compiled list-Block grammar (OEC9013): item children are
                 // static text, {element.<field>} values or intrinsic elements —
                 // no conditional JSX. Stable rows carry status:'' and the
-                // .chip:empty rule hides the stability chip.
-                <div class='ce-row' id={element.anchor} key={element.key}>
+                // `empty:hidden` utility on the status chip hides it.
+                <div
+                  class='grid grid-cols-[minmax(0,1fr)] items-start gap-2 border-b border-border py-4 min-[1101px]:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] min-[1101px]:gap-[clamp(1rem,4vw,3rem)]'
+                  id={element.anchor}
+                  key={element.key}
+                >
                   <div>
-                    <span class='ce-tag'>{element.tag}</span>
-                    <span class='ce-class'>{element.className}</span>
-                    <span class='chip'>{element.layer}</span>
-                    <span class='chip'>{element.hydrate}</span>
-                    <span class='chip chip-stability'>{element.status}</span>
+                    <span class='inline text-primary font-mono text-(length:--text-base) font-bold wrap-anywhere'>
+                      {element.tag}
+                    </span>
+                    <span class='mt-1 block text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                      {element.className}
+                    </span>
+                    <span class='me-1 rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {element.layer}
+                    </span>
+                    <span class='me-1 rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {element.hydrate}
+                    </span>
+                    <span class='me-1 rounded-md bg-transparent px-2 py-1 text-(length:--text-xs) text-primary empty:hidden shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-ring)_55%,transparent)]'>
+                      {element.status}
+                    </span>
                   </div>
-                  <p class='ce-description'>{element.description}</p>
-                  <span class='ce-module'>{element.module}</span>
-                  <div class='ce-details'>
-                    <span class='ce-detail'>
-                      <b>{element.attributesLabel}</b>
+                  <p class='m-0 text-(length:--text-sm) leading-normal text-muted-foreground'>
+                    {element.description}
+                  </p>
+                  <span class='font-mono text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                    {element.module}
+                  </span>
+                  <div class='col-span-full grid gap-2'>
+                    <span class='block text-(length:--text-xs) leading-normal text-muted-foreground wrap-anywhere'>
+                      <b class='me-2 font-bold tracking-[0.08em] text-muted-foreground uppercase'>
+                        {element.attributesLabel}
+                      </b>
                       {element.attributes}
                     </span>
-                    <span class='ce-detail'>
-                      <b>{element.eventsLabel}</b>
+                    <span class='block text-(length:--text-xs) leading-normal text-muted-foreground wrap-anywhere'>
+                      <b class='me-2 font-bold tracking-[0.08em] text-muted-foreground uppercase'>
+                        {element.eventsLabel}
+                      </b>
                       {element.events}
                     </span>
-                    <span class='ce-detail'>
-                      <b>{element.slotsLabel}</b>
+                    <span class='block text-(length:--text-xs) leading-normal text-muted-foreground wrap-anywhere'>
+                      <b class='me-2 font-bold tracking-[0.08em] text-muted-foreground uppercase'>
+                        {element.slotsLabel}
+                      </b>
                       {element.slots}
                     </span>
-                    <span class='ce-detail'>
-                      <b>{element.partsLabel}</b>
+                    <span class='block text-(length:--text-xs) leading-normal text-muted-foreground wrap-anywhere'>
+                      <b class='me-2 font-bold tracking-[0.08em] text-muted-foreground uppercase'>
+                        {element.partsLabel}
+                      </b>
                       {element.cssParts}
                     </span>
                   </div>

@@ -82,16 +82,16 @@ export default class OpenSearch extends OpenElement {
 
   render() {
     return (
-      <div class='search-root'>
+      <div class='contents'>
         <button
           type='button'
-          class='search-trigger'
+          class='inline-flex size-9 cursor-pointer items-center justify-center rounded-full border-0 bg-transparent p-0 font-bold tracking-normal text-(length:--text-xs) text-foreground shadow-none transition-all hover:border-transparent hover:bg-primary/[5.44%] hover:text-primary'
           part='trigger'
           aria-label={this.triggerLabel}
           onClick={this.openSearch}
         >
           <svg
-            class='search-icon'
+            class='inline-block size-5'
             part='icon'
             viewBox='0 0 16 16'
             fill='none'
@@ -102,12 +102,29 @@ export default class OpenSearch extends OpenElement {
             <circle cx='7' cy='7' r='4.5' />
             <path d='M10.5 10.5L14 14' />
           </svg>
-          <span part='label'>{this.triggerLabel}</span>
-          <kbd part='shortcut'>⌘K</kbd>
+          <span class='hidden' part='label'>
+            {this.triggerLabel}
+          </span>
+          <kbd
+            class='ml-1 hidden rounded-md border border-border p-1 text-(length:--text-xs) [font-family:inherit]'
+            part='shortcut'
+          >
+            ⌘K
+          </kbd>
         </button>
 
-        <div class='overlay' hidden data-pagefind-ignore onClick={this.closeSearchOnBackdrop}>
-          <div class='panel' role='dialog' aria-modal='true' aria-label={this.dialogLabel}>
+        <div
+          class='overlay fixed inset-0 z-[99999] box-border flex h-screen w-screen max-h-none max-w-none items-start justify-center m-0 border-0 pt-[15vh] text-inherit backdrop-blur-[18px]'
+          hidden
+          data-pagefind-ignore
+          onClick={this.closeSearchOnBackdrop}
+        >
+          <div
+            class='panel mx-4 w-full max-w-[560px] overflow-hidden rounded-2xl border border-border bg-background shadow-[0_1rem_4rem_color-mix(in_srgb,var(--color-primary)_18%,transparent)]'
+            role='dialog'
+            aria-modal='true'
+            aria-label={this.dialogLabel}
+          >
             {/* The combobox state machine (Zag, open-search-controller.ts) owns
                 the ARIA graph: role=combobox on the input, role=listbox on the
                 results, aria-activedescendant across them. The static markup
@@ -116,34 +133,51 @@ export default class OpenSearch extends OpenElement {
                 Block branches below stay static (OEC9012). The visually
                 hidden label names the listbox through the machine's
                 aria-labelledby wiring. */}
-            <label id='open-search-results-label' class='results-label' for='open-search-input'>
+            <label id='open-search-results-label' class='sr-only' for='open-search-input'>
               {this.resultsLabel}
             </label>
-            <div id='open-search-control' class='control'>
+            <div id='open-search-control' class='block'>
               <input
                 type='text'
                 id='open-search-input'
-                class='search-input'
+                class='search-input box-border block w-full rounded-none border-0 border-b-[0.5px] border-b-border bg-transparent px-3 py-3 text-(length:--text-base) text-foreground [font-family:inherit]'
                 aria-label={this.inputLabel}
                 placeholder={this.placeholder}
                 onInput={this.searchFromInput}
               />
             </div>
-            <div id='open-search-positioner' class='results-positioner'>
-              <div id='open-search-results' class='results' onClick={this.closeSearchFromResults}>
-                <div class='empty' hidden={this.hideEmpty}>
+            <div id='open-search-positioner' class='pointer-events-none z-[1]'>
+              <div
+                id='open-search-results'
+                class='pointer-events-auto max-h-[min(50vh,26rem)] overflow-y-auto rounded-xl border border-border bg-popover py-3 shadow-[0_1rem_4rem_color-mix(in_srgb,var(--color-primary)_18%,transparent)]'
+                onClick={this.closeSearchFromResults}
+              >
+                <div
+                  class='px-3 py-9 text-center text-(length:--text-sm) text-muted-foreground empty:hidden'
+                  hidden={this.hideEmpty}
+                >
                   {this.message}
                 </div>
-                <div class='skeleton' hidden={this.hideSkeleton} aria-hidden='true'>
-                  <span></span>
-                  <span></span>
-                  <span></span>
+                <div class='grid gap-3 p-3' hidden={this.hideSkeleton} aria-hidden='true'>
+                  <span class='block h-8 rounded-md bg-muted'></span>
+                  <span class='block h-8 rounded-md bg-muted'></span>
+                  <span class='block h-8 rounded-md bg-muted'></span>
                 </div>
                 {this.hits.map((hit) => (
-                  <a class='result item' href={hit.href} key={hit.key}>
-                    <div class='item-section'>{hit.section}</div>
-                    <div class='item-title'>{hit.title}</div>
-                    <div class='item-text'>{hit.text}</div>
+                  <a
+                    class='result block cursor-pointer p-3 text-inherit no-underline transition-[background] hover:bg-accent data-[highlighted]:bg-accent'
+                    href={hit.href}
+                    key={hit.key}
+                  >
+                    <div class='mb-1 text-(length:--text-xs) tracking-widest text-muted-foreground uppercase'>
+                      {hit.section}
+                    </div>
+                    <div class='mb-1 text-(length:--text-sm) font-medium text-popover-foreground'>
+                      {hit.title}
+                    </div>
+                    <div class='line-clamp-2 text-(length:--text-sm) leading-normal text-muted-foreground'>
+                      {hit.text}
+                    </div>
                   </a>
                 ))}
               </div>
