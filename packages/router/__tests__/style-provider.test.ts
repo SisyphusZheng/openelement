@@ -295,6 +295,19 @@ test('a declared unocss config path that is not there is a coded failure', async
   expect(code).toBe(PresetErrorCode.UNOCSS_CONFIG_UNRESOLVED);
 });
 
+test('a component sheet with nothing admitted compiles to nothing, and is not an error', async () => {
+  // The build asks for the component sheet on every build of an app that
+  // selected the engine; "no admitted candidate" is the ordinary answer for a
+  // component-less app, so it returns empty text and the emitter writes no
+  // file. Only an ENABLED compile WITH admitted candidates that still yields no
+  // CSS is the coded defect — the guard right below this one.
+  const declaration = { theme: [] };
+  const integration = await integrationFor(fixturePlan(declaration), declaration);
+  expect(await integration.provider.compileComponents({ candidates: [], sources: new Map() })).toBe(
+    '',
+  );
+});
+
 test('theme sources resolve their own @import chain, including a bare package subpath', async () => {
   // The fixture's tokens.css imports `open-props/style` (a bare specifier the
   // browser cannot resolve) and nothing else; this asserts the chain is

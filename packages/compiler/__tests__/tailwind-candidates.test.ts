@@ -251,5 +251,9 @@ describe('the candidate registry', () => {
     registry.register('/proj/shadow.tsx', ['m-3'], { shadow: true });
     expect(registry.all()).toEqual(['p-2', 'm-3']);
     expect(registry.allLight()).toEqual(['p-2']);
+    // The shadow-only view stays available (and ordered) for a consumer that
+    // wants exactly the shadow-root facts; the component sheet no longer reads
+    // it, so this assertion is not what the sheet compiles from.
+    expect(registry.allShadow()).toEqual(['m-3']);
   });
 });

@@ -67,6 +67,13 @@ export interface ClassCandidateRegistry {
   /** Every candidate registered so far, first-seen ordered and deduplicated. */
   all(): readonly string[];
   /**
+   * The SHADOW-root candidates only. The COMPONENT sheet no longer compiles
+   * from this view (a light-root class can render inside a shadow tree, so the
+   * sheet takes {@linkcode ClassCandidateRegistry.all}); it stays as the
+   * shadow-only view of the facts, for a consumer that wants exactly that.
+   */
+  allShadow(): readonly string[];
+  /**
    * The LIGHT-root candidates only — the document sheet's input for an engine
    * that generates its own document CSS (a shadow component's classes are
    * delivered by the component stylesheet and never inflate the document one).
@@ -104,6 +111,9 @@ export function createClassCandidateRegistry(): ClassCandidateRegistry {
     },
     all() {
       return union(() => true);
+    },
+    allShadow() {
+      return union((entry) => entry.shadow);
     },
     allLight() {
       return union((entry) => !entry.shadow);
