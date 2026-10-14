@@ -42,17 +42,11 @@
  * preset-less render.
  */
 
-import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { basename, isAbsolute, join, relative, resolve } from 'pathe';
+import { existsSync } from 'node:fs';
+import { isAbsolute, join, relative, resolve } from 'pathe';
 import type { Plugin } from 'vite';
 import { PresetErrorCode, buildError } from '../internal/error-codes.ts';
-import {
-  cssAssetUrl,
-  fetchSheetAdapterModule,
-  styleAssetFileName,
-} from './internal/style-assets.ts';
-import type { TailwindOptions } from '../config.ts';
+import { generatedSheetBase, generatedSheetsPlugin } from './internal/generated-sheets.ts';
 
 /**
  * The project-relative path of the virtual entry module. A real-looking path
@@ -90,15 +84,6 @@ export interface ResolvedTailwindOptions {
    * the pipeline is on. The reset is the one fact the application owns.
    */
   readonly documentReset: boolean;
-}
-
-/** Normalize `tailwind: true` / object / undefined into resolved options. */
-export function resolveTailwindOptions(
-  option: boolean | TailwindOptions | undefined,
-): ResolvedTailwindOptions | undefined {
-  if (!option) return undefined;
-  if (option === true) return { theme: [], documentReset: true };
-  return { theme: option.theme ?? [], documentReset: true };
 }
 
 /** The absolute path of the virtual entry module (its module identity). */
@@ -306,7 +291,8 @@ export interface ComponentStyleSheetRecord {
 }
 
 /**
- * The component stylesheet's build half.
+ * The component stylesheet's build half: ONE generated sheet of this build,
+ * compiled from the admitted shadow candidates by the official compiler.
  *
  * Why the official compiler API instead of a CSS module in the build graph:
  * the peer only compiles `.css`-typed modules, and Vite's own CSS pipeline then
@@ -315,23 +301,13 @@ export interface ComponentStyleSheetRecord {
  * constructable sheet the shadow roots need. Compiling through the peer's own
  * compiler (`@tailwindcss/node`, resolved from the installed peer — the same
  * package, same version, same option set the peer passes) keeps the ONE
- * official compiler while letting the framework's existing asset protocol own
- * emission: content-addressed file name, `emitFile`, fetch adapter with
- * `STYLE_SHEET_READY`/`STYLE_SHEET_URL`.
+ * official compiler while the framework's existing generated-sheet emitter
+ * (`generatedSheetsPlugin`) owns emission: content-addressed file name,
+ * `emitFile`, fetch adapter, `url()` rebase.
  *
  * Nothing here interprets Tailwind: the entry text is a standard `@import`
  * list plus `@source inline(…)` candidate admissions, and every CSS decision is
  * the official compiler's.
- *
- * The compiler's own `url()` rebasing reaches the referenced FILES (the
- * entry's base), not the emitted asset's URL, so a `url()` target of the
- * compiled text is a project-relative path no browser can resolve from the
- * emitted sheet's own location (the 404 this rebase closes; the internal design note recorded
- * it as an outstanding S-lane item). The build therefore rebases every such
- * target onto the asset it emits for the referenced bytes and resolves it to
- * the asset's own URL with the one URL rule the style-edge emitter applies
- * (`cssAssetUrl`): the sheet addresses a resource this build owns, in the same
- * spelling every other emitted sheet uses.
  */
 export function componentStyleSheetPlugin(
   root: string,
@@ -339,187 +315,29 @@ export function componentStyleSheetPlugin(
   candidates: () => readonly string[],
   record: ComponentStyleSheetRecord,
 ): Plugin {
-  let compiled: Promise<string> | undefined;
-  /**
-   * The emitted asset of every file a rebased `url()` target addresses, keyed
-   * by the referenced file's content digest — the digest the placeholder in
-   * the sheet carries.
-   */
-  const assetReferences = new Map<string, string>();
-  /** The sheet's emission, performed exactly once per build. */
-  let sheetReferenceId: string | undefined;
-  /**
-   * Compile the sheet, rebase its `url()` targets, emit it (and the bytes those
-   * targets address) and record its content-addressed file name.
-   *
-   * The emission is a BUILD concern, not a module-graph concern: the sheet is
-   * consumed by the SSR/DSD link channel even when the generated entry never
-   * imports its adapter (the island-free CSS-only shape, defect D), and the
-   * asset's name is its own content hash, so a second emission would be the
-   * same file under the same name. Emitting once, from whichever consumer runs
-   * first, keeps the adapter module and the declared link pointing at one
-   * resource.
-   */
-  const emitSheet = async (context: ComponentSheetEmitContext): Promise<string | undefined> => {
-    if (sheetReferenceId !== undefined) return sheetReferenceId;
-    // Read the candidates NOW, never at plugin construction: the build's
-    // discovery pass registers them in its own `buildStart`, which runs before
-    // this hook — the ordering defect B depends on. No candidates: no sheet
-    // (the registry is the build's own, so "none" means none for THIS build).
-    const admitted = candidates();
-    if (admitted.length === 0) return undefined;
-    compiled ??= compileComponentStyleSheet(root, options, admitted);
-    const css = rebaseComponentSheetUrls(
-      context,
-      componentSheetBase(root),
-      await compiled,
-      assetReferences,
-    );
-    const fileName = styleAssetFileName(css);
-    record.fileName = fileName;
-    sheetReferenceId = context.emitFile({ type: 'asset', fileName, source: css });
-    return sheetReferenceId;
-  };
-  return {
-    name: 'open:tailwind-components',
-    enforce: 'pre',
-    resolveId(id) {
-      return id === COMPONENT_SHEET_SPECIFIER ? COMPONENT_SHEET_GRAPH_ID : null;
+  return generatedSheetsPlugin([
+    {
+      specifier: COMPONENT_SHEET_SPECIFIER,
+      graphId: COMPONENT_SHEET_GRAPH_ID,
+      urlBase: generatedSheetBase(root),
+      record,
+      adapterComments: [
+        '// The shared component stylesheet: the utilities the admitted shadow-root',
+        '// class candidates compile to. One sheet per realm, held by the generated',
+        '// client entry so every shadow root adopts the same CSSStyleSheet object.',
+      ],
+      compile: async () => {
+        // Read the candidates NOW, never at plugin construction: the build's
+        // discovery pass registers them in its own `buildStart`, which runs
+        // before this hook — the ordering defect B depends on. No candidates:
+        // no sheet (the registry is the build's own, so "none" means none for
+        // THIS build).
+        const admitted = candidates();
+        if (admitted.length === 0) return '';
+        return await compileComponentStyleSheet(root, options, admitted);
+      },
     },
-    async buildStart() {
-      await emitSheet(this);
-    },
-    async load(id) {
-      if (id !== COMPONENT_SHEET_GRAPH_ID) return null;
-      const referenceId = await emitSheet(this);
-      // A graph that imports the adapter with no admitted candidate (every
-      // candidate module left the graph between the entry's generation and the
-      // module load): an empty module keeps the import resolvable without
-      // handing out a sheet that was never emitted.
-      if (referenceId === undefined) return 'export default undefined;\n';
-      return fetchSheetAdapterModule(referenceId);
-    },
-    /**
-     * Resolve every digest placeholder of the emitted sheet to the emitted
-     * asset's own URL — through Vite's own file-name mapping (`getFileName`),
-     * the same API the style-edge placeholder pass uses, so the framework
-     * never spells a hashed name itself. The references were created in this
-     * build's `load`, so the join cannot miss an asset the sheet addresses —
-     * including files Vite's own pipeline INLINED into the document sheet
-     * (below `assetsInlineLimit`), which have no document-side asset to
-     * borrow a name from.
-     */
-    generateBundle(_options, bundle) {
-      if (assetReferences.size === 0 || record.fileName === undefined) return;
-      const output = bundle[record.fileName];
-      if (output === undefined || output.type !== 'asset') return;
-      const base = this.environment.config.base;
-      const source =
-        typeof output.source === 'string'
-          ? output.source
-          : Buffer.from(output.source).toString('utf8');
-      output.source = source.replace(
-        COMPONENT_URL_PLACEHOLDER_RE,
-        (_whole, quote: string, digest: string) => {
-          const referenceId = assetReferences.get(digest);
-          if (referenceId === undefined) {
-            // Unreachable by construction: the rebase records the reference of
-            // every digest it stamps into the placeholder.
-            throw new Error(
-              `[tailwind] the component sheet carries an unresolved url() placeholder ` +
-                `(digest ${digest}); the rebased reference map lost its emission`,
-            );
-          }
-          return `url(${quote}${cssAssetUrl(base, record.fileName!, this.getFileName(referenceId))}${quote})`;
-        },
-      );
-    },
-  };
-}
-
-/** The compile base — the component entry's own directory (see above). */
-function componentSheetBase(root: string): string {
-  return join(root, '.openElement');
-}
-
-/** Placeholder prefix a rebased component-sheet `url()` target carries. */
-const COMPONENT_URL_PLACEHOLDER_PREFIX = '__OE_COMPONENT_URL__';
-/** The same placeholder in the emitted CSS text (digest-keyed). */
-const COMPONENT_URL_PLACEHOLDER_RE = /url\(\s*(['"]?)__OE_COMPONENT_URL__([0-9a-f]{64})\1\s*\)/g;
-/** One (possibly quoted) `url()` target of the compiled sheet. */
-const URL_REFERENCE_RE = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
-
-function contentDigest(bytes: Uint8Array): string {
-  return createHash('sha256').update(bytes).digest('hex');
-}
-
-/**
- * A target the compiler rebased to a project-relative file path: anything not
- * already self-contained (data URL, fragment, absolute URL/path) and not a
- * scheme URL. Only those are resolved against the compile base; the rest are
- * left exactly as the official compiler wrote them.
- */
-function isFileUrlTarget(target: string): boolean {
-  return (
-    target !== '' &&
-    !target.startsWith('data:') &&
-    !target.startsWith('#') &&
-    !target.startsWith('/') &&
-    !/^[a-z][a-z0-9+.-]*:/i.test(target)
-  );
-}
-
-/**
- * Replace every relative `url()` target of the compiled sheet with a
- * deterministic placeholder carrying the referenced file's content digest, and
- * emit the referenced bytes as an asset of this build. The digest keeps the
- * sheet's file name a faithful content address (two different referenced
- * assets can never produce one sheet name, and no emission-order fact leaks
- * into the name) and is what the `generateBundle` half resolves to the emitted
- * asset's own file name.
- *
- * Emitting the bytes here — rather than borrowing an asset Vite's document
- * pipeline happened to emit for the same file — is what makes the reference
- * total: a font below `assetsInlineLimit` is a data URL in the document sheet
- * and has no emitted asset to borrow, yet the component sheet must still
- * address it.
- */
-function rebaseComponentSheetUrls(
-  context: ComponentSheetEmitContext,
-  entryBase: string,
-  css: string,
-  assetReferences: Map<string, string>,
-): string {
-  return css.replace(URL_REFERENCE_RE, (whole, quote: string, target: string) => {
-    if (!isFileUrlTarget(target)) return whole;
-    let file: string;
-    let bytes: Uint8Array;
-    try {
-      file = resolve(entryBase, decodeURIComponent(target));
-      bytes = readFileSync(file);
-    } catch {
-      // Not a readable file (an unresolved specifier, a query string, a
-      // malformed escape): not a target this rebase owns, so it is left
-      // exactly as the official compiler wrote it.
-      return whole;
-    }
-    const digest = contentDigest(bytes);
-    if (!assetReferences.has(digest)) {
-      assetReferences.set(
-        digest,
-        context.emitFile({ type: 'asset', name: basename(file), source: bytes }),
-      );
-    }
-    return `url(${quote}${COMPONENT_URL_PLACEHOLDER_PREFIX}${digest}${quote})`;
-  });
-}
-
-/** The emit half of the plugin context the rebase needs. */
-interface ComponentSheetEmitContext {
-  /** Emit the bytes a rebased `url()` target addresses (named, hashed by Vite). */
-  emitFile(file: { type: 'asset'; name: string; source: Uint8Array }): string;
-  /** Emit the sheet itself under its own content address. */
-  emitFile(file: { type: 'asset'; fileName: string; source: string }): string;
+  ]);
 }
 
 /** The specifier the generated client entry imports; the plugin's own id. */

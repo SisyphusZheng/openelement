@@ -86,6 +86,7 @@ test('defineConfig: identity helper, accepted key set is the documented surface'
     'i18n',
     'viewTransition',
     'tailwind',
+    'unocss',
     'speculation',
     'build',
     'middleware',

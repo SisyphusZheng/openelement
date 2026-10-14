@@ -41,9 +41,9 @@ export interface OpenElementCssPart {
 }
 
 /**
- * A declaration's Tailwind compilation requirement and the package-owned style
+ * A declaration's utility-compilation requirement and the package-owned style
  * sources that requirement compiles (the declared-compilation contract; see
- * the router's `tailwind-plan` module for the resolution rules).
+ * the router's `style-plan` module for the resolution rules).
  *
  * `required` is the mandatory-compilation dependency: the component's
  * presentation cannot be delivered without the compile, so an application that
@@ -55,10 +55,17 @@ export interface OpenElementCssPart {
  * `sources` are package-relative paths (e.g. `./theme.css`) resolved against
  * THIS package, so a consumer never repeats the owner's declaration. They must
  * exist in the installed package (i.e. ship in the tarball).
+ *
+ * `dialect` names the CLASS LANGUAGE this component's utility tokens are
+ * written in, not the engine that compiles them: the declaration stays
+ * provider-neutral, and a selected provider that does not implement the
+ * dialect fails the build before any compile. Omitted means `tailwind4` — the
+ * language every declaration written before this field existed uses.
  */
 export interface OpenElementTailwindDeclaration {
   required?: boolean;
   sources?: string[];
+  dialect?: 'tailwind4';
 }
 
 /** The openElement-specific extension block of a package manifest declaration. */

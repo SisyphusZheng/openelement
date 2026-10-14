@@ -24,7 +24,7 @@ import {
   pageChunkMap,
   postProcessClientIslandBuild,
 } from './internal/ssg/index.ts';
-import { tailwindPlanForApp } from './internal/tailwind-plan.ts';
+import { stylePlanForApp } from './internal/style-plan.ts';
 import { stylesheetLinkTag } from './head-injection.ts';
 import {
   collectBuildArtifacts,
@@ -136,17 +136,19 @@ export function buildPlugin(
       const hasEnhancedForms = (ctx.phase1.cachedRoutes ?? []).some(
         (route) => route.type === 'page' && route.hasEnhancedForms === true,
       );
-      // The Tailwind entry (alpha15 S lane; demand is DECLARED):
-      // the pipeline exists when the application declares it OR an admitted
-      // package declaration requires/offers it — so a declared requirement is
-      // itself a reason to run Phase 2 even when the app carries no islands.
-      const tailwindOptions = tailwindPlanForApp(
+      // The style entry (alpha15 S lane; demand is DECLARED): the pipeline
+      // exists when the application declares it OR an admitted package
+      // declaration requires/offers it — so a declared requirement is itself a
+      // reason to run Phase 2 even when the app carries no islands, and which
+      // ENGINE compiles it is the application's own declaration.
+      const stylePlan = stylePlanForApp(
         ctx,
         ctx.phase3.root || process.cwd(),
         options.tailwind,
+        options.unocss,
       );
       // S-C2/S-12: an app whose components are all server-rendered (no islands,
-      // no enhanced forms, no Tailwind) still needs Phase 2 — the client build
+      // no enhanced forms, no style entry) still needs Phase 2 — the client build
       // is the ONE owner of the emitted style assets, and a server-rendered
       // component's authored `.css` edge is declared by the SSR build as a URL
       // (the inline fallback retired with S-C1.4). Without this term such an
@@ -157,7 +159,7 @@ export function buildPlugin(
       const hasServerRenderedPages = (ctx.phase1.cachedRoutes ?? []).some(
         (route) => route.type === 'page',
       );
-      if (totalIslands > 0 || hasEnhancedForms || tailwindOptions || hasServerRenderedPages) {
+      if (totalIslands > 0 || hasEnhancedForms || stylePlan || hasServerRenderedPages) {
         await runClientIslandBuild(ctx);
       }
 
@@ -167,11 +169,11 @@ export function buildPlugin(
       // `headExtras` at their own build step, so the link lands in every
       // render channel from one serialization. Fail closed: a declared entry
       // with no emitted stylesheet already failed in buildClient.
-      if (tailwindOptions) {
+      if (stylePlan) {
         if (ctx.clientStyleAssets.length === 0) {
           throw new Error(
-            '[tailwind] the entry is enabled but Phase 2 recorded no document stylesheet — ' +
-              'the client build either did not run or emitted no CSS for the entry',
+            `[${stylePlan.provider}] the style entry is enabled but Phase 2 recorded no document ` +
+              'stylesheet — the client build either did not run or emitted no CSS for the entry',
           );
         }
         const base = ctx.phase3.base || '/';

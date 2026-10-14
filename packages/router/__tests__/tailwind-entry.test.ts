@@ -17,30 +17,12 @@ import { expect, test } from 'vitest';
 import {
   isPackageStyleSource,
   renderTailwindEntry,
-  resolveTailwindOptions,
   resolveTailwindSource,
   tailwindEntryModuleId,
   tailwindEntryPath,
   tailwindEntryPlugin,
   tailwindEntryUrl,
 } from '../src/vite/tailwind.ts';
-
-// ─── Option resolution ─────────────────────────────────────────
-
-test('the entry is OFF by default and for every falsy spelling', () => {
-  expect(resolveTailwindOptions(undefined)).toEqual(undefined);
-  expect(resolveTailwindOptions(false)).toEqual(undefined);
-});
-
-test('tailwind: true resolves to an empty source list; an object declares sources', () => {
-  // `resolveTailwindOptions` normalizes the APPLICATION's own declaration, so
-  // both spellings report the document reset as on — this helper never sees
-  // package declarations (the plan resolver owns that fact).
-  expect(resolveTailwindOptions(true)).toEqual({ theme: [], documentReset: true });
-  const options = { theme: ['@openelement/ui/theme.css'] } as const;
-  expect(resolveTailwindOptions(options)).toEqual({ ...options, documentReset: true });
-  expect(resolveTailwindOptions({})).toEqual({ theme: [], documentReset: true });
-});
 
 // ─── Source resolution (app-relative paths vs package specifiers) ───
 

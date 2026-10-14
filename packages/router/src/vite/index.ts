@@ -92,7 +92,6 @@ export type { OpenMdxPluginOptions } from './plugin-mdx.ts';
 // Tailwind entry (alpha9 C2 #1505; externalized alpha15 S lane): the option
 // type lives on the host-neutral config surface, the implementation is the
 // official @tailwindcss/vite pipeline mounted by the build/dev channels.
-export { resolveTailwindOptions } from './tailwind.ts';
 export type { ResolvedTailwindOptions } from './tailwind.ts';
 export type { TailwindOptions } from '../config.ts';
 

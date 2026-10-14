@@ -31,3 +31,4 @@ Evidence cited by an active ADR follows the same policy: ADR-0120's commissioned
 - [ADR-0164-island-style-asset-protocol.md](./ADR-0164-island-style-asset-protocol.md)
 - [ADR-0166-regions-axis-entry-subpaths.md](./ADR-0166-regions-axis-entry-subpaths.md)
 - [ADR-0167-declared-tailwind-compilation.md](./ADR-0167-declared-tailwind-compilation.md)
+- [ADR-0168-style-provider-port.md](./ADR-0168-style-provider-port.md)

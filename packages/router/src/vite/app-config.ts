@@ -441,6 +441,21 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
 
   // --- token stylesheet: override > convention ---
   const tokenSource = overrides.styles?.tokens ?? conventionTokensPath(dirs.base);
+  /**
+   * One owner per token file. A file the application's own style entry
+   * declares (`tailwind.theme` / `unocss.theme`) is compiled into the document
+   * sheet by the engine, so the INLINE token convention must not carry it too:
+   * the two channels would deliver one file twice, and an engine source talks
+   * the engine's own language (`@theme` blocks, bare `@import`s) which the
+   * inline `<style>` channel rejects as unsafe CSS by design. The declared
+   * source wins — the application asked the engine for it.
+   */
+  const engineThemeSources = [
+    ...(typeof overrides.tailwind === 'object' ? (overrides.tailwind.theme ?? []) : []),
+    ...(typeof overrides.unocss === 'object' ? (overrides.unocss.theme ?? []) : []),
+  ];
+  const declaredByEngine = (source: string): boolean =>
+    source === tokenSource || join(root, source) === join(root, tokenSource);
   let tokensFragment: string | undefined;
   if (overrides.styles?.tokens !== undefined) {
     const css = readTextFileIfPresent(join(root, tokenSource));
@@ -452,7 +467,7 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
       );
     }
     tokensFragment = tokensFragmentFor(css);
-  } else {
+  } else if (!engineThemeSources.some(declaredByEngine)) {
     const css = readTextFileIfPresent(join(root, tokenSource));
     if (css !== null) {
       tokensFragment = tokensFragmentFor(css);
@@ -485,6 +500,7 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
   }
   if (overrides.viewTransition !== undefined) options.viewTransition = overrides.viewTransition;
   if (overrides.tailwind !== undefined) options.tailwind = overrides.tailwind;
+  if (overrides.unocss !== undefined) options.unocss = overrides.unocss;
   if (overrides.speculation !== undefined) options.speculation = overrides.speculation;
   if (overrides.build?.manifestBudget !== undefined) {
     options.build = { ...options.build, manifestBudget: { ...overrides.build.manifestBudget } };

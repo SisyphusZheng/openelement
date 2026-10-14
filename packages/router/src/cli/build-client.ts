@@ -46,15 +46,8 @@ import {
   readViteClientManifest,
 } from '../vite/client-asset-manifest.ts';
 import { createClassCandidateRegistry } from '@openelement/compiler';
-import { tailwindPlanForApp } from '../vite/internal/tailwind-plan.ts';
-import {
-  COMPONENT_SHEET_SPECIFIER,
-  componentStyleSheetPlugin,
-  tailwindEntryPath,
-  tailwindEntryPlugin,
-  tailwindPlugins,
-  type ComponentStyleSheetRecord,
-} from '../vite/tailwind.ts';
+import { stylePlanForApp } from '../vite/internal/style-plan.ts';
+import { createStyleBuildIntegration } from '../vite/internal/style-provider.ts';
 import {
   ELEMENT_RUNTIME_ENTRY_SPECIFIER,
   type ElementRuntimeIdentity,
@@ -427,13 +420,14 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     (route) => route.type === 'page' && route.hasEnhancedForms === true,
   );
 
-  // The Tailwind entry (alpha15 S lane; demand is DECLARED): the
-  // pipeline exists when the application declares it OR an admitted package
-  // declaration requires/offers it. With no declaration at all nothing here
-  // resolves, no peer is loaded, no entry is generated and no resource is
-  // emitted. `tailwind: false` is authoritative and fails closed when an
-  // admitted component requires the compile.
-  const tailwindOptions = tailwindPlanForApp(ctx, root, ctx.options.tailwind);
+  // The style entry (alpha15 S lane; demand is DECLARED): the pipeline exists
+  // when the application declares it OR an admitted package declaration
+  // requires/offers it. With no declaration at all nothing here resolves, no
+  // peer is loaded, no entry is generated and no resource is emitted. A
+  // declared `false` is authoritative and fails closed when an admitted
+  // component requires the compile. Which ENGINE compiles it is the
+  // application's own declaration (`tailwind` or `unocss`); see `style-plan`.
+  const stylePlan = stylePlanForApp(ctx, root, ctx.options.tailwind, ctx.options.unocss);
 
   // The component stylesheet (alpha15 S lane): the compiler's shadow-root
   // class candidates compiled by the same official peer into one shared,
@@ -450,9 +444,35 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   // and discovery pass, read by this build's stylesheet emitter, and it never
   // sees another build's facts.
   const shadowCandidateRegistry = createClassCandidateRegistry();
+  /**
+   * The module texts this build's discovery walk read (id → source). The walk
+   * already reads every server-rendered module to ask the compiler for its
+   * admission facts; a provider that extracts candidates from SOURCE (UnoCSS)
+   * consumes these through its own extractors, so the framework never
+   * tokenizes anything itself. One writer (the discovery pass), one reader
+   * (the selected provider's document compile).
+   */
+  const walkedSources = new Map<string, string>();
   const shadowCandidates = (): readonly string[] =>
-    tailwindOptions ? shadowCandidateRegistry.allShadow() : [];
-  const componentSheetRecord: ComponentStyleSheetRecord = { fileName: undefined };
+    stylePlan ? shadowCandidateRegistry.allShadow() : [];
+  const documentCandidates = (): readonly string[] =>
+    stylePlan ? shadowCandidateRegistry.allLight() : [];
+  /**
+   * The style engine this build selected, its plugins and its emission
+   * records. Constructed once the plan exists; an unselected engine is never
+   * imported, so it cannot reach this build or the browser bundle.
+   */
+  const styleIntegration =
+    stylePlan === undefined
+      ? undefined
+      : await createStyleBuildIntegration({
+          root,
+          plan: stylePlan,
+          unocss: ctx.options.unocss,
+          shadowCandidates,
+          documentCandidates,
+          sources: () => walkedSources,
+        });
   /**
    * The component stylesheet's graph specifier, decided from the CURRENT
    * registry: the generated entry imports the adapter when (and only when) the
@@ -461,7 +481,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
    * pass registered its facts.
    */
   const componentSheetSpecifier = (): string | undefined =>
-    shadowCandidates().length > 0 ? COMPONENT_SHEET_SPECIFIER : undefined;
+    shadowCandidates().length > 0 ? styleIntegration?.provider.componentSheetSpecifier : undefined;
+  /**
+   * Whether the selected engine reads its candidates from source. The module
+   * texts the discovery walk reads are republished only for such an engine.
+   */
+  const isSourceExtractingProvider = styleIntegration?.provider.documentDelivery === 'generated';
 
   const localDeliveryTags = localIslands.flatMap((tagName) =>
     deliveryTagsForLocal(
@@ -499,7 +524,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     packageIslandDecls.length === 0 &&
     compilerBehaviorDecls.length === 0 &&
     !enhancedForms &&
-    !tailwindOptions &&
+    !stylePlan &&
     !hasServerRenderedRoots
   ) {
     await removeClientDeliveryArtifacts(root, outDir);
@@ -553,7 +578,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     selectedPackageDecls.length === 0 &&
     selectedCompilerBehaviorDecls.length === 0 &&
     !enhancedForms &&
-    !tailwindOptions &&
+    !stylePlan &&
     !hasServerRenderedRoots
   ) {
     await removeClientDeliveryArtifacts(root, outDir);
@@ -685,12 +710,17 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     return generateClientEntry(islandEntries, {
       enhancedForms,
       renderer: ctx.options.renderer,
-      // The document stylesheet's module: the generated entry imports the
-      // Tailwind entry so the official pipeline compiles it inside this build's
-      // CSS graph and Vite emits the content-hashed `.css` asset (plus every
-      // `url()` asset the sources reference) into dist/client. No other module
-      // imports it, so the entry chunk's CSS is exactly the document stylesheet.
-      ...(tailwindOptions ? { styleEntry: tailwindEntryPath(root) } : {}),
+      // The document stylesheet's module: for a `graph-entry` provider the
+      // generated entry imports the CSS entry so the engine's pipeline
+      // compiles it inside this build's CSS graph and Vite emits the
+      // content-hashed `.css` asset (plus every `url()` asset the sources
+      // reference) into dist/client. No other module imports it, so the entry
+      // chunk's CSS is exactly the document stylesheet. A `generated` provider
+      // emits its document sheet as its own asset and the head links it, so
+      // nothing is imported here.
+      ...(stylePlan !== undefined && styleIntegration?.provider.documentDelivery === 'graph-entry'
+        ? { styleEntry: styleIntegration.provider.documentSheetModule }
+        : {}),
       // The component stylesheet's adapter: imported and registered by the entry
       // (native renderer) when the compiler admitted shadow-root candidates.
       ...(utilitySheet === undefined ? {} : { utilitySheet }),
@@ -718,11 +748,14 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const clientOutDir = resolve(root, outDir, 'client');
   const clientBase = ctx.phase3.base || '/';
 
-  // The official Tailwind integration, mounted into this build's CSS graph
-  // only while the app declares the entry (alpha15 S lane). `@tailwindcss/vite`
-  // is an optional peer; a declared entry with no resolvable peer fails closed
-  // with the loader's own coded diagnostic.
-  const tailwindPeerPlugins = tailwindOptions ? await tailwindPlugins() : [];
+  // The selected engine's plugins, mounted into this build's CSS graph only
+  // while the app declares (or an admitted package requires) the entry
+  // (alpha15 S lane). A `graph-entry` provider contributes its virtual entry
+  // plus the official peer (`@tailwindcss/vite`, an optional peer that fails
+  // closed with the loader's own coded diagnostic when missing); a `generated`
+  // provider contributes the framework's sheet emitter. Absent — not inert —
+  // when no plan exists, so an unselected engine is never imported.
+  const stylePlugins = styleIntegration?.plugins ?? [];
 
   // this build owns the island style asset protocol's `.css`
   // artifacts. The emission records feed the manifest's `styles` field and
@@ -893,13 +926,6 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         | undefined,
     },
     plugins: [
-      // The Tailwind entry (S lane): the virtual entry module's resolve/load
-      // plus the official plugins that compile it. The peer's own `apply`
-      // filters its serve/build halves, exactly as in a user config. Absent
-      // (not inert) when the app declares no entry.
-      ...(tailwindOptions
-        ? [tailwindEntryPlugin(root, tailwindOptions), ...tailwindPeerPlugins]
-        : []),
       // S-C1.4 (#1609) + defect B: the sources the SERVER renders are part of the
       // same asset build. The pass walks their static module graph through this
       // build's resolver, asks the compiler for each module's admission facts —
@@ -919,18 +945,20 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         // discovery pass uses the list to tell the app when a component package
         // it merely IMPORTS is not delivered. See the plugin's parameter note.
         (ctx.phase1.packageManifests ?? []).map((manifest) => manifest.packageName),
+        // The walk's own reads, republished for a provider whose extractors
+        // consume source (alpha15 stage 2B). Absent — not empty — when the
+        // selected engine's integration owns its own detection, so a Tailwind
+        // build pays nothing for a map it will never read.
+        isSourceExtractingProvider ? walkedSources : undefined,
       ),
-      // The component stylesheet's half of the same seam: it sits AFTER the
-      // peer (same `enforce: 'pre'` seat), so its transform receives the
-      // compiled CSS, emits the content-addressed asset and hands the graph
-      // the fetch adapter the client entry registers. Mounted whenever the
-      // Tailwind entry is on — never gated on a pre-build candidate count,
-      // which is exactly what the aliased-reachability defect made wrong: the
-      // sheet emits when this build DISCOVERED candidates (a candidate-less
-      // build emits nothing).
-      ...(tailwindOptions
-        ? [componentStyleSheetPlugin(root, tailwindOptions, shadowCandidates, componentSheetRecord)]
-        : []),
+      // The selected engine's half of the same seam: it sits AFTER the
+      // discovery pass, so its `buildStart` compile reads the candidates that
+      // pass registered — never gated on a pre-build candidate count, which is
+      // exactly what the aliased-reachability defect made wrong: the sheet
+      // emits when this build DISCOVERED candidates (a candidate-less build
+      // emits nothing). Absent (not inert) when no plan exists, so an
+      // unselected engine is never imported.
+      ...stylePlugins,
       // The compiler is part of the official client build path. The outer
       // open:core hook covers normal Vite transforms; this inline build owns
       // its own plugin list and must use the same transform exactly once.
@@ -1076,22 +1104,40 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     });
 
     // The document stylesheet (S lane): the client entry chunk's emitted CSS
-    // files, read from the same manifest the asset manifest consumes. Fail
-    // closed — a declared Tailwind entry that emitted no stylesheet would ship
-    // pages styled by nothing, silently.
-    if (tailwindOptions) {
-      const manifestPath = join(clientOutDir, '.vite', 'manifest.json');
-      const viteManifest = await readViteClientManifest(manifestPath);
-      ctx.clientStyleAssets = findClientEntryStyles(viteManifest, manifestPath);
-      if (ctx.clientStyleAssets.length === 0) {
-        throw buildError(
-          ClientAssetErrorCode.STYLESHEET_MISSING,
-          'The tailwind entry is enabled but the client build emitted no document stylesheet ' +
-            `(manifest: ${manifestPath}) — the generated entry imports ${tailwindEntryPath(root)} ` +
-            ', so a missing CSS asset is a build defect, never a silent unstyled page',
-        );
+    // files, read from the same manifest the asset manifest consumes — or, for
+    // an engine that generates its own sheet, the asset this build emitted
+    // directly. Fail closed either way: a declared entry that emitted no
+    // stylesheet would ship pages styled by nothing, silently.
+    if (stylePlan && styleIntegration) {
+      if (styleIntegration.provider.documentDelivery === 'generated') {
+        const fileName = styleIntegration.documentRecord?.fileName;
+        if (fileName === undefined) {
+          throw buildError(
+            ClientAssetErrorCode.STYLESHEET_MISSING,
+            `The ${stylePlan.provider} style entry is enabled but the client build emitted no ` +
+              'document stylesheet — the engine compiled no CSS for the declared sources, ' +
+              'candidates or preflight layers. A missing document sheet is a build defect, ' +
+              'never a silently unstyled page.',
+          );
+        }
+        ctx.clientStyleAssets = [fileName];
+      } else {
+        const manifestPath = join(clientOutDir, '.vite', 'manifest.json');
+        const viteManifest = await readViteClientManifest(manifestPath);
+        ctx.clientStyleAssets = findClientEntryStyles(viteManifest, manifestPath);
+        if (ctx.clientStyleAssets.length === 0) {
+          throw buildError(
+            ClientAssetErrorCode.STYLESHEET_MISSING,
+            `The ${stylePlan.provider} style entry is enabled but the client build emitted no ` +
+              `document stylesheet (manifest: ${manifestPath}) — the generated entry imports ` +
+              `${styleIntegration.provider.documentSheetModule}, so a missing CSS asset is a ` +
+              'build defect, never a silently unstyled page',
+          );
+        }
       }
-      log.info(`Tailwind document stylesheet emitted: ${ctx.clientStyleAssets.join(', ')}`);
+      log.info(
+        `${stylePlan.provider} document stylesheet emitted: ${ctx.clientStyleAssets.join(', ')}`,
+      );
     }
 
     // The authored sheets' emitted files (S5-C): the SSR adapter declares each
@@ -1106,16 +1152,18 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     // (defect C: no other build's registry is consulted).
     const discoveredShadowCandidates = shadowCandidates();
     if (discoveredShadowCandidates.length > 0) {
-      if (componentSheetRecord.fileName === undefined) {
+      const componentSheetFile = styleIntegration?.componentRecord.fileName;
+      if (componentSheetFile === undefined) {
         throw buildError(
           ClientAssetErrorCode.STYLESHEET_MISSING,
           'The compiler admitted shadow-root class candidates but the client build emitted no ' +
-            'component stylesheet — the official Tailwind compile produced no CSS for the entry',
+            `component stylesheet — the ${stylePlan?.provider ?? 'style'} compile produced no ` +
+            'CSS for the entry',
         );
       }
-      ctx.componentStyleSheet = { fileName: componentSheetRecord.fileName };
+      ctx.componentStyleSheet = { fileName: componentSheetFile };
       log.info(
-        `Tailwind component stylesheet emitted: ${componentSheetRecord.fileName} ` +
+        `${stylePlan?.provider ?? 'style'} component stylesheet emitted: ${componentSheetFile} ` +
           `(${discoveredShadowCandidates.length} shadow class candidate(s))`,
       );
     }

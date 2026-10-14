@@ -1,5 +1,6 @@
 /**
- * The dev channel of the component stylesheet (alpha15 S lane, S5-A).
+ * The dev channel of the component stylesheet (alpha15 S lane S5-A, provider
+ * port stage 2B).
  *
  * Production delivers the shadow utilities as a content-addressed client asset
  * (Phase 2) plus a declarative `<link>` in every DSD template. Dev has no
@@ -8,20 +9,18 @@
  * write:
  *
  * 1. The sheet itself is served at the stable dev URL
- *    `<base>.openElement/tailwind-components.css`, compiled through the
- *    OFFICIAL compiler API from the same candidate set and entry text the
- *    build uses (one compiler, one entry generator, one candidate channel).
- *    Direct browser requests get raw CSS — the `<link>` in the dev DSD works
- *    exactly as the built one does.
+ *    `<base>.openElement/<engine>-components.<version>.css`, compiled through
+ *    the SELECTED provider's public API from the same candidate set the build
+ *    uses (one engine, one candidate channel, one sheet).
  * 2. The generated dev SSR entry imports `virtual:open-element-style-links`;
  *    this plugin answers that import with the dev URL, so every DSD template
  *    of a component whose classes were admitted declares the resource.
- * 3. The client's shared sheet comes from the adapter module behind
- *    `virtual:open-tailwind-components`: one `CSSStyleSheet` per realm held on
- *    `globalThis`, filled by `fetch` + `replace()`, carrying the protocol's
- *    readiness and identity keys. The object survives HMR re-evaluation, so an
- *    edit UPDATES the same sheet (every root holding it re-renders) instead of
- *    replacing the reference.
+ * 3. The client's shared sheet comes from the adapter module behind the
+ *    provider's own component-sheet specifier: one `CSSStyleSheet` per realm
+ *    held on `globalThis`, filled by `fetch` + `replace()`, carrying the
+ *    protocol's readiness and identity keys. The object survives HMR
+ *    re-evaluation, so an edit UPDATES the same sheet (every root holding it
+ *    re-renders) instead of replacing the reference.
  *
  * HMR: a `.tsx` edit can change the admitted candidate set and a declared
  * theme source edit changes the theme layer. Both dirty the compile cache; the
@@ -30,6 +29,10 @@
  * sheet through the adapter's `import.meta.hot.accept`, so connected shadow
  * roots update in place. No node is created, no page reload is required for
  * the stylesheet half of the change.
+ *
+ * PROVIDER SELECTION IS STATIC: the plan names one engine, the integration for
+ * that engine is constructed here, and the other engine's package is never
+ * imported by this dev server.
  */
 
 import process from 'node:process';
@@ -37,33 +40,29 @@ import type { Plugin, ViteDevServer } from 'vite';
 import { createLogger, formatError } from '@openelement/element';
 import { collectShadowClassCandidates } from './internal/collect-shadow-candidates.ts';
 import {
-  COMPONENT_SHEET_SPECIFIER,
-  compileComponentStyleSheet,
-  type ResolvedTailwindOptions,
-} from './tailwind.ts';
+  createStyleBuildIntegration,
+  type StyleBuildIntegration,
+} from './internal/style-provider.ts';
 import { STYLE_LINKS_VIRTUAL_ID } from './internal/element-style-links.ts';
 import { devClientModulePath } from './internal/dev-client-path.ts';
 import type { OpenPluginState } from './plugin-config.ts';
-import { tailwindPlanForApp } from './internal/tailwind-plan.ts';
+import { stylePlanForApp } from './internal/style-plan.ts';
 
-const log = createLogger('router-vite:tailwind-components-dev');
-
-/** The served component stylesheet's project-relative identity (bare form). */
-export const DEV_COMPONENT_SHEET_PATH = '.openElement/tailwind-components.css' as const;
+const log = createLogger('router-vite:style-components-dev');
 
 /**
  * The public dev URL of the served component stylesheet.
  *
  * Dev-only detail: the URL carries a version segment
- * (`…/tailwind-components.<version>.css`). Vite's dev pipeline keys modules and
- * direct CSS responses by id, so a byte-stable URL would keep serving the first
- * compile after an edit; the version segment makes every content-moving change
- * a new resource. Production keeps its single content-addressed asset — the
- * dev URL is not part of the built contract.
+ * (`…/<engine>-components.<version>.css`). Vite's dev pipeline keys modules and
+ * direct CSS responses by id, so a byte-stable URL would keep serving the
+ * first compile after an edit; the version segment makes every content-moving
+ * change a new resource. Production keeps its single content-addressed asset —
+ * the dev URL is not part of the built contract.
  */
-export function devComponentSheetUrl(base: string, version = 'current'): string {
+export function devComponentSheetUrl(base: string, engine: string, version = 'current'): string {
   const cleanBase = base.endsWith('/') ? base : `${base}/`;
-  return `${cleanBase}.openElement/tailwind-components.${version}.css`;
+  return `${cleanBase}.openElement/${engine}-components.${version}.css`;
 }
 
 /** A short stable digest of the candidate fingerprint (cache identity). */
@@ -78,7 +77,7 @@ function fingerprintDigest(fingerprint: string): string {
 /** The generated dev adapter module for the shared component sheet. */
 function devSheetAdapterModule(url: string): string {
   return [
-    '// <generated by open:tailwind-components-dev — dev sheet adapter; do not edit>',
+    '// <generated by open:style-components-dev — dev sheet adapter; do not edit>',
     '// One CSSStyleSheet per realm, held on globalThis so an HMR re-evaluation',
     '// UPDATES the same object (every root holding it re-renders) instead of',
     '// handing out a fresh reference. Fetch + replace() — no DOM node, ever.',
@@ -103,26 +102,41 @@ function devSheetAdapterModule(url: string): string {
   ].join('\n');
 }
 
-export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
+export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
   let root = process.cwd();
   let base = '/';
   /**
-   * The pipeline plan, resolved lazily and memoized: demand may come
-   * from an admitted package declaration, which the manifest scan (run in
-   * `open:core`'s buildStart, before any request) makes visible — not from
-   * `configResolved`, which runs before that scan.
+   * The pipeline plan and the engine's integration, resolved lazily and
+   * memoized: demand may come from an admitted package declaration, which the
+   * manifest scan (run in `open:core`'s buildStart, before any request) makes
+   * visible — not from `configResolved`, which runs before that scan.
    */
-  let plan: ResolvedTailwindOptions | undefined;
-  let planResolved = false;
-  const options = (): ResolvedTailwindOptions | undefined => {
-    if (!planResolved) {
-      plan = tailwindPlanForApp(state.ctx, root, state.resolvedOptions.tailwind);
-      planResolved = true;
-    }
-    return plan;
+  let integration: StyleBuildIntegration | undefined;
+  let integrationReady: Promise<StyleBuildIntegration | undefined> | undefined;
+  const resolveIntegration = async (): Promise<StyleBuildIntegration | undefined> => {
+    integrationReady ??= (async () => {
+      const plan = stylePlanForApp(
+        state.ctx,
+        root,
+        state.resolvedOptions.tailwind,
+        state.resolvedOptions.unocss,
+      );
+      if (plan === undefined) return undefined;
+      const resolved = await createStyleBuildIntegration({
+        root,
+        plan,
+        unocss: state.resolvedOptions.unocss,
+        shadowCandidates: () => state.classCandidates.allShadow(),
+        documentCandidates: () => state.classCandidates.allLight(),
+        sources: () => new Map(),
+      });
+      integration = resolved;
+      return resolved;
+    })();
+    return await integrationReady;
   };
   const styleLinksId = '\0open-element-style-links-dev.js';
-  const adapterId = '\0oe-tailwind-components-dev.js';
+  const adapterId = '\0oe-style-components-dev.js';
   /**
    * Bumped on every change that can move the sheet's CONTENT (a declared
    * theme source edit does not change the candidate fingerprint, yet the theme
@@ -131,26 +145,28 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
    */
   let sheetVersion = 0;
 
-  // This plugin instance's own registry (one dev server): the dev transform is
-  // its writer, so the served sheet can never be built from another project's
-  // facts (defect C).
+  const engine = (): string => integration?.provider.id ?? 'style';
   const shadowCandidates = (): readonly string[] => state.classCandidates.allShadow();
   const fingerprint = (): string => shadowCandidates().join(' ');
   const liveVersion = (): string => fingerprintDigest(`${fingerprint()}#${sheetVersion}`);
   const currentCss = async (): Promise<string> => {
-    const resolved = options();
+    const resolved = integration;
     if (resolved === undefined) return '';
     // Always compile for the CURRENT candidate set: the module id is versioned
     // by the change counter, so Vite calls this exactly once per version and a
     // cache here could only serve a stale sheet.
-    return await compileComponentStyleSheet(root, resolved, shadowCandidates());
+    return await resolved.provider.compileComponents({
+      candidates: shadowCandidates(),
+      sources: new Map(),
+    });
   };
   /** A change that may move the admitted candidates or the theme layer. */
   const relevantChange = (file: string): boolean =>
-    /\.(?:tsx|css)$/.test(file) || (options()?.theme ?? []).some((source) => file.endsWith(source));
+    /\.(?:tsx|css)$/.test(file) ||
+    (integration?.plan.theme ?? []).some((source) => file.endsWith(source));
 
   return {
-    name: 'open:tailwind-components-dev',
+    name: 'open:style-components-dev',
     apply: 'serve',
     enforce: 'pre',
 
@@ -159,33 +175,9 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
       base = config.base ?? '/';
     },
 
-    resolveId(id) {
-      if (options() === undefined) return null;
-      // The sheet never enters Vite's module graph: it is served as a plain
-      // `text/css` response (see the middleware below). A CSS-typed module id
-      // would make Vite wrap the sheet in its dev style-injector, which writes
-      // a <style> node at runtime — exactly what this lane forbids.
-      if (id === COMPONENT_SHEET_SPECIFIER) return adapterId;
-      if (id === STYLE_LINKS_VIRTUAL_ID) return styleLinksId;
-      return null;
-    },
-
-    load(id) {
-      if (options() === undefined) return null;
-      if (id === styleLinksId) {
-        return [
-          '// <generated by open:tailwind-components-dev — dev sheet URLs; do not edit>',
-          "import { __setRequestTimeStyleSheetUrls } from '@openelement/element';",
-          `__setRequestTimeStyleSheetUrls(${JSON.stringify([devComponentSheetUrl(base, liveVersion())])});`,
-          '',
-        ].join('\n');
-      }
-      if (id === adapterId) return devSheetAdapterModule(devComponentSheetUrl(base, liveVersion()));
-      return null;
-    },
-
-    configureServer(server: ViteDevServer) {
-      if (options() === undefined) return;
+    async configureServer(server: ViteDevServer) {
+      const resolved = await resolveIntegration();
+      if (resolved === undefined) return;
       // The sheet's own endpoint: a direct `text/css` response, compiled per
       // request from the current candidate set. Registered before Vite's
       // internal middlewares, so neither the module graph nor the CSS plugin
@@ -193,7 +185,10 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
       server.middlewares.use(async (request, response, next) => {
         const url = request.url ?? '';
         const path = url.split('?', 1)[0];
-        if (path === undefined || !/\.openElement\/tailwind-components\.[^./]+\.css$/.test(path)) {
+        if (
+          path === undefined ||
+          !/\.openElement\/[a-z0-9-]+-components\.[^./]+\.css$/.test(path)
+        ) {
           next();
           return;
         }
@@ -214,8 +209,8 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
         }
       });
       log.info(
-        `tailwind component sheet served at ${devComponentSheetUrl(base, 'current')} ` +
-          '(compiled by the official pipeline, adopted as one shared CSSStyleSheet)',
+        `${engine()} component sheet served at ${devComponentSheetUrl(base, engine(), 'current')} ` +
+          '(compiled by the engine’s own API, adopted as one shared CSSStyleSheet)',
       );
       /**
        * Everything that must follow a registration change: the module id's
@@ -274,8 +269,8 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
       const onFile = async (file: string): Promise<void> => {
         if (!relevantChange(file)) return;
         if (/\.tsx$/.test(file)) {
-          // The compile is the same official compiler the transform runs (one
-          // module, not the whole app).
+          // The compile is the same engine the transform runs (one module, not
+          // the whole app).
           await collectShadowClassCandidates({
             root,
             modules: [{ path: file }],
@@ -297,7 +292,7 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
       server.watcher.on('change', (file) => {
         void onFile(file).catch((error) => {
           log.error(
-            `tailwind component sheet: re-registering ${file} failed — the served sheet ` +
+            `${engine()} component sheet: re-registering ${file} failed — the served sheet ` +
               `keeps the previous facts: ${formatError(error)}`,
           );
         });
@@ -305,12 +300,41 @@ export function devTailwindComponentsPlugin(state: OpenPluginState): Plugin {
       server.watcher.on('add', (file) => {
         void onFile(file).catch((error) => {
           log.error(
-            `tailwind component sheet: registering ${file} failed — the served sheet ` +
+            `${engine()} component sheet: registering ${file} failed — the served sheet ` +
               `keeps the previous facts: ${formatError(error)}`,
           );
         });
       });
       server.watcher.on('unlink', onUnlink);
+    },
+
+    resolveId(id) {
+      if (integration === undefined) return null;
+      // The sheet never enters Vite's module graph: it is served as a plain
+      // `text/css` response (see the middleware above). A CSS-typed module id
+      // would make Vite wrap the sheet in its dev style-injector, which writes
+      // a <style> node at runtime — exactly what this lane forbids.
+      if (id === integration.provider.componentSheetSpecifier) return adapterId;
+      if (id === STYLE_LINKS_VIRTUAL_ID) return styleLinksId;
+      return null;
+    },
+
+    load(id) {
+      if (integration === undefined) return null;
+      if (id === styleLinksId) {
+        return [
+          '// <generated by open:style-components-dev — dev sheet URLs; do not edit>',
+          "import { __setRequestTimeStyleSheetUrls } from '@openelement/element';",
+          `__setRequestTimeStyleSheetUrls(${JSON.stringify([
+            devComponentSheetUrl(base, engine(), liveVersion()),
+          ])});`,
+          '',
+        ].join('\n');
+      }
+      if (id === adapterId) {
+        return devSheetAdapterModule(devComponentSheetUrl(base, engine(), liveVersion()));
+      }
+      return null;
     },
   };
 }

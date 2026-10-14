@@ -186,6 +186,36 @@ export interface TailwindOptions {
   theme?: string[];
 }
 
+/**
+ * Options for the UnoCSS entry (alpha15 stage 2B) — the sibling of
+ * {@linkcode TailwindOptions}, with the same shape and the same meaning of
+ * every field. Declaring it selects UnoCSS as the application's style engine;
+ * declaring it alongside `tailwind` is a conflict and fails closed.
+ *
+ * UnoCSS compiles from a configuration rather than from CSS entry text, so
+ * the engine-specific half of the declaration lives in the project's own
+ * `uno.config.ts` (presets, `theme`, shortcuts, extractors) — the router
+ * loads it through the official `@unocss/config` loader and never
+ * re-interprets it. What this key owns is the provider-neutral half:
+ * `theme` names the token/role sources that ship in the document sheet.
+ *
+ * `unocss: true` enables the entry with no declared sources: the framework's
+ * default preset (`presetWind4`, the `tailwind4` dialect) supplies the scale
+ * layer and the declared utilities are compiled from the admitted candidates.
+ */
+export interface UnocssOptions {
+  /**
+   * The style sources the document sheet carries after the preset's own theme
+   * layer: package CSS specifiers or app-relative paths. Plain CSS — an
+   * UnoCSS-generated document sheet is real CSS by the time it exists, so a
+   * role/token file (`open-props`, a package's `:root` block) is included
+   * verbatim and needs no engine-specific transform.
+   */
+  theme?: string[];
+  /** The project's own UnoCSS configuration file, app-relative. */
+  config?: string;
+}
+
 /** Overrides accepted by an `openelement.config.ts` file (unknown keys fail closed). */
 export interface OpenElementUserConfig {
   /** Page renderer. Omit to keep the compiled native renderer. */
@@ -234,6 +264,13 @@ export interface OpenElementUserConfig {
    */
   tailwind?: boolean | TailwindOptions;
   /**
+   * The UnoCSS entry (alpha15 stage 2B, opt-in): the sibling of `tailwind`.
+   * Declaring it selects UnoCSS as this application's style engine; declaring
+   * both keys is a conflict and fails closed — see `UnocssOptions`
+   * (@openelement/router/vite).
+   */
+  unocss?: boolean | UnocssOptions;
+  /**
    * Speculation Rules emission. Boolean for now: `true` uses the framework
    * route-derived defaults, `false` emits none. An object form (explicit
    * prerender/prefetch lists, exclusions, eagerness) is a possible future
@@ -271,6 +308,7 @@ export const OPEN_ELEMENT_CONFIG_KEYS: readonly string[] = [
   'i18n',
   'viewTransition',
   'tailwind',
+  'unocss',
   'speculation',
   'build',
   'middleware',
@@ -278,6 +316,9 @@ export const OPEN_ELEMENT_CONFIG_KEYS: readonly string[] = [
 
 /** Accepted keys inside the `tailwind` options object. */
 export const OPEN_ELEMENT_TAILWIND_KEYS: readonly string[] = ['theme'];
+
+/** Accepted keys inside the `unocss` options object. */
+export const OPEN_ELEMENT_UNOCSS_KEYS: readonly string[] = ['theme', 'config'];
 
 /** Accepted keys inside `head`. */
 export const OPEN_ELEMENT_HEAD_KEYS: readonly string[] = [
@@ -413,6 +454,7 @@ export function assertValidUserConfig(value: unknown): asserts value is OpenElem
     i18n,
     viewTransition,
     tailwind,
+    unocss,
     speculation,
     build,
     middleware,
@@ -500,6 +542,17 @@ export function assertValidUserConfig(value: unknown): asserts value is OpenElem
     assertKnownKeys(tailwind, 'tailwind', OPEN_ELEMENT_TAILWIND_KEYS);
     const theme = (tailwind as { theme?: unknown }).theme;
     if (theme !== undefined) assertStringArray('tailwind.theme', theme);
+  }
+
+  if (unocss !== undefined && unocss !== true) {
+    if (!isPlainObject(unocss)) {
+      throw typeError('unocss', 'true or an object', unocss);
+    }
+    assertKnownKeys(unocss, 'unocss', OPEN_ELEMENT_UNOCSS_KEYS);
+    const theme = (unocss as { theme?: unknown }).theme;
+    if (theme !== undefined) assertStringArray('unocss.theme', theme);
+    const config = (unocss as { config?: unknown }).config;
+    if (config !== undefined) assertStringKey('unocss.config', config);
   }
 
   if (build !== undefined) {

@@ -69,13 +69,13 @@ test('openPlugin: returns retained plugins in correct order', () => {
     // sheet adapters for the requests the open:core compiled-element
     // transform (protocol-activated) emits.
     'open:style-assets-dev',
-    // The dev half of the Tailwind entry (apply: 'serve'), inert until the
-    // resolved options carry the `tailwind` key.
-    'open:tailwind-dev',
+    // The dev half of the style entry (apply: 'serve'), inert until the
+    // resolved plan selects an engine.
+    'open:style-dev',
     // alpha15 S lane (S5-A): the dev channel of the component stylesheet —
-    // serves the officially compiled sheet, feeds the dev DSD link, and hands
+    // serves the engine-compiled sheet, feeds the dev DSD link, and hands
     // the client its shared constructable sheet.
-    'open:tailwind-components-dev',
+    'open:style-components-dev',
     // The component stylesheet channel the generated SSR/dev entry imports
     // (empty list outside the build that emits the addresses).
     'open:element-style-links',

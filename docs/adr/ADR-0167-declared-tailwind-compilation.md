@@ -10,6 +10,10 @@
 - Extends: `OpenElementPackageManifest` (the source-designated package protocol
   — explicitly NOT Custom Elements Manifest; the router's third-party CEM
   reader is a separate, unvalidated parser, `cem-compat.ts`).
+- Extended by: [ADR-0168](ADR-0168-style-provider-port.md), which generalizes
+  this ADR's rules onto a provider port and adds a second engine. Every
+  decision below stands: demand is a package fact, the document reset is an
+  application fact, and the framework owns no engine grammar.
 
 ## Context
 

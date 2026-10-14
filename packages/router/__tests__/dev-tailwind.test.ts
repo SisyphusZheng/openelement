@@ -383,7 +383,7 @@ test('with no tailwind key the dev document is unchanged (#1582 constraint)', as
   const withPlugin = await bootDev(openElement(BASE_OPTIONS));
   handles.push(withPlugin);
   const control = await bootDev(
-    openElement(BASE_OPTIONS).filter((plugin) => plugin.name !== 'open:tailwind-dev'),
+    openElement(BASE_OPTIONS).filter((plugin) => plugin.name !== 'open:style-dev'),
   );
   handles.push(control);
 
@@ -455,7 +455,7 @@ test('dev serves the component stylesheet and declares it in the DSD (S5-A)', as
   // The client's shared sheet rides the same adapter protocol the built entry
   // uses: one CSSStyleSheet, fetch + replace(), the readiness and identity
   // keys — and NO DOM node creation anywhere in the adapter.
-  const adapter = await fetch(`${handle.base}/@id/__x00__oe-tailwind-components-dev.js`).then(
+  const adapter = await fetch(`${handle.base}/@id/__x00__oe-style-components-dev.js`).then(
     (response) => response.text(),
   );
   expect(adapter, 'one shared sheet per realm').toContain('__openElementComponentSheet');

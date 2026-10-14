@@ -331,6 +331,43 @@ export const PresetErrorCode = {
    * the installed package does not carry.
    */
   TAILWIND_SOURCE_UNRESOLVED: 'OE_PRESET_TAILWIND_SOURCE_UNRESOLVED',
+  /**
+   * The application declares both `tailwind` and `unocss`. The style entry has
+   * exactly one compiling engine and the winner must not depend on key order.
+   */
+  STYLE_PROVIDER_CONFLICT: 'OE_PRESET_STYLE_PROVIDER_CONFLICT',
+  /**
+   * An admitted component requires a utility dialect the selected provider
+   * does not implement. Checked before any compile: the alternative is a
+   * half-styled component.
+   */
+  STYLE_DIALECT_UNSUPPORTED: 'OE_PRESET_STYLE_DIALECT_UNSUPPORTED',
+  /**
+   * The UnoCSS entry is enabled but the `unocss` package is not resolvable
+   * from the application.
+   */
+  UNOCSS_UNRESOLVABLE: 'OE_PRESET_UNOCSS_UNRESOLVABLE',
+  /**
+   * The project's own `uno.config.ts` (or the declared config path) cannot be
+   * loaded, or does not export the configuration shape the loader expects.
+   */
+  UNOCSS_CONFIG_UNLOADABLE: 'OE_PRESET_UNOCSS_CONFIG_UNLOADABLE',
+  /**
+   * The UnoCSS compile produced no CSS for a sheet that cannot be empty: the
+   * provider is enabled and candidates were admitted, so an empty result is a
+   * defect of the adapter, never a silently unstyled document.
+   */
+  UNOCSS_EMPTY_COMPILE: 'OE_PRESET_UNOCSS_EMPTY_COMPILE',
+  /**
+   * The declared UnoCSS config path is not app-relative, or names a file the
+   * project does not carry.
+   */
+  UNOCSS_CONFIG_UNRESOLVED: 'OE_PRESET_UNOCSS_CONFIG_UNRESOLVED',
+  /**
+   * A declared UnoCSS `theme` source carries Tailwind's `@theme` at-rule,
+   * which UnoCSS does not compile: the roles would be silently absent.
+   */
+  UNOCSS_THEME_SOURCE_INCOMPATIBLE: 'OE_PRESET_UNOCSS_THEME_SOURCE_INCOMPATIBLE',
 } as const;
 
 /**

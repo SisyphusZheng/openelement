@@ -181,6 +181,31 @@ The full role-name inventory is the `@theme` block of
 `--color-info`, `--color-border`, `--color-input`, `--color-ring`, and
 `--color-chart-1` … `--color-chart-5`.
 
+### Which engine compiles the components (alpha15 stage 2B)
+
+This package's components author their control surfaces as **`tailwind4`-dialect
+utility tokens** and declare exactly that in their manifest entries
+(`openElement.tailwind.dialect: 'tailwind4'`, the default). The declaration
+names the class LANGUAGE, never an engine: it is what makes the components
+portable to any provider that implements the dialect.
+
+- **Tailwind 4** implements it natively — the first-party default
+  (`tailwind: { theme: ['@openelement/ui/theme.css'] }`).
+- **UnoCSS** implements it through its official `presetWind4`. The application
+  selects it with the sibling key (`unocss: { theme: [...] }`), supplies the
+  role→variable join in its own `uno.config.ts`, and the components compile
+  unchanged. The router's own package documentation states the port's shape.
+- A provider that does NOT implement `tailwind4` fails the build
+  (`OE_PRESET_STYLE_DIALECT_UNSUPPORTED`) before anything compiles — a
+  component is never delivered half-styled.
+
+Because `theme.css` is a Tailwind `@theme` source, it is a **Tailwind** engine
+source, not a portable one. Under UnoCSS the same roles come from a plain-CSS
+token file the application owns (Open Props, its own `:root` table, …); the
+role NAMES in this document stay the contract either way. The router refuses a
+`@theme` source under UnoCSS (`OE_PRESET_UNOCSS_THEME_SOURCE_INCOMPATIBLE`)
+rather than silently dropping the roles it declares.
+
 ## alpha8 → C3 variable rename map
 
 The retired alias names are gone. The notable re-seats (consumers renaming

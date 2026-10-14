@@ -1,6 +1,6 @@
 /** Adapter-owned framework, build, content, and routing contracts. */
 import type { FrameworkOptions as ElementFrameworkOptions } from '@openelement/element';
-import type { TailwindOptions } from '../config.ts';
+import type { TailwindOptions, UnocssOptions } from '../config.ts';
 import type { CriticalAssetsOptions } from './internal/ssg/critical-assets.ts';
 
 export type {
@@ -46,6 +46,13 @@ export type FrameworkOptions = ElementFrameworkOptions & {
    * Tailwind-less pipeline.
    */
   tailwind?: boolean | TailwindOptions;
+  /**
+   * Opt-in UnoCSS entry (alpha15 stage 2B): the sibling of `tailwind`, same
+   * shape and same meaning. Declaring it selects UnoCSS as this
+   * application's style engine; declaring both keys is a conflict and fails
+   * closed — see `UnocssOptions` (`@openelement/router/vite`).
+   */
+  unocss?: boolean | UnocssOptions;
 };
 
 /** Blog options stored in the adapter build context. */

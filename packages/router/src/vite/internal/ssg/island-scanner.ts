@@ -7,7 +7,7 @@ import { createLogger } from '@openelement/element';
 import { normalizeSeparators, pathToTagName } from '@openelement/element/build-utils';
 import { hasControlCharacter } from '../../../internal/control-characters.ts';
 import { buildError, PackageIslandErrorCode } from '../../../internal/error-codes.ts';
-import type { DeclaredTailwindSource } from '../tailwind-plan.ts';
+import { type DeclaredStyleSource, STYLE_DIALECTS } from '../style-plan.ts';
 import { join } from 'pathe';
 import { safeReadDir, safeReadFile, safeStat } from './route-scanner-fs.ts';
 import {
@@ -122,9 +122,9 @@ export type DeliveryIslandDecl = IslandDecl & IslandDeliveryMeta;
 export function admittedTailwindDeclarations(
   packageManifests: readonly OpenElementPackageManifest[],
   admitted: readonly { readonly tagName: string }[],
-): DeclaredTailwindSource[] {
+): DeclaredStyleSource[] {
   const admittedTags = new Set(admitted.map((decl) => decl.tagName));
-  const facts: DeclaredTailwindSource[] = [];
+  const facts: DeclaredStyleSource[] = [];
   for (const pkg of packageManifests) {
     for (const declaration of pkg.declarations) {
       if (!admittedTags.has(declaration.tagName)) continue;
@@ -137,7 +137,11 @@ export function admittedTailwindDeclarations(
             `${JSON.stringify(block)}; it must be an object.`,
         );
       }
-      const { required, sources } = block as { required?: unknown; sources?: unknown };
+      const { required, sources, dialect } = block as {
+        required?: unknown;
+        sources?: unknown;
+        dialect?: unknown;
+      };
       if (required !== undefined && typeof required !== 'boolean') {
         throw buildError(
           PackageIslandErrorCode.TAILWIND_SHAPE,
@@ -155,10 +159,23 @@ export function admittedTailwindDeclarations(
             `${JSON.stringify(sources)}; it must be an array of package-relative paths.`,
         );
       }
+      // A dialect outside the shipped set is a coded failure, not a typo that
+      // quietly falls back: the declaration is a compile-time requirement, and
+      // an unknown language has no provider that could satisfy it.
+      if (dialect !== undefined && !STYLE_DIALECTS.includes(dialect as never)) {
+        throw buildError(
+          PackageIslandErrorCode.TAILWIND_SHAPE,
+          `${pkg.packageName} <${declaration.tagName}> declares openElement.tailwind.dialect ` +
+            `as ${JSON.stringify(dialect)}; the supported dialects are ` +
+            `${STYLE_DIALECTS.join(', ')} (an unknown dialect has no provider that could ` +
+            'compile it).',
+        );
+      }
       facts.push({
         packageName: pkg.packageName,
         tagName: declaration.tagName,
         required: required === true,
+        dialect: (dialect as DeclaredStyleSource['dialect'] | undefined) ?? 'tailwind4',
         sources: (sources as string[] | undefined) ?? [],
       });
     }

@@ -59,6 +59,12 @@ export interface ClassCandidateRegistry {
   all(): readonly string[];
   /** The SHADOW-root candidates only — the component stylesheet's input. */
   allShadow(): readonly string[];
+  /**
+   * The LIGHT-root candidates only — the document sheet's input for an engine
+   * that generates its own document CSS (a shadow component's classes are
+   * delivered by the component stylesheet and never inflate the document one).
+   */
+  allLight(): readonly string[];
   /** True when any module contributed candidates. */
   has(): boolean;
 }
@@ -94,6 +100,9 @@ export function createClassCandidateRegistry(): ClassCandidateRegistry {
     },
     allShadow() {
       return union((entry) => entry.shadow);
+    },
+    allLight() {
+      return union((entry) => !entry.shadow);
     },
     has() {
       return byModule.size > 0;

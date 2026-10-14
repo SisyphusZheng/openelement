@@ -1,5 +1,5 @@
 /**
- * @openelement/router — declared Tailwind compilation (ADR-0167).
+ * @openelement/router — declared style compilation (ADR-0167).
  *
  * Demand for the Tailwind pipeline is a DECLARED fact: an admitted package
  * declaration says "my components need the compile" and owns the sources that
@@ -27,10 +27,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
 import { PackageIslandErrorCode, PresetErrorCode } from '../src/internal/error-codes.ts';
-import {
-  type DeclaredTailwindSource,
-  resolveTailwindPlan,
-} from '../src/vite/internal/tailwind-plan.ts';
+import { type DeclaredStyleSource, resolveStylePlan } from '../src/vite/internal/style-plan.ts';
 import { admittedTailwindDeclarations } from '../src/vite/internal/ssg/island-scanner.ts';
 import type { OpenElementPackageManifest } from '@openelement/protocol/manifest';
 
@@ -113,7 +110,7 @@ async function appWithPackage(options: {
 async function admittedFacts(
   root: string,
   packageName = '@acme/widgets',
-): Promise<DeclaredTailwindSource[]> {
+): Promise<DeclaredStyleSource[]> {
   const manifest = JSON.parse(
     await readFile(join(root, 'node_modules', ...packageName.split('/'), 'manifest.json'), 'utf8'),
   ) as OpenElementPackageManifest;
@@ -127,7 +124,7 @@ test('undefined + a declared requirement enables the pipeline with the declared 
   const { root, packageRoot } = await appWithPackage({
     manifestTailwind: { required: true, sources: ['./src/theme.css'] },
   });
-  const plan = resolveTailwindPlan({
+  const plan = resolveStylePlan({
     root,
     tailwind: undefined,
     declarations: await admittedFacts(root),
@@ -156,7 +153,7 @@ test('the application owns the document reset, and only the application', async 
     [{ theme: [] }, true],
   ];
   for (const [tailwind, documentReset] of rows) {
-    const plan = resolveTailwindPlan({ root, tailwind, declarations });
+    const plan = resolveStylePlan({ root, tailwind, declarations });
     expect(plan?.documentReset, `tailwind: ${JSON.stringify(tailwind)}`).toEqual(documentReset);
   }
 });
@@ -164,11 +161,11 @@ test('the application owns the document reset, and only the application', async 
 test('undefined + no declaration leaves the pipeline off (no peer, no compile, no resource)', async () => {
   const { root } = await appWithPackage({});
   expect(
-    resolveTailwindPlan({ root, tailwind: undefined, declarations: await admittedFacts(root) }),
+    resolveStylePlan({ root, tailwind: undefined, declarations: await admittedFacts(root) }),
     'an undeclared component library does not turn Tailwind on',
   ).toBeUndefined();
   expect(
-    resolveTailwindPlan({ root, tailwind: undefined, declarations: [] }),
+    resolveStylePlan({ root, tailwind: undefined, declarations: [] }),
     'a bare application with classes but no declaration stays off',
   ).toBeUndefined();
 });
@@ -177,7 +174,7 @@ test('true enables the pipeline with the declared sources only', async () => {
   const { root, packageRoot } = await appWithPackage({
     manifestTailwind: { sources: ['./src/theme.css'] },
   });
-  const plan = resolveTailwindPlan({
+  const plan = resolveStylePlan({
     root,
     tailwind: true,
     declarations: await admittedFacts(root),
@@ -190,7 +187,7 @@ test('an application override compiles after the declared sources, and a duplica
     manifestTailwind: { required: true, sources: ['./src/theme.css'] },
   });
   await writeFile(join(root, 'app', 'brand.css'), ':root { --color-primary: red; }');
-  const plan = resolveTailwindPlan({
+  const plan = resolveStylePlan({
     root,
     tailwind: {
       theme: [
@@ -212,7 +209,7 @@ test('an application override compiles after the declared sources, and a duplica
 test('false with no requirement is an authoritative off switch', async () => {
   const { root } = await appWithPackage({ manifestTailwind: { sources: ['./src/theme.css'] } });
   expect(
-    resolveTailwindPlan({ root, tailwind: false, declarations: await admittedFacts(root) }),
+    resolveStylePlan({ root, tailwind: false, declarations: await admittedFacts(root) }),
     'an optional source does not make the compile mandatory',
   ).toBeUndefined();
 });
@@ -223,13 +220,11 @@ test('false against a mandatory declaration fails closed, naming package and tag
   });
   const facts = await admittedFacts(root);
   expect(
-    await errorCodeOf(() => resolveTailwindPlan({ root, tailwind: false, declarations: facts })),
+    await errorCodeOf(() => resolveStylePlan({ root, tailwind: false, declarations: facts })),
     'the disablement conflict is a coded diagnostic',
   ).toEqual(PresetErrorCode.TAILWIND_REQUIRED_DISABLED);
   await expect(
-    Promise.resolve().then(() =>
-      resolveTailwindPlan({ root, tailwind: false, declarations: facts }),
-    ),
+    Promise.resolve().then(() => resolveStylePlan({ root, tailwind: false, declarations: facts })),
   ).rejects.toThrowError(/@acme\/widgets <acme-widget>/);
 });
 
@@ -239,9 +234,7 @@ test('a declared source that the installed package does not carry fails closed',
   });
   const facts = await admittedFacts(root);
   expect(
-    await errorCodeOf(() =>
-      resolveTailwindPlan({ root, tailwind: undefined, declarations: facts }),
-    ),
+    await errorCodeOf(() => resolveStylePlan({ root, tailwind: undefined, declarations: facts })),
   ).toEqual(PresetErrorCode.TAILWIND_SOURCE_UNRESOLVED);
 });
 
@@ -251,13 +244,11 @@ test('a non-package-relative declared source fails closed', async () => {
   });
   const facts = await admittedFacts(root);
   expect(
-    await errorCodeOf(() =>
-      resolveTailwindPlan({ root, tailwind: undefined, declarations: facts }),
-    ),
+    await errorCodeOf(() => resolveStylePlan({ root, tailwind: undefined, declarations: facts })),
   ).toEqual(PresetErrorCode.TAILWIND_SOURCE_UNRESOLVED);
   await expect(
     Promise.resolve().then(() =>
-      resolveTailwindPlan({ root, tailwind: undefined, declarations: facts }),
+      resolveStylePlan({ root, tailwind: undefined, declarations: facts }),
     ),
   ).rejects.toThrowError(/must be package-relative/);
 });
@@ -276,7 +267,7 @@ test('two declarations in one package resolve in a deterministic order (tag name
   // Facts arrive in the DECLARED order; the plan sorts them.
   const facts = await admittedFacts(root);
   expect(facts.map((fact) => fact.tagName)).toEqual(['acme-beta', 'acme-alpha']);
-  const plan = resolveTailwindPlan({ root, tailwind: undefined, declarations: facts });
+  const plan = resolveStylePlan({ root, tailwind: undefined, declarations: facts });
   expect(plan?.theme?.map((source) => source.split('/').pop())).toEqual(['alpha.css', 'beta.css']);
 });
 
