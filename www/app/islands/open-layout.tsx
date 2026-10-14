@@ -229,6 +229,7 @@ export default class OpenLayout extends OpenElement {
               <a
                 class='inline-flex h-9 items-center justify-center rounded-full border-0 bg-transparent px-2 font-mono text-(length:--text-xs) tracking-[0.02em] text-foreground no-underline whitespace-nowrap transition-all duration-150 ease-[ease] hover:bg-primary/[5.44%] hover:text-primary focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[3px]'
                 href={this.switchLocaleHref}
+                data-locale-switch
               >
                 {this.switchLocaleLabel}
                 <span class='sr-only'>{this.switchLocaleNote}</span>
@@ -417,7 +418,7 @@ export default class OpenLayout extends OpenElement {
               ))}
             </nav>
           </div>
-          <div class='mx-auto flex max-w-(--site-container-wide) flex-col items-center justify-between gap-2 border-t border-border px-4 py-4 text-center text-(length:--font-size-body-sm) text-muted-foreground min-[901px]:flex-row min-[901px]:gap-4 min-[901px]:px-8 min-[901px]:py-4 min-[901px]:text-left'>
+          <div class='mx-auto flex max-w-(--site-container-wide) flex-col items-center justify-between gap-2 border-t border-border px-4 py-4 text-center text-(length:--font-size-body-sm) text-muted-foreground min-[901px]:flex-row min-[901px]:gap-4 min-[901px]:px-8 min-[901px]:py-4 min-[901px]:text-start'>
             <span>{this.footerTagline}</span>
             <span>{this.footerCopyright}</span>
           </div>

@@ -341,13 +341,12 @@ test('build output: zh pages keep in-content links inside the zh tree (#1031)', 
     const html = readFileSync(file, 'utf8');
     for (const match of html.matchAll(anchorRe)) {
       const [tag, href] = match;
-      // Layout chrome links carry data-nav and are localized client-side by
-      // open-layout (#816); only in-content links are asserted here.
-      if (tag.includes('data-nav')) continue;
-      // The locale switcher deliberately points at the *other* locale tree;
-      // it must not carry data-nav or the client-side localization would
-      // rewrite it back into the current locale.
-      if (tag.includes('locale-switch')) continue;
+      // The locale switcher deliberately points at the *other* locale tree,
+      // so it is the one layout anchor exempt from this rule. It marks itself
+      // with data-locale-switch rather than a presentation class, which the
+      // utility-first migration removed (the visual vocabulary is the class
+      // list; the behaviour hook stays an attribute).
+      if (tag.includes('data-locale-switch')) continue;
       if (href === '/zh' || href.startsWith('/zh/')) continue;
       failures.push(`${file}: ${href}`);
     }

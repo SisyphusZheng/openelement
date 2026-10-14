@@ -3,13 +3,16 @@
  *
  * Kept here, and why:
  *   - the host box (the host tag is not authored markup);
- *   - the layout subtree's type baseline: every descendant ELEMENT resolves to
- *     the site sans unless a more specific rule picks another family. This is
- *     not the same as putting `font-sans` on the layout root: inheritance
- *     loses to the element's own rule, and the difference is real text
- *     metrics inside the page content this layout projects (measured: page
- *     height moved 3.5px in Firefox when the rule was dropped), so the
- *     baseline stays a declared rule rather than an inherited value;
+ *   - the layout subtree's type baseline, declared in `@layer base`: every
+ *     descendant ELEMENT resolves to the site sans unless a more specific rule
+ *     picks another family. The layer is load-bearing, not decoration —
+ *     Tailwind's utilities live in `@layer utilities`, an unlayered universal
+ *     selector beats every layered declaration regardless of specificity, and
+ *     that is exactly what the previous build did: the header's nav links
+ *     (authored `font-mono`) and every `font-mono` utility on the migrated
+ *     pages computed to the sans stack. In `@layer base` the baseline keeps
+ *     the sans voice for elements no rule claims while a `font-*` utility
+ *     takes effect where the markup asks for one.
  *   - the mobile menu disclosure's marker suppression — `::-webkit-details-marker`
  *     and `::marker` are pseudo-element subjects a utility cannot address on
  *     the element itself.
@@ -23,8 +26,10 @@
   display: block;
 }
 
-* {
-  font-family: var(--font-sans);
+@layer base {
+  * {
+    font-family: var(--font-sans);
+  }
 }
 
 .mobile-menu-btn::-webkit-details-marker {
