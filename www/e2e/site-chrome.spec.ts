@@ -270,17 +270,18 @@ test.describe('Site chrome: reading rail scrollspy', () => {
     await page.goto('/guide/getting-started');
     await page.waitForLoadState('networkidle');
 
-    // open-page-rail renders the same links twice (.desktop-outline and
-    // .mobile-outline) and markCurrent marks both copies, so every
-    // assertion here is scoped to one outline.
+    // open-page-rail renders the same links twice (the desktop outline nav
+    // and the nav inside the mobile details) and markCurrent marks both
+    // copies, so every assertion here is scoped to the desktop outline —
+    // the first nav in the component.
     const rail = page.locator('open-reading-shell[rail] open-page-rail');
-    const desktop = rail.locator('.desktop-outline');
+    const desktop = rail.locator('nav').first();
     await expect(desktop).toBeVisible();
 
     // At rest the first rail link (#start / Overview) must already be
     // current. Without the install-time seed nothing was marked until the
     // observer fired, and #start never enters the -15%/-70% band.
-    const overview = desktop.locator('nav.links a[href="#start"]');
+    const overview = desktop.locator('a[href="#start"]');
     await expect(overview).toHaveAttribute('aria-current', 'location');
     await expect(desktop.locator('[aria-current="location"]')).toHaveCount(1);
 
@@ -289,13 +290,13 @@ test.describe('Site chrome: reading rail scrollspy', () => {
     // DOM-level outline contract: every rail target must resolve through
     // document.getElementById to the real heading the anchor names.
     const unresolved = await page.evaluate(() =>
-      [...document.querySelectorAll('open-page-rail .desktop-outline nav.links a[href^="#"]')]
+      [...document.querySelectorAll('open-page-rail div > nav a[href^="#"]')]
         .map((a) => a.getAttribute('href')!.slice(1))
         .filter((id) => document.getElementById(id) === null),
     );
     expect(unresolved).toEqual([]);
 
-    const second = desktop.locator('nav.links a[href^="#"]').nth(1);
+    const second = desktop.locator('a[href^="#"]').nth(1);
     const href = (await second.getAttribute('href'))!;
     await page.evaluate((selector) => {
       const el = document.querySelector(selector);

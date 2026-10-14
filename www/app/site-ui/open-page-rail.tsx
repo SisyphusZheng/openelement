@@ -44,23 +44,45 @@ export default class OpenPageRail extends OpenElement {
 
   render() {
     return (
-      <div class='outline-root' data-pagefind-ignore>
-        <div class='desktop-outline'>
-          <nav class='links' aria-label={this.onThisPage}>
-            <a href='#start'>{this.overview}</a>
+      <div data-pagefind-ignore>
+        <div class='hidden min-[901px]:block'>
+          <nav class='grid gap-1 [counter-reset:rail-item]' aria-label={this.onThisPage}>
+            <a
+              class='block py-1 pe-0 ps-3 text-muted-foreground font-mono text-(length:--text-xs) leading-[1.45] no-underline border-s-2 border-s-transparent hover:text-foreground focus-visible:text-foreground data-[depth=3]:ps-5 data-[depth=3]:text-[length:calc(var(--text-xs)*0.94)] aria-[current=location]:text-foreground aria-[current=location]:font-extrabold aria-[current=location]:border-s-primary'
+              href='#start'
+            >
+              {this.overview}
+            </a>
             {this.items.map((item) => (
-              <a key={item.id} href={item.href} data-depth={item.depth}>
+              <a
+                key={item.id}
+                class='block py-1 pe-0 ps-3 text-muted-foreground font-mono text-(length:--text-xs) leading-[1.45] no-underline border-s-2 border-s-transparent hover:text-foreground focus-visible:text-foreground data-[depth=3]:ps-5 data-[depth=3]:text-[length:calc(var(--text-xs)*0.94)] aria-[current=location]:text-foreground aria-[current=location]:font-extrabold aria-[current=location]:border-s-primary'
+                href={item.href}
+                data-depth={item.depth}
+              >
                 {item.label}
               </a>
             ))}
           </nav>
         </div>
-        <details class='mobile-outline'>
-          <summary>{this.onThisPage}</summary>
-          <nav class='links' aria-label={this.onThisPage}>
-            <a href='#start'>{this.overview}</a>
+        <details class='block min-[901px]:hidden'>
+          <summary class='cursor-pointer rounded-lg border border-border bg-(--surface-1) px-4 py-3 font-mono text-(length:--text-xs) font-extrabold tracking-[0.12em] text-foreground uppercase'>
+            {this.onThisPage}
+          </summary>
+          <nav class='grid gap-1 pt-3 [counter-reset:rail-item]' aria-label={this.onThisPage}>
+            <a
+              class='block py-1 pe-0 ps-3 text-muted-foreground font-mono text-(length:--text-xs) leading-[1.45] no-underline border-s-2 border-s-transparent hover:text-foreground focus-visible:text-foreground data-[depth=3]:ps-5 data-[depth=3]:text-[length:calc(var(--text-xs)*0.94)] aria-[current=location]:text-foreground aria-[current=location]:font-extrabold aria-[current=location]:border-s-primary'
+              href='#start'
+            >
+              {this.overview}
+            </a>
             {this.items.map((item) => (
-              <a key={item.id} href={item.href} data-depth={item.depth}>
+              <a
+                key={item.id}
+                class='block py-1 pe-0 ps-3 text-muted-foreground font-mono text-(length:--text-xs) leading-[1.45] no-underline border-s-2 border-s-transparent hover:text-foreground focus-visible:text-foreground data-[depth=3]:ps-5 data-[depth=3]:text-[length:calc(var(--text-xs)*0.94)] aria-[current=location]:text-foreground aria-[current=location]:font-extrabold aria-[current=location]:border-s-primary'
+                href={item.href}
+                data-depth={item.depth}
+              >
                 {item.label}
               </a>
             ))}
