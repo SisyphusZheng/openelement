@@ -4,6 +4,7 @@
 import { computed, element, OpenElement, property } from '@openelement/element';
 import { formatFreshnessDate, readingChromeStrings } from './chrome-strings.ts';
 import type { ReadingMetadata, ReadingNavigation } from './page-contract.ts';
+import articleProseStyles from './article-prose.css';
 import openReadingShellStyles from './open-reading-shell.css';
 
 type ReadingTag = { key: string; label: string };
@@ -11,7 +12,11 @@ type CompiledComputed<T> = ReturnType<typeof computed<T>> & T;
 
 @element('open-reading-shell')
 export default class OpenReadingShell extends OpenElement {
-  static override styles = [openReadingShellStyles];
+  // The generated-content treatment rides the shell (article-prose.css):
+  // every reading page renders its build-time prose HTML inside this host,
+  // so one sheet scope covers all of them (one emitted fence surface, not
+  // one per page component). See the sheet header.
+  static override styles = [openReadingShellStyles, articleProseStyles];
 
   @property({ reflect: true })
   rail = false;
