@@ -191,20 +191,27 @@ portable to any provider that implements the dialect.
 
 - **Tailwind 4** implements it natively — the first-party default
   (`tailwind: { theme: ['@openelement/ui/theme.css'] }`).
-- **UnoCSS** implements it through its official `presetWind4`. The application
-  selects it with the sibling key (`unocss: { theme: [...] }`), supplies the
-  role→variable join in its own `uno.config.ts`, and the components compile
-  unchanged. The router's own package documentation states the port's shape.
+- **UnoCSS** implements the dialect through its official `presetWind4`, but
+  THIS PACKAGE IS NOT SELECTABLE UNDER IT TODAY. An application that selects
+  `unocss` and admits `@openelement/ui` fails closed at plan time with
+  `OE_PRESET_UNOCSS_THEME_SOURCE_INCOMPATIBLE`, because the package's declared
+  role table is the `@theme` source below. Being portable in class tokens is
+  not the same as being selectable with this package's theme source, and the
+  framework does not substitute one for the other: the coded refusal is the
+  supported answer until a shipped mechanism lets an application point an
+  UnoCSS build at a plain-CSS role table for this package.
 - A provider that does NOT implement `tailwind4` fails the build
   (`OE_PRESET_STYLE_DIALECT_UNSUPPORTED`) before anything compiles — a
   component is never delivered half-styled.
 
 Because `theme.css` is a Tailwind `@theme` source, it is a **Tailwind** engine
-source, not a portable one. Under UnoCSS the same roles come from a plain-CSS
-token file the application owns (Open Props, its own `:root` table, …); the
-role NAMES in this document stay the contract either way. The router refuses a
-`@theme` source under UnoCSS (`OE_PRESET_UNOCSS_THEME_SOURCE_INCOMPATIBLE`)
-rather than silently dropping the roles it declares.
+source, not a portable one. Under UnoCSS the same roles would come from a
+plain-CSS token file the application owns (Open Props, its own `:root`
+table, …); the role NAMES in this document stay the contract either way. The
+router refuses a `@theme` source under UnoCSS
+(`OE_PRESET_UNOCSS_THEME_SOURCE_INCOMPATIBLE`) rather than silently dropping
+the roles it declares — which is why the combination above is refused instead
+of half-styled.
 
 ## alpha8 → C3 variable rename map
 

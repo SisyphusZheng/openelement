@@ -127,11 +127,25 @@ rejected by the inline `<style>` channel anyway.
 
 ## Consequences
 
-- `@openelement/ui`'s components compile unchanged under either engine: its
-  class tokens are `tailwind4`-dialect, and both providers implement that
-  dialect. The packed probe fixture
-  (`tests/fixtures/router-unocss-probe`) proves it on real artifacts in
-  Chromium, Firefox and WebKit.
+- THE CLASS DIALECT IS PORTABLE; `@openelement/ui` IS NOT SELECTABLE UNDER
+  UNOCSS TODAY. Its components author `tailwind4`-dialect tokens and both
+  providers implement that dialect, so the class tokens themselves are
+  engine-neutral. But the package also DECLARES its role table
+  (`openElement.tailwind.sources: ['./src/theme.css']`), and that file is a
+  Tailwind `@theme` source: an application that selects `unocss` and admits
+  `@openelement/ui` fails closed at plan time with
+  `OE_PRESET_UNOCSS_THEME_SOURCE_INCOMPATIBLE`, naming the source. The
+  alternative — dropping the declared roles — is the silent half-styling this
+  contract exists to prevent. An application that wants both ships its own
+  role table in `uno.config.ts`'s `theme` key AND stops admitting the package's
+  theme source; no shipped mechanism performs that substitution today, so the
+  supported answer is the coded refusal, not a claim of parity.
+- What IS qualified on real artifacts is the PROVIDER SUBSTITUTION itself: the
+  same fixture app builds and is measured in Chromium, Firefox and WebKit under
+  either engine (`tests/fixtures/router-unocss-probe`), and its document +
+  component sheets come from the selected engine's own compiler. That fixture
+  consumes the workspace router and a token source it owns; it does not consume
+  `@openelement/ui`, so it is not evidence about the package.
 - A provider that does not implement a required dialect is a build failure, not
   a half-styled component.
 - The framework's Tailwind paths are untouched: the same entry text, the same

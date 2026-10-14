@@ -12,6 +12,7 @@
  */
 
 import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { expect, test } from 'vitest';
@@ -137,6 +138,24 @@ test('an imported file carrying @theme is refused too, not only the entry', asyn
     'utf8',
   );
   const { document } = await withTheme([`.probe-${process.pid}/entry.css`]);
+  expect(await errorCodeOf(document)).toBe(PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE);
+});
+
+test('the first-party package is refused under UnoCSS by code, never half-styled', async () => {
+  // The shipped facts, not a synthetic stand-in: @openelement/ui declares its
+  // role table as a `tailwind` theme source (generated-manifest.json →
+  // ./src/theme.css), and that file is a Tailwind `@theme` source. An
+  // application that selects `unocss` and admits the package therefore reaches
+  // this refusal — the supported answer while no shipped mechanism substitutes
+  // a plain-CSS role table for the package's. The class tokens are portable;
+  // the declared theme source is not, and the two facts must not be conflated
+  // into a claim of cross-engine parity.
+  const uiRoot = join(import.meta.dirname!, '../../../packages/ui');
+  expect(readFileSync(join(uiRoot, 'src/generated-manifest.json'), 'utf8')).toContain(
+    '"./src/theme.css"',
+  );
+  expect(readFileSync(join(uiRoot, 'src/theme.css'), 'utf8')).toContain('@theme');
+  const { document } = await withTheme([join(uiRoot, 'src/theme.css')]);
   expect(await errorCodeOf(document)).toBe(PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE);
 });
 

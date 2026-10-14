@@ -223,17 +223,19 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
         state.ctx.phase1.cachedRoutes = routes;
 
         // The DEV channel's class candidates must be complete before the first
-        // document render: the component sheet's version (and therefore the
-        // `<link>` the DSD template declares) is computed from this registry the
-        // moment the style-links module loads — which happens BEFORE the app's
-        // modules are transformed — so a transform-only registration would leave
-        // the first paint declaring a sheet URL the client adapter disagrees
-        // with, and the shadow roots would adopt nothing (defect C's ordering
-        // requirement; a process-global registry used to hide this by leaking
-        // the previous server's facts). The inventory is the Phase 1 scan's own
-        // (bundler-resolved, defect B): the same discovery the build runs, not a
-        // second scanner. Builds skip it — their client build discovers its own
-        // graph and owns its own registry.
+        // document render: the component sheet's CONTENT is compiled from this
+        // registry on every request, and the sheet itself is a stable URL the
+        // first paint's DSD already declares — a first compile that ran while
+        // the app's own modules had not been transformed yet would serve an
+        // incomplete sheet under that same URL, and the shadow roots adopting
+        // it would paint unstyled until the next compile. Registering the
+        // Phase 1 scan's inventory up front closes that window; the
+        // transform-time registrations keep it current afterwards (defect C's
+        // ordering requirement; a process-global registry used to hide this by
+        // leaking the previous server's facts). The inventory is the Phase 1
+        // scan's own (bundler-resolved, defect B): the same discovery the build
+        // runs, not a second scanner. Builds skip it — their client build
+        // discovers its own graph and owns its own registry.
         if (state.produceMode === 'serve') {
           await collectShadowClassCandidates({
             root: process.cwd(),
