@@ -85,7 +85,7 @@ What we measure, and the commands that reproduce each row.
 
 ### Output size
 
-Numbers measured on 2026-10-14 from the docs site's own build (`www/dist`, built with `pnpm run site:build`). The commands below reproduce each row; page and URL counts follow the route set, so re-run them after content changes. The figures moved five times since alpha6: the alpha6 build made client asset injection manifest-driven with exact package-island identity (#1471, ADR-0160); the alpha8 B2 manifest conversion (pnpm workspaces, no `deno.json` workspace marker) re-cut the app-side island chunks; the alpha8 client build now resolves each package island's declared identity to its real module id before chunk grouping (#1471 fail-closed), so every island chunk is named `island-open-<tag>-<hash>.js` and the shared compiled-element runtime ships as one chunk that `client.js` loads eagerly on every island page; the alpha9 styling train seated the site on the @theme role sheet with the Zag-powered open-search island (#1502), which grows the island chunks and route payloads measured below; and the alpha10 train minified the island component styles (#1543), gave the shared compiled-element runtime its own `element-runtime-<hash>.js` chunk instead of a berth inside an island chunk (#1544), and then extracted the island stylesheets out of the chunks entirely as content-addressed `client/assets/*.css` resources (#1553, ADR-0164). The alpha.11 style train (#1558, ADR-0164) has since moved the package islands' and the site pages' remaining inline style sheets onto the same `.css` import form. The alpha15 candidate re-cut the `@openelement/ui` island chunks once more when the six components moved their control surfaces from authored sheets to utility classes in markup — the two rows that moved most, `island-open-button` and `island-open-code-block`, carry that change — and every row below is re-measured from that build. Route payloads below are measured as the eager import closure of the route's manifest chunk set, so they stay honest no matter which chunk file hosts shared code.
+Numbers measured on 2026-10-14 from the docs site's own build (`www/dist`, built with `pnpm run site:build`). The commands below reproduce each row; page and URL counts follow the route set, so re-run them after content changes. The figures moved five times since alpha6: the alpha6 build made client asset injection manifest-driven with exact package-island identity (#1471, ADR-0160); the alpha8 B2 manifest conversion (pnpm workspaces, no `deno.json` workspace marker) re-cut the app-side island chunks; the alpha8 client build now resolves each package island's declared identity to its real module id before chunk grouping (#1471 fail-closed), so every island chunk is named `island-open-<tag>-<hash>.js` and the shared compiled-element runtime ships as one chunk that `client.js` loads eagerly on every island page; the alpha9 styling train seated the site on the @theme role sheet with the Zag-powered open-search island (#1502), which grows the island chunks and route payloads measured below; and the alpha10 train minified the island component styles (#1543), gave the shared compiled-element runtime its own `element-runtime-<hash>.js` chunk instead of a berth inside an island chunk (#1544), and then extracted the island stylesheets out of the chunks entirely as content-addressed `client/assets/*.css` resources (#1553, ADR-0164). The alpha.11 style train (#1558, ADR-0164) has since moved the package islands' and the site pages' remaining inline style sheets onto the same `.css` import form. The alpha15 candidate re-cut the island chunks when presentation moved from authored sheets into the markup as utility classes: the `@openelement/ui` components first (`island-open-button`, `island-open-code-block`), and this round the site's own islands (`island-open-page-rail`, `island-open-dragon-live-gaze`), whose class strings are longer than the class names they replaced — the same trade the components made. Every row below is re-measured from that build. Route payloads below are measured as the eager import closure of the route's manifest chunk set, so they stay honest no matter which chunk file hosts shared code.
 
 | Metric                 | Value                                              |
 | ---------------------- | -------------------------------------------------- |
@@ -112,8 +112,8 @@ The docs site is a normal openElement app, islands included, so its client outpu
 | ------------------------------ | --------- | ------- |
 | `element-runtime`              | 91,005    | 28,157  |
 | `island-open-button`           | 14,495    | 2,731   |
-| `island-open-dragon-live-gaze` | 11,268    | 4,152   |
-| `island-open-page-rail`        | 9,738     | 2,971   |
+| `island-open-dragon-live-gaze` | 13,053    | 4,548   |
+| `island-open-page-rail`        | 11,553     | 3,257   |
 | `island-open-cinematic-scroll` | 7,841     | 3,092   |
 | `island-open-code-block`       | 4,120     | 1,574   |
 | `island-open-hero-polish`      | 5,644     | 2,326   |
@@ -130,9 +130,9 @@ What a page actually downloads follows from its island manifest plus the entry's
 
 | Route                    | Client payload (raw) | Distinct chunks |
 | ------------------------ | -------------------- | --------------- |
-| `/guide/mdx`             | 163,325 B            | 9               |
-| `/guide/getting-started` | 163,325 B            | 9               |
-| `/`                      | 180,237 B            | 11              |
+| `/guide/mdx`             | 166,734 B            | 9               |
+| `/guide/getting-started` | 166,734 B            | 9               |
+| `/`                      | 185,431 B            | 11              |
 
 Across all 74 page manifests the site declares 9 island tags in 352 entries: the chrome islands (`open-layout`, `open-search`, `open-theme-toggle`) on every page, `open-page-rail` on 64, `open-code-block` on 52, and the remaining tags on a handful of pages each. The #1557 B8 retirement removed the `open-badge` package island (its roadmap usage is a plain HTML+CSS recipe now), and the reference page documents the two new split packages, which moved the payload rows.
 
