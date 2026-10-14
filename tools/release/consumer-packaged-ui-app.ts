@@ -241,7 +241,9 @@ const PROBE_THEME_SOURCE = './src/theme.css';
 /** Utilities nothing in the appliance mentions: a full utility bundle would
  * carry them, a per-candidate compile cannot. */
 const ABSENT_UTILITY_PROBES = ['rotate-90', 'p-96', 'underline'] as const;
-/** The light root's own utility: its rules belong to the DOCUMENT stylesheet. */
+/** The light root's own utility: the document sheet compiles it, and the
+ * component sheet carries it too (a light root can render inside a shadow
+ * tree). */
 const LIGHT_ROOT_UTILITY = 'p-4';
 /** The starter island's own utility: shadow-root component CSS from local source. */
 const STARTER_ISLAND_UTILITY = 'p-2';
@@ -1245,8 +1247,13 @@ async function main(): Promise<void> {
         );
       }
     }
-    // Scope routing: the LIGHT root's utility belongs to the document sheet, and
-    // must not be duplicated into the shadow components' component sheet.
+    // Scope routing: a light root's class is covered by the document entry AND
+    // carried by the component sheet. Both halves are required, for different
+    // reasons: the document sheet styles the light DOM the page renders into
+    // when it is the document's own tree, and the component sheet is the only
+    // resource that reaches a light root rendered INSIDE a shadow tree — which
+    // the layout convention does for every page. A sheet that carries the class
+    // in one place only would leave one of those two placements unstyled.
     const documentSheets = emittedTexts.filter(({ css }) => css.includes(`.${LIGHT_ROOT_UTILITY}`));
     if (documentSheets.length === 0) {
       throw new Error(
@@ -1254,10 +1261,11 @@ async function main(): Promise<void> {
           'document entry must compile the page-level classes',
       );
     }
-    if (componentSheet.css.includes(`.${LIGHT_ROOT_UTILITY}`)) {
+    if (!componentSheet.css.includes(`.${LIGHT_ROOT_UTILITY}`)) {
       throw new Error(
-        `Component stylesheet ${componentSheet.name} carries the light root's .${LIGHT_ROOT_UTILITY} ` +
-          "— a light root's classes belong to the document entry, not to the shadow component sheet",
+        `Component stylesheet ${componentSheet.name} does not carry the light root's ` +
+          `.${LIGHT_ROOT_UTILITY} — a page rendered inside the layout's shadow template has no ` +
+          'other resource to reach it',
       );
     }
     // The widget's DSD template declares that component sheet as a marked link:
