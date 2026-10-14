@@ -322,6 +322,11 @@ jobs:
           vp run --fail-if-no-match @openelement/fixture-router-lit-framework#gate
           vp run --fail-if-no-match @openelement/fixture-router-ui-dogfood#gate
           vp run --fail-if-no-match @openelement/fixture-router-static-only#build
+          # The second style engine (alpha15 stage 2B): the probe reads its own
+          # build's artifacts through computed styles in all three engines, so
+          # the qualified candidate covers the UnoCSS document and component
+          # sheets the same way it covers the Tailwind ones.
+          vp run --fail-if-no-match @openelement/fixture-router-unocss-probe#gate
       - name: Nitro proofs
         run: |
           vp run --fail-if-no-match @openelement/fixture-router-nitro#proof:node

@@ -140,11 +140,22 @@ export interface StyleBuildIntegration {
   /** The plan this integration was built for (the dev channels read it back). */
   readonly plan: ResolvedStyleSelection;
   /**
-   * The plugins this build mounts for the engine. A `graph-entry` provider
-   * contributes its entry module plus the official peer; a `generated`
-   * provider contributes the framework's own sheet emitter.
+   * The plugins that make the ENGINE's inputs exist, mounted BEFORE the
+   * server-rendered discovery pass. A `graph-entry` provider contributes its
+   * CSS entry module plus the official peer here, because Vite's own CSS
+   * pipeline compiles that entry as the graph reaches it; a `generated`
+   * provider contributes nothing, because its sheets are produced from the
+   * build's facts rather than from the graph.
    */
-  readonly plugins: Plugin[];
+  readonly graphPlugins: Plugin[];
+  /**
+   * The plugins that COMPILE the sheets, mounted AFTER the discovery pass: the
+   * component sheet (every provider) and a generated document sheet. Their
+   * `buildStart` reads the candidates the pass registered, so mounting them
+   * first would compile from an empty registry — the ordering defect B exists
+   * for.
+   */
+  readonly sheetPlugins: Plugin[];
   /** The component sheet's emission record. */
   readonly componentRecord: SheetFileNameRecord;
   /**
@@ -189,7 +200,8 @@ export async function createStyleBuildIntegration(
       plan,
       componentRecord,
       documentRecord,
-      plugins: [
+      graphPlugins: [],
+      sheetPlugins: [
         generatedSheetsPlugin([
           {
             specifier: provider.documentSheetModule,
@@ -237,10 +249,7 @@ export async function createStyleBuildIntegration(
     plan,
     componentRecord,
     documentRecord: undefined,
-    plugins: [
-      tailwindEntryPlugin(root, plan),
-      ...(await tailwindPlugins()),
-      componentStyleSheetPlugin(root, plan, input.shadowCandidates, componentRecord),
-    ],
+    graphPlugins: [tailwindEntryPlugin(root, plan), ...(await tailwindPlugins())],
+    sheetPlugins: [componentStyleSheetPlugin(root, plan, input.shadowCandidates, componentRecord)],
   };
 }

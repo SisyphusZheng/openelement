@@ -280,6 +280,53 @@ test('a Tailwind `@theme` source is refused with both supported shapes named', a
   );
 });
 
+test('a declared theme source that is not there is a coded failure', async () => {
+  const declaration = { theme: ['app/styles/does-not-exist.css'] };
+  const integration = await integrationFor(fixturePlan(declaration), declaration);
+  const code = await errorCodeOf(() =>
+    integration.provider.compileDocument!({ candidates: [], sources: new Map() }),
+  );
+  expect(code).toBe(PresetErrorCode.TAILWIND_SOURCE_UNRESOLVED);
+});
+
+test('a declared unocss config path that is not there is a coded failure', async () => {
+  const declaration = { config: 'uno.missing.config.ts' };
+  const code = await errorCodeOf(() => integrationFor(fixturePlan(declaration), declaration));
+  expect(code).toBe(PresetErrorCode.UNOCSS_CONFIG_UNRESOLVED);
+});
+
+test('theme sources resolve their own @import chain, including a bare package subpath', async () => {
+  // The fixture's tokens.css imports `open-props/style` (a bare specifier the
+  // browser cannot resolve) and nothing else; this asserts the chain is
+  // INLINED rather than left as a specifier, and that the deep import's own
+  // variables are the ones the roles read.
+  const integration = await integrationFor(fixturePlan(), FIXTURE_DECLARATION);
+  const css = await integration.provider.compileDocument!({
+    candidates: [],
+    sources: new Map(),
+  });
+  expect(css, 'no @import statement survives (only the provenance comment does)').not.toMatch(
+    /^@import/m,
+  );
+  expect(css, 'the import is recorded, so the sheet says where the layer came from').toContain(
+    "/* @import 'open-props/style' */",
+  );
+  expect(css, 'the imported file’s own variables are present').toContain('--violet-7');
+});
+
+test('a candidate set that compiles to nothing is a coded failure, never an empty sheet', async () => {
+  const integration = await integrationFor(fixturePlan(), FIXTURE_DECLARATION);
+  const code = await errorCodeOf(() =>
+    integration.provider.compileComponents({
+      // A token no preset can compile: the candidate was admitted by the
+      // compiler, so an empty compile is the adapter's defect, not silence.
+      candidates: ['not-a-utility-token-at-all'],
+      sources: new Map(),
+    }),
+  );
+  expect(code).toBe(PresetErrorCode.UNOCSS_EMPTY_COMPILE);
+});
+
 test('a missing engine is a coded failure, not a silent skip', async () => {
   // Vitest patches Node's module resolution (vite-node), so a root with
   // nothing installed is only provably bare in a plain Node process — the one
@@ -322,4 +369,57 @@ test('a missing engine is a coded failure, not a silent skip', async () => {
   } finally {
     await rm(bare, { recursive: true, force: true });
   }
+});
+
+test('the plan’s own conditions, one row at a time', () => {
+  const plan = (input: Parameters<typeof resolveStylePlan>[0]) => resolveStylePlan(input);
+
+  // No requirement and no offered source: automatic mode has nothing to run.
+  expect(
+    plan({
+      root: FIXTURE_ROOT,
+      tailwind: undefined,
+      declarations: requiredDeclaration({ required: false, sources: [] }),
+    }),
+    'a declaration that neither requires nor offers anything enables nothing',
+  ).toBeUndefined();
+
+  // The off switch on the engine the application did NOT select is not a
+  // conflict: it is an explicit "not this one".
+  expect(
+    plan({ root: FIXTURE_ROOT, tailwind: false, unocss: true, declarations: [] })?.provider,
+    'tailwind: false beside unocss: true selects UnoCSS',
+  ).toBe('unocss');
+  expect(
+    plan({ root: FIXTURE_ROOT, tailwind: true, unocss: false, declarations: [] })?.provider,
+    'and the mirror row selects Tailwind',
+  ).toBe('tailwind');
+  expect(
+    plan({ root: FIXTURE_ROOT, tailwind: undefined, unocss: false, declarations: [] }),
+    'unocss: false alone is the off switch',
+  ).toBeUndefined();
+
+  // Ordering: two packages that both require the compile resolve by package
+  // name, then tag name — never by the order the scan produced them.
+  const twoPackageRows = plan({
+    root: FIXTURE_ROOT,
+    tailwind: undefined,
+    declarations: [
+      { ...requiredDeclaration()[0]!, packageName: '@zeta/widgets' },
+      { ...requiredDeclaration()[0]!, packageName: '@alpha/widgets', tagName: 'alpha-zzz' },
+      { ...requiredDeclaration()[0]!, packageName: '@alpha/widgets', tagName: 'alpha-aaa' },
+    ],
+  });
+  expect(twoPackageRows?.provider, 'the default engine still compiles them').toBe('tailwind');
+  expect(
+    twoPackageRows?.documentReset,
+    'automatic mode never resets the application’s document',
+  ).toBe(false);
+
+  // An application declaration whose source list is EMPTY is still a
+  // declaration: it owns the document (and therefore its reset).
+  expect(
+    plan({ root: FIXTURE_ROOT, tailwind: { theme: [] }, declarations: [] })?.documentReset,
+    'an empty declared source list still owns the document',
+  ).toBe(true);
 });

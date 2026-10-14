@@ -748,14 +748,16 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
   const clientOutDir = resolve(root, outDir, 'client');
   const clientBase = ctx.phase3.base || '/';
 
-  // The selected engine's plugins, mounted into this build's CSS graph only
-  // while the app declares (or an admitted package requires) the entry
-  // (alpha15 S lane). A `graph-entry` provider contributes its virtual entry
-  // plus the official peer (`@tailwindcss/vite`, an optional peer that fails
-  // closed with the loader's own coded diagnostic when missing); a `generated`
-  // provider contributes the framework's sheet emitter. Absent — not inert —
-  // when no plan exists, so an unselected engine is never imported.
-  const stylePlugins = styleIntegration?.plugins ?? [];
+  // The selected engine's plugins, in the two positions their ordering
+  // requires (alpha15 S lane + stage 2B). A `graph-entry` provider contributes
+  // its virtual entry plus the official peer (`@tailwindcss/vite`, an optional
+  // peer that fails closed with the loader's own coded diagnostic when
+  // missing) BEFORE the discovery pass — Vite's CSS graph compiles that entry
+  // as it reaches it — and its sheet-compiling half after. A `generated`
+  // provider contributes only the sheet half. Absent — not inert — when no plan
+  // exists, so an unselected engine is never imported.
+  const styleGraphPlugins = styleIntegration?.graphPlugins ?? [];
+  const styleSheetPlugins = styleIntegration?.sheetPlugins ?? [];
 
   // this build owns the island style asset protocol's `.css`
   // artifacts. The emission records feed the manifest's `styles` field and
@@ -926,6 +928,9 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         | undefined,
     },
     plugins: [
+      // The engine's graph half (stage 2B): the document entry module and the
+      // official peer that compiles it, both inert until the entry is reached.
+      ...styleGraphPlugins,
       // S-C1.4 (#1609) + defect B: the sources the SERVER renders are part of the
       // same asset build. The pass walks their static module graph through this
       // build's resolver, asks the compiler for each module's admission facts —
@@ -951,14 +956,14 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         // build pays nothing for a map it will never read.
         isSourceExtractingProvider ? walkedSources : undefined,
       ),
-      // The selected engine's half of the same seam: it sits AFTER the
-      // discovery pass, so its `buildStart` compile reads the candidates that
-      // pass registered — never gated on a pre-build candidate count, which is
-      // exactly what the aliased-reachability defect made wrong: the sheet
-      // emits when this build DISCOVERED candidates (a candidate-less build
-      // emits nothing). Absent (not inert) when no plan exists, so an
-      // unselected engine is never imported.
-      ...stylePlugins,
+      // The engine's sheet half: it sits AFTER the discovery pass, so its
+      // `buildStart` compile reads the candidates that pass registered — never
+      // gated on a pre-build candidate count, which is exactly what the
+      // aliased-reachability defect made wrong: the sheet emits when this build
+      // DISCOVERED candidates (a candidate-less build emits nothing). Absent
+      // (not inert) when no plan exists, so an unselected engine is never
+      // imported.
+      ...styleSheetPlugins,
       // The compiler is part of the official client build path. The outer
       // open:core hook covers normal Vite transforms; this inline build owns
       // its own plugin list and must use the same transform exactly once.
