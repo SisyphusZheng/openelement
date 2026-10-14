@@ -643,6 +643,46 @@ try {
       })(),
     };
 
+    // ── Consumer-side ::part (alpha15 task 2) ──────────────────────────────
+    // The declared part names are a PUBLIC contract (CUSTOMIZATION.md: they
+    // never shrink), and the whole point of a part is that a DOCUMENT rule
+    // reaches it through the shadow boundary. One consumer rule per declared
+    // control part, then the computed value read back inside the shadow tree —
+    // a sheet that stopped exposing the part would leave the outline unstyled.
+    const partProbe = document.createElement('style');
+    partProbe.textContent = [
+      'open-button::part(control){outline:3px solid rgb(1, 2, 3)}',
+      'open-theme-toggle::part(toggle){outline:3px solid rgb(1, 2, 3)}',
+      'open-code-block::part(copy){outline:3px solid rgb(1, 2, 3)}',
+    ].join('');
+    // The rule has to live in the tree the host DOES: the lab page renders
+    // inside the layout's shadow template (the starter ships a shadow-root
+    // layout), so a document-head stylesheet would not match any of these
+    // hosts at all — the same boundary the component sheet exists for.
+    const partAnchor = globalThis.__deepFind('open-button');
+    const partRoot = partAnchor ? partAnchor.getRootNode() : document;
+    if (partRoot === document || partRoot === document.documentElement) {
+      document.head.appendChild(partProbe);
+    } else {
+      partRoot.appendChild(partProbe);
+    }
+    const partOutline = (tag, part) => {
+      const host = globalThis.__deepFind(tag);
+      const exposed = host?.shadowRoot ? host.shadowRoot.querySelectorAll('[part]') : [];
+      for (const node of exposed) {
+        if (node.getAttribute('part') === part) {
+          const style = getComputedStyle(node);
+          return style.outlineStyle + ' ' + style.outlineWidth;
+        }
+      }
+      return 'missing';
+    };
+    const parts = {
+      buttonControl: partOutline('open-button', 'control'),
+      themeToggle: partOutline('open-theme-toggle', 'toggle'),
+      codeCopy: partOutline('open-code-block', 'copy'),
+    };
+
     return {
       widgetFound: widget !== null,
       widgetPaddingTop: widgetSpan ? getComputedStyle(widgetSpan).paddingTop : 'missing',
@@ -652,6 +692,7 @@ try {
       // background here is the declared-source path doing its job.
       widgetBackground: widgetSpan ? getComputedStyle(widgetSpan).backgroundColor : 'missing',
       components,
+      parts,
       // Tailwind v4 lowers rotate-45 to the independent rotate property
       // (not transform), so both channels are read.
       widgetRotate: widgetSpan ? getComputedStyle(widgetSpan).rotate : 'missing',
@@ -752,6 +793,18 @@ try {
   else {
     expectComputed('open-dropdown content min-width', components.dropdownContent.minWidth, '192px');
     expectComputed('open-dropdown content padding-top', components.dropdownContent.paddingTop, '8px');
+  }
+  // A document-level "::part()" rule reaches every declared control part
+  // through the shadow boundary. "missing" would mean the part no longer
+  // exists; any other value means the consumer rule applied.
+  const partRows = [
+    ['open-button ::part(control)', lab.parts.buttonControl],
+    ['open-theme-toggle ::part(toggle)', lab.parts.themeToggle],
+    ['open-code-block ::part(copy)', lab.parts.codeCopy],
+  ];
+  for (const row of partRows) {
+    if (row[1] === 'missing') failures.push(row[0] + ' is not exposed on its host');
+    else expectComputed(row[0] + ' consumer outline', String(row[1]), 'solid 3px');
   }
   // The discriminator is the MEASURED application, not CSS.supports: this
   // WebKit build reports support for the rotate property yet ignores it in an
