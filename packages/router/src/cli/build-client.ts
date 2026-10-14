@@ -453,8 +453,8 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
    * (the selected provider's document compile).
    */
   const walkedSources = new Map<string, string>();
-  const shadowCandidates = (): readonly string[] =>
-    stylePlan ? shadowCandidateRegistry.allShadow() : [];
+  const componentSheetCandidates = (): readonly string[] =>
+    stylePlan ? shadowCandidateRegistry.all() : [];
   const documentCandidates = (): readonly string[] =>
     stylePlan ? shadowCandidateRegistry.allLight() : [];
   /**
@@ -469,7 +469,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
           root,
           plan: stylePlan,
           unocss: ctx.options.unocss,
-          shadowCandidates,
+          componentSheetCandidates,
           documentCandidates,
           sources: () => walkedSources,
         });
@@ -481,7 +481,9 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
    * pass registered its facts.
    */
   const componentSheetSpecifier = (): string | undefined =>
-    shadowCandidates().length > 0 ? styleIntegration?.provider.componentSheetSpecifier : undefined;
+    componentSheetCandidates().length > 0
+      ? styleIntegration?.provider.componentSheetSpecifier
+      : undefined;
   /**
    * Whether the selected engine reads its candidates from source. The module
    * texts the discovery walk reads are republished only for such an engine.
@@ -1155,13 +1157,13 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     // set whose entry emitted no CSS would ship unstyled shadow components —
     // fail closed instead. The candidates are THIS build's own discovered facts
     // (defect C: no other build's registry is consulted).
-    const discoveredShadowCandidates = shadowCandidates();
-    if (discoveredShadowCandidates.length > 0) {
+    const discoveredSheetCandidates = componentSheetCandidates();
+    if (discoveredSheetCandidates.length > 0) {
       const componentSheetFile = styleIntegration?.componentRecord.fileName;
       if (componentSheetFile === undefined) {
         throw buildError(
           ClientAssetErrorCode.STYLESHEET_MISSING,
-          'The compiler admitted shadow-root class candidates but the client build emitted no ' +
+          'The compiler admitted class candidates but the client build emitted no ' +
             `component stylesheet — the ${stylePlan?.provider ?? 'style'} compile produced no ` +
             'CSS for the entry',
         );
@@ -1169,7 +1171,7 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
       ctx.componentStyleSheet = { fileName: componentSheetFile };
       log.info(
         `${stylePlan?.provider ?? 'style'} component stylesheet emitted: ${componentSheetFile} ` +
-          `(${discoveredShadowCandidates.length} shadow class candidate(s))`,
+          `(${discoveredSheetCandidates.length} admitted class candidate(s))`,
       );
     }
 

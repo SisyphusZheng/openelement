@@ -438,12 +438,13 @@ test('dev serves the component stylesheet and declares it in the DSD (S5-A)', as
     '<template shadowrootmode="open">',
   );
   expect(card, 'no inline <style> in the dev DSD').not.toContain('<style');
-  expect(card, 'the dev DSD declares a versioned component stylesheet').toMatch(
+  expect(card, 'the dev DSD declares the component stylesheet').toMatch(
     /<link rel="stylesheet" href="\/\.openElement\/tailwind-components\.[^"]+\.css" data-oe-static-styles \/>/,
   );
 
   // The declared URL answers the COMPILED utility sheet from the official
-  // pipeline (dev versions the resource; production content-addresses it).
+  // pipeline (dev serves the one stable resource; production content-addresses
+  // it).
   const sheet = await fetchEntryCss(handle, '', await declaredComponentSheetHref(handle));
   expect(sheet, 'the admitted utilities compiled').toMatch(/\.p-8\s*\{/);
   expect(sheet, '\.rounded-xl compiled').toMatch(/\.rounded-xl\s*\{/);
@@ -451,6 +452,19 @@ test('dev serves the component stylesheet and declares it in the DSD (S5-A)', as
   expect(sheet, 'a reduced entry: no preflight reset in the component sheet').not.toContain(
     'button, input, select',
   );
+  // The client adapter addresses the SAME resource the DSD declared: identity
+  // is a fact both halves state independently, and a version derived from the
+  // candidate set could not be (the two halves sample it at different points,
+  // before and after the app's own shadow modules are transformed). One stable
+  // URL is the only identity both can state.
+  const declared = await declaredComponentSheetHref(handle);
+  expect(declared, 'the DSD declares the stable component sheet resource').toMatch(
+    /\/\.openElement\/tailwind-components\.current\.css$/,
+  );
+  expect(
+    await declaredComponentSheetHref(handle),
+    'the declared resource does not drift between renders',
+  ).toEqual(declared);
 
   // The client's shared sheet rides the same adapter protocol the built entry
   // uses: one CSSStyleSheet, fetch + replace(), the readiness and identity
@@ -479,17 +493,16 @@ test('a TSX class edit recompiles the served component sheet (S5-A)', async () =
   const original = await readFile(cardPath, 'utf8');
   try {
     await writeFile(cardPath, original.replace('p-8', 'p-4'));
-    // The watcher invalidates the compile cache; the next page render
-    // re-registers the edited candidates, and the next sheet read answers the
-    // recompiled CSS at the SAME url.
+    // The watcher re-registers the edited candidates; the sheet response is
+    // compiled per request, so the SAME resource answers the recompiled CSS.
+    // Identity stays stable on purpose: the DSD link and the client adapter
+    // must name one resource, and a version sampled from the candidate set
+    // cannot (they sample it before and after the app's shadow modules are
+    // transformed). The browser-level proof — the computed style actually
+    // changing without a reload — runs in the dogfood fixture's dev spec.
     await new Promise((resolve) => setTimeout(resolve, 300));
-    // The edit moves the served resource: the next document declares a NEW
-    // versioned sheet URL (Vite keys dev modules by id, so a byte-stable URL
-    // would keep serving the first compile). The browser-level proof — the
-    // computed style actually changing without a reload — runs in the dogfood
-    // fixture's dev Playwright spec.
     const afterHref = await declaredComponentSheetHref(handle);
-    expect(afterHref, 'the dev sheet URL re-versions after a class edit').not.toEqual(beforeHref);
+    expect(afterHref, 'the served resource identity is stable across edits').toEqual(beforeHref);
     const after = await fetchEntryCss(handle, '', afterHref);
     expect(after, 'the edited class compiled').toMatch(/\.p-4\s*\{/);
     expect(after, 'the removed class is gone').not.toMatch(/\.p-8\s*\{/);

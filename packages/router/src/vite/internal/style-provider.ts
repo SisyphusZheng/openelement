@@ -173,8 +173,14 @@ export interface StyleIntegrationInput {
   readonly plan: ResolvedStyleSelection;
   /** The application's own `unocss` declaration (its config path). */
   readonly unocss: boolean | UnocssOptions | undefined;
-  /** The admitted SHADOW-root candidates (the component sheet's input). */
-  shadowCandidates(): readonly string[];
+  /**
+   * The candidates the COMPONENT sheet must carry: every admitted one, light
+   * roots included. A light-root component's DOM is not always the document's
+   * DOM — the layout convention renders every page inside the layout's shadow
+   * template, and a shadow component can render a light-root child — so a
+   * document-level class can end up in a tree only the component sheet reaches.
+   */
+  componentSheetCandidates(): readonly string[];
   /** The admitted LIGHT-root candidates (the document sheet's input). */
   documentCandidates(): readonly string[];
   /** The module texts this build walked (id → source), for token extraction. */
@@ -232,7 +238,7 @@ export async function createStyleBuildIntegration(
             compile: () =>
               provider.compileComponents({
                 ...compileInput(),
-                candidates: input.shadowCandidates(),
+                candidates: input.componentSheetCandidates(),
               }),
           },
         ]),
@@ -250,6 +256,8 @@ export async function createStyleBuildIntegration(
     componentRecord,
     documentRecord: undefined,
     graphPlugins: [tailwindEntryPlugin(root, plan), ...(await tailwindPlugins())],
-    sheetPlugins: [componentStyleSheetPlugin(root, plan, input.shadowCandidates, componentRecord)],
+    sheetPlugins: [
+      componentStyleSheetPlugin(root, plan, input.componentSheetCandidates, componentRecord),
+    ],
   };
 }

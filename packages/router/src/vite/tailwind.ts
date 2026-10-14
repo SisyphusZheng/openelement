@@ -262,7 +262,8 @@ function escapeInlineCandidate(candidate: string): string {
  * absent — a reset inside a component's own shadow tree would change every
  * existing component's rendering — and the theme layer is tree-shaken to the
  * variables the admitted utilities reference. The candidate list comes from
- * the compiler (`allShadowClassCandidates`), never from a framework-owned
+ * the compiler's registry — every admitted candidate, because a light-root
+ * class can render inside a shadow tree — never from a framework-owned
  * scanner: the official compiler owns candidate syntax and utility generation.
  */
 export function renderComponentUtilitiesEntry(

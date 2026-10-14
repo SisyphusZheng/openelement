@@ -52,7 +52,7 @@ async function withTheme(
     root: FIXTURE_ROOT,
     plan: plan!,
     unocss: declaration,
-    shadowCandidates: () => [],
+    componentSheetCandidates: () => [],
     documentCandidates: () => [],
     sources: () => new Map(),
   });
@@ -158,7 +158,7 @@ test('a configuration the engine rejects is a coded failure, not a crash', async
       root: FIXTURE_ROOT,
       plan: plan!,
       unocss: declaration,
-      shadowCandidates: () => [],
+      componentSheetCandidates: () => [],
       documentCandidates: () => [],
       sources: () => new Map(),
     }),
@@ -198,7 +198,7 @@ test('a document sheet that compiles to nothing at all is a coded failure', asyn
     root: FIXTURE_ROOT,
     plan: plan!,
     unocss: declaration,
-    shadowCandidates: () => [],
+    componentSheetCandidates: () => [],
     documentCandidates: () => [],
     sources: () => new Map(),
   });

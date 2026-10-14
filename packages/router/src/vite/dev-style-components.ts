@@ -9,7 +9,7 @@
  * write:
  *
  * 1. The sheet itself is served at the stable dev URL
- *    `<base>.openElement/<engine>-components.<version>.css`, compiled through
+ *    `<base>.openElement/<engine>-components.current.css`, compiled through
  *    the SELECTED provider's public API from the same candidate set the build
  *    uses (one engine, one candidate channel, one sheet).
  * 2. The generated dev SSR entry imports `virtual:open-element-style-links`;
@@ -24,11 +24,11 @@
  *
  * HMR: a `.tsx` edit can change the admitted candidate set and a declared
  * theme source edit changes the theme layer. Both dirty the compile cache; the
- * watcher compares the candidate fingerprint and, when it moved, invalidates
- * the served sheet module and the adapter module — Vite then re-fetches the
- * sheet through the adapter's `import.meta.hot.accept`, so connected shadow
- * roots update in place. No node is created, no page reload is required for
- * the stylesheet half of the change.
+ * watcher re-registers the module's facts and only then invalidates the adapter
+ * module — Vite then re-fetches the sheet through the adapter's
+ * `import.meta.hot.accept`, so connected shadow roots update in place. No node
+ * is created, no page reload is required for the stylesheet half of the
+ * change.
  *
  * PROVIDER SELECTION IS STATIC: the plan names one engine, the integration for
  * that engine is constructed here, and the other engine's package is never
@@ -53,25 +53,23 @@ const log = createLogger('router-vite:style-components-dev');
 /**
  * The public dev URL of the served component stylesheet.
  *
- * Dev-only detail: the URL carries a version segment
- * (`…/<engine>-components.<version>.css`). Vite's dev pipeline keys modules and
- * direct CSS responses by id, so a byte-stable URL would keep serving the
- * first compile after an edit; the version segment makes every content-moving
- * change a new resource. Production keeps its single content-addressed asset —
- * the dev URL is not part of the built contract.
+ * Dev-only detail: the URL is ONE stable resource
+ * (`…/<engine>-components.current.css`), not a versioned one. The DSD link is
+ * baked into the served HTML when a page renders, and the client adapter is
+ * served later; a version derived from the candidate set is sampled at both
+ * moments and the set is not complete until the app's own shadow modules have
+ * been transformed — so the two samples legitimately disagree and the client's
+ * fail-closed resource check rejects its own server's link. Identity must be a
+ * fact both halves can state, and in dev that fact is the one sheet the dev
+ * server compiles. Freshness rides the other two seams instead: the response
+ * is `no-store` (compiled per request), and a content-moving change
+ * re-evaluates the client adapter through its own hot-accept, which refills
+ * the same `CSSStyleSheet`. Production keeps its single content-addressed
+ * asset — the dev URL is not part of the built contract.
  */
 export function devComponentSheetUrl(base: string, engine: string, version = 'current'): string {
   const cleanBase = base.endsWith('/') ? base : `${base}/`;
   return `${cleanBase}.openElement/${engine}-components.${version}.css`;
-}
-
-/** A short stable digest of the candidate fingerprint (cache identity). */
-function fingerprintDigest(fingerprint: string): string {
-  let hash = 5381;
-  for (let index = 0; index < fingerprint.length; index++) {
-    hash = ((hash << 5) + hash + fingerprint.charCodeAt(index)) >>> 0;
-  }
-  return hash.toString(36);
 }
 
 /** The generated dev adapter module for the shared component sheet. */
@@ -126,7 +124,7 @@ export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
         root,
         plan,
         unocss: state.resolvedOptions.unocss,
-        shadowCandidates: () => state.classCandidates.allShadow(),
+        componentSheetCandidates: () => state.classCandidates.all(),
         documentCandidates: () => state.classCandidates.allLight(),
         sources: () => new Map(),
       });
@@ -137,26 +135,16 @@ export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
   };
   const styleLinksId = '\0open-element-style-links-dev.js';
   const adapterId = '\0oe-style-components-dev.js';
-  /**
-   * Bumped on every change that can move the sheet's CONTENT (a declared
-   * theme source edit does not change the candidate fingerprint, yet the theme
-   * layer must recompile). It rides the module id, so Vite's per-id module
-   * cache cannot serve a stale sheet after any relevant edit.
-   */
-  let sheetVersion = 0;
-
   const engine = (): string => integration?.provider.id ?? 'style';
-  const shadowCandidates = (): readonly string[] => state.classCandidates.allShadow();
-  const fingerprint = (): string => shadowCandidates().join(' ');
-  const liveVersion = (): string => fingerprintDigest(`${fingerprint()}#${sheetVersion}`);
+  const sheetCandidates = (): readonly string[] => state.classCandidates.all();
   const currentCss = async (): Promise<string> => {
     const resolved = integration;
     if (resolved === undefined) return '';
-    // Always compile for the CURRENT candidate set: the module id is versioned
-    // by the change counter, so Vite calls this exactly once per version and a
-    // cache here could only serve a stale sheet.
+    // Always compile for the CURRENT candidate set, never from a cache: the
+    // served URL is stable by design (see the URL's note), so the response is
+    // the only place the compiled sheet can be fresh.
     return await resolved.provider.compileComponents({
-      candidates: shadowCandidates(),
+      candidates: sheetCandidates(),
       sources: new Map(),
     });
   };
@@ -213,24 +201,20 @@ export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
           '(compiled by the engine’s own API, adopted as one shared CSSStyleSheet)',
       );
       /**
-       * Everything that must follow a registration change: the module id's
-       * version moves, the DSD link module is invalidated and the client
-       * adapter (when loaded) is re-evaluated in place.
+       * Everything that must follow a registration change: the client adapter
+       * (when loaded) is re-evaluated in place, so it refetches the stable
+       * sheet URL and replaces the same `CSSStyleSheet` object. The sheet
+       * response itself is compiled per request, so there is nothing to
+       * invalidate on the server half.
        */
       const afterCandidatesMoved = (): void => {
         // The candidate set (or a declared theme source) may have moved: hand
         // the client modules their update. The browser refetches through the
         // adapter's hot-accept, so the sheet object is re-filled in place — no
         // new nodes, no page reload for the stylesheet half of the change. The
-        // version is bumped only AFTER the registration completed, so a request
-        // can never be served under a new version built from the old facts.
-        sheetVersion += 1;
-        // The DSD link text is served by the SSR graph: invalidation alone is
-        // enough, because the next document render declares the new version.
-        for (const environment of Object.values(server.environments)) {
-          const styleLinks = environment.moduleGraph.idToModuleMap.get(styleLinksId);
-          if (styleLinks !== undefined) environment.moduleGraph.invalidateModule(styleLinks);
-        }
+        // update is sent only AFTER the registration completed, so the client
+        // can never refetch a sheet built from the old facts.
+        //
         // The shared sheet's adapter is a CLIENT module: re-evaluate it (its
         // hot-accept refetches and `replace()`s the same sheet object) — but
         // only when the page actually loaded it. Sending an update for a
@@ -326,13 +310,13 @@ export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
           '// <generated by open:style-components-dev — dev sheet URLs; do not edit>',
           "import { __setRequestTimeStyleSheetUrls } from '@openelement/element';",
           `__setRequestTimeStyleSheetUrls(${JSON.stringify([
-            devComponentSheetUrl(base, engine(), liveVersion()),
+            devComponentSheetUrl(base, engine()),
           ])});`,
           '',
         ].join('\n');
       }
       if (id === adapterId) {
-        return devSheetAdapterModule(devComponentSheetUrl(base, engine(), liveVersion()));
+        return devSheetAdapterModule(devComponentSheetUrl(base, engine()));
       }
       return null;
     },

@@ -200,11 +200,11 @@ describe('the candidate registry', () => {
     const registry = createClassCandidateRegistry();
     const transform = transformOf(registry);
     transform(authoredSource(`<div class="p-7">x</div>`), MODULE_ID);
-    expect(registry.allShadow()).toEqual(['p-7']);
+    expect(registry.all()).toEqual(['p-7']);
 
     transform(authoredSource(`<div>no classes here</div>`), MODULE_ID);
     expect(registry.forModule(MODULE_ID)).toEqual([]);
-    expect(registry.allShadow()).toEqual([]);
+    expect(registry.all()).toEqual([]);
     expect(registry.has()).toEqual(false);
   });
 
@@ -213,7 +213,7 @@ describe('the candidate registry', () => {
     const transform = transformOf(registry);
     transform(authoredSource(`<div class="p-7">x</div>`), MODULE_ID);
     transform(authoredSource(`<div class="p-9">x</div>`), MODULE_ID);
-    expect(registry.allShadow()).toEqual(['p-9']);
+    expect(registry.all()).toEqual(['p-9']);
   });
 
   test('a removed module contributes nothing (deleted file)', () => {
@@ -222,7 +222,7 @@ describe('the candidate registry', () => {
     transform(authoredSource(`<div class="p-7">x</div>`), MODULE_ID);
     registry.remove(MODULE_ID);
     expect(registry.forModule(MODULE_ID)).toEqual([]);
-    expect(registry.allShadow()).toEqual([]);
+    expect(registry.all()).toEqual([]);
   });
 
   test('two owners in one process never share facts', () => {
@@ -233,17 +233,23 @@ describe('the candidate registry', () => {
     transformOf(firstProject)(authoredSource(`<div class="p-7">x</div>`), '/one/a.tsx');
     transformOf(secondProject)(authoredSource(`<div class="m-3">y</div>`), '/two/b.tsx');
 
-    expect(firstProject.allShadow()).toEqual(['p-7']);
-    expect(secondProject.allShadow()).toEqual(['m-3']);
+    expect(firstProject.all()).toEqual(['p-7']);
+    expect(secondProject.all()).toEqual(['m-3']);
     // An empty registration in one owner cannot erase the other's facts.
     firstProject.register('/one/a.tsx', [], { shadow: true });
-    expect(secondProject.allShadow()).toEqual(['m-3']);
+    expect(secondProject.all()).toEqual(['m-3']);
   });
 
-  test('light-root candidates stay out of the shadow union', () => {
+  test('a light-root candidate joins the component sheet but not the document-sheet input', () => {
+    // The component sheet carries EVERY admitted candidate: a light root can
+    // render inside a shadow tree (the layout convention puts every page
+    // there), where nothing else reaches it. The document-sheet input stays
+    // light-only — a shadow component's classes are delivered by the component
+    // sheet and must not inflate the document one.
     const registry = createClassCandidateRegistry();
     registry.register('/proj/light.tsx', ['p-2'], { shadow: false });
-    expect(registry.all()).toEqual(['p-2']);
-    expect(registry.allShadow()).toEqual([]);
+    registry.register('/proj/shadow.tsx', ['m-3'], { shadow: true });
+    expect(registry.all()).toEqual(['p-2', 'm-3']);
+    expect(registry.allLight()).toEqual(['p-2']);
   });
 });

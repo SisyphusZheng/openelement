@@ -96,7 +96,7 @@ async function integrationFor(
     root: FIXTURE_ROOT,
     plan,
     unocss,
-    shadowCandidates: () => [],
+    componentSheetCandidates: () => [],
     documentCandidates: () => [],
     sources: () => new Map(),
   });
@@ -344,7 +344,7 @@ test('a missing engine is a coded failure, not a silent skip', async () => {
           root,
           plan,
           unocss: true,
-          shadowCandidates: () => [],
+          componentSheetCandidates: () => [],
           documentCandidates: () => [],
           sources: () => new Map(),
         });

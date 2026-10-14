@@ -235,7 +235,7 @@ export function devStylePlugin(state: OpenPluginState): Plugin {
         root: entryRoot,
         plan,
         unocss: state.resolvedOptions.unocss,
-        shadowCandidates: () => state.classCandidates.allShadow(),
+        componentSheetCandidates: () => state.classCandidates.all(),
         documentCandidates: () => state.classCandidates.allLight(),
         sources: () => new Map(),
       });

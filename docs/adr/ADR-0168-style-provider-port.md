@@ -61,9 +61,13 @@ package, tag, dialect and provider.
 
 - the DECLARED demand and the resolved plan (engine, sources, document reset,
   dialect);
-- the opaque class candidates its compiler collected, split by root scope
-  (`allShadow()` for the component sheet, `allLight()` for a generated document
-  sheet);
+- the opaque class candidates its compiler collected, each carrying the root
+  scope it was admitted in. The COMPONENT sheet takes them all (`all()`): a
+  light-root class can render inside a shadow tree — the layout convention puts
+  every page inside the layout's shadow template — where the document sheet
+  cannot reach it. A generated DOCUMENT sheet takes the light ones
+  (`allLight()`), because a shadow component's classes are delivered by the
+  component sheet and must not inflate the document one;
 - the module texts its own graph walk read, offered to a provider whose
   extractors consume source;
 - DELIVERY: content-addressed emission, the fetch adapter, the DSD marked link,

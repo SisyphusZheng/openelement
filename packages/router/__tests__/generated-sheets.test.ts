@@ -80,7 +80,7 @@ async function integrationWithTheme(theme: readonly string[], candidates: readon
     root: FIXTURE_ROOT,
     plan: plan!,
     unocss: declaration,
-    shadowCandidates: () => candidates,
+    componentSheetCandidates: () => candidates,
     documentCandidates: () => candidates,
     sources: () => new Map(),
   });

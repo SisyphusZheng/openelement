@@ -10,12 +10,21 @@
  * compiler as explicit candidates (`@source inline(…)`), which owns candidate
  * syntax, utility generation, theme compilation and optimization.
  *
- * Root scope is part of the fact: a shadow-root component's classes cannot be
- * styled by the document stylesheet, so its candidates feed the component
- * stylesheet that ships to shadow trees ({@linkcode ClassCandidateRegistry.allShadow});
- * a light-root component's classes live in document DOM and the document
- * entry's own pipeline already covers them, so they are recorded separately and
- * never inflate the shadow sheet.
+ * Root scope is part of the fact, because it decides which sheet an engine can
+ * use: a light-root component's classes are covered by the document entry's own
+ * pipeline when its DOM is the document's DOM ({@linkcode
+ * ClassCandidateRegistry.allLight} — the document-sheet input for an engine
+ * that generates its own document CSS), while a shadow-root component's
+ * classes can only reach its tree through the component stylesheet.
+ *
+ * The COMPONENT sheet compiles from every admitted candidate
+ * ({@linkcode ClassCandidateRegistry.all}), not from the shadow-root subset:
+ * a light-root component's DOM does not always end up in the document. The
+ * layout convention puts every page inside the layout's shadow template, and a
+ * shadow component may render a light-root child, so a document-level class
+ * can be rendered inside a shadow tree where only the component sheet reaches
+ * it. The sheet is emitted only when a shadow root exists, so an app without
+ * one pays nothing for the wider set.
  *
  * OWNERSHIP (defect C): the registry is an explicit object with a lifetime its
  * owner chooses — one per build, one per dev server — instead of a
@@ -57,8 +66,6 @@ export interface ClassCandidateRegistry {
   forModule(moduleId: string): readonly string[];
   /** Every candidate registered so far, first-seen ordered and deduplicated. */
   all(): readonly string[];
-  /** The SHADOW-root candidates only — the component stylesheet's input. */
-  allShadow(): readonly string[];
   /**
    * The LIGHT-root candidates only — the document sheet's input for an engine
    * that generates its own document CSS (a shadow component's classes are
@@ -97,9 +104,6 @@ export function createClassCandidateRegistry(): ClassCandidateRegistry {
     },
     all() {
       return union(() => true);
-    },
-    allShadow() {
-      return union((entry) => entry.shadow);
     },
     allLight() {
       return union((entry) => !entry.shadow);
