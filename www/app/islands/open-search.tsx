@@ -155,10 +155,16 @@ export default class OpenSearch extends OpenElement {
                 <div
                   class='px-3 py-9 text-center text-(length:--text-sm) text-muted-foreground empty:hidden'
                   hidden={this.hideEmpty}
+                  data-empty
                 >
                   {this.message}
                 </div>
-                <div class='grid gap-3 p-3' hidden={this.hideSkeleton} aria-hidden='true'>
+                <div
+                  class='grid gap-3 p-3'
+                  hidden={this.hideSkeleton}
+                  aria-hidden='true'
+                  data-skeleton
+                >
                   <span class='block h-8 rounded-md bg-muted'></span>
                   <span class='block h-8 rounded-md bg-muted'></span>
                   <span class='block h-8 rounded-md bg-muted'></span>
