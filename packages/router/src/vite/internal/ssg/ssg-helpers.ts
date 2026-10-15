@@ -8,14 +8,6 @@
 import { normalizeRoutePatternForURLPattern } from '@openelement/router/router';
 import { buildError, SsgDynamicErrorCode } from '../../../internal/error-codes.ts';
 import { quoteGeneratedJavaScriptValue } from './codegen-literals.ts';
-import { walkHtmlFileEntries } from '../html-files.ts';
-
-// ─── Path / URL helpers ────────────────────────────────────────
-
-/** Recursively find all .html files under a directory. */
-export function findHtmlFiles(dir: string): string[] {
-  return walkHtmlFileEntries(dir).map((entry) => entry.absolutePath);
-}
 
 // ─── Route helpers ─────────────────────────────────────────────
 
