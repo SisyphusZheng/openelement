@@ -38,12 +38,36 @@
  */
 
 import type { ViteDevServer } from 'vite';
+import { realpathSync } from 'node:fs';
+import { basename, dirname, sep } from 'node:path';
 import { createLogger, formatError } from '@openelement/element';
 import { createStyleBuildIntegration, type StyleBuildIntegration } from './style-provider.ts';
 import { stylePlanForApp } from './style-plan.ts';
 import type { OpenPluginState } from '../plugin-config.ts';
 
 const log = createLogger('router-vite:style-session');
+
+/**
+ * Set-key discipline for configuration inputs: identity is a fact about the
+ * FILE, not about the spelling it was reached through. The engine's loader
+ * reports paths as given (`/var/folders/…` under an OS temp root) while the
+ * file-events stream reports the realpath (`/private/var/folders/…`), so a
+ * plain string set would never recognize its own file's change. Keys are
+ * realpaths; a path not yet on disk (a configuration watched from before it
+ * existed) falls back to its parent directory's real path plus the entry
+ * name, which stays stable across both spellings.
+ */
+const realKey = (file: string): string => {
+  try {
+    return realpathSync.native(file);
+  } catch {
+    try {
+      return realpathSync.native(dirname(file)) + sep + basename(file);
+    } catch {
+      return file;
+    }
+  }
+};
 
 export interface DevStyleSession {
   /** The project root; both channels learn it in `configResolved`. */
@@ -70,8 +94,9 @@ export function createDevStyleSession(state: OpenPluginState): DevStyleSession {
 
   /** Watch one configuration input, whether it exists yet or not. */
   const watch = (file: string): void => {
-    if (configurationInputs.has(file)) return;
-    configurationInputs.add(file);
+    const key = realKey(file);
+    if (configurationInputs.has(key)) return;
+    configurationInputs.add(key);
     server?.watcher.add(file);
   };
 
@@ -141,7 +166,7 @@ export function createDevStyleSession(state: OpenPluginState): DevStyleSession {
       if (listening) return;
       listening = true;
       const react = (file: string): void => {
-        if (!configurationInputs.has(file)) return;
+        if (!configurationInputs.has(realKey(file))) return;
         void rebuild(file).catch((error: unknown) => {
           log.error(
             `reloading the style configuration after ${file} failed — the served sheets keep ` +

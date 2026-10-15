@@ -342,3 +342,59 @@ test('a uno.config.ts edit rebuilds the generator and reaches both dev sheets', 
     writeFileSync(configPath, original, 'utf8');
   }
 });
+
+test('a uno.config.ts edit reaches both dev sheets when the project root lives under the OS temp directory', async () => {
+  // The macOS temp-root shape: /var is a symlink to /private/var, and the
+  // file-events stream reports the REALPATH while the engine's configuration
+  // loader reports the path AS GIVEN. A configuration input matched by string
+  // identity never recognizes its own file's change, the generator never
+  // rebuilds, and the edit never reaches either sheet — the packed-consumer
+  // lane hit exactly this with a scratch app under the OS temp directory.
+  // Identity must be a fact about the FILE, not about the spelling it was
+  // reached through.
+  const { cpSync, rmSync, symlinkSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { mkdtemp } = await import('node:fs/promises');
+  const scratch = await mkdtemp(join(tmpdir(), 'openelement-unocss-tmp-root-'));
+  try {
+    for (const entry of ['app', 'openelement.config.ts', 'uno.config.ts', 'package.json']) {
+      cpSync(join(FIXTURE_DIR, entry), join(scratch, entry), { recursive: true });
+    }
+    // The engine resolves from the app root's own tree; the copy borrows the
+    // fixture's node_modules so the copied root resolves the same packages.
+    symlinkSync(join(FIXTURE_DIR, 'node_modules'), join(scratch, 'node_modules'), 'dir');
+    const handle = await bootDev(openElement(), scratch);
+    const configPath = join(scratch, 'uno.config.ts');
+    const original = readFileSync(configPath, 'utf8');
+    const before = await devSheets(handle);
+    expect(before.component, 'the component sheet carries the role utility').toContain(
+      '.bg-primary\\/14',
+    );
+    const importantCount = (css: string) => (css.match(/!important/g) ?? []).length;
+    const beforeCounts = {
+      document: importantCount(before.document),
+      component: importantCount(before.component),
+    };
+
+    writeFileSync(
+      configPath,
+      original.replace('presets: [presetWind4()]', 'presets: [presetWind4({ important: true })]'),
+      'utf8',
+    );
+    const after = await waitForSheets(
+      handle,
+      before,
+      (sheets) => importantCount(sheets.component) > beforeCounts.component,
+    );
+    expect(
+      importantCount(after.component),
+      'the temp-dir root did not isolate the configuration watcher: the component sheet was recompiled',
+    ).toBeGreaterThan(beforeCounts.component);
+    expect(
+      importantCount(after.document),
+      'the document sheet was recompiled from the new configuration too',
+    ).toBeGreaterThan(beforeCounts.document);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
