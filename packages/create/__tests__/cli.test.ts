@@ -7,17 +7,17 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import process from 'node:process';
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
 import { OPEN_ELEMENT_CONFIG_KEYS } from '../../router/src/config.ts';
 import { CREATE_VERSION } from '../src/version.ts';
 import { createInstallCommand } from '../src/install-command.ts';
-import { detectPackageManager } from '../src/pm.ts';
 import {
   assertUnifiedProductVersions,
   buildTemplates,
@@ -1047,9 +1047,49 @@ test('no arguments: usage on stdout, exit 1, canonical command first', async () 
   expect(Buffer.concat(err).toString().includes('a project name is required')).toBeTruthy();
 });
 
-test('detectPackageManager probes pnpm before npm and answers a real manager', () => {
-  const pm = detectPackageManager();
-  expect(['pnpm', 'npm']).toContain(pm);
+test('the scaffold installs with pnpm, because the catalog pins it', () => {
+  // The template's `vite-plus: "catalog:"` and the workspace catalog are pnpm
+  // only: npm answers EUNSUPPORTEDPROTOCOL for the whole install. The probe
+  // therefore has one answer, and the caller reports a miss as a requirement
+  // rather than falling back to a manager that cannot install the project.
+  expect(pnpmAvailable).toBe(true);
+});
+
+test('a host without pnpm fails with the requirement, not with an npm install error', async () => {
+  // PATH keeps node (already running this process) and nothing else, so the
+  // probe cannot find pnpm. The scaffold must still be written — the message
+  // has to leave the user something to install into — and the run must name
+  // pnpm and the catalog protocol rather than fall back to npm.
+  const binDir = `node${process.pid}-bin`;
+  mkdirSync(binDir, { recursive: true });
+  symlinkSync(process.execPath, join(binDir, 'node'));
+  const tmpRoot = `node${process.pid}-no-pnpm`;
+  mkdirSync(tmpRoot, { recursive: true });
+  try {
+    const child = spawn(process.execPath, [join(packageDir, 'src', 'cli.ts'), 'no-pnpm-app'], {
+      cwd: tmpRoot,
+      env: { ...process.env, PATH: resolve(binDir) },
+    });
+    const writes = await Promise.all([
+      Array.fromAsync(child.stdout!),
+      Array.fromAsync(child.stderr!),
+    ]);
+    const code = await new Promise<number>((resolve) =>
+      child.once('exit', (c) => resolve(c ?? -1)),
+    );
+    const stderr = Buffer.concat(writes[1]!).toString();
+    expect(code).toEqual(1);
+    expect(stderr.includes('pnpm is required'), stderr).toBeTruthy();
+    expect(stderr.includes('catalog:'), stderr).toBeTruthy();
+    expect(stderr.includes('EUNSUPPORTEDPROTOCOL'), stderr).toBeTruthy();
+    expect(stderr.includes('pnpm install'), stderr).toBeTruthy();
+    // The files survive: the message tells the user to install in place.
+    expect(existsSync(join(tmpRoot, 'no-pnpm-app', 'pnpm-workspace.yaml'))).toBeTruthy();
+    expect(existsSync(join(tmpRoot, 'no-pnpm-app', 'node_modules'))).toBeFalsy();
+  } finally {
+    rmSync(tmpRoot, { recursive: true, force: true });
+    rmSync(binDir, { recursive: true, force: true });
+  }
 });
 
 test('L11: project name validation enforces npm-name and traversal rules', () => {

@@ -12,9 +12,10 @@
  * other behavior is a flag with a default, so CI and packed consumers run
  * without a prompt.
  *
- * Post-scaffold lifecycle: git init (default), dependency install via the
- * detected package manager (pnpm first, then npm — default on), an optional
- * dev-server start (--start), and a boxed handoff naming the next commands.
+ * Post-scaffold lifecycle: git init (default), dependency install with pnpm
+ * (the template's catalog pins it — npm cannot install it, so a missing pnpm
+ * fails before the install with the reason; default on), an optional dev-server
+ * start (--start), and a boxed handoff naming the next commands.
  *
  * L9: every failure mode exits 1 with one actionable message — never a
  * runtime stack trace.
@@ -27,7 +28,7 @@ import process from 'node:process';
 import readline from 'node:readline/promises';
 import { buildTemplates, resolveVersions, validateProjectName } from './template-builder.ts';
 import { createInstallCommand } from './install-command.ts';
-import { detectPackageManager } from './pm.ts';
+import { pnpmAvailable } from './pm.ts';
 import { CREATE_VERSION } from './version.ts';
 
 /** The one scaffold template (#1530). `-t/--template` pins it non-interactively. */
@@ -336,7 +337,22 @@ async function main(): Promise<void> {
 
   let pm: string | null = null;
   if (flags.install !== false) {
-    pm = detectPackageManager();
+    // pnpm-only, checked BEFORE the install rather than assumed: the template
+    // resolves `vite-plus` and `vite` through a pnpm catalog, and `catalog:` is
+    // a pnpm-only protocol, so npm cannot install this project at all (it fails
+    // with EUNSUPPORTEDPROTOCOL). Failing here names the real requirement at
+    // the point where it matters and leaves the scaffold on disk, instead of
+    // handing an npm user an install error they cannot act on.
+    if (!pnpmAvailable()) {
+      fail(
+        'pnpm is required to install this project. Its dependencies resolve through a pnpm ' +
+          'catalog (pnpm-workspace.yaml: `vite-plus: "catalog:"`), and `catalog:` is a pnpm-only ' +
+          'protocol — npm rejects it with EUNSUPPORTEDPROTOCOL and installs nothing. Install ' +
+          'pnpm (https://pnpm.io/installation), then run `pnpm install` in ./' +
+          `${relativeTarget}/. The project files are already complete there.`,
+      );
+    }
+    pm = 'pnpm';
     console.info(`\nInstalling dependencies with ${pm}...`);
     const install = spawnSync(pm, ['install'], {
       cwd: targetDir,
