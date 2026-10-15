@@ -146,11 +146,11 @@ export async function loader(ctx: { request: Request }): Promise<GuestbookData> 
 }
 ```
 
-This is ADR-0120's three-state status rule, frozen: a successful non-GET action answers 303, an action endpoint never answers 200 with a success document, and validation stays a `fail(4xx)` return. On the fetch channel the same success is the `redirect` ActionResult (`{ type: 'redirect', status: 303, location }`), whose body the built-in enhancement follows as a navigation.
+This is ADR-0120's three-state status rule, frozen: a successful non-GET action answers 303, an action endpoint never answers 200 with a success document, and validation stays a `fail(4xx)` return. The rule is about the NATIVE channel's status line — on the fetch channel the same success is HTTP **200** whose body is the `redirect` ActionResult (`{ type: 'redirect', status: 303, location }`), and the 303 is the value inside that body rather than the status of the response. The built-in enhancement follows it as a navigation; a programmatic caller reads it as data.
 
 ## Action fetch negotiation
 
-Fetch-based action posts are recognized by the `x-openelement-action` header (exported as `ACTION_FETCH_HEADER` from `@openelement/router`): the built-in morph enhancement sends `enhance` and receives the same full-HTML responses as the no-JS path; a programmatic caller sends `true` and receives the serialized `ActionResult` union — `failure` with `status`/`data`, or `redirect` with the PRG `status`/`location`; there is no success document, because a successful mutation answers 303 (see the Form actions section) — while error outcomes answer RFC 9457 `problem+json` (`type`/`title`/`status`/`detail`). No header means a plain browser form post.
+Fetch-based action posts are recognized by the `x-openelement-action` header (exported as `ACTION_FETCH_HEADER` from `@openelement/router`): the built-in morph enhancement sends `enhance` and receives the same full-HTML responses as the no-JS path; a programmatic caller sends `true` and receives the serialized `ActionResult` union — `failure` with `status`/`data`, or `redirect` with the PRG `status`/`location`. A validation failure comes back as `422` with `application/json` and the `failure` shape — the author's status and data, not a document. `application/problem+json` (`type`/`title`/`status`/`detail`) is the channel's PROTOCOL-error shape instead: a rejected cross-site post, an unknown action, an unparseable body. No header means a plain browser form post.
 
 ## Two loader/action chains
 

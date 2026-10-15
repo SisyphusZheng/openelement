@@ -64,7 +64,7 @@ my-app/
   public/           static assets, copied into dist/ as-is
 ```
 
-`pnpm check` type-checks the starter's `app/` directory together with `vite.config.ts` and `openelement.config.ts`; new routes are picked up automatically.
+`pnpm typecheck` type-checks the starter's `app/` directory together with `vite.config.ts` and `openelement.config.ts`; new routes are picked up automatically.
 
 ## Step 2: Add your first page
 

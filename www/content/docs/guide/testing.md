@@ -9,7 +9,7 @@ order: 110
 The generated project wires a single fast signal against the real framework types:
 
 ```bash
-pnpm check   # tsc --noEmit over the tsconfig include: app/ + vite.config.ts + openelement.config.ts
+pnpm typecheck   # tsc --noEmit over the tsconfig include: app/ + vite.config.ts + openelement.config.ts
 ```
 
 It type-checks every route and component source with the actual `@openelement/*` declarations, so a wrong option on `definePage`, a `props` projector that does not match its loader's data, an unsupported decorator option or a broken import fails here — before any build runs and without a browser.
@@ -58,7 +58,7 @@ import { saveNote } from '../app/lib/guestbook.ts';
 
 test('an empty message fails validation', () => {
   const formData = new FormData();
-  formData.set('message', '');
+  formData.set('note', '');
   const failure = saveNote({ formData });
   assert.equal(failure.status, 422);
 });
@@ -76,7 +76,7 @@ import { saveNote } from '../app/lib/guestbook.ts';
 
 test('a valid message redirects to the echo', () => {
   const formData = new FormData();
-  formData.set('message', 'hello');
+  formData.set('note', 'hello');
   let thrown: unknown;
   try {
     saveNote({ formData });
@@ -86,7 +86,7 @@ test('a valid message redirects to the echo', () => {
   if (!(thrown instanceof OpenElementRedirect)) {
     throw new Error('a valid message must redirect');
   }
-  assert.equal(thrown.location, '/guestbook?echoed=hello');
+  assert.equal(thrown.location, '/guestbook?saved=hello');
 });
 ```
 

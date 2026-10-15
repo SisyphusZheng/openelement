@@ -49,11 +49,22 @@ export default defineConfig({
 两张样式表职责不同：
 
 - `tokens.css` 就是上表中的通用 token 约定：一张普通样式表，框架把它内联进每个文档 `<head>`，不经构建步骤、与 Tailwind 无关。触发它的是文件是否存在——建了这张表，它就会被内联进每个页面；`styles: { tokens }` 可把约定指向别的文件。
-- `theme.css` 是 starter 的 Tailwind 样式表。它不是框架约定——脚手架通过 `openelement.config.ts` 里的 `tailwind: { theme: ['app/styles/theme.css'] }` 显式点名它。该键与上面的约定相互独立：dev 编译声明的源并在文档头以 link 交付编译产物，build 把同一份编译结果作为 `/assets/open-tailwind.css` 输出并链接。角色落在 Tailwind 的 `theme` 层，而不是一段原样内联的样式。
+- `theme.css` 是 starter 的 Tailwind 样式表。它不是框架约定——脚手架通过 `openelement.config.ts` 里的 `tailwind: { theme: ['app/styles/theme.css'] }` 显式点名它。该键与上面的约定相互独立：dev 编译声明的源并在文档头以 link 交付编译产物，build 把同一份编译结果作为 `client/assets/` 下的内容寻址资产输出并链接（`/client/assets/<hash>.css`，文件名取自构建自身的 manifest，从不手写）。角色落在 Tailwind 的 `theme` 层，而不是一段原样内联的样式。
 
-脚手架项目把 token 放在它声明的 `theme.css` 里，于是只有一个 token 来源而不是两个——但这是项目选择，不是框架强制的规则。框架真正强制的是「框架选项只有一个家」：`openelement.config.ts` 已带选项时再往 `openElement()` 内联传选项是硬错误。如果你同时保留 `tokens.css` 约定文件与 `tailwind.theme` 样式表，两者都会生效（都会被内联/编译），保持一致的责任在使用方。
+脚手架项目把 token 放在它声明的 `theme.css` 里，于是只有一个 token 来源而不是两个——但这是项目选择，不是框架强制的规则。框架真正强制的是「框架选项只有一个家」：`openelement.config.ts` 已带选项时再往 `openElement()` 内联传选项是硬错误。如果你同时保留 `tokens.css` 约定文件与 `tailwind.theme` 样式表，两者都会生效，保持一致的责任在使用方。
 
-`tailwind` 决定这条管线是否存在，而包也可以自己声明这个需求。省略该键时，只有**被准入的包声明了需求**才会编译 Tailwind：`packageIslands` 列出的包，其 manifest 里的 `openElement.tailwind` 块要么要求编译（`required: true`——此时关闭该入口会让构建以带码诊断失败，而不是发出没有样式的组件），要么提供随它一起编译的包自有样式源（`sources: ['./theme.css']`，包内相对路径，在已安装的包内解析）。使用方无需重复属主的样式源：声明的源先编译，应用自己的 `theme` 条目在其后；同一个文件即使以不同写法出现两次也只编译一次（按解析到的文件去重）。应用本地的 class 不会自行打开这条管线——自己写 utility 的应用要自己声明 `tailwind`。`true` 只编译声明的源、不含应用自己的源；`false` 完全关闭管线（不加载 peer、不编译、不产出样式表），并在被准入组件要求编译时失败关闭。
+### 一条策略，两条样式表通道
+
+样式面是两种交付，一张样式表走哪一条由它的**角色**决定，而不是它所在的文件：
+
+| 通道 | 承载什么 | 如何交付 |
+| --- | --- | --- |
+| document | token/角色表、引擎的 preflight 层，以及 light DOM 用到的工具类 | 一份编译后、内容寻址的样式表，由每个文档的 `<head>` 链接（引擎自身的编译，由所选 provider 驱动） |
+| component | 某个 **shadow root** 已准入 class 所需的工具类 | 同一 provider 针对 shadow 候选集的编译产物，经框架的样式资产协议交付——由每个 DSD 模板声明，并在每个 realm 内被采纳为一张共享的 `CSSStyleSheet` |
+
+这个划分不是打包细节：把 reset 或 token 表放进组件的 shadow 树，会改变每一个既有组件的渲染方式，所以 component 样式表只承载工具类，document 样式表拥有一切全局内容。应用自己撰写的 `.css` 文件按它自己的 import 路径走；由引擎编译的样式表则由所选 provider 决定去向。
+
+`tailwind` 决定这条管线是否存在，而包也可以自己声明这个需求。省略该键时，只有**被准入的包声明了需求**才会编译 Tailwind：`packageIslands` 列出的包，其 manifest 里的 `openElement.tailwind` 块（`OpenElementExtensions`，框架在标准包 manifest 上的命名空间扩展——不是第二种元数据格式，也不是 `custom-elements.json`：Custom Elements Manifest 依旧是标签、属性、成员、事件、slot 与 part 的通用交换权威）要么要求编译（`required: true`——此时关闭该入口会让构建以带码诊断失败，而不是发出没有样式的组件），要么提供随它一起编译的包自有样式源（`sources: ['./theme.css']`，包内相对路径，在已安装的包内解析）。使用方无需重复属主的样式源：声明的源先编译，应用自己的 `theme` 条目在其后；同一个文件即使以不同写法出现两次也只编译一次（按解析到的文件去重）。应用本地的 class 不会自行打开这条管线——自己写 utility 的应用要自己声明 `tailwind`。`true` 只编译声明的源、不含应用自己的源；`false` 完全关闭管线（不加载 peer、不编译、不产出样式表），并在被准入组件要求编译时失败关闭。
 
 可接受的键——其余任何键都会以这份列表报错并让构建失败：
 

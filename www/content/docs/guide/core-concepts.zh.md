@@ -43,7 +43,7 @@ export default class MyCounter extends OpenElement {
 
 ### shadow root 行为：delegatesFocus
 
-`@element('my-dialog', { root: 'shadow-open', delegatesFocus: true })` 会生成对应的 class static，因此挂载的 shadow root 以 `delegatesFocus` 创建。聚焦进入宿主时会被委派到 shadow 树中的第一个可聚焦元素，且宿主自身匹配 `:focus`——这正是 dialog、menu 或复合字段这类包装组件无需手写 focus trap 即可键盘可用的原因。它只对 shadow root 生效（`'light'` root 没有可配置的 shadow root），且编译器只接受字面量：`@element(..., { delegatesFocus: <布尔字面量> })`，其他写法以 `OEC9002` fail closed。
+`@element('my-dialog', { root: 'shadow-open', delegatesFocus: true })` 会生成对应的 class static，因此挂载的 shadow root 以 `delegatesFocus` 创建。聚焦进入宿主时会被委派到 shadow 树中的第一个可聚焦元素，且宿主自身匹配 `:focus`。它带来的是复合控件焦点体系中的「进入」那一半，也只有那一半：初始焦点落在控件希望的位置，而不是宿主元素本身。它不是 focus trap——Tab 仍会离开宿主、走向文档中的下一个可聚焦项——也不是键盘模型。必须把焦点关在里面的 dialog、响应方向键的 menu、管理 roving tabindex 的复合字段，这些仍然要在委派之上自己写。它只对 shadow root 生效（`'light'` root 没有可配置的 shadow root），且编译器只接受字面量：`@element(..., { delegatesFocus: <布尔字面量> })`，其他写法以 `OEC9002` fail closed。
 
 ### 表单参与：formAssociated
 

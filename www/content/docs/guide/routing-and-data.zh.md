@@ -144,11 +144,11 @@ export async function loader(ctx: { request: Request }): Promise<GuestbookData> 
 }
 ```
 
-这正是已冻结的 ADR-0120 三态状态规则：成功的非 GET action 以 303 应答，action 端点绝不会以 200 返回成功文档，校验失败保持 `fail(4xx)` 返回。在 fetch 通道上，同一个成功就是 `redirect` ActionResult（`{ type: 'redirect', status: 303, location }`），内置增强会把该 body 当作导航跟随。
+这正是已冻结的 ADR-0120 三态状态规则：成功的非 GET action 以 303 应答，action 端点绝不会以 200 返回成功文档，校验失败保持 `fail(4xx)` 返回。这条规则说的是 NATIVE 通道的状态行——在 fetch 通道上，同一个成功是 HTTP **200**，其 body 是 `redirect` ActionResult（`{ type: 'redirect', status: 303, location }`）：303 是 body 里的值，不是响应的状态。内置增强把它当作导航跟随，编程调用方则把它当数据读取。
 
 ## Action fetch 协商
 
-基于 fetch 的 action 提交通过 `x-openelement-action` 头识别（从 `@openelement/router` 导出为 `ACTION_FETCH_HEADER`）：内置 morph 增强发送 `enhance`，收到与无 JS 路径相同的完整 HTML 响应；编程调用方发送 `true`，收到序列化的 `ActionResult` 联合类型——`failure`（带 `status`/`data`）或 `redirect`（带 PRG 的 `status`/`location`）；不存在成功文档，因为成功的变更以 303 应答（见「Form actions」一节）；错误结果则以 RFC 9457 `problem+json` 应答（`type`/`title`/`status`/`detail`）。没有该头即视为普通浏览器表单提交。
+基于 fetch 的 action 提交通过 `x-openelement-action` 头识别（从 `@openelement/router` 导出为 `ACTION_FETCH_HEADER`）：内置 morph 增强发送 `enhance`，收到与无 JS 路径相同的完整 HTML 响应；编程调用方发送 `true`，收到序列化的 `ActionResult` 联合类型——`failure`（带 `status`/`data`）或 `redirect`（带 PRG 的 `status`/`location`）。校验失败以 `422`、`application/json` 与 `failure` 形状返回——是作者的状态与数据，不是一份文档。`application/problem+json`（`type`/`title`/`status`/`detail`）则是该通道的协议错误形状：被拒的跨站提交、未知 action、无法解析的请求体。没有该头即视为普通浏览器表单提交。
 
 ## 两条 loader/action 链
 

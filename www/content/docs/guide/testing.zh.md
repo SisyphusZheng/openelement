@@ -9,7 +9,7 @@ order: 110
 生成的项目用一个快速信号对着真实的框架类型做检查：
 
 ```bash
-pnpm check   # tsc --noEmit，检查 tsconfig include：app/ + vite.config.ts + openelement.config.ts
+pnpm typecheck   # tsc --noEmit，检查 tsconfig include：app/ + vite.config.ts + openelement.config.ts
 ```
 
 它用真实的 `@openelement/*` 声明检查每个 route 与 component 源文件，因此 `definePage` 上写错的选项、与 loader 数据不匹配的 `props` 投影器、不受支持的装饰器选项或断掉的 import 都会在这里失败——在任何构建运行之前，且不需要浏览器。
@@ -58,7 +58,7 @@ import { saveNote } from '../app/lib/guestbook.ts';
 
 test('空消息在校验阶段失败', () => {
   const formData = new FormData();
-  formData.set('message', '');
+  formData.set('note', '');
   const failure = saveNote({ formData });
   assert.equal(failure.status, 422);
 });
@@ -76,7 +76,7 @@ import { saveNote } from '../app/lib/guestbook.ts';
 
 test('合法消息跳转到回显', () => {
   const formData = new FormData();
-  formData.set('message', 'hello');
+  formData.set('note', 'hello');
   let thrown: unknown;
   try {
     saveNote({ formData });
@@ -86,7 +86,7 @@ test('合法消息跳转到回显', () => {
   if (!(thrown instanceof OpenElementRedirect)) {
     throw new Error('合法消息必须跳转');
   }
-  assert.equal(thrown.location, '/guestbook?echoed=hello');
+  assert.equal(thrown.location, '/guestbook?saved=hello');
 });
 ```
 

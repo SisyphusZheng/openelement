@@ -92,7 +92,14 @@ Verify the artifact, not the log. After `pnpm build`:
 1. `ls dist/server/` tells you whether the build produced a request-time server at all. A pure-static project should show no `dist/server` directory.
 2. `pnpm start` prints which mode it loaded — `request-time server entry loaded (dynamic routes enabled)`, or `no dist/server — static-only preview`. That line is the artifact's own answer; if it disagrees with your routes, the build is what to look at.
 3. `curl -i http://localhost:4173/` must answer 200 with the prerendered HTML for a static route.
-4. `curl -i -X POST -H 'x-openelement-action: true' --data 'message=' http://localhost:4173/your-form-route` must reach the action: a validation failure answers `422` with `application/problem+json`, a success answers `303` with a `Location` header.
+4. `curl -i -X POST -H 'x-openelement-action: true' --data 'message=' http://localhost:4173/your-form-route` must reach the action. The header selects the FETCH channel, whose answers are data rather than navigations — measured on this build:
+
+   | channel | invalid submission | valid submission |
+   | --- | --- | --- |
+   | native form (no header) | `422`, the re-rendered form | `303` with a `Location` header |
+   | fetch (`x-openelement-action: true`) | `422`, `application/json`, body `{"type":"failure","status":422,"data":{…}}` | `200` (not 303), `application/json`, body `{"type":"redirect","status":303,"location":"…"}` |
+
+   The PRG status rides inside the fetch channel's body because that answer is data, not a redirect to follow. `application/problem+json` is the channel's PROTOCOL-error shape (a rejected cross-site post, an unknown action, an unparseable body), not the shape a validation failure uses.
 5. Request a `'dynamic'` route twice and confirm the response body differs from the file on disk in `dist/` — that is the request-time path working.
 
 ### Smoke script

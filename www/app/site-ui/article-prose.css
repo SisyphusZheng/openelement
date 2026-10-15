@@ -1,19 +1,24 @@
 /* article-prose — the generated-content treatment of the reading pages
  * (alpha15 utility-first migration).
  *
- * What this sheet owns, and why it must stay a sheet:
+ * What this sheet owns, and why it stays a sheet:
  *   the article/prose HTML of the guide/architecture articles, the blog
  *   dispatches and the changelog archive. That HTML is generated at BUILD
  *   time (markdown -> HTML in www/lib/markdown.ts; code fences compile to
  *   Shiki token spans, the pipeline wraps each fence in <open-code-block>
- *   and appends heading anchors — www/app/site-ui/article-body.ts). It
- *   arrives as an `innerHTML` string a build step produced, is re-generated
- *   by every build rather than edited by hand, and carries no authored
- *   markup a utility could ride: "put the classes in the markup" cannot
- *   reach it. Its presentation therefore stays native here, and every rule
- *   is rooted at the generated-content container class (.article-content,
- *   .blog-content, .changelog-content) — the one authored hook the pipeline
- *   output sits inside.
+ *   and appends heading anchors — www/app/site-ui/article-body.ts).
+ *
+ *   The reason is ownership, not capability. A generator can emit classes as
+ *   easily as it emits anything else, and the pipeline could tag each element
+ *   it produces; the sheet is here because the rules it holds are
+ *   DESCENDANT-scoped presentation of an output stream — `h2 + p`, list
+ *   markers, `:first-child`, `::before` heading anchors — that several
+ *   producers share (three collections, one treatment) and that would have to
+ *   be threaded through every producer's output and kept in step with all of
+ *   them. One sheet, one owner, one scope. Every rule is rooted at the
+ *   generated-content container class (.article-content, .blog-content,
+ *   .changelog-content), which is the authored hook the pipeline output sits
+ *   inside and the boundary that keeps these rules off the page chrome.
  *
  * What this sheet does NOT own (the scope boundary): every page-chrome
  * element the page components render — breadcrumbs, titles, lede, the blog

@@ -64,7 +64,7 @@ my-app/
   public/           静态资源，原样拷进 dist/
 ```
 
-`pnpm check` 会类型检查 starter 的 `app/` 目录以及 `vite.config.ts` 与 `openelement.config.ts`；新增的路由会被自动纳入。
+`pnpm typecheck` 会类型检查 starter 的 `app/` 目录以及 `vite.config.ts` 与 `openelement.config.ts`；新增的路由会被自动纳入。
 
 ## 第 2 步：加第一个页面
 
