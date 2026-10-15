@@ -25,7 +25,7 @@ The compiler lowers every `@element` module into a Part Program — a serializab
 | `render()` is one return | `render() { return <main>…</main>; }` | locals before the return, two root elements, a fragment root, text as the root (`OEC9007`) |
 | Failures happen at runtime | a `throw` inside a lifecycle method such as `connectedCallback()` | `if (…) throw` inside `render()` (`OEC9007`) — authored throws are not compilable; boundaries catch runtime failures |
 | Handlers are method references | `onClick={this.pick}` or a single-action arrow | `onClick={this.pick()}` and other inline call expressions (`OEC9016`) |
-| Attributes are static or property reads | literals, `this.<property>` sinks, the admitted boolean/class/style forms | spreads, computed expressions (`OEC9011`) |
+| Attributes are static or property reads | literals, `this.<property>` sinks, the admitted boolean/class/style forms, and the inline conditional class on intrinsic elements | spreads, computed expressions (`OEC9011`) |
 
 ## One compiled class per module
 
@@ -357,11 +357,16 @@ export class MyStatus extends OpenElement {
 
 ```text
 // rejected: a branch element binds attributes, it does not interpolate text — OEC9012
+// (bind the value as an attribute, e.g. data-label={this.label})
 render() { return <div>{this.ready ? <b>{this.label}</b> : <i>Waiting</i>}</div>; }
 // rejected: handlers stay outside blocks — OEC9012
 render() { return <div>{this.ready ? <b onClick={this.pick}>Ready</b> : <i>Waiting</i>}</div>; }
-// and a text-only ternary is not a Block at all:
+// a text-only ternary is not a Block at all — derive the text in a computed(...)
+// property and interpolate {this.<property>}:
 render() { return <div>{this.ready ? 'yes' : 'no'}</div>; }
+// a nested ternary fails the same way — one condition per Block; derive the
+// decision in a computed(...) property and branch on it:
+render() { return <div>{this.ready ? (this.busy ? <b>a</b> : <b>b</b>) : <i>c</i>}</div>; }
 ```
 
 ## `render()` is one return
@@ -424,7 +429,7 @@ render() { return <button onClick={this.toggle()}>x</button>; }
 
 ## Attributes are static or property reads
 
-Attribute values are evaluated by the serializer, the fresh mount and the claim alike, so each one is either a literal or a single `this.<property>` sink (with the boolean, class and style forms admitted as their own Parts). Spreads and computed expressions have no common serializable form.
+Attribute values are evaluated by the serializer, the fresh mount and the claim alike, so each one is either a literal or a single `this.<property>` sink (with the boolean, class and style forms admitted as their own Parts). The `class` attribute admits one inline conditional form on intrinsic elements — `class={this.<property> ? 'on' : 'off'}` — where both branches are string literals and the condition reads declared properties under the computed-body grammar; the compiler lowers it to a synthesized `computed(...)` field bound to the class Part (custom-element hosts keep the literal/property forms). Spreads and computed expressions have no common serializable form.
 
 ```tsx
 import { element, OpenElement, property } from '@openelement/element';
@@ -434,8 +439,11 @@ export class MyLink extends OpenElement {
   @property({ reflect: false })
   href = '/';
 
+  @property({ reflect: false, type: Boolean })
+  active = false;
+
   render() {
-    return <a class='link' href={this.href}>Docs</a>;
+    return <a class={this.active ? 'link link-active' : 'link'} href={this.href}>Docs</a>;
   }
 }
 ```
@@ -444,6 +452,8 @@ export class MyLink extends OpenElement {
 // rejected: spreads and computed attribute expressions — OEC9011
 render() { return <a {...this.props}>Docs</a>; }
 render() { return <a title={'See ' + this.href}>Docs</a>; }
+// rejected: conditional class branches must be string literals — OEC9011
+render() { return <a class={this.active ? this.tone : 'link'}>Docs</a>; }
 ```
 
 ## See also

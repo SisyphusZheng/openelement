@@ -462,7 +462,12 @@ export class Lowering {
     }
     for (const prop of attributes.properties) {
       if (ts.isJsxSpreadAttribute(prop)) {
-        this.fail(prop, 'OEC9011', 'spread attributes are not supported by the compiler grammar');
+        this.fail(
+          prop,
+          'OEC9011',
+          'spread attributes are not supported by the compiler grammar — write each attribute ' +
+            'explicitly (a literal or a this.<property> sink)',
+        );
       }
       const name = this.normalizeAttributeName(prop.name.getText(this.sf));
       const init = prop.initializer;
@@ -473,10 +478,20 @@ export class Lowering {
         ts.isJsxExpression(init) &&
         init.expression !== undefined;
       if (isCustomHost && (isDynamicEvent || /^on[A-Z]/.test(name))) {
-        this.fail(prop, 'OEC9017', `custom-element host <${tag}> may not carry event handlers`);
+        this.fail(
+          prop,
+          'OEC9017',
+          `custom-element host <${tag}> may not carry event handlers — bind the handler on an ` +
+            'intrinsic element, or attach the listener imperatively in a lifecycle method',
+        );
       }
       if (!isSafeAttributeName(name) && !isDynamicEvent && name !== 'innerHTML') {
-        this.fail(prop, 'OEC9011', `attribute name "${name}" is unsafe`);
+        this.fail(
+          prop,
+          'OEC9011',
+          `attribute name "${name}" is unsafe — names must be valid HTML attribute names, not ` +
+            'event handlers (on*) or forbidden sinks; use an admitted attribute name',
+        );
       }
       // innerHTML is exempt from the generic name check only so the dynamic
       // trusted-HTML sink path below can admit it; every static or non-field
@@ -490,11 +505,22 @@ export class Lowering {
           this.fieldAccess(unwrapExpression(init.expression)) !== null
         )
       ) {
-        this.fail(prop, 'OEC9011', `attribute name "${name}" is unsafe`);
+        this.fail(
+          prop,
+          'OEC9011',
+          'attribute name "innerHTML" is unsafe as a static attribute — innerHTML opens only ' +
+            'through the trusted-HTML sink: bind an Object-typed trustedHtml(...) property and ' +
+            'carry the literal trustedHtml marker',
+        );
       }
       const attributeKey = name.toLowerCase();
       if (attributeNames.has(attributeKey)) {
-        this.fail(prop, 'OEC9011', `duplicate attribute "${name}" is unsupported`);
+        this.fail(
+          prop,
+          'OEC9011',
+          `duplicate attribute "${name}" is unsupported — remove one; an element admits each ` +
+            'attribute once',
+        );
       }
       attributeNames.add(attributeKey);
       if (!init) {
@@ -527,7 +553,12 @@ export class Lowering {
       }
       if (name === 'ref') {
         if (isCustomHost) {
-          this.fail(prop, 'OEC9017', `custom-element host <${tag}> may not carry a ref`);
+          this.fail(
+            prop,
+            'OEC9017',
+            `custom-element host <${tag}> may not carry a ref — query the host imperatively ` +
+              'in a lifecycle method (e.g. connectedCallback)',
+          );
         }
         if (staticOnly) {
           this.fail(prop, 'OEC9012', `${BRANCH_BOUNDARY} — a ref cannot bind inside a branch`);
@@ -586,7 +617,12 @@ export class Lowering {
           // emits it and the client claim assigns it as a JS property.
           const propReason = forbiddenSinkReason('prop', name);
           if (propReason !== null) {
-            this.fail(prop, 'OEC9011', `property sink name "${name}" is unsafe`);
+            this.fail(
+              prop,
+              'OEC9011',
+              `property sink name "${name}" is unsafe — prototype-pollution primitives are on ` +
+                'the shared deny list on every boundary; rename the attribute',
+            );
           }
           this.addPart({ k: 'prop', signal: field, name, path }, path, prop, elementId);
           continue;
@@ -604,7 +640,12 @@ export class Lowering {
       }
       const text = primitiveText(literal);
       if (text === null) {
-        this.fail(prop, 'OEC9011', `attribute "${name}" only accepts primitive literal values`);
+        this.fail(
+          prop,
+          'OEC9011',
+          `attribute "${name}" only accepts primitive literal values — use a string, number or ` +
+            'boolean literal (objects and arrays have no attribute form)',
+        );
       }
       if (literal === false || literal === null) continue;
       attrs.push([name, literal === true ? '' : (text ?? '')]);
@@ -665,7 +706,12 @@ export class Lowering {
         );
         continue;
       }
-      this.fail(child, 'OEC9013', 'JSX fragments and spreads are outside the compiler grammar');
+      this.fail(
+        child,
+        'OEC9013',
+        "JSX fragments and spreads are outside the compiler grammar — wrap the fragment's " +
+          'children in a single element',
+      );
     }
     if (VOID_TAGS.has(tag)) {
       const child = children.find((candidate) => hasMeaningfulJsxChild(this.sf, candidate));
@@ -918,27 +964,47 @@ export class Lowering {
         );
       }
       if (VOID_TAGS.has(tag)) {
-        this.fail(sourceNode, 'OEC9026', `void element <${tag}> cannot carry an innerHTML sink`);
+        this.fail(
+          sourceNode,
+          'OEC9026',
+          `void element <${tag}> cannot carry an innerHTML sink — move the sink to a ` +
+            'container element (e.g. <div>)',
+        );
       }
       this.addPart({ k: 'html', signal, path }, path, sourceNode, elementId);
       return;
     }
     if (BOOLEAN_ATTRIBUTES.has(lowerName)) {
       if (forbiddenSinkReason('bool', name) !== null) {
-        this.fail(sourceNode, 'OEC9011', `attribute name "${name}" is unsafe`);
+        this.fail(
+          sourceNode,
+          'OEC9011',
+          `attribute name "${name}" is unsafe — names must be valid HTML attribute names, not ` +
+            'event handlers (on*) or forbidden sinks; use an admitted attribute name',
+        );
       }
       this.addPart({ k: 'bool', signal, name, path }, path, sourceNode, elementId);
       return;
     }
     if (name === 'value' || DOM_PROPERTY_NAMES.has(name) || (tag === 'input' && name === 'value')) {
       if (forbiddenSinkReason('prop', name) !== null) {
-        this.fail(sourceNode, 'OEC9011', `property sink name "${name}" is unsafe`);
+        this.fail(
+          sourceNode,
+          'OEC9011',
+          `property sink name "${name}" is unsafe — prototype-pollution primitives are on the ` +
+            'shared deny list on every boundary; rename the sink',
+        );
       }
       this.addPart({ k: 'prop', signal, name, path }, path, sourceNode, elementId);
       return;
     }
     if (forbiddenSinkReason('attr', name) !== null) {
-      this.fail(sourceNode, 'OEC9011', `attribute name "${name}" is unsafe`);
+      this.fail(
+        sourceNode,
+        'OEC9011',
+        `attribute name "${name}" is unsafe — names must be valid HTML attribute names, not ` +
+          'event handlers (on*) or forbidden sinks; use an admitted attribute name',
+      );
     }
     this.addPart({ k: 'attr', signal, name, path }, path, sourceNode, elementId);
   }
@@ -952,7 +1018,17 @@ export class Lowering {
     const expr = unwrapExpression(child.expression);
     const field = this.fieldAccess(expr);
     if (field) {
-      if (staticOnly) this.fail(child, 'OEC9012', 'Block branches must be fully static');
+      // alpha15 widened branches to admit this.<property> attribute sinks; text
+      // interpolation is the one binding a branch still cannot carry, so the
+      // message names the now-legal attribute spelling (#1614).
+      if (staticOnly) {
+        this.fail(
+          child,
+          'OEC9012',
+          `${BRANCH_BOUNDARY} — a branch cannot interpolate text; bind the value as an ` +
+            'attribute (e.g. data-label={this.<property>})',
+        );
+      }
       const index = this.addPart({ k: 'text', signal: field }, path, child);
       return { k: 'part', id: `p${index}`, index };
     }
@@ -1046,7 +1122,32 @@ export class Lowering {
     if (ts.isJsxSelfClosingElement(branch)) {
       return this.lowerElement(branch.tagName, branch.attributes, [], [0], branch, true);
     }
-    this.fail(near, 'OEC9012', 'conditional Block branches must be single static JSX elements');
+    // The two near-misses an author (or agent) actually writes get their own
+    // nearest-legal-spelling hint (#1614): a nested ternary fails because one
+    // Block carries one condition, and a text-only ternary fails because a
+    // Block swaps elements, not text — both resolve through computed(...).
+    if (ts.isConditionalExpression(branch)) {
+      this.fail(
+        near,
+        'OEC9012',
+        'nested ternaries are outside the compiler grammar — one condition per Block; derive ' +
+          'the decision in a computed(...) property and branch on it',
+      );
+    }
+    if (literalValue(branch, this.sf) !== undefined) {
+      this.fail(
+        near,
+        'OEC9012',
+        'a text-only ternary is not a Block — Blocks swap elements; derive the text in a ' +
+          'computed(...) property and interpolate {this.<property>}',
+      );
+    }
+    this.fail(
+      near,
+      'OEC9012',
+      'conditional Block branches must be single static JSX elements — each branch is exactly ' +
+        'one element (bind its values as this.<property> attributes)',
+    );
   }
 
   private lowerEach(expr: ts.CallExpression, near: ts.Node, path: number[]): ProgramTreeNode {
@@ -1080,7 +1181,12 @@ export class Lowering {
     let key: string | null = null;
     for (const prop of attributes.properties) {
       if (!ts.isJsxAttribute(prop)) {
-        this.fail(prop, 'OEC9011', 'list Block items do not support spread attributes');
+        this.fail(
+          prop,
+          'OEC9011',
+          'list Block items do not support spread attributes — write each attribute ' +
+            'explicitly (a literal or {<item>.<field>})',
+        );
       }
       if (prop.name.getText(this.sf) !== 'key') continue;
       if (key !== null) this.fail(prop, 'OEC9014', 'list Block items may declare key only once');
@@ -1158,7 +1264,12 @@ export class Lowering {
     // them verbatim and the client instantiates them per item.
     const isCustomHost = /^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(tag);
     if (!/^[a-z][a-z0-9]*$/.test(tag) && !isCustomHost) {
-      this.fail(tagName, 'OEC9010', 'list Block item must be an intrinsic lowercase element');
+      this.fail(
+        tagName,
+        'OEC9010',
+        'list Block item must be an intrinsic lowercase element or a custom-element host — ' +
+          'compose by tag name, not class values',
+      );
     }
     const itemTagReason = forbiddenSinkReason('tag', tag);
     if (itemTagReason !== null) this.fail(tagName, 'OEC9010', itemTagReason);
@@ -1168,7 +1279,12 @@ export class Lowering {
     const attributeNames = new Set<string>();
     for (const prop of attributes.properties) {
       if (!ts.isJsxAttribute(prop)) {
-        this.fail(prop, 'OEC9011', 'spread attributes are not supported in item templates');
+        this.fail(
+          prop,
+          'OEC9011',
+          'spread attributes are not supported in item templates — write each attribute ' +
+            'explicitly (a literal or {<item>.<field>})',
+        );
       }
       const name = this.normalizeAttributeName(prop.name.getText(this.sf));
       if (name === 'key') {
@@ -1187,11 +1303,21 @@ export class Lowering {
         ts.isJsxExpression(prop.initializer) &&
         prop.initializer.expression !== undefined;
       if (!isSafeAttributeName(name) && !isItemEvent) {
-        this.fail(prop, 'OEC9011', `attribute name "${name}" is unsafe`);
+        this.fail(
+          prop,
+          'OEC9011',
+          `attribute name "${name}" is unsafe — names must be valid HTML attribute names, not ` +
+            'event handlers (on*) or forbidden sinks; use an admitted attribute name',
+        );
       }
       const attributeKey = name.toLowerCase();
       if (attributeNames.has(attributeKey)) {
-        this.fail(prop, 'OEC9011', `duplicate attribute "${name}" is unsupported`);
+        this.fail(
+          prop,
+          'OEC9011',
+          `duplicate attribute "${name}" is unsupported — remove one; an element admits each ` +
+            'attribute once',
+        );
       }
       attributeNames.add(attributeKey);
       if (!prop.initializer) {
@@ -1204,7 +1330,11 @@ export class Lowering {
         continue;
       }
       if (!ts.isJsxExpression(prop.initializer) || !prop.initializer.expression) {
-        this.fail(prop, 'OEC9011', 'item template attributes must be static literals');
+        this.fail(
+          prop,
+          'OEC9011',
+          `item template attribute "${name}" must be a static literal or {${param}.<field>}`,
+        );
       }
       // Per-item event handlers (#1556 IR v2): `on<event>={this.<method>}` (or
       // a single-action arrow) lowers to an ItemEventBinding on the each part
@@ -1213,7 +1343,12 @@ export class Lowering {
       // item templates stay handler-free, matching the host rule above.
       if (/^on[A-Z]/.test(name)) {
         if (isCustomHost) {
-          this.fail(prop, 'OEC9017', `custom-element host <${tag}> may not carry event handlers`);
+          this.fail(
+            prop,
+            'OEC9017',
+            `custom-element host <${tag}> may not carry event handlers — bind the handler on an ` +
+              'intrinsic element, or attach the listener imperatively in a lifecycle method',
+          );
         }
         if (itemEvents === undefined) {
           this.fail(
@@ -1255,7 +1390,12 @@ export class Lowering {
       }
       const text = primitiveText(literal);
       if (text === null) {
-        this.fail(prop, 'OEC9011', 'item template attributes must use primitive literals');
+        this.fail(
+          prop,
+          'OEC9011',
+          'item template attributes must use primitive literals — use a string, number or ' +
+            `boolean literal, or bind {${param}.<field>}`,
+        );
       }
       if (literal === false || literal === null) continue;
       attrs.push([name, literal === true ? '' : (text ?? '')]);

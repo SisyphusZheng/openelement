@@ -212,12 +212,22 @@ export function validateComputedExpressionBody(
   const replacements: Array<{ start: number; end: number; name: string }> = [];
   const visit = (node: ts.Node): void => {
     if (ts.isFunctionDeclaration(node) || ts.isFunctionExpression(node)) {
-      fail(node, 'OEC9024', `${subjects.actor} may not nest non-arrow functions`);
+      fail(
+        node,
+        'OEC9024',
+        `${subjects.actor} may not nest non-arrow functions — hoist the function to module ` +
+          'scope and import it',
+      );
     }
     if (ts.isPropertyAccessExpression(node) && node.expression.kind === ts.SyntaxKind.ThisKeyword) {
       const name = node.name.text;
       if (computedFieldNames.has(name)) {
-        fail(node, 'OEC9024', `${subjects.single} may not read computed field "${name}"`);
+        fail(
+          node,
+          'OEC9024',
+          `${subjects.single} may not read computed field "${name}" — read its source ` +
+            'this.<property> inputs instead (computed fields cannot chain)',
+        );
       }
       if (!plainFieldNames.has(name)) {
         fail(
@@ -458,7 +468,12 @@ function propertyFields(
       }
       names.add(member.name.text);
       if (!member.initializer) {
-        fail(member, 'OEC9005', 'compiled fields require a literal initializer');
+        fail(
+          member,
+          'OEC9005',
+          'compiled fields require an admitted initializer — a serializable literal, ' +
+            'computed(...), or trustedHtml(...)',
+        );
       }
       // alpha.8: computed fields derive their signal from other properties.
       // They never carry attributes, never reflect, and hold no serialized
@@ -515,7 +530,12 @@ function propertyFields(
           } else if (ts.isStringLiteral(entry.initializer)) {
             attribute = camelToKebab(entry.initializer.text);
             if (!isSafeAttributeName(attribute)) {
-              fail(entry, 'OEC9023', 'property attribute name is unsafe');
+              fail(
+                entry,
+                'OEC9023',
+                `property attribute name "${attribute}" is unsafe — use a valid HTML attribute ` +
+                  'name (no on* handlers, no forbidden sinks)',
+              );
             }
           } else {
             fail(entry, 'OEC9023', 'property attribute must be a string literal or false');
@@ -528,7 +548,12 @@ function propertyFields(
           else explicitConverter = type.label;
           continue;
         }
-        fail(entry, 'OEC9022', `unsupported @property option "${optionName}"`);
+        fail(
+          entry,
+          'OEC9022',
+          `unsupported @property option "${optionName}" — admitted options are type, ` +
+            'converter, reflect and attribute',
+        );
       }
       const inferred = explicitType ?? inferPropertyType(member, defaultValue, sf);
       const converter = explicitConverter ?? inferred.label;
@@ -631,7 +656,8 @@ function propertyFields(
     fail(
       member,
       'OEC9006',
-      'constructors, accessors and undecorated fields are outside the compiler grammar',
+      'constructors, accessors and undecorated fields are outside the compiler grammar — ' +
+        'declare state as @property fields and behavior as methods',
     );
   }
   if (!render) fail(classNode, 'OEC9007', 'compiled classes must declare render()');
@@ -799,7 +825,10 @@ export function analyzeCompiledModule(
     fail(
       statement,
       'OEC9008',
-      'runtime top-level statements are outside the compiled module grammar',
+      'runtime top-level statements are outside the compiled module grammar — keep shared ' +
+        'state in a plain module and import it; the island policy statement ' +
+        '(export const openElement = defineIslandConfig(...)) is the one admitted runtime ' +
+        'statement',
     );
   }
 
@@ -881,7 +910,12 @@ export function analyzeCompiledModule(
   }
   tag = expr.arguments[0].text;
   if (!/^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(tag)) {
-    fail(decorator, 'OEC9002', `@element tag "${tag}" is not a custom-element name`);
+    fail(
+      decorator,
+      'OEC9002',
+      `@element tag "${tag}" is not a custom-element name — use a lowercase name with at ` +
+        'least one dash (my-element)',
+    );
   }
   // alpha.8: `@element(tag, { root: 'light' | 'shadow-open' | 'shadow-closed' })`
   // selects the program root ownership mode (light content vs DSD). Pages and
