@@ -124,13 +124,16 @@ scanning:
 import { openElement } from '@openelement/router/vite';
 
 export default {
-  plugins: [
-    openElement({
-      packageIslands: ['@openelement/ui'],
-    }),
-  ],
+  plugins: [openElement()],
 };
 ```
+
+Admission is automatic (`packageIslands` defaults to `'auto'`): the build
+derives the set from the app's real imports, so an ordinary
+`import '@openelement/ui/open-button'` delivers the component once the
+manifest above is visible to the build. The explicit list stays available for
+pinning (`packageIslands: ['@openelement/ui']`) and `'manual'` turns the
+derivation off.
 
 The manifest includes attributes, events, slots, CSS parts, SSR renderability,
 DSD behavior, and hydration strategy metadata.

@@ -64,14 +64,14 @@ export default defineConfig({
 
 这个划分不是打包细节：把 reset 或 token 表放进组件的 shadow 树，会改变每一个既有组件的渲染方式，所以 component 样式表只承载工具类，document 样式表拥有一切全局内容。应用自己撰写的 `.css` 文件按它自己的 import 路径走；由引擎编译的样式表则由所选 provider 决定去向。
 
-`tailwind` 决定这条管线是否存在，而包也可以自己声明这个需求。省略该键时，只有**被准入的包声明了需求**才会编译 Tailwind：`packageIslands` 列出的包，其 manifest 里的 `openElement.tailwind` 块（`OpenElementExtensions`，框架在标准包 manifest 上的命名空间扩展——不是第二种元数据格式，也不是 `custom-elements.json`：Custom Elements Manifest 依旧是标签、属性、成员、事件、slot 与 part 的通用交换权威）要么要求编译（`required: true`——此时关闭该入口会让构建以带码诊断失败，而不是发出没有样式的组件），要么提供随它一起编译的包自有样式源（`sources: ['./theme.css']`，包内相对路径，在已安装的包内解析）。使用方无需重复属主的样式源：声明的源先编译，应用自己的 `theme` 条目在其后；同一个文件即使以不同写法出现两次也只编译一次（按解析到的文件去重）。应用本地的 class 不会自行打开这条管线——自己写 utility 的应用要自己声明 `tailwind`。`true` 只编译声明的源、不含应用自己的源；`false` 完全关闭管线（不加载 peer、不编译、不产出样式表），并在被准入组件要求编译时失败关闭。
+`tailwind` 决定这条管线是否存在，而包也可以自己声明这个需求。省略该键时，只有**被准入的包声明了需求**才会编译 Tailwind：被接纳的包——显式声明、或由应用真实导入推导而来（见下文 `packageIslands`）——其 manifest 里的 `openElement.tailwind` 块（`OpenElementExtensions`，框架在标准包 manifest 上的命名空间扩展——不是第二种元数据格式，也不是 `custom-elements.json`：Custom Elements Manifest 依旧是标签、属性、成员、事件、slot 与 part 的通用交换权威）要么要求编译（`required: true`——此时关闭该入口会让构建以带码诊断失败，而不是发出没有样式的组件），要么提供随它一起编译的包自有样式源（`sources: ['./theme.css']`，包内相对路径，在已安装的包内解析）。使用方无需重复属主的样式源：声明的源先编译，应用自己的 `theme` 条目在其后；同一个文件即使以不同写法出现两次也只编译一次（按解析到的文件去重）。应用本地的 class 不会自行打开这条管线——自己写 utility 的应用要自己声明 `tailwind`。`true` 只编译声明的源、不含应用自己的源；`false` 完全关闭管线（不加载 peer、不编译、不产出样式表），并在被准入组件要求编译时失败关闭。
 
 可接受的键——其余任何键都会以这份列表报错并让构建失败：
 
 - `renderer`——`'native'`（默认，编译后的 Part Program 序列化器）或 `'lit'`。
 - `dirs`——`{ routes, islands, components }`。
 - `layout`——`false` 表示退出约定，或 `{ import, props }`。标签名由 import 的文件名推导，因此不可配置。
-- `packageIslands`——构建额外接纳其 island 模块的包名，例如 `['@openelement/ui']`。加载器会把该列表并入 SSR 外部化列表（列出的包被打包而非运行时导入），因此没有 `ssr.noExternal` 键。
+- `packageIslands`——组件包如何被接纳。省略或 `'auto'`（默认）：构建在 scan 期推导被接纳的集合——应用的路由、页面、布局、岛与组件真正导入的每一个包属主元素模块（经打包器解析）都按其属主包归因，拥有有效 OpenElement manifest 的包无需任何配置即被接纳。数组在推导之外追加显式条目（如 `['@openelement/ui']`）；两个包声明同名标签时，显式条目优先于推导条目。`'manual'` 关闭推导：只接纳列出的包，导入未列出组件包的行为会以显式声明的修法被报告。应用导入了某包的元素模块、而该包没有有效 manifest 时，它永远不会被接纳（无可接纳之物）并被报告——这是 auto 下保留的唯一真实失误类报告。推导还会把每个被接纳的包并入 SSR 外部化列表（被接纳的包被打包而非运行时导入），因此没有 `ssr.noExternal` 键。
 - `head`——结构化文档头通道：`title`、`description`、`lang`、`favicon`、`ogImage`、`stylesheets: string[]` 与 `scripts: { src, defer?, crossOrigin?, integrity? }[]`。脚本与样式表都经框架自己的 link/script 序列化器写出，因此配置条目与内联 `inject` 条目产出的字节完全一致。`inject` 本身——框架的原始 HTML 通道——刻意在这里没有家。
 - `styles`——`{ tokens }`，把 token 约定指向另一个文件。
 - `i18n`——`{ locales, defaultLocale }`；构建会在每个额外 locale 前缀下展开所有路由。
