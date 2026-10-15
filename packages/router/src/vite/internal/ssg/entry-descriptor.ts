@@ -424,6 +424,10 @@ export function buildEntryDescriptor(
         importPath: `/${routesDir}/${r.filePath}`,
         isDynamic,
         paramNames,
+        // #1568: template pages carry no element class — the generated entry
+        // registers nothing for them and renders them through the
+        // descriptor's render function.
+        ...(r.htmlPage === true ? { htmlPage: true } : {}),
         ...(r.streamManifest ? { streamManifest: r.streamManifest } : {}),
       };
     });

@@ -125,6 +125,14 @@ export interface RouteEntry {
    * registration tag.
    */
   definePage?: boolean;
+  /**
+   * True when the route module default-exports defineHtmlPage(...) (#1568):
+   * a template page whose render is a plain function returning HTML. The
+   * route carries no element class — the generated entry registers nothing
+   * for it and renders it by calling the descriptor's render function, so it
+   * never produces island, claim, or client-chunk output.
+   */
+  htmlPage?: boolean;
   /** Source text captured during scanning when includeSource is enabled. */
   source?: string;
   /**

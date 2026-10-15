@@ -1,5 +1,6 @@
 export {
   classifyActionResult,
+  defineHtmlPage,
   defineIslandConfig,
   definePage,
   fail,
@@ -15,9 +16,12 @@ export {
 } from './authoring.ts';
 export type {
   ActionOutcome,
+  HtmlPageModule,
+  HtmlPageRender,
   IslandConfig,
   IslandDeliveryStrategy,
   JsonValue,
+  OpenElementHtmlPageDescriptor,
   OpenElementPageDescriptor,
   PageComponentConstructor,
   PageErrorProjector,

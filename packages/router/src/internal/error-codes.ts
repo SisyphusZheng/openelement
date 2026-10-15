@@ -21,10 +21,12 @@
 
 import { OpenElementError } from '@openelement/element/authoring';
 
-/** Stable codes for the page-authoring surface (`definePage`). */
+/** Stable codes for the page-authoring surfaces (`definePage`/`defineHtmlPage`). */
 export const PageErrorCode = {
   /** First argument is not the compiled page element class. */
   NOT_COMPILED_CLASS: 'OE_PAGE_NOT_COMPILED_CLASS',
+  /** defineHtmlPage() first argument is not a render function (#1568). */
+  TEMPLATE_RENDER: 'OE_PAGE_TEMPLATE_RENDER',
   /** Descriptor is not an object, or carries a field the contract removed. */
   DESCRIPTOR_SHAPE: 'OE_PAGE_DESCRIPTOR_SHAPE',
   /** `route` intent is unsupported (`route.path`, mistyped `layout`). */

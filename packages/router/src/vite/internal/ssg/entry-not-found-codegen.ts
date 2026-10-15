@@ -69,11 +69,17 @@ export function renderNotFoundRoute(
     actionDataExpr: 'undefined',
     indent: '    ',
   });
-  lines.push(
-    `    let __content = __ssr(__tag, __pageProps(${route.varName}, __pageContext), { route: ${quoteGeneratedJavaScriptValue(
-      route.path,
-    )}, documentStyles: __documentStyles })`,
-  );
+  if (route.htmlPage) {
+    // #1568: a template /404 page renders through its descriptor's render
+    // function — no host element exists to __ssr.
+    lines.push(`    let __content = __page.render(__pageProps(${route.varName}, __pageContext))`);
+  } else {
+    lines.push(
+      `    let __content = __ssr(__tag, __pageProps(${route.varName}, __pageContext), { route: ${quoteGeneratedJavaScriptValue(
+        route.path,
+      )}, documentStyles: __documentStyles })`,
+    );
+  }
   lines.push('');
   for (const renderer of renderers.filter((r) => rendererScopeMatches(route.path, r.scope))) {
     lines.push(`    __content = await ${renderer.varName}.default.wrap(__content, c)`);

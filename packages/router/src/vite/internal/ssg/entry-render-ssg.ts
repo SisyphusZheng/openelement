@@ -120,9 +120,19 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   // filtering there would orphan the head of its og block.
   lines.push(...routeHeadExtrasStatements('headExtrasValue', '    '));
   lines.push('    if (locale) props.locale = locale;');
+  // #1568: the template-page fork. A template route owns no element class —
+  // its render IS the descriptor's plain function, and the output flows
+  // through the same renderer wraps, layout wrap, and document wrap the
+  // compiled path feeds, so the HTTP/DSD contract is byte-for-byte the same
+  // shape.
+  lines.push('    let content;');
+  lines.push('    if (page.kind === "html-page") {');
+  lines.push('      content = page.render(props);');
+  lines.push('    } else {');
   lines.push(
-    '    let content = __ssr(info.tagName, props, { route: routePath, documentStyles: __documentStyles });',
+    '      content = __ssr(info.tagName, props, { route: routePath, documentStyles: __documentStyles });',
   );
+  lines.push('    }');
   lines.push('    for (const renderer of __matchingRenderers(routePath)) {');
   lines.push('      content = await renderer.wrap(content, __rendererContext(routePath, params));');
   lines.push('    }');
@@ -211,12 +221,17 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   // (alpha15 S lane, S-C1.2), and the wrap below reads both. Same context
   // object, same order as the success path.
   lines.push(...documentResolutionSetupLines('page', '__errorPageContext', '        '));
-  lines.push(
-    '        const errorContent = __renderLayout(__ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles }), routePath, { locale, routeMeta, documentStyles: __documentStyles });',
-  );
-  // Per-property og dedup on the boundary re-render: the fresh __doc above
-  // re-resolves the route's meta, and the wrap below serializes it.
   lines.push(...routeHeadExtrasStatements('headExtrasValue', '        '));
+  // Same #1568 fork on the boundary re-render: the template error channel
+  // re-renders through the render function with the error-projected props.
+  lines.push('        const __errorPageHtml = page.kind === "html-page"');
+  lines.push('          ? page.render(__pageErrorProps(info.module, error, __errorPageContext))');
+  lines.push(
+    '          : __ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles });',
+  );
+  lines.push(
+    '        const errorContent = __renderLayout(__errorPageHtml, routePath, { locale, routeMeta, documentStyles: __documentStyles });',
+  );
   lines.push(
     '        const errorComponentCount = (errorContent.match(/<template shadowrootmode="open"/g) || []).length;',
   );

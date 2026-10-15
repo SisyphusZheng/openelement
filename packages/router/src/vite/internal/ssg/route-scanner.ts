@@ -262,6 +262,11 @@ export async function scanRoutes(
         let tagName: string | undefined;
         let source: string | undefined;
         let isDefinePage = false;
+        // #1568: a template page — the module default-exports
+        // defineHtmlPage(...). It is a page (the page facts apply) but owns
+        // no element class, so the registration-coupled notes and gates
+        // below stay off it and the descriptor marks the route htmlPage.
+        let isHtmlPage = false;
         let streamManifest: StreamRouteManifest | undefined;
         if (routeType === 'page') {
           // The compiler semantic core reads route meaning without executing the module.
@@ -274,6 +279,7 @@ export async function scanRoutes(
             });
             tagName = semantics.exportedTagName;
             isDefinePage = semantics.definePage;
+            isHtmlPage = semantics.templatePage === true;
             streamManifest = await scanStreamManifest(
               routePath,
               fullPath,
@@ -301,7 +307,12 @@ export async function scanRoutes(
             // modules USE the tag
             // (defineElement + <tag/> in the render) and stay silent — an
             // orphaned export gets a one-time note.
-            if (isDefinePage && tagName !== undefined && !semantics.usesExportedTagName) {
+            if (
+              isDefinePage &&
+              !isHtmlPage &&
+              tagName !== undefined &&
+              !semantics.usesExportedTagName
+            ) {
               const resolvedPath = resolve(fullPath);
               if (!notedIgnoredTagName.has(resolvedPath)) {
                 notedIgnoredTagName.add(resolvedPath);
@@ -318,8 +329,12 @@ export async function scanRoutes(
             // render is bypassed — request/actionData context never reaches
             // the page. This shape has never worked correctly; fail the build
             // with the rename guidance instead of letting it ship silently.
+            // A template page (#1568) registers no page class at all, so
+            // there is nothing to shadow — the check stays scoped to routes
+            // that put a class under the fallback tag.
             if (
               isDefinePage &&
+              !isHtmlPage &&
               tagName !== undefined &&
               tagName === fileToTagName(relativePath) &&
               semantics.usesExportedTagName
@@ -342,6 +357,7 @@ export async function scanRoutes(
           varName: pathToVarName(routePath),
           tagName,
           ...(isDefinePage ? { definePage: true } : {}),
+          ...(isHtmlPage ? { htmlPage: true } : {}),
           ...(streamManifest ? { streamManifest } : {}),
           // #569: page sources carrying data-open-enhance require the client
           // enhancement layer even when the app has zero islands. The match

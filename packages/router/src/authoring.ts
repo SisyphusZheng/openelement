@@ -14,6 +14,13 @@ import { ERROR_PREFIX } from '@openelement/element/authoring';
  * projector and the error projector) to that class as the `openElementPage`
  * static the pipeline reads; it never creates classes and never holds a
  * render function. There is no runtime JSX render path.
+ *
+ * The one exception is the template-page surface (#1568):
+ * `defineHtmlPage(render, descriptor?)` defines a page whose render is a
+ * plain function returning HTML — SSG-direct output with zero client
+ * semantics (no Part Program, no @property machinery, no island/claim/chunk
+ * emission). Its descriptor is the only page descriptor that carries a
+ * render function, and only as a build-time-only output surface.
  */
 
 import { isDangerousKey, isValidTagName, OpenElementError } from '@openelement/element/authoring';
@@ -566,6 +573,183 @@ export function projectPageProps(context: {
     }
   }
   return props;
+}
+
+/**
+ * A template page's render function (#1568): the projected props record in,
+ * an HTML string out. The string is the page's own authored markup — the
+ * same trust level as a _renderer.ts wrapper's output — and the build-time
+ * only contract means it never ships to the client: no Part Program, no
+ * @property machinery, no island/claim/chunk emission.
+ */
+export type HtmlPageRender = (props: Record<string, unknown>) => string;
+
+interface HtmlPageDescriptorInput<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+> {
+  route?: PageRouteIntent;
+  head?: PageHead | PageHeadResolver<Data, Params>;
+  renderIntent?: { mode?: PageRenderingMode };
+  props?: PagePropsProjector<Data, Params>;
+  error?: PageErrorProjector<Data, Params>;
+}
+
+/**
+ * The template-page descriptor the pipeline reads (`module.default.
+ * openElementPage` with `kind: 'html-page'`, #1568). Same metadata/projector
+ * shape as {@link OpenElementPageDescriptor} plus the render function — the
+ * one place a render function is admitted, and only as a build-time-only,
+ * zero-client page surface.
+ */
+export interface OpenElementHtmlPageDescriptor<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+> {
+  kind: 'html-page';
+  route?: PageRouteIntent;
+  head?: PageHead | PageHeadResolver<Data, Params>;
+  renderIntent: NormalizedPageRenderIntent;
+  props?: PagePropsProjector<Data, Params>;
+  error?: PageErrorProjector<Data, Params>;
+  render: HtmlPageRender;
+}
+
+/** The route-module default export shape a defineHtmlPage() call produces. */
+export interface HtmlPageModule<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+> {
+  openElementPage: OpenElementHtmlPageDescriptor<Data, Params>;
+}
+
+/**
+ * Define a template page (#1568): a page whose render is a plain function
+ * returning HTML. SSG-direct output — build-time-only with zero client JS,
+ * no Part Program, no @property state machinery for one-shot static text.
+ * Both render channels (the SSG renderRoute and the request-time GET
+ * handler) produce the SAME document contract the component path produces:
+ * render(props) → renderer wraps → layout wrap → wrapInDocument.
+ *
+ *   import { defineHtmlPage } from '@openelement/router';
+ *   export const loader = async (ctx) => ({ title: 'About' });
+ *   export default defineHtmlPage(
+ *     (props) => `<main><h1>${props.title}</h1></main>`,
+ *     { head: { title: 'About' } },
+ *   );
+ *
+ * Unlike definePage(), the first argument IS the render: the page owns no
+ * element class, so the generated entry registers nothing in the SSR
+ * registry and the route never reaches the island or static-component
+ * client surfaces. Streaming (renderIntent.stream) is a compiled-program
+ * channel and is rejected here.
+ */
+export function defineHtmlPage<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+>(
+  render: HtmlPageRender,
+  descriptor?: HtmlPageDescriptorInput<Data, Params>,
+): HtmlPageModule<Data, Params> {
+  if (typeof render !== 'function') {
+    throw authoringError(
+      PageErrorCode.TEMPLATE_RENDER,
+      `${ERROR_PREFIX} defineHtmlPage() requires a render function as its first argument: ` +
+        'defineHtmlPage((props) => `<main>…</main>`, { head, route?, renderIntent?, props?, error? }). ' +
+        'The render receives the projected props record and returns the page HTML; data fetching ' +
+        'belongs in the route module\u2019s loader.',
+    );
+  }
+  if (descriptor !== undefined) {
+    if (typeof descriptor !== 'object' || descriptor === null || Array.isArray(descriptor)) {
+      throw authoringError(
+        PageErrorCode.DESCRIPTOR_SHAPE,
+        `${ERROR_PREFIX} defineHtmlPage() requires an object descriptor. ` +
+          'Pass defineHtmlPage(render, { route?, head?, renderIntent?, props?, error? }), or omit ' +
+          'the second argument entirely.',
+      );
+    }
+    for (const key of Object.keys(descriptor)) {
+      if (PAGE_DESCRIPTOR_FIELDS.has(key)) continue;
+      throw authoringError(
+        PageErrorCode.DESCRIPTOR_SHAPE,
+        `${ERROR_PREFIX} defineHtmlPage() does not accept top-level "${key}". ` +
+          'Use only route, head, renderIntent, props, and error — the render function is the ' +
+          `FIRST argument, not a descriptor field. Remove "${key}" from the descriptor.`,
+      );
+    }
+    if (descriptor.route && Object.hasOwn(descriptor.route, 'path')) {
+      throw authoringError(
+        PageErrorCode.ROUTE_INTENT,
+        `${ERROR_PREFIX} defineHtmlPage route.path is not supported; the route file owns its URL ` +
+          'path. Remove route.path — the path is derived from the route file location.',
+      );
+    }
+    if (
+      descriptor.route?.layout !== undefined &&
+      typeof descriptor.route.layout !== 'string' &&
+      descriptor.route.layout !== false
+    ) {
+      throw authoringError(
+        PageErrorCode.ROUTE_INTENT,
+        `${ERROR_PREFIX} defineHtmlPage route.layout must be a layout name string or false ` +
+          `(got ${JSON.stringify(descriptor.route.layout)}). ` +
+          `Write route: { layout: 'post' } to select a named layout, or ` +
+          'route: { layout: false } to render without one.',
+      );
+    }
+    if (descriptor.props !== undefined && typeof descriptor.props !== 'function') {
+      throw authoringError(
+        PageErrorCode.PROJECTOR,
+        `${ERROR_PREFIX} defineHtmlPage() props must be a projector function. ` +
+          'Write props: ({ data, params }) => ({ … }) — the returned record is handed to the ' +
+          'render function.',
+      );
+    }
+    if (descriptor.error !== undefined && typeof descriptor.error !== 'function') {
+      throw authoringError(
+        PageErrorCode.PROJECTOR,
+        `${ERROR_PREFIX} defineHtmlPage() error must be an error projector function. ` +
+          'Write error: (error, context) => ({ … }) — the returned record is handed to the ' +
+          'render function for the 500 re-render — or drop the field to keep the default ' +
+          'status page.',
+      );
+    }
+  }
+  const renderMode = descriptor?.renderIntent?.mode ?? 'static';
+  if (renderMode !== 'static' && renderMode !== 'dynamic') {
+    throw authoringError(
+      PageErrorCode.RENDER_MODE,
+      `${ERROR_PREFIX} renderIntent.mode must be 'static' or 'dynamic' ` +
+        `(got "${String(descriptor?.renderIntent?.mode)}"). ` +
+        "Use 'static' for a build-time prerendered page (the default) or 'dynamic' for a " +
+        'per-request page that runs its loader on every request.',
+    );
+  }
+  if (
+    descriptor?.renderIntent &&
+    Object.hasOwn(descriptor.renderIntent, 'stream') &&
+    (descriptor.renderIntent as { stream?: unknown }).stream !== undefined
+  ) {
+    throw authoringError(
+      PageErrorCode.RENDER_MODE,
+      `${ERROR_PREFIX} renderIntent.stream is not supported on defineHtmlPage: streaming is a ` +
+        'compiled-Part-Program channel (the deferred-field front gate rides the compiled ' +
+        'program), and a template page has none. Remove stream, or use a compiled definePage ' +
+        'route for a streamed page.',
+    );
+  }
+  return {
+    openElementPage: {
+      kind: 'html-page',
+      ...(descriptor?.route !== undefined ? { route: descriptor.route } : {}),
+      ...(descriptor?.head !== undefined ? { head: descriptor.head } : {}),
+      renderIntent: { mode: renderMode },
+      ...(descriptor?.props !== undefined ? { props: descriptor.props } : {}),
+      ...(descriptor?.error !== undefined ? { error: descriptor.error } : {}),
+      render,
+    },
+  };
 }
 
 /**

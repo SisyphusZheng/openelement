@@ -339,7 +339,11 @@ export function renderEntry(desc: EntryDescriptor): string {
     // self-registered class with the entry's page class would recurse when
     // its compiled program emits the same tag. The entry therefore only
     // overwrites registrations it made itself.
+    // #1568: template pages are skipped — their default export is a plain
+    // descriptor record, not a class, and a template route must never touch
+    // the SSR registry (zero client semantics).
     for (const route of desc.pageRoutes) {
+      if (route.htmlPage) continue;
       const tagNameExpr = pageRouteTagExpr(route.varName, route.tagName);
       lines.push(
         `try { __registerSsrComponent(${tagNameExpr}, ${route.varName}.default); } catch (err) { console.error('[ssg] Failed to register route custom element ${tagNameExpr}:', err); throw err; }`,

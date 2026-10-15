@@ -37,6 +37,16 @@ export interface ModuleSemanticFacts {
    * (no injected vocabulary) never recognizes another package's factories.
    */
   definePage: boolean;
+  /**
+   * Present (true) only when the default-exported page-definition factory is
+   * a TEMPLATE page definition (`template-page-definition` vocabulary kind,
+   * #1568): a page whose render is a plain function returning HTML, not a
+   * compiled element class. Implies {@link definePage}. Spread-conditional
+   * like the other rare facts, so every non-template module's facts stay
+   * byte-identical. The host build reads this to keep template routes off
+   * the element-registration surfaces.
+   */
+  templatePage?: boolean;
   usesExportedTagName: boolean;
   enhancedForm: boolean;
   defaultCompiledTag?: string;
@@ -479,7 +489,8 @@ export function analyzeModuleSemantics(
   const imports = createModuleIntrinsicBindings(sourceFile);
   const vocabulary = [...CORE_VOCABULARY, ...(options.vocabulary ?? [])];
   const pageDefinitionBindings = vocabulary.filter(
-    (descriptor) => descriptor.kind === 'page-definition',
+    (descriptor) =>
+      descriptor.kind === 'page-definition' || descriptor.kind === 'template-page-definition',
   );
   const registrationBindings = vocabulary.filter(
     (descriptor) => descriptor.kind === 'element-registration',
@@ -502,6 +513,9 @@ export function analyzeModuleSemantics(
   let compiledElementDecorator = false;
   let unsupportedElementDecorator: string | undefined;
   let definePage = fileName.endsWith('.mdx');
+  // .mdx routes are function-component pages the mdx plugin compiles to a
+  // class — they are pages, but not template-page definitions.
+  let templatePage = false;
   let usesExportedTagName = false;
   let enhancedForm = false;
   let defaultCompiledTag: string | undefined;
@@ -533,18 +547,21 @@ export function analyzeModuleSemantics(
       // A default-exported page-definition factory call marks the module as a
       // page — but only for a binding the host's injected vocabulary admits.
       // (The lit renderer's factory lives on a subpath; the router injects
-      // both specifiers, the core stays package-blind, #1339.)
+      // both specifiers, the core stays package-blind, #1339.) A
+      // template-page-definition binding (#1568) marks the module as a
+      // template page on top of the page fact.
       const pageFactory = statement.expression.expression.text;
-      if (
-        pageDefinitionBindings.some((descriptor) =>
-          imports.isRuntimeNamedImport(
-            pageFactory,
-            descriptor.moduleSpecifier,
-            descriptor.exportName,
-          ),
-        )
-      )
+      const matchedPageBinding = pageDefinitionBindings.find((descriptor) =>
+        imports.isRuntimeNamedImport(
+          pageFactory,
+          descriptor.moduleSpecifier,
+          descriptor.exportName,
+        ),
+      );
+      if (matchedPageBinding) {
         definePage = true;
+        if (matchedPageBinding.kind === 'template-page-definition') templatePage = true;
+      }
     }
 
     if (!ts.isClassDeclaration(statement)) continue;
@@ -686,6 +703,7 @@ export function analyzeModuleSemantics(
     ...(unsupportedElementDecorator === undefined ? {} : { unsupportedElementDecorator }),
     ...(exportedTagName === undefined ? {} : { exportedTagName }),
     definePage,
+    ...(templatePage ? { templatePage: true } : {}),
     usesExportedTagName,
     enhancedForm,
     ...(defaultCompiledTag === undefined ? {} : { defaultCompiledTag }),

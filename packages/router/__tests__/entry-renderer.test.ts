@@ -682,7 +682,10 @@ test('renderEntry: SSG renderRoute renders the page error component on failure',
   // RenderError (no silent normal-page write).
   expect(code).toContain('if (typeof page.error === "function") {');
   expect(code).toContain('__pageErrorProps(info.module, error,');
-  expect(code).toContain('__renderLayout(__ssr(info.tagName,');
+  // #1568: the boundary re-render forks on the template-page kind — the
+  // compiled path keeps the __ssr call inside the forked expression.
+  expect(code).toContain('const __errorPageHtml = page.kind === "html-page"');
+  expect(code).toContain('__renderLayout(__errorPageHtml, routePath,');
   expect(code).toContain(
     'return { html: errorHtml, status: 500, errors: [renderError], componentCount: errorComponentCount, renderTimeMs };',
   );

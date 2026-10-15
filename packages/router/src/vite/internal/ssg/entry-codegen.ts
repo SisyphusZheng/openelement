@@ -164,6 +164,25 @@ function renderRouteHandlerPreamble(lines: string[], ctx: RouteHandlerEmitContex
   }
 }
 
+/**
+ * Emit the content expression for one route render: a template page (#1568)
+ * renders through the descriptor's render function — the projected props in,
+ * the authored HTML out; a compiled page renders its registered host element
+ * through __ssr. Both feed the same renderer/layout/document wraps.
+ */
+function routeRenderStatement(
+  ctx: RouteHandlerEmitContext,
+  propsExpr: string,
+  indent: string,
+): string {
+  if (ctx.route.htmlPage) {
+    // The handler preamble binds __page to the page descriptor; a template
+    // descriptor carries the render function (#1568).
+    return `${indent}let __content = __page.render(${propsExpr})`;
+  }
+  return `${indent}let __content = __ssr(__tag, ${propsExpr}, { route: ${ctx.pathLiteral}, documentStyles: __documentStyles })`;
+}
+
 /** Emissions shared by the success path and the error-boundary channel. */
 function renderRouteContentLines(
   lines: string[],
@@ -178,9 +197,7 @@ function renderRouteContentLines(
   // (the lit page-data side channel — embedded JSON no
   // client consumed — was removed; page-state restoration needs a real
   // consumer contract first.)
-  lines.push(
-    `${indent}let __content = __ssr(__tag, ${propsExpr}, { route: ${pathLiteral}, documentStyles: __documentStyles })`,
-  );
+  lines.push(routeRenderStatement(ctx, propsExpr, indent));
   if (matchingRenderers.length > 0) {
     lines.push(`${indent}// Renderer tree wrapping (outer -> inner)`);
     for (const renderer of matchingRenderers) {
@@ -332,9 +349,19 @@ function renderRouteResponseAndCatch(lines: string[], ctx: RouteHandlerEmitConte
     // Per-property og dedup on the boundary re-render too: the fresh __doc
     // above re-resolves the route's meta, and the wrap below serializes it.
     lines.push(...routeHeadExtrasStatements(headExtrasExpr, '        '));
-    lines.push(
-      `        let __errorHtml = __ssr(__tag, __pageErrorProps(${ctx.route.varName}, err, __pageContext), { route: ${pathLiteral}, documentStyles: __documentStyles })`,
-    );
+    if (ctx.route.htmlPage) {
+      // #1568: the template error channel re-renders through the same render
+      // function with the error-projected props — the descriptor's error
+      // projector maps the failure onto props, the authored template decides
+      // what the 500 body looks like. No host element exists to __ssr.
+      lines.push(
+        `        let __errorHtml = __page.render(__pageErrorProps(${ctx.route.varName}, err, __pageContext))`,
+      );
+    } else {
+      lines.push(
+        `        let __errorHtml = __ssr(__tag, __pageErrorProps(${ctx.route.varName}, err, __pageContext), { route: ${pathLiteral}, documentStyles: __documentStyles })`,
+      );
+    }
     if (matchingRenderers.length > 0) {
       for (const renderer of matchingRenderers) {
         lines.push(`        __errorHtml = await ${renderer.varName}.default.wrap(__errorHtml, c)`);

@@ -34,6 +34,24 @@ Routes 应当能从仓库目录树中被发现。`definePage` 路由默认导出
 
 `renderIntent.mode` 决定页面在哪里渲染:`'static'`(默认)在构建时预渲染;`'dynamic'` 跳过预渲染,通过生成的 `dist/server` 入口按请求渲染,每次请求都会运行路由 loader。导出 action 的页面可以保持 `'static'`——即混合页:其 GET 被预渲染并由静态产物伺服,而其 action POST 在请求时分派给生成的服务器入口。当 GET 本身必须按请求执行时(按请求的 loader、响应头、不可重复的内容)才选择 `'dynamic'`。该行为已冻结。
 
+## 模板页
+
+当页面只是一次性的静态文本——法律条款、落地段落——编译类的机制就显得多余。`defineHtmlPage(render, descriptor?)` 定义一个**模板页**:render 就是一个普通函数,接收投影后的 props 记录并返回页面 HTML。输出是 SSG 直出的——仅构建期、零客户端 JS;模板页不产生 Part Program、不产生 `@property` 状态机,也永远不会进入 island、静态组件或客户端 chunk 表面。路由模块不注册任何东西:没有元素类。
+
+```ts
+// app/routes/about.ts
+import { defineHtmlPage } from '@openelement/router';
+
+export const loader = async () => ({ title: '关于' });
+
+export default defineHtmlPage(
+  (props) => `<main><h1>${props.title}</h1></main>`,
+  { head: { title: '关于' } },
+);
+```
+
+页面之外的一切都与组件路径完全相同:loader 照常运行,`props` 投影器(或默认投影)构建 props 记录;render 输出流经同一套 renderer 包装、布局包装和文档包装——因此 HTTP/DSD 契约、head 解析、redirect/not-found 通道,以及错误投影器的 500 重渲染(把错误投影后的 props 交给同一个 render 函数)都与编译页面的行为一致。`renderIntent.stream` 是编译 Part Program 的通道,在模板页上会被拒绝;页面需要流式渲染时请使用 `definePage` 路由。
+
 ## 表单 action
 
 路由可导出 `action({ formData })`——纯 HTML 表单无需 JavaScript 即可工作:校验失败返回 `fail(4xx, data)`,以 `fail()` 的状态码(惯例为 422)重渲染并回显;成功则以 303 应答(PRG)。命名 action 通过 `formaction='?/name'` 分派。标记 `data-open-enhance` 的表单经 fetch 提交并把返回的文档 morph 就位:light DOM 未变化的已水合 island 状态保留,`data-open-preserve` 豁免子树,URL 跟随 PRG 目标。action 在校验失败后必须可安全重跑；这些应用闭环语义已冻结。

@@ -34,6 +34,24 @@ Two consequences worth writing down: never let a loader return a DOM node, a cla
 
 `renderIntent.mode` selects where a page renders: `'static'` (default) prerenders at build; `'dynamic'` skips prerendering and renders per request through the generated `dist/server` entry, running the route loader on every request. A page that exports an action may stay `'static'` — a hybrid page: its GET is prerendered and served from the static artifact, while its action POST is dispatched to the generated server entry at request time. Choose `'dynamic'` when the GET itself must run per request (per-request loaders, response headers, non-repeatable content). This behavior is frozen.
 
+## Template pages
+
+When a page is one-shot static text — a legal notice, a landing section — the compiled-class machinery is more than it needs. `defineHtmlPage(render, descriptor?)` defines a **template page**: the render is a plain function that receives the projected props record and returns the page HTML. The output is SSG-direct — build-time-only with zero client JS; a template page produces no Part Program, no `@property` state machinery, and never reaches the island, static-component, or client-chunk surfaces. The route module registers nothing: there is no element class.
+
+```ts
+// app/routes/about.ts
+import { defineHtmlPage } from '@openelement/router';
+
+export const loader = async () => ({ title: 'About' });
+
+export default defineHtmlPage(
+  (props) => `<main><h1>${props.title}</h1></main>`,
+  { head: { title: 'About' } },
+);
+```
+
+Everything around the page stays the same as the component path: the loader runs and the `props` projector (or the default projection) builds the props record; the render output flows through the same renderer wraps, layout wrap, and document wrap — so the HTTP/DSD contract, the head resolution, the redirect/not-found channels, and the error projector's 500 re-render (which hands the error-projected props to the same render function) behave exactly as they do for a compiled page. `renderIntent.stream` is a compiled-Part-Program channel and is rejected on template pages; use a `definePage` route when a page must stream.
+
 ## Form actions
 
 A route may export an `action({ formData })` — plain HTML forms work without JavaScript: validation failures return `fail(4xx, data)` and re-render with the echo at `fail()`'s status (conventionally 422), successes answer 303 (PRG). Named actions dispatch via `formaction='?/name'`. Forms marked `data-open-enhance` submit via fetch and morph the returned document into place: hydrated islands whose light DOM did not change keep their state, `data-open-preserve` exempts a subtree, and the URL follows the PRG target. An action must be safe to re-run after a failed validation; these application-loop semantics are frozen.

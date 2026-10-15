@@ -180,6 +180,14 @@ export interface PageRouteDecl {
   isDynamic?: boolean;
   paramNames?: string[];
   streamManifest?: StreamRouteManifest;
+  /**
+   * True for a template page (#1568): the route module default-exports
+   * defineHtmlPage(...), so there is no element class to register and both
+   * render channels produce the document by calling the descriptor's render
+   * function (render(props) → renderer wraps → layout wrap → wrapInDocument)
+   * instead of the compiled serializer.
+   */
+  htmlPage?: boolean;
 }
 
 /** One island the build admits: tag, module path, and delivery facts. */
