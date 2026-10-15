@@ -3,7 +3,7 @@
  *
  * The observational rule for packaging defects: qualify the PACKED artifact,
  * never the workspace source. This tool installs the five pack:dry-run
- * tarballs into a scratch consumer OUTSIDE the repository (so the adapter's
+ * tarballs into a scratch consumer OUTSIDE the repository (so the router's
  * workspace auto-alias in workspace-alias.ts cannot substitute workspace
  * source for the packed modules), scaffolds the canonical starter through the
  * packed @openelement/create CLI (non-interactive, so the Tailwind-ON
@@ -20,9 +20,9 @@
  *   typecheck the starter's own `typecheck` script (tsc --noEmit)
  *   test     the starter's own `test` script
  *   build    real SSG build; must emit dist/server/index.js (request-time),
- *            the structured build manifest (6 pages + 1 API route, no page
- *            errors), the prerendered index/freshness pages with the app
- *            shell marker, and the public asset copy
+ *            the structured build manifest (3 page routes + 1 API route, no
+ *            page errors), the prerendered index and about pages, and the
+ *            public asset copy
  *   boundary the generated SSR bundle (dist/server/entry.js) imports only the
  *            starter's product dependency surface — no @openelement/*
  *            specifier outside package.json may survive into the bundle
@@ -739,7 +739,7 @@ async function main(): Promise<void> {
     await assertConsumerDoesNotResolveIntoRepository(join(tmp, 'node_modules'));
     await assertConsumerDoesNotResolveIntoRepository(join(starter, 'node_modules'));
 
-    // Lifecycle leg 1 — dev: the packed adapter must boot the real vite dev
+    // Lifecycle leg 1 — dev: the packed starter must boot the real vite dev
     // server (the Vite+ core, through the starter's `vp dev` script) and
     // SSR-render the index route over HTTP, not just exit green.
     // The host is pinned: vite's default 'localhost' binding is IPv6-first on
@@ -768,12 +768,12 @@ async function main(): Promise<void> {
     if (!test.success) throw new Error(`Packed starter test script failed:\n${test.output}`);
     console.log('Packed starter test script passed.');
 
-    // Lifecycle leg 4 — build: packed adapter must run the real SSG build.
+    // Lifecycle leg 4 — build: the packed starter must run the real SSG build.
     const build = await run('pnpm', ['run', 'build'], starter, BUILD_TIMEOUT_MS);
     if (!build.success) throw new Error(`Packed starter SSG build failed:\n${build.output}`);
 
-    // A green exit alone is not enough: the packed adapter must actually emit the
-    // request-time server entry. The starter's /contact route renders
+    // A green exit alone is not enough: the packed starter must actually emit
+    // the request-time server entry. The starter's /404 route renders
     // request-time, so a build that skips the server bundle would silently drop
     // it.
     const serverEntry = join(starter, 'dist', 'server', 'index.js');

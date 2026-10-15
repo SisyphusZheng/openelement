@@ -18,7 +18,7 @@ import { ERROR_PREFIX } from '@openelement/element/authoring';
 
 import { isDangerousKey, isValidTagName, OpenElementError } from '@openelement/element/authoring';
 import { HYDRATION_STRATEGIES } from '@openelement/element/authoring';
-import type { HydrationStrategy } from '@openelement/element/authoring';
+import type { IslandDeliveryStrategy } from '@openelement/protocol/ssg';
 import { hasControlCharacter } from './internal/control-characters.ts';
 import { isInvalidIslandMedia, ISLAND_MEDIA_QUERY_MAX_LENGTH } from './internal/island-media.ts';
 import { authoringError, IslandErrorCode, PageErrorCode } from './internal/error-codes.ts';
@@ -568,8 +568,12 @@ export function projectPageProps(context: {
   return props;
 }
 
-/** Delivery strategy for an island: a hydration trigger or media-gated loading. */
-export type IslandDeliveryStrategy = HydrationStrategy | 'media';
+/**
+ * Delivery strategy for an island: a hydration trigger or media-gated loading.
+ * The protocol package owns the contract (`@openelement/protocol/ssg`); this
+ * face re-exports it rather than restating the union.
+ */
+export type { IslandDeliveryStrategy };
 
 /** Per-island delivery configuration (SSR/DSD participation and hydration strategy). */
 export interface IslandConfig {

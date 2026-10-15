@@ -241,9 +241,6 @@ importers:
       '@supabase/supabase-js':
         specifier: ^2.84.0
         version: 2.117.2
-      hono:
-        specifier: ^4.12
-        version: 4.13.11
       vite:
         specifier: 8.0.16
         version: 8.0.16(@types/node@26.5.0)(jiti@2.7.0)(yaml@2.9.1)
@@ -651,9 +648,6 @@ importers:
       gray-matter:
         specifier: ^4.0.3
         version: 4.0.3
-      hono:
-        specifier: ^4.12
-        version: 4.13.11
       marked:
         specifier: ^15.0.0
         version: 15.0.12

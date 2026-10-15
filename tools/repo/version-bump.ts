@@ -414,7 +414,7 @@ export function rewriteConfigVersion(text: string, from: string, to: string): st
   return text.replace(pattern, `$1${to}$2`);
 }
 
-/** Rewrite the CREATE_VERSION anchor, leaving VITE_STARTER_PIN alone. */
+/** Rewrite the CREATE_VERSION anchor; the other embedded starter pins stay put. */
 export function rewriteCreateVersion(text: string, from: string, to: string): string {
   const pattern = new RegExp(`(CREATE_VERSION = ')${escapeRegExp(from)}(')`);
   if (!pattern.test(text)) {

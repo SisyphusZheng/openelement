@@ -102,8 +102,9 @@ npm create @openelement@0.43 my-app
 
 - `package.json` - starter dependencies (`@openelement/*` with caret ranges
   over the generated-from release)
-  and the lifecycle scripts (`dev`/`typecheck`/`test`/`build`/`start`; `build` and
-  `start` run the `openelement` bin from `@openelement/router`)
+  and the lifecycle scripts
+  (`dev`/`fmt`/`lint`/`typecheck`/`test`/`build`/`start`; `build` and `start`
+  run the router's `oe` bin)
 - `tsconfig.json` - the type-check surface for `pnpm typecheck`: JSX authoring
   through the element import source, whole-`app/` coverage
 - `vite.config.ts` - Vite build configuration only; framework options still

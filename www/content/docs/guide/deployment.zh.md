@@ -116,6 +116,12 @@ test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
 echo 'artifact answers: static 200, action 422'
 ```
 
+## 产物兼容性
+
+生成的模块在文件头横幅里带两个版本戳：Part Program 格式版本与生成模块的 ABI 版本。运行时不实现某个版本时会拒绝该产物——校验以期望值对实际值的诊断失败关闭（`version must be 2 (got 1) … v1 artifacts are refused, never coerced`），而不是按错误的语法去读产物。
+
+一次构建只部署一份。版本检查能发现产物按与运行时不同的格式版本编译，但它分辨不出**同一版本**的两次构建：把一次构建的浏览器资源与另一次构建的请求时服务端入口混在一起，既不支持、也检测不到。请重新生成整份输出（`pnpm build`），把 `dist/` 作为整体发布。
+
 ## 另见
 
 - [构建与配置](/zh/guide/configuration)——决定产物形态的构建、路由与中间件选项。

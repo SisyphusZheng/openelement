@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { OpenElementError } from '@openelement/element';
 import { openElement } from '../src/vite/app-vite.ts';
 import { buildHeadExtras } from '../src/vite/head-injection.ts';
-import { resolveAppConfig } from '../src/vite/app-config.ts';
+import { assertNoRenamedInlineKeys, resolveAppConfig } from '../src/vite/app-config.ts';
 import {
   defineConfig,
   hasInlineFrameworkOptions,
@@ -230,6 +230,29 @@ test('app config: unknown top-level and nested keys fail closed', () => {
       `message must list the accepted keys: ${message}`,
     ).toBeTruthy();
   }
+});
+
+test('app config: a renamed inline key fails closed and names its replacement', () => {
+  // Both old spellings reached the inline face once. Accepting either would
+  // let a build read a key `openelement.config.ts` rejects — and, for
+  // appShell, silently drop the layout: the convention was renamed to
+  // `layout` (or an app/layout.tsx module) in alpha15.
+  assertThrowsIncludes(
+    () => assertNoRenamedInlineKeys({ html: { title: 'x' } }),
+    OpenElementError,
+    'openElement({ html: … }) was renamed',
+    'the old inline head key must fail closed',
+  );
+  assertThrowsIncludes(
+    () => assertNoRenamedInlineKeys({ appShell: { tagName: 'x-layout' } }),
+    OpenElementError,
+    'openElement({ appShell: … }) was renamed',
+    'the retired app-shell key must fail closed instead of dropping the layout',
+  );
+
+  // The current spellings (and an absent inline object) pass untouched.
+  assertNoRenamedInlineKeys({ head: { title: 'x' }, layout: false });
+  assertNoRenamedInlineKeys(undefined);
 });
 
 test('app config: type violations fail closed with the offending key named', () => {

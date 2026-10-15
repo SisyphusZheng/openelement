@@ -80,10 +80,10 @@ test('version-bump: rewriters move only the version token', () => {
     `{\n  "name": "@openelement/element",\n  "version": "1.0.0-alpha.3",\n  "description": "1.0.0-alpha.2 stays"\n}`,
   );
   const anchor =
-    "/** The published CLI version. */\nexport const CREATE_VERSION = '1.0.0-alpha.2';\n\nexport const VITE_STARTER_PIN = '8.0.16';\n";
+    "/** The published CLI version. */\nexport const CREATE_VERSION = '1.0.0-alpha.2';\n\nexport const TAILWIND_STARTER_PIN = '4.3.3';\n";
   const rewritten = rewriteCreateVersion(anchor, '1.0.0-alpha.2', '1.0.0-alpha.3');
   expect(rewritten.includes("CREATE_VERSION = '1.0.0-alpha.3'"), rewritten).toBeTruthy();
-  expect(rewritten.includes("VITE_STARTER_PIN = '8.0.16'"), rewritten).toBeTruthy();
+  expect(rewritten.includes("TAILWIND_STARTER_PIN = '4.3.3'"), rewritten).toBeTruthy();
 });
 
 test('version-bump: the release-state rewriter moves bookkeeping, never registry truth', () => {

@@ -12,6 +12,9 @@
  * - no second first-party bundler orchestration (`npm:esbuild`, `npm:rollup`,
  *   `rolldown-vite` imports in first-party build sources; the WTR browser
  *   test host is exempt — it serves tests, it does not build products)
+ * - no direct `vite` entry in the starter template: the generated project's
+ *   vite tree comes from the Vite+ catalog (`vite: npm:@voidzero-dev/
+ *   vite-plus-core` plus the `vite@*` override in pnpm-workspace.yaml)
  *
  * Usage: node tools/repo/deps-vite-check.ts (pnpm --dir tools/repo run deps:vite-check)
  */
@@ -29,14 +32,11 @@ const MANIFEST_GLOB_ROOTS = [
   'apps/saas/package.json',
   'tests/fixtures/*/package.json',
   'tests/e2e/starter-smoke/package.json',
-  // The starter template ships to every new user; its vite entries must
-  // inject the canonical pin through the ${v.vite} scaffold token (B5: the
-  // token lives in devDependencies of package.json.tmpl, ADR-0161).
+  // The starter template ships to every new user; it must declare no vite
+  // entry at all (the Vite+ catalog + the `vite@*` override own the generated
+  // project's vite tree, ADR-0161).
   'packages/create/templates/package.json.tmpl',
 ];
-
-/** Scaffold token form the starter template must use for every vite specifier. */
-const VITE_TEMPLATE_TOKEN = 'npm:vite@${v.vite}';
 
 export interface ManifestRecord {
   path: string;
@@ -89,14 +89,13 @@ function viteSpecifierViolations(
   }
   if (key !== 'vite') return out;
   if (path.endsWith('.tmpl')) {
-    // Templates inject the canonical pin through the ${v.vite} scaffold
-    // token; a literal pin here would ship an unguarded second source.
-    if (value !== VITE_TEMPLATE_TOKEN) {
-      out.push({
-        where: `${path} ${slot}.${key}`,
-        message: `template vite specifier must be the '${VITE_TEMPLATE_TOKEN}' token (canonical pin: ${VITE_DEV_PIN})`,
-      });
-    }
+    // The starter's Vite comes from the Vite+ catalog and the `vite@*`
+    // override in its workspace file; a direct entry here would be a second
+    // source the generated project resolves against.
+    out.push({
+      where: `${path} ${slot}.${key}`,
+      message: 'the starter template must not declare vite directly; the Vite+ catalog owns it',
+    });
     return out;
   }
   const parsed = parseNpmSpecifier(value);
@@ -171,51 +170,6 @@ export function checkBundlerImports(files: { path: string; text: string }[]): Vi
     }
   }
   return violations;
-}
-
-/**
- * The starter template's raw text must carry no literal vite pin anywhere
- * (the manifest and its script commands): every occurrence goes through the
- * ${v.vite} token fed by the embedded VITE_STARTER_PIN.
- */
-export function checkTemplateViteText(path: string, text: string): ViteViolation[] {
-  if (!path.endsWith('.tmpl')) return [];
-  return /npm:vite@\d/.test(text)
-    ? [
-        {
-          where: path,
-          message: `literal vite pin in template; use the '${VITE_TEMPLATE_TOKEN}' token`,
-        },
-      ]
-    : [];
-}
-
-/**
- * Anchor the create CLI's embedded VITE_STARTER_PIN to the canonical dev pin
- * (same pattern as the CREATE_VERSION anchor in check-package-graph): the
- * packed CLI cannot import workspace tooling, so the copy is asserted here.
- */
-export function checkStarterVitePin(versionSource: string): ViteViolation[] {
-  const match = versionSource.match(/VITE_STARTER_PIN = '([^']+)'/u);
-  if (!match) {
-    return [
-      {
-        where: 'packages/create/src/version.ts',
-        message: 'VITE_STARTER_PIN anchor missing',
-      },
-    ];
-  }
-  if (match[1] !== VITE_DEV_PIN) {
-    return [
-      {
-        where: 'packages/create/src/version.ts',
-        message: `VITE_STARTER_PIN ${
-          match[1]
-        } does not match canonical VITE_DEV_PIN ${VITE_DEV_PIN}`,
-      },
-    ];
-  }
-  return [];
 }
 
 /** Normalized dependency record: package.json values restated in the
@@ -325,11 +279,9 @@ if (import.meta.main) {
         failures.push({ where: path, message: 'manifest missing or unparseable' });
         continue;
       }
-      failures.push(...checkTemplateViteText(path, text));
       // B5 (ADR-0161): the starter template is a package.json manifest — the
       // dependency slots normalize into the `npm:<name>@<spec>` shape the
-      // specifier checks consume (devDependencies.vite '${v.vite}' becomes
-      // the canonical token form).
+      // specifier checks consume.
       records.push(
         manifestRecordFromPackageJson(path, manifest as unknown as Record<string, unknown>),
       );
@@ -347,7 +299,6 @@ if (import.meta.main) {
     failures.push({ where: path, message: 'unrecognized manifest path' });
   }
   failures.push(...checkManifests(records));
-  failures.push(...checkStarterVitePin(await readFile('packages/create/src/version.ts', 'utf8')));
   // The single pnpm lock is the resolution truth; synthesize the specifier
   // record from its resolved package keys (every `vite@<version>` entry).
   const lockText = await readFile('pnpm-lock.yaml', 'utf8').catch(() => null);

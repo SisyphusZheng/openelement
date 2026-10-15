@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { CREATE_VERSION, VITE_STARTER_PIN } from './version.ts';
+import { CREATE_VERSION } from './version.ts';
 
 // npm package-name ceiling (validate-npm-package-name); a generated project
 // directory must stay a legal package name so `npm init`-style flows and
@@ -66,15 +66,11 @@ export function assertUnifiedProductVersions(versions: ProductVersions): Product
 // starter file mapping (M-C2). The cli.test.ts toolchain gate consumes this
 // exact list instead of keeping its own 28-pair copy, so adding a template
 // file cannot pass the scaffold and fail the gate (or vice versa).
-// The layout entry key (`app/layout.tsx.tmpl`, renamed from
-// `app/islands/app-shell.tsx.tmpl` by the R layout batch) rides this same
-// list; the cli.test.ts toolchain gate consumes these exact keys.
 //
 // The starter manifest is stored
 // as package.json.tmpl so the templates/ directory never looks like a nested
 // package root to npm tooling; pnpm scripts and the @openelement/* dependency
-// ranges (caret over the generated-from release — owner ruling 2026-10-09;
-// B5: the former deno.json import map) live in it when written.
+// ranges live in it when written.
 //
 // One template: the showcase starter, Tailwind-ON (the owner's single-default
 // ruling — one default, no variant pair, no flag; the demo pages and islands
@@ -107,7 +103,7 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   // the per-component sheets below hold each root's own box rule, which has
   // no markup to carry it.
   ['app/styles/theme.css', 'app/styles/theme.css'],
-  // alpha.4: the structural document-head convention. The config file carries
+  // The structural document-head convention. The config file carries
   // the structured `head` channel (title/description/favicon/scripts); this
   // module carries what a URL list cannot express (meta tags, preloads).
   ['app/head.tsx.tmpl', 'app/head.tsx'],
@@ -148,11 +144,8 @@ export async function buildTemplates(
   const invalid = validateProjectName(projectName);
   if (invalid) throw new Error(`Invalid project name "${projectName}". ${invalid}`);
   const templatesBase = new URL('../templates/', import.meta.url);
-  // The starter's Vite pin comes from the workspace-anchored VITE_STARTER_PIN
-  // (deps:vite-check), not from the product release version.
   const tokens = {
     ...versionTokens(v),
-    ['$' + '{v.vite}']: VITE_STARTER_PIN,
     ['$' + '{name}']: projectName,
   };
   const entries = await Promise.all(

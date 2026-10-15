@@ -192,12 +192,12 @@ async function assertShowcaseStarter(manifestPath: string, starterDir: string): 
       );
     }
   }
-  // The layout convention lives outside the islands directory (alpha15 R
-  // batch 3: app/layout.tsx, tag app-layout).
+  // The layout convention lives outside the islands directory: the module at
+  // app/layout.tsx registers under the app-layout tag.
   if (!existsSync(join(starterDir, 'app', 'layout.tsx'))) {
     throw new Error(
       '[starter-smoke setup] the generated starter is missing the layout module ' +
-        'app/layout.tsx (the alpha.15 chrome convention)',
+        'app/layout.tsx (the auto-registered layout convention)',
     );
   }
   console.log('[starter-smoke setup] starter is the showcase form, Vite+ toolchain, Tailwind-ON');

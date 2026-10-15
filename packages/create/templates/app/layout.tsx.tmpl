@@ -4,8 +4,8 @@
  * The convention path is enough: the build finds this module, registers its
  * compiled class under the `app-layout` tag, and renders EVERY page inside
  * it, projecting the page's own render into the default <slot>. The header
- * and footer markup that used to be copied onto every page lives here
- * exactly once — a page module now carries only its own content.
+ * and footer markup lives here exactly once — a page module carries only its
+ * own content.
  *
  * The shadow root (root: 'shadow-open') is what makes the projection work:
  * the chrome below renders in this element's shadow tree, while the slotted

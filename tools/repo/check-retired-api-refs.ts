@@ -2,10 +2,9 @@
  * Current-doc retired-API scan (1.0.0-alpha.1): fail when current guides,
  * architecture pages, maintainer docs, package READMEs, starter templates,
  * or site chrome teach a retired package, subpath, or public symbol.
- * History stays allowed only where it is explicitly labeled as history: the
- * migration archive and version-titled blog posts. docs/adr stays out of
- * scope on purpose: ADRs are the historical record and may name retired
- * decisions.
+ * History is kept out of scope rather than allowlisted: docs/adr is
+ * deliberately unscanned (the historical record may name retired decisions),
+ * and the version-titled blog posts live outside the scanned trees.
  *
  * Symbol entries are DERIVED, not hand-listed: the public interface snapshot
  * at the newest release tag that ships one is diffed against the current
@@ -32,8 +31,6 @@ const SCAN_DIRS = [
   // Starter template sources ship as .tmpl; the extension list covers them.
   'packages/create/templates',
 ];
-
-const HISTORY_ALLOWLIST = ['migration.md', 'migration.zh.md'];
 
 const seen = new Set<string>();
 const files: string[] = [];
@@ -147,7 +144,6 @@ const NAMED_IMPORT =
 
 let failures = 0;
 for (const file of files) {
-  if (HISTORY_ALLOWLIST.some((allowed) => file.endsWith(allowed))) continue;
   // Generated data modules are derived from scanned sources (content
   // collections, package exports); version-titled blog history may name
   // retired APIs, so scan sources rather than serialized output.

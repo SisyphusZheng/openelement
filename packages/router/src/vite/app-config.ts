@@ -21,7 +21,7 @@ import { join } from 'pathe';
 import { pathToFileURL } from 'node:url';
 import { escapeAttr } from '@openelement/element/html';
 import { OpenElementError } from '@openelement/element/authoring';
-import { conventionLayoutPath } from '../config.ts';
+import { conventionLayoutPath, CONVENTION_LAYOUT_PATH } from '../config.ts';
 import { conventionHeadPath } from '../config.ts';
 import { conventionTokensPath } from '../config.ts';
 import { resolveDirs } from '../config.ts';
@@ -80,28 +80,38 @@ export interface ResolveAppConfigInput {
   inlineOptionsPresent?: boolean;
 }
 
-/** The inline framework-options key that was renamed to `head` (see below). */
-export const RENAMED_INLINE_HEAD_KEY = 'html';
-
 /**
- * The inline `openElement({ ... })` face spells the document-head channel
- * `head`, exactly like `openelement.config.ts` does. The old inline name `html`
- * had two spellings for one channel; accepting both would let a build read a
- * key the config file rejects, so passing it fails closed and names the
- * replacement.
+ * Inline `openElement({ ... })` keys this face no longer carries, each mapped
+ * to the guidance that names its replacement.
  *
- * Only the framework-options face is checked here: `FrameworkOptions.html` is
- * the internal transfer shape the resolved options carry, and the low-level
- * `createOpenPlugin()` (not public API) keeps reading it.
+ * The inline face spells each channel the way `openelement.config.ts` does.
+ * An old spelling had two names for one channel; accepting both would let a
+ * build read a key the config file rejects, so passing one fails closed
+ * instead of being silently ignored.
+ *
+ * Only the framework-options face is checked here: `FrameworkOptions.html`
+ * and `FrameworkOptions.layout` are the internal transfer shapes the resolved
+ * options carry, and the low-level `createOpenPlugin()` (not public API)
+ * keeps reading them.
  */
+const RENAMED_INLINE_KEYS: Readonly<Record<string, string>> = {
+  html:
+    `the document-head channel is spelled "head" both inline and in ${OPEN_ELEMENT_CONFIG_FILE}. ` +
+    `Move the value to openElement({ head: { title, description, lang, favicon, ogImage, stylesheets, scripts } }) ` +
+    `— or, for framework options in a project with a config file, into ` +
+    `${OPEN_ELEMENT_CONFIG_FILE} itself and call openElement() with no arguments.`,
+  appShell:
+    `the layout is spelled "layout" both inline and in ${OPEN_ELEMENT_CONFIG_FILE}: ` +
+    `openElement({ layout: { import, props } }). The app-shell convention was renamed in alpha15 — ` +
+    `an ${CONVENTION_LAYOUT_PATH} convention module needs no option at all.`,
+};
+
 export function assertNoRenamedInlineKeys(options: Record<string, unknown> | undefined): void {
-  if (!options || options[RENAMED_INLINE_HEAD_KEY] === undefined) return;
+  if (!options) return;
+  const renamed = Object.keys(RENAMED_INLINE_KEYS).find((key) => options[key] !== undefined);
+  if (renamed === undefined) return;
   throw new OpenElementError(
-    `[openElement] openElement({ ${RENAMED_INLINE_HEAD_KEY}: … }) was renamed: the document-head ` +
-      `channel is spelled "head" both inline and in ${OPEN_ELEMENT_CONFIG_FILE}. Move the value ` +
-      `to openElement({ head: { title, description, lang, favicon, ogImage, stylesheets, scripts } }) ` +
-      `— or, for framework options in a project with a config file, into ` +
-      `${OPEN_ELEMENT_CONFIG_FILE} itself and call openElement() with no arguments.`,
+    `[openElement] openElement({ ${renamed}: … }) was renamed: ${RENAMED_INLINE_KEYS[renamed]}`,
     { code: 'CONFIG_RENAMED_KEY', severity: 'error', phase: 'build', recoverable: false },
   );
 }

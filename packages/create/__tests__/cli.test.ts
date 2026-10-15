@@ -195,7 +195,7 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
   // ruling 2026-10-08): exact build-time pins in devDependencies, the @theme
   // role sheet on disk, and the preset wiring in the vite config.
   const manifest = JSON.parse(
-    templates['package.json'].replace(/\$\{v\.[a-z]+\}/g, '1.0.0-alpha.10'),
+    templates['package.json'].replace(/\$\{v\.[a-z]+\}/g, CREATE_VERSION),
   ) as { devDependencies: Record<string, string> };
   expect(manifest.devDependencies['@tailwindcss/vite']).toEqual('4.3.3');
   expect(manifest.devDependencies.tailwindcss).toEqual('4.3.3');
@@ -887,10 +887,11 @@ test('source CLI generates the showcase starter with git init and the boxed hand
     expect(workspace).toContain('@openelement/router@');
     // The boxed handoff names the next commands, the docs, and the generator
     // version (a cached `npx` run resolves whatever copy it first downloaded,
-    // so the box is where a stale generator announces itself — #1634).
+    // so the box is where a stale generator announces itself — #1634). The
+    // per-file `created …` listing is asserted with the scaffold output; this
+    // block asserts the BOX itself.
     expect(stdout.includes('cd sample-app'), stdout).toBeTruthy();
     expect(stdout.includes('run dev'), stdout).toBeTruthy();
-    expect(stdout.includes('README.md'), stdout).toBeTruthy();
     expect(
       stdout.includes(`@openelement/create ${CREATE_VERSION}`),
       `handoff box must carry the generator version:\n${stdout}`,

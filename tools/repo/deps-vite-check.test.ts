@@ -3,8 +3,6 @@ import {
   checkBundlerImports,
   checkLockfileVite,
   checkManifests,
-  checkStarterVitePin,
-  checkTemplateViteText,
   VITE_DEV_PIN,
 } from './deps-vite-check.ts';
 
@@ -53,26 +51,19 @@ test('vite gate rejects split lockfile instances and second bundlers', () => {
   ).toEqual(1);
 });
 
-test('vite gate holds the starter template to the ${v.vite} token and anchors its embedded pin', () => {
+test('vite gate keeps a direct vite entry out of the starter template', () => {
   const tmpl = 'packages/create/templates/package.json.tmpl';
-  // The token form passes (the raw devDependency '${v.vite}' normalizes to
-  // the canonical token specifier); a literal pin in the template fails even
-  // when it matches the canonical dev pin (the template must not carry a
-  // copy).
-  expect(checkManifests([{ path: tmpl, imports: { vite: 'npm:vite@${v.vite}' } }])).toEqual([]);
+  // The generated project's vite tree comes from the Vite+ catalog and the
+  // `vite@*` override in its workspace file, so ANY direct entry in the
+  // template is a second source — including one matching the canonical dev
+  // pin, and including the retired `${v.vite}` scaffold token.
   expect(
     checkManifests([{ path: tmpl, imports: { vite: `npm:vite@${VITE_DEV_PIN}` } }]).length,
   ).toEqual(1);
-  // Script commands sit outside the manifest slots, so the raw-text rule
-  // covers them.
-  expect(checkTemplateViteText(tmpl, '"dev": "vite"')).toEqual([]);
-  expect(
-    checkTemplateViteText(tmpl, '"dependencies": { "vite": "npm:vite@8.0.16" }').length,
-  ).toEqual(1);
-  expect(checkTemplateViteText('packages/router/package.json', 'npm:vite@8.0.16')).toEqual([]);
-  // The embedded copy the packed CLI stamps into generated starters is
-  // anchored to the canonical pin.
-  expect(checkStarterVitePin(`export const VITE_STARTER_PIN = '${VITE_DEV_PIN}';\n`)).toEqual([]);
-  expect(checkStarterVitePin("export const VITE_STARTER_PIN = '7.0.0';\n").length).toEqual(1);
-  expect(checkStarterVitePin("export const CREATE_VERSION = 'x';\n").length).toEqual(1);
+  expect(checkManifests([{ path: tmpl, imports: { vite: 'npm:vite@${v.vite}' } }]).length).toEqual(
+    1,
+  );
+  expect(checkManifests([{ path: tmpl, imports: { vite: 'npm:vite@^8.0.0' } }]).length).toEqual(1);
+  // The template as shipped (no vite key at all) passes.
+  expect(checkManifests([{ path: tmpl, imports: { 'vite-plus': 'catalog:' } }])).toEqual([]);
 });

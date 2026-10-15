@@ -3,10 +3,10 @@
  *
  * Guards the starter regression classes the computed surface owns: unstyled
  * page (no token baseline), dead island, jammed nav, duplicate H1, missing
- * 404 fidelity — the layer curl-level checks cannot see. Since alpha.14 the
- * chrome (header.site-head among it) renders inside the auto-registered
- * layout's open shadow root; Playwright's CSS engine pierces open shadow
- * roots, so the same selectors keep guarding the real surface.
+ * 404 fidelity — the layer curl-level checks cannot see. The chrome
+ * (header.site-head among it) renders inside the auto-registered layout's open
+ * shadow root; Playwright's CSS engine pierces open shadow roots, so the same
+ * selectors keep guarding the real surface.
  */
 import { expect, test } from '@playwright/test';
 
