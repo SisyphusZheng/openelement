@@ -1059,19 +1059,22 @@ export function runMatrix(paths: HarnessPaths = {}): ScenarioOutcome[] {
   // ── 15. The kept release tooling surfaces are reused, not rebuilt ───────
   scenario('release-surfaces-reused', 'NONE', () => {
     const problems: string[] = [];
-    const markers: Array<[string, RegExp]> = [
-      ['openelement-release environment', /environment: openelement-release/u],
-      ['npm OIDC trusted publishing', /id-token: write/u],
-      ['publish:npm step', /publish:npm/u],
-      ['registry sync', /sync:registry/u],
-      ['per-package GitHub Releases', /gh release create/u],
-      ['npm registry url', /registry\.npmjs\.org/u],
-      ['pack surface check', /pack-surface:check/u],
-      ['post-publish consumers', /published-consumers\.yml/u],
-      ['version validation tooling', /check-release-version\.ts/u],
+    // Literal markers, matched with includes(): the check asks "is this kept
+    // surface present in the workflow text", which is substring semantics —
+    // regexes here only added unanchored-pattern risk for no behavior.
+    const markers: Array<[string, string]> = [
+      ['openelement-release environment', 'environment: openelement-release'],
+      ['npm OIDC trusted publishing', 'id-token: write'],
+      ['publish:npm step', 'publish:npm'],
+      ['registry sync', 'sync:registry'],
+      ['per-package GitHub Releases', 'gh release create'],
+      ['npm registry url', 'registry.npmjs.org'],
+      ['pack surface check', 'pack-surface:check'],
+      ['post-publish consumers', 'published-consumers.yml'],
+      ['version validation tooling', 'check-release-version.ts'],
     ];
-    for (const [label, pattern] of markers) {
-      if (!pattern.test(release.text)) problems.push(`missing kept surface: ${label}`);
+    for (const [label, marker] of markers) {
+      if (!release.text.includes(marker)) problems.push(`missing kept surface: ${label}`);
     }
     const environments = release.text.match(/environment: openelement-release/gu)?.length ?? 0;
     if (environments < 2)

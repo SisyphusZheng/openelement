@@ -29,7 +29,12 @@ export function layoutAdmissionFromOptions(
 ): IslandTransformLayoutAdmission | undefined {
   if (typeof layout !== 'object' || !layout) return undefined;
   if (!layout.import.startsWith('.')) return undefined;
-  const path = layout.import.replace(/^\.\//, '').replace(/^(\.\.\/)+/, '');
+  // Segment-wise normalization (linear, no backtracking quantifiers): strip
+  // leading './' and '../' segments so the admission path compares against
+  // the convention's own spelling.
+  let path = layout.import;
+  while (path.startsWith('./')) path = path.slice(2);
+  while (path.startsWith('../')) path = path.slice(3);
   if (path === '') return undefined;
   return { path, tagName: layout.tagName };
 }

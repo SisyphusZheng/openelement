@@ -629,10 +629,20 @@ export function serverRenderedStyleEdgesPlugin(
 ): Plugin {
   let admitted = false;
   let edges: Map<string, RegisteredStyleRequest> | undefined;
+  /**
+   * The Vite build's resolved root, recorded by this plugin's own
+   * `configResolved` — the workspace-root search below must start from the
+   * build's root, not from the process working directory (a build launched
+   * from elsewhere than its root would otherwise bound the workspace wrong).
+   */
+  let resolvedRoot: string | undefined;
   return {
     name: 'open:server-rendered-style-edges',
     enforce: 'pre',
     apply: 'build',
+    configResolved(config) {
+      resolvedRoot = config.root;
+    },
     // The DISCOVERY phase runs in buildStart, which is why this plugin is
     // mounted BEFORE every consumer of its facts: the compiler facts it
     // registers — the authored `.css` edges AND the statically admitted class
@@ -647,6 +657,7 @@ export function serverRenderedStyleEdgesPlugin(
         candidates,
         new Set(admittedPackages),
         sources,
+        resolvedRoot,
       );
     },
     // The module-LOADING phase: reaching a sheet's text through Vite's `?inline`
@@ -663,9 +674,6 @@ export function serverRenderedStyleEdgesPlugin(
     },
   };
 }
-
-/** The client build's root, recorded by the plugin's `configResolved`. */
-let serverRenderRoot: string | undefined;
 
 /**
  * The DISCOVERY half: resolve the seeds through this build's own resolver, walk
@@ -686,6 +694,8 @@ async function discoverServerRenderedModules(
   candidates: ClassCandidateRegistry,
   admittedPackages: ReadonlySet<string>,
   sources?: Map<string, string>,
+  /** The Vite build's resolved root (the plugin's `configResolved`); the process working directory only stands in when absent. */
+  root?: string,
 ): Promise<Map<string, RegisteredStyleRequest>> {
   const roots = [...seeds.files];
   for (const specifier of seeds.specifiers) {
@@ -712,8 +722,8 @@ async function discoverServerRenderedModules(
     );
     return new Map();
   }
-  const root = serverRenderRoot ?? process.cwd();
-  const workspaceRoot = findBuildWorkspaceRoot(root) ?? undefined;
+  const effectiveRoot = root ?? process.cwd();
+  const workspaceRoot = findBuildWorkspaceRoot(effectiveRoot) ?? undefined;
   const walk = await walkModuleGraph(this, roots);
   if (walk.truncated) {
     this.warn(
@@ -737,7 +747,7 @@ async function discoverServerRenderedModules(
     sources?.set(file, source);
     let compiled;
     try {
-      compiled = compileElementModule(source, stableModuleId(file, root, workspaceRoot), {
+      compiled = compileElementModule(source, stableModuleId(file, effectiveRoot, workspaceRoot), {
         staticSidecars: [ISLAND_ADMISSION],
       });
     } catch {
@@ -769,7 +779,7 @@ async function discoverServerRenderedModules(
     registerArtifactCandidates(source, file, candidates);
     elementFiles.push(file);
   }
-  reportUnadmittedComponentPackages.call(this, elementFiles, admittedPackages, root);
+  reportUnadmittedComponentPackages.call(this, elementFiles, admittedPackages, effectiveRoot);
   // The registered request objects themselves — never a re-derived key. The
   // previous form rebuilt each edge's graph id and decoded it back through
   // `getStyleRequest`, a round-trip that does not hold for every registry key

@@ -64,7 +64,7 @@ function resolverFor(root: string): ModuleWalkResolver {
         if (key === undefined) return Promise.resolve(null);
         const target = map[key]!;
         const substituted = key.endsWith('*')
-          ? target.replace('*', specifier.slice(key.length - 1))
+          ? target.slice(0, -1) + specifier.slice(key.length - 1)
           : target;
         const id = probe(resolvePath(root, substituted));
         return Promise.resolve(id === undefined ? null : { id });

@@ -65,8 +65,12 @@ createServer((nodeRequest, nodeResponse) => {
       }
       nodeResponse.end();
     } catch (error) {
+      // The response body never carries error text or stacks: the fixture is
+      // an e2e server, but the habit is the product's. Diagnostics stay in
+      // the server log.
+      console.error('[base-path fixture] request failed:', error);
       nodeResponse.statusCode = 500;
-      nodeResponse.end(String(error));
+      nodeResponse.end('Internal Server Error');
     }
   })();
 }).listen(PORT, '127.0.0.1', () => {
