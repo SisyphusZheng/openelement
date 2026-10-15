@@ -25,15 +25,18 @@ pnpm dev
 
 ## 只要 element 当库用
 
-脚手架是可选的。只想要组件运行时的项目安装一个包即可，全程接触不到 Router：
+脚手架是可选的。只想要组件运行时的项目需要装两个包——编译产物加载的运行时，以及构建期把 TSX 编译成 Part Program 的编译器：
 
 ```bash
 pnpm add @openelement/element
+pnpm add -D @openelement/compiler
 ```
 
-- **Vite 项目**通过包的 Vite 接缝挂载编译器：`import { element } from '@openelement/compiler/vite'`，把 `element()` 加进 `plugins`。该插件在构建期把每个组件的 TSX `render()` 编译成 Part Program。
+两行都需要。`@openelement/element` 只依赖 `@openelement/protocol` 与 signals 内核，**不会**带上编译器：只执行第一行的话，拿到的是运行时，编译不出组件。编译器是构建期那一半，属于 `devDependencies`，下面那句 Vite 接缝就是从这里导入的。
+
+- **Vite 项目**通过包的 Vite 接缝挂载编译器：`import { element } from '@openelement/compiler/vite'`，把 `element()` 加进 `plugins`。该插件在构建期把每个组件的 TSX `render()` 编译成 Part Program。任何运行该插件的宿主都可以——Router 的 Vite 构建，或一个纯 Vite 项目；编译器不属于运行时。
 - **其他打包器**通过 `@openelement/compiler` 以编程方式驱动同一套编译器——即 Vite 插件自己调用的 TSX-to-Part-Program 内核——再把产物接进自己的流水线。
-- **产物是标准 Custom Elements。** 编译后的组件就是一个用 `customElements.define` 注册的普通类，产出的 bundle 可以直接进任何页面或框架，无需内嵌任何运行时。这条路每轮发布都会验证：打包产物消费者验收会单独安装 `@openelement/element`（无 Router、无脚手架），编译一个组件，再从独立的纯 HTML 页面在三个浏览器里加载该 bundle。
+- **产物是标准 Custom Elements。** 编译后的组件就是一个用 `customElements.define` 注册的普通类，产出的 bundle 可以直接进任何页面或框架，无需内嵌运行时，也不需要再跑编译器：消费已编译的 bundle 就是在纯 HTML 里写一个 `<script type="module">`，两个包都不需要。这条消费路径每轮发布都会验证：打包产物验收用 `@openelement/element` 与 `@openelement/compiler` 两个 tarball 在无 Router、无脚手架的项目里构建一个组件，再从独立的纯 HTML 页面在三个浏览器里加载该 bundle（`tools/release/consumer-packaged-element.ts`）。
 
 ## 探索
 

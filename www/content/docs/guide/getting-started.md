@@ -25,15 +25,18 @@ The scaffold ships one form, Tailwind-ON: a preset-wired `vite.config.ts`, the `
 
 ## Using element as a library
 
-The scaffold is optional. A project that wants only the component runtime installs one package and never sees the Router:
+The scaffold is optional. A project that wants only the component runtime adds two packages — the runtime its compiled components load, and the compiler that turns TSX into the Part Program at build time:
 
 ```bash
 pnpm add @openelement/element
+pnpm add -D @openelement/compiler
 ```
 
-- **Vite projects** mount the compiler through the package's Vite seam: `import { element } from '@openelement/compiler/vite'` and add `element()` to `plugins`. The plugin compiles each component's TSX `render()` into the Part Program at build time.
+Both lines are required. `@openelement/element` depends on `@openelement/protocol` and the signals core, and on nothing else — it does **not** bring the compiler, so a project that stops after the first line has the runtime but cannot build a component. The compiler is the build-time half and belongs in `devDependencies`; it is what the Vite seam below is imported from.
+
+- **Vite projects** mount the compiler through the package's Vite seam: `import { element } from '@openelement/compiler/vite'` and add `element()` to `plugins`. The plugin compiles each component's TSX `render()` into the Part Program at build time. Any host that runs the plugin — the Router's Vite build, or a bare Vite project — is enough; the compiler is not part of the runtime.
 - **Other bundlers** drive the same compiler programmatically through `@openelement/compiler` — the TSX-to-Part-Program core the Vite plugin itself calls — and wire its output into their own pipeline.
-- **The output is standard Custom Elements.** A compiled component is a plain class you register with `customElements.define`, so the emitted bundle loads in any page or framework with no runtime to vendor. This path is verified on every release: the packed-artifact consumer qualification installs `@openelement/element` alone (no Router, no scaffold), compiles a component, and loads the bundle from a separate plain-HTML page in three browsers.
+- **The output is standard Custom Elements.** A compiled component is a plain class you register with `customElements.define`, so the emitted bundle loads in any page or framework with no runtime to vendor and no compiler to run: consuming an already-compiled bundle is a `<script type="module">` in plain HTML and needs neither package. That consumer path is verified on every release: the packed-artifact qualification builds a component with the `@openelement/element` and `@openelement/compiler` tarballs in a project with no Router and no scaffold, then loads the resulting bundle from a separate plain-HTML page in three browsers (`tools/release/consumer-packaged-element.ts`).
 
 ## Explore
 
