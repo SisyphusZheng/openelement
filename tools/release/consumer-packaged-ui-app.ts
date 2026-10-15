@@ -492,6 +492,11 @@ const DEEP = \`(function () {
 const browser = await browserType.launch({ headless: true });
 try {
   const page = await browser.newPage();
+  // Fail-safe diagnosis: any uncaught page error rides the measured result so
+  // a failed behaviour row says WHY, not just THAT.
+  const pageErrors = [];
+  page.on('pageerror', (error) => { pageErrors.push(String(error?.message ?? error)); });
+  globalThis.__pageErrors = pageErrors;
 
   await page.goto(baseUrl + '/ui-lab', { waitUntil: 'load' });
   await page.evaluate(DEEP);
@@ -703,7 +708,7 @@ try {
     // presses the keys.
     const behaviour = {};
     const upgraded = [];
-    for (const tag of ['open-input', 'open-dialog', 'open-dropdown']) {
+    for (const tag of ['open-button', 'open-input', 'open-dialog', 'open-dropdown']) {
       upgraded.push(
         await customElements.whenDefined(tag).then(() => tag).catch(() => tag + ':never'),
       );
@@ -767,6 +772,61 @@ try {
       contentTag: content?.tagName.toLowerCase() ?? null,
     };
 
+    // ── open-button single-slot rows (alpha15, PR #1611 audit) ─────────────
+    // The audit measured the OLD twin-sibling shape assigning the user's text
+    // into the HIDDEN anchor's slot (same-name default slots assign by tree
+    // order; hidden is not a slot force), leaving the visible button blank.
+    // These rows prove the single-slot rewrite: exactly one control element,
+    // no hidden sibling anywhere in the shadow root, the slot ASSIGNED the
+    // user text, the control RENDERING it, and the control reachable by
+    // keyboard (the click row is measured in the keyboard half below).
+    const buttonHost = globalThis.__deepFind('open-button');
+    const buttonEl = buttonHost?.shadowRoot?.querySelector('button') ?? null;
+    const buttonAnchor = buttonHost?.shadowRoot?.querySelector('a') ?? null;
+    const buttonSlot = buttonEl?.querySelector('slot') ?? null;
+    let buttonClicks = 0;
+    if (buttonHost) buttonHost.addEventListener('open-click', () => { buttonClicks += 1; });
+    // Probe half: a synthetic click on the control itself. This separates
+    // "the delegated listener is attached and open-click reaches the host"
+    // from "a real keyboard Enter fired the UA click" — the keyboard half
+    // below asserts the latter through its own click delta.
+    let probeClicks = 0;
+    if (buttonHost) buttonHost.addEventListener('open-click', () => { probeClicks += 1; });
+    // What the control actually renders: the flattened text of the button,
+    // resolving <slot> through its assigned nodes. (textContent alone
+    // measures "" for slotted content — assigned light-DOM nodes are not
+    // descendants — measured in chromium before wiring this row; a bare
+    // textContent row would have asserted the blank-button bug as passing.)
+    const flattenedText = (node) => {
+      if (node.nodeType === 3) return node.textContent ?? '';
+      if (node.tagName === 'SLOT') return node.assignedNodes().map(flattenedText).join('');
+      let out = '';
+      for (const child of node.childNodes) out += flattenedText(child);
+      return out;
+    };
+    behaviour.button = {
+      found: buttonHost !== null,
+      controlCount: buttonHost?.shadowRoot?.querySelectorAll('[part=control]').length ?? 0,
+      buttonTag: buttonEl?.tagName.toLowerCase() ?? null,
+      anchorPresent: buttonAnchor !== null,
+      hiddenSibling: (buttonHost?.shadowRoot?.querySelector('[hidden]')) !== null,
+      assignedText: buttonSlot
+        ? buttonSlot.assignedNodes().map((node) => node.textContent ?? '').join('')
+        : null,
+      renderedText: buttonEl ? flattenedText(buttonEl) : null,
+      probeClicks: (function () {
+        if (buttonEl) {
+          try {
+            buttonEl.click();
+          } catch (error) {
+            globalThis.__probeClickError = String(error?.message ?? error);
+          }
+        }
+        return probeClicks;
+      })(),
+      probeClickError: globalThis.__probeClickError ?? null,
+    };
+
     // Handles for the Playwright-driven keyboard half.
     // Focus retargeting hides the path from the document to a slotted element:
     // document.activeElement stops at the host, and the host shadow root's own
@@ -790,6 +850,8 @@ try {
       opener,
       deepActive,
       inputEvents: () => inputEvents,
+      buttonEl,
+      buttonClicks: () => buttonClicks,
     };
 
     return {
@@ -898,6 +960,27 @@ try {
       })
     : null;
 
+  // open-button keyboard rows (alpha15): the control takes focus and a real
+  // Enter fires the delegated click (counted on the host's open-click).
+  const buttonFocused = keys
+    ? await page.evaluate(() => {
+        const a14 = globalThis.__a14;
+        if (!a14.buttonEl) return null;
+        a14.buttonEl.focus();
+        return {
+          focused: a14.deepActive() === a14.buttonEl,
+          clicksBefore: a14.buttonClicks(),
+        };
+      })
+    : null;
+  if (keys && buttonFocused) await page.keyboard.press('Enter');
+  const buttonAfterEnter = buttonFocused
+    ? await page.evaluate(() => {
+        const a14 = globalThis.__a14;
+        return { clicks: a14.buttonClicks() };
+      })
+    : null;
+
   await page.goto(baseUrl + '/', { waitUntil: 'load' });
   await page.evaluate(DEEP);
   const home = await page.evaluate(() => {
@@ -914,7 +997,15 @@ try {
   const measured = {
     lab,
     home,
-    keys: { dialogOpened, dialogAfterEscape, dropdownFocused, dropdownAfterEnter, dropdownAfterEscape },
+    keys: {
+      dialogOpened,
+      dialogAfterEscape,
+      dropdownFocused,
+      dropdownAfterEnter,
+      dropdownAfterEscape,
+      buttonFocused,
+      buttonAfterEnter,
+    },
   };
   const failures = [];
   if (!lab.widgetFound) failures.push('utility-widget was not found on /ui-lab');
@@ -1035,6 +1126,43 @@ try {
     expectValue('open-dropdown opened on a real Enter', dropdownEnter.contentOpen, true);
     expectValue('open-dropdown closed on a real Escape', dropdownEscape.contentOpen, false);
     expectValue('open-dropdown returned focus to its trigger', dropdownEscape.focusOnTrigger, true);
+  }
+
+  // ── open-button single-slot rows (alpha15, PR #1611 audit) ────────────────
+  // One control element per state, no hidden sibling, and the user text both
+  // ASSIGNED into the slot and RENDERED by the visible control — the two
+  // readings the twin-sibling shape failed (assignment went to the hidden
+  // anchor's slot; the visible button was blank).
+  const button = behaviour.button;
+  const buttonFocus = measured.keys?.buttonFocused;
+  const buttonEnter = measured.keys?.buttonAfterEnter;
+  if (!button?.found) failures.push('open-button was not found on /ui-lab');
+  else {
+    expectValue('open-button emitted one control', button.controlCount, 1);
+    expectValue('open-button rendered the button branch', button.buttonTag, 'button');
+    expectValue('open-button anchor branch absent', button.anchorPresent, false);
+    expectValue('open-button hidden sibling absent', button.hiddenSibling, false);
+    expectValue('open-button slot assignedText', button.assignedText, 'packed button');
+    expectValue('open-button renderedText', button.renderedText, 'packed button');
+    if (!buttonFocus || !buttonEnter) {
+      failures.push('open-button keyboard rows did not run (the probe handles were missing)');
+    } else {
+      expectValue('open-button control takes focus', buttonFocus.focused, true);
+      // The synthetic probe proves the delegated listener path; the delta
+      // proves a REAL keyboard Enter fired the UA click on the control.
+      expectValue('open-button probe click reached the host', button.probeClicks, 1);
+      if (!(buttonEnter.clicks - buttonFocus.clicksBefore >= 1)) {
+        failures.push(
+          'open-button real Enter fired no click: ' +
+            JSON.stringify({
+              before: buttonFocus.clicksBefore,
+              after: buttonEnter.clicks,
+              probeClickError: button.probeClickError,
+              pageErrors: (globalThis.__pageErrors ?? []).slice(0, 3),
+            }),
+        );
+      }
+    }
   }
 
   // A document-level "::part()" rule reaches every declared control part

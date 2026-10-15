@@ -164,6 +164,64 @@ test('#1548: a plain .ts island with no compiled module scans blocks-free', () =
   ).toBe(false);
 });
 
+test('alpha15: a pre-compiled package island with an embedded Block scans blocks-carrying', () => {
+  // A packed install ships COMPILED modules: the program rides as embedded
+  // JSON the compiler pass cannot re-derive (compileElementModule sees no
+  // authoring grammar and returns null). The alpha15 packaged-consumer
+  // appliance broke exactly here — open-button's new when Block was
+  // invisible to the scan, the build aliased the blocks-free element entry,
+  // and every Block Part failed closed in the browser. The scan reads the
+  // artifact itself; absence is still only proven from authoring sources.
+  const root = makeApp();
+  linkElementPackage(root);
+  mkdirSync(join(root, 'node_modules/packed-ui'), { recursive: true });
+  writeFileSync(
+    join(root, 'node_modules/packed-ui/package.json'),
+    JSON.stringify({ name: 'packed-ui', main: 'index.js' }),
+  );
+  writeFileSync(
+    join(root, 'node_modules/packed-ui/index.js'),
+    [
+      "import { OpenElement } from '@openelement/element';",
+      '// Compiled output: the program is data, not authoring grammar.',
+      'const __partProgram = {',
+      '\t"version": 2,',
+      '\t"tag": "packed-el",',
+      '\t"blocks": [{ "id": "r7", "index": 7, "kind": "when" }],',
+      '};',
+      'export class PackedEl extends OpenElement {}',
+      '',
+    ].join('\n'),
+  );
+  writeIsland(root, 'scan-island.tsx', `import 'packed-ui';\n${PLAIN_ISLAND}`);
+  expect(scan(root, { islandFiles: ['scan-island.tsx'] })).toBe(true);
+});
+
+test('alpha15: a pre-compiled package island with empty blocks scans blocks-free', () => {
+  const root = makeApp();
+  linkElementPackage(root);
+  mkdirSync(join(root, 'node_modules/packed-plain'), { recursive: true });
+  writeFileSync(
+    join(root, 'node_modules/packed-plain/package.json'),
+    JSON.stringify({ name: 'packed-plain', main: 'index.js' }),
+  );
+  writeFileSync(
+    join(root, 'node_modules/packed-plain/index.js'),
+    [
+      "import { OpenElement } from '@openelement/element';",
+      'const __partProgram = {',
+      '\t"version": 2,',
+      '\t"tag": "packed-plain-el",',
+      '\t"blocks": [],',
+      '};',
+      'export class PackedPlainEl extends OpenElement {}',
+      '',
+    ].join('\n'),
+  );
+  writeIsland(root, 'scan-island.tsx', `import 'packed-plain';\n${PLAIN_ISLAND}`);
+  expect(scan(root, { islandFiles: ['scan-island.tsx'] })).toBe(false);
+});
+
 // #1548: the emission half — the client build's exact element-entry alias.
 
 test('#1548: the alias resolves the element entry to its no-blocks sibling', () => {

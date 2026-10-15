@@ -1536,3 +1536,55 @@ describe('compiled-element alpha15 - when-branch attribute sinks', () => {
     );
   });
 });
+
+describe('compiled-element alpha15 - open-button single-slot structure (shipped source)', () => {
+  // The shipped component is compiled verbatim — the same bytes the packages
+  // ship — so the structure proof cannot drift from the artifact consumers
+  // install. The single-slot rewrite rides the when-branch attribute-sink
+  // unlock: one control element per branch, no hidden sibling, one delegated
+  // click listener on the static display:contents wrapper.
+  const source = readFileSync(
+    new URL('../../../packages/ui/src/open-button.tsx', import.meta.url),
+    'utf8',
+  );
+
+  test('the control pair compiles to one when Block with branch-owned sinks', () => {
+    const { program } = compileElementProgram(source, '/project/packages/ui/src/open-button.tsx');
+    const blocks = program.blocks;
+    expect(blocks.length, 'exactly one Block (the control when)').toEqual(1);
+    expect(blocks[0].kind).toEqual('when');
+
+    // No hidden sibling pickers: the two `hidden` bool sinks are gone with
+    // the two-slot structure.
+    const hiddenSinks = program.parts.filter(
+      (part: { k: string; name?: string }) => part.k === 'bool' && part.name === 'hidden',
+    );
+    expect(hiddenSinks.length, 'no hidden sink survives the single-slot rewrite').toEqual(0);
+
+    // Click handling is delegated once, on the static wrapper.
+    const eventParts = program.parts.filter((part: { k: string }) => part.k === 'event');
+    expect(eventParts.length, 'one delegated click listener').toEqual(1);
+
+    // The dynamic control attributes are branch-owned sinks.
+    const whenPart = program.parts.find((part: { k: string }) => part.k === 'when') as {
+      on: Array<{ attrs?: string[][] }>;
+      off: Array<{ attrs?: string[][] }>;
+    };
+    const sinkNames = (program.parts as Array<{ k: string; name?: string }>)
+      .filter((part) => part.k === 'attr' || part.k === 'bool' || part.k === 'prop')
+      .map((part) => part.name)
+      .sort();
+    expect(sinkNames).toEqual(['aria-disabled', 'disabled', 'href', 'rel', 'target', 'type']);
+
+    // Each branch carries exactly one slot (the single default slot per branch).
+    const slotCount = (branch: Array<{ attrs?: string[][] }>): number =>
+      branch.reduce(
+        (count, node) => count + (node.attrs?.some(([name]) => name === 'part') ? 1 : 0),
+        0,
+      );
+    expect(whenPart.on.length).toEqual(1);
+    expect(whenPart.off.length).toEqual(1);
+    expect(slotCount(whenPart.on), 'the button branch root').toEqual(1);
+    expect(slotCount(whenPart.off), 'the anchor branch root').toEqual(1);
+  });
+});

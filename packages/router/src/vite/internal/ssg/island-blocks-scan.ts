@@ -98,6 +98,26 @@ function importSpecifiers(source: string): string[] {
   return out;
 }
 
+/**
+ * Whether one module's TEXT embeds a compiled Part Program carrying Block
+ * Parts — the packed-package form of the blocks truth (alpha15, found by the
+ * packaged-consumer appliance). A packed install ships COMPILED modules:
+ * their programs ride as embedded JSON (`const __partProgram = {...}`) that
+ * {@linkcode compileElementModule} cannot re-derive — it sees no authoring
+ * grammar and returns null, so a packed component's when/each Block was
+ * invisible to the scan and the build aliased the blocks-free element entry.
+ *
+ * Posture stays one-directional: a non-empty `"blocks"` array beside the
+ * `__partProgram` marker is PROOF of blocks (the wire grammar always emits
+ * the key, and a non-empty array always opens with an object); anything else
+ * contributes nothing — absence is still only ever proven by compiling the
+ * authoring source.
+ */
+function compiledArtifactMightUseBlocks(source: string): boolean {
+  if (!source.includes('__partProgram')) return false;
+  return /"blocks"\s*:\s*\[\s*\{/.test(source);
+}
+
 function stripSpecifierQuery(specifier: string): string {
   return specifier.split('?', 1)[0].split('#', 1)[0];
 }
@@ -208,6 +228,9 @@ export function islandsMightUseBlocks(input: IslandsBlocksScanInput): boolean {
       // transform with its own diagnostic; for this scan its truth is unknown.
       return true;
     }
+    // A pre-compiled module (a packed package's dist) proves blocks from its
+    // own embedded program — the compiler pass above sees no grammar in it.
+    if (compiledArtifactMightUseBlocks(source)) return true;
     for (const specifier of importSpecifiers(source)) {
       const target = resolveImport(file, specifier, input.root);
       if (target !== null) queue.push(target.replaceAll('\\', '/'));
