@@ -403,7 +403,12 @@ export default class UiLab extends OpenElement {
           <p>dialog body from the packed tarball</p>
         </open-dialog>
         <open-dropdown>
-          <span slot='trigger'>packed dropdown</span>
+          {/* The trigger is the CONSUMER's element: the component wraps its
+              slot in a presentational span and takes the keyboard affordance
+              from what the consumer puts there. A non-focusable span made this
+              appliance under-exercise the component — the behaviour rows below
+              could not reach the trigger at all. */}
+          <button slot='trigger' type='button'>packed dropdown</button>
           <p>dropdown content from the packed tarball</p>
         </open-dropdown>
         <open-code-block>
@@ -683,8 +688,113 @@ try {
       codeCopy: partOutline('open-code-block', 'copy'),
     };
 
+    // ── Behaviour, not styles (alpha15 A14) ────────────────────────────────
+    // The Site renders open-button, open-code-block and open-theme-toggle, so
+    // its behaviour rows live in the Site's own matrix. open-input,
+    // open-dialog and open-dropdown render ONLY here — computed styles say the
+    // sheets arrived, these rows say the components work.
+    //
+    // The KEYBOARD half of each row is driven from the Playwright side (real
+    // keys), not from synthetic KeyboardEvents here: a top-layer <dialog> and
+    // a popover both close on the user agent's own Escape handling, which a
+    // synthetic event never reaches — measured, chromium and firefox kept the
+    // dialog open under a dispatched keydown while WebKit (whose path runs
+    // through a listener) closed it. This block records the STATE; the driver
+    // presses the keys.
+    const behaviour = {};
+    const upgraded = [];
+    for (const tag of ['open-input', 'open-dialog', 'open-dropdown']) {
+      upgraded.push(
+        await customElements.whenDefined(tag).then(() => tag).catch(() => tag + ':never'),
+      );
+    }
+    behaviour.upgraded = upgraded;
+
+    const inputHost = globalThis.__deepFind('open-input');
+    const inputControl = inputHost?.shadowRoot?.querySelector('input') ?? null;
+    const inputLabel = inputHost?.shadowRoot?.querySelector('label') ?? null;
+    let inputEvents = 0;
+    if (inputHost) inputHost.addEventListener('open-input', () => { inputEvents += 1; });
+    inputControl?.focus();
+    const inputFocused = inputControl !== null && inputHost?.shadowRoot?.activeElement === inputControl;
+    if (inputControl) {
+      inputControl.value = 'typed by the probe';
+      inputControl.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    if (inputHost) inputHost.disabled = true;
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    behaviour.input = {
+      found: inputHost !== null,
+      // The label must be ASSOCIATED with the control, not merely present.
+      labelled: inputLabel !== null && inputControl !== null && inputLabel.control === inputControl,
+      focused: inputFocused,
+      valueOnHost: inputHost ? String(inputHost.value) : null,
+      eventCount: inputEvents,
+      disabledControl: inputControl?.disabled ?? null,
+      controlPart: inputHost?.shadowRoot?.querySelector('[part=control]') !== null,
+      labelPart: inputHost?.shadowRoot?.querySelector('[part=label]') !== null,
+    };
+
+    const dialogHost = globalThis.__deepFind('open-dialog');
+    const dialogEl = dialogHost?.shadowRoot?.querySelector('dialog') ?? null;
+    const opener = document.createElement('button');
+    opener.id = 'a14-dialog-opener';
+    document.body.appendChild(opener);
+    behaviour.dialog = {
+      found: dialogHost !== null,
+      hasHeaderPart: dialogHost?.shadowRoot?.querySelector('[part=header]') !== null,
+      hasOverlayPart: dialogHost?.shadowRoot?.querySelector('[part=overlay]') !== null,
+      dialogPresent: dialogEl !== null,
+    };
+
+    const dropdownHost = globalThis.__deepFind('open-dropdown');
+    // The focusable trigger is the consumer's slotted element, not the
+    // presentational span the component wraps it in.
+    const trigger =
+      dropdownHost?.querySelector('[slot=trigger]') ??
+      dropdownHost?.shadowRoot?.querySelector('[part=trigger]') ??
+      null;
+    const content = dropdownHost?.shadowRoot?.querySelector('[part=content]') ?? null;
+    behaviour.dropdown = {
+      found: dropdownHost !== null,
+      triggerTag: trigger?.tagName.toLowerCase() ?? null,
+      // A trigger the keyboard cannot reach is not a trigger. Its tabIndex and
+      // resolved display are recorded so a failure says which one it is.
+      triggerTabIndex: trigger?.tabIndex ?? null,
+      triggerDisplay: trigger ? getComputedStyle(trigger).display : null,
+      contentPresent: content !== null,
+      contentTag: content?.tagName.toLowerCase() ?? null,
+    };
+
+    // Handles for the Playwright-driven keyboard half.
+    // Focus retargeting hides the path from the document to a slotted element:
+    // document.activeElement stops at the host, and the host shadow root's own
+    // activeElement only ever names elements INSIDE that shadow root. The
+    // consumer's trigger is neither. The walk below is the only honest way to
+    // ask "is this exact element focused".
+    const deepActive = () => {
+      let node = document.activeElement;
+      while (node && node.shadowRoot && node.shadowRoot.activeElement) {
+        node = node.shadowRoot.activeElement;
+      }
+      return node;
+    };
+    globalThis.__a14 = {
+      inputHost,
+      dialogHost,
+      dialogEl,
+      dropdownHost,
+      trigger,
+      content,
+      opener,
+      deepActive,
+      inputEvents: () => inputEvents,
+    };
+
     return {
       widgetFound: widget !== null,
+      behaviour,
       widgetPaddingTop: widgetSpan ? getComputedStyle(widgetSpan).paddingTop : 'missing',
       widgetFontWeight: widgetSpan ? getComputedStyle(widgetSpan).fontWeight : 'missing',
       // ADR-0167: the package-OWNED theme role. The appliance declares no
@@ -721,6 +831,73 @@ try {
     };
   });
 
+  // ── The keyboard half of the behaviour matrix (alpha15 A14) ──────────────
+  // Real keys, driven from here: a top-layer <dialog> and a popover both close
+  // through the user agent's own Escape handling, which a synthetic
+  // KeyboardEvent dispatched in the page never reaches.
+  const keys = await page.evaluate(() => {
+    const a14 = globalThis.__a14;
+    if (!a14 || !a14.dialogHost || !a14.dropdownHost) return null;
+    // Open the dialog with the documented property, from a known focused
+    // element, so "focus returned" has a target to return to.
+    let element = document.activeElement;
+    while (element && element.shadowRoot && element.shadowRoot.activeElement) {
+      element = element.shadowRoot.activeElement;
+    }
+    a14.focusBefore = element;
+    a14.opener.focus();
+    a14.dialogHost.open = true;
+    return { before: document.activeElement === a14.opener };
+  });
+  const dialogOpened = keys
+    ? await page.evaluate(() => {
+        const a14 = globalThis.__a14;
+        return { open: a14.dialogEl.open, modal: a14.dialogEl.matches(':modal') };
+      })
+    : null;
+
+  if (keys) await page.keyboard.press('Escape');
+  const dialogAfterEscape = keys
+    ? await page.evaluate(() => {
+        const a14 = globalThis.__a14;
+        return {
+          open: a14.dialogEl.open,
+          openFlag: a14.dialogHost.open,
+          focusOnOpener: document.activeElement === a14.opener,
+        };
+      })
+    : null;
+
+  const dropdownFocused = keys
+    ? await page.evaluate(() => {
+        const a14 = globalThis.__a14;
+        a14.trigger.focus();
+        return {
+          focused: a14.deepActive() === a14.trigger,
+          contentOpen: a14.content.matches(':popover-open'),
+        };
+      })
+    : null;
+  // A real Enter on the trigger opens the popover; a real Escape closes it and
+  // the user agent returns focus to the trigger.
+  if (keys) await page.keyboard.press('Enter');
+  const dropdownAfterEnter = keys
+    ? await page.evaluate(() => {
+        const a14 = globalThis.__a14;
+        return { contentOpen: a14.content.matches(':popover-open') };
+      })
+    : null;
+  if (keys) await page.keyboard.press('Escape');
+  const dropdownAfterEscape = keys
+    ? await page.evaluate(() => {
+        const a14 = globalThis.__a14;
+        return {
+          contentOpen: a14.content.matches(':popover-open'),
+          focusOnTrigger: a14.deepActive() === a14.trigger,
+        };
+      })
+    : null;
+
   await page.goto(baseUrl + '/', { waitUntil: 'load' });
   await page.evaluate(DEEP);
   const home = await page.evaluate(() => {
@@ -734,7 +911,11 @@ try {
     };
   });
 
-  const measured = { lab, home };
+  const measured = {
+    lab,
+    home,
+    keys: { dialogOpened, dialogAfterEscape, dropdownFocused, dropdownAfterEnter, dropdownAfterEscape },
+  };
   const failures = [];
   if (!lab.widgetFound) failures.push('utility-widget was not found on /ui-lab');
   if (lab.widgetPaddingTop !== '32px') failures.push('p-8 padding-top=' + lab.widgetPaddingTop);
@@ -794,6 +975,68 @@ try {
     expectComputed('open-dropdown content min-width', components.dropdownContent.minWidth, '192px');
     expectComputed('open-dropdown content padding-top', components.dropdownContent.paddingTop, '8px');
   }
+  // ── Behaviour for the three components the Site does not render (A14) ────
+  // A green Site matrix covers open-button, open-code-block and
+  // open-theme-toggle. These three render only on this artifact, so their
+  // acceptance is here or nowhere.
+  const behaviour = lab.behaviour ?? {};
+  const expectValue = (label, actual, expected) => {
+    if (actual !== expected) {
+      failures.push(label + ' = ' + JSON.stringify(actual) + ' (expected ' + JSON.stringify(expected) + ')');
+    }
+  };
+  const notUpgraded = (behaviour.upgraded ?? []).filter((tag) => String(tag).endsWith(':never'));
+  if (notUpgraded.length > 0) {
+    failures.push('packed components never upgraded: ' + notUpgraded.join(', '));
+  }
+  const input = behaviour.input;
+  if (!input?.found) failures.push('open-input was not found on /ui-lab');
+  else {
+    expectValue('open-input label association', input.labelled, true);
+    expectValue('open-input control focus', input.focused, true);
+    expectValue('open-input value reached the host', input.valueOnHost, 'typed by the probe');
+    if (!(input.eventCount >= 1)) {
+      failures.push('open-input did not announce its change: ' + input.eventCount);
+    }
+    expectValue('open-input disabled reached the control', input.disabledControl, true);
+    expectValue('open-input ::part(control)', input.controlPart, true);
+    expectValue('open-input ::part(label)', input.labelPart, true);
+  }
+
+  const dialog = behaviour.dialog;
+  const dialogKeys = measured.keys?.dialogOpened;
+  const dialogAfter = measured.keys?.dialogAfterEscape;
+  if (!dialog?.found) failures.push('open-dialog was not found on /ui-lab');
+  else if (!dialogKeys || !dialogAfter) {
+    // The keyboard half could not run: the handles were missing. Say so rather
+    // than pass a half-measured row.
+    failures.push('open-dialog keyboard rows did not run (the probe handles were missing)');
+  } else {
+    expectValue('open-dialog opened', dialogKeys.open, true);
+    expectValue('open-dialog used the modal top layer', dialogKeys.modal, true);
+    expectValue('open-dialog closed on a real Escape', dialogAfter.open, false);
+    expectValue('open-dialog open flag followed', dialogAfter.openFlag, false);
+    expectValue('open-dialog returned focus to its opener', dialogAfter.focusOnOpener, true);
+    expectValue('open-dialog ::part(header)', dialog.hasHeaderPart, true);
+    expectValue('open-dialog ::part(overlay)', dialog.hasOverlayPart, true);
+  }
+
+  const dropdown = behaviour.dropdown;
+  const dropdownFocus = measured.keys?.dropdownFocused;
+  const dropdownEnter = measured.keys?.dropdownAfterEnter;
+  const dropdownEscape = measured.keys?.dropdownAfterEscape;
+  if (!dropdown?.found) failures.push('open-dropdown was not found on /ui-lab');
+  else if (!dropdownFocus || !dropdownEnter || !dropdownEscape) {
+    failures.push('open-dropdown keyboard rows did not run (the probe handles were missing)');
+  } else {
+    expectValue('open-dropdown trigger tabindex', dropdown.triggerTabIndex, 0);
+    expectValue('open-dropdown trigger takes focus', dropdownFocus.focused, true);
+    expectValue('open-dropdown starts closed', dropdownFocus.contentOpen, false);
+    expectValue('open-dropdown opened on a real Enter', dropdownEnter.contentOpen, true);
+    expectValue('open-dropdown closed on a real Escape', dropdownEscape.contentOpen, false);
+    expectValue('open-dropdown returned focus to its trigger', dropdownEscape.focusOnTrigger, true);
+  }
+
   // A document-level "::part()" rule reaches every declared control part
   // through the shadow boundary. "missing" would mean the part no longer
   // exists; any other value means the consumer rule applied.
@@ -869,9 +1112,15 @@ async function runUtilityBrowserMatrix(starter: string, baseUrl: string): Promis
       }
       console.log(`PASS utility computed styles / ${browserName} / pass`);
     } else {
-      failures.push(
-        `utility computed styles / ${browserName} / FAIL:\n${probe.output.slice(-2000)}`,
-      );
+      // The probe reports its failures as `[browser] reason | reason | … :: the
+      // full measurement`. The tail is a JSON dump that pushed the REASONS out
+      // of the previous 2000-character window, so a red run said nothing about
+      // what failed. Lead with the reasons; keep the measurement behind them.
+      const output = probe.output;
+      const marker = `[${browserName}] `;
+      const start = output.lastIndexOf(marker);
+      const reason = start === -1 ? output.slice(-2000) : output.slice(start, start + 2000);
+      failures.push(`utility computed styles / ${browserName} / FAIL:\n${reason}`);
       console.log(`FAIL utility computed styles / ${browserName} / fail`);
     }
   }
