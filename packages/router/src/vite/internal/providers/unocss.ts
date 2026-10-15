@@ -72,11 +72,23 @@ interface UnoGeneratorLike {
 
 /** The resolved-config loader's contract (the official `@unocss/config`). */
 interface UnoConfigModule {
+  /**
+   * `sources` is the set of files the configuration was read from, and it is
+   * what the engine's own dev plugin watches (`@unocss/vite`'s
+   * `ConfigHMRPlugin`). The installed versions hand these back as plain paths
+   * — `unconfig`, which `@unocss/config` delegates to, returns `string[]` —
+   * while the loader's public type describes `{ filepath }` records. Both
+   * shapes are accepted here because only the running version knows which it
+   * is, and reading the wrong one silently yields an empty watch list.
+   */
   loadConfig(
     cwd: string,
     configOrPath?: string,
     extraConfigSources?: unknown[],
-  ): Promise<{ config: Record<string, unknown>; sources: Array<{ filepath?: string }> }>;
+  ): Promise<{
+    config: Record<string, unknown>;
+    sources: Array<string | { filepath?: string }>;
+  }>;
 }
 
 /** The `unocss` package's public surface, as this adapter uses it. */
@@ -254,7 +266,7 @@ async function resolveUnoConfig(
     declaredConfig === undefined ? undefined : resolveDeclaredConfigPath(root, declaredConfig);
   const loaded = await loadConfig(root, declared);
   const watchFiles = loaded.sources
-    .map((source) => source.filepath)
+    .map((source) => (typeof source === 'string' ? source : source.filepath))
     .filter((file): file is string => typeof file === 'string' && file !== '');
   const ownPresets = Array.isArray(loaded.config.presets) && loaded.config.presets.length > 0;
   if (ownPresets) return { config: loaded.config, watchFiles, defaultPreset: false };

@@ -39,14 +39,10 @@ import process from 'node:process';
 import type { Plugin, ViteDevServer } from 'vite';
 import { createLogger, formatError } from '@openelement/element';
 import { collectShadowClassCandidates } from './internal/collect-shadow-candidates.ts';
-import {
-  createStyleBuildIntegration,
-  type StyleBuildIntegration,
-} from './internal/style-provider.ts';
 import { STYLE_LINKS_VIRTUAL_ID } from './internal/element-style-links.ts';
+import type { DevStyleSession } from './internal/dev-style-session.ts';
 import { devClientModulePath } from './internal/dev-client-path.ts';
 import type { OpenPluginState } from './plugin-config.ts';
-import { stylePlanForApp } from './internal/style-plan.ts';
 
 const log = createLogger('router-vite:style-components-dev');
 
@@ -100,58 +96,28 @@ function devSheetAdapterModule(url: string): string {
   ].join('\n');
 }
 
-export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
+export function devStyleComponentsPlugin(state: OpenPluginState, session: DevStyleSession): Plugin {
   let root = process.cwd();
   let base = '/';
-  /**
-   * The pipeline plan and the engine's integration, resolved lazily and
-   * memoized: demand may come from an admitted package declaration, which the
-   * manifest scan (run in `open:core`'s buildStart, before any request) makes
-   * visible — not from `configResolved`, which runs before that scan.
-   */
-  let integration: StyleBuildIntegration | undefined;
-  let integrationReady: Promise<StyleBuildIntegration | undefined> | undefined;
-  const resolveIntegration = async (): Promise<StyleBuildIntegration | undefined> => {
-    integrationReady ??= (async () => {
-      const plan = stylePlanForApp(
-        state.ctx,
-        root,
-        state.resolvedOptions.tailwind,
-        state.resolvedOptions.unocss,
-      );
-      if (plan === undefined) return undefined;
-      const resolved = await createStyleBuildIntegration({
-        root,
-        plan,
-        unocss: state.resolvedOptions.unocss,
-        componentSheetCandidates: () => state.classCandidates.all(),
-        documentCandidates: () => state.classCandidates.allLight(),
-        sources: () => new Map(),
-      });
-      integration = resolved;
-      return resolved;
-    })();
-    return await integrationReady;
-  };
   const styleLinksId = '\0open-element-style-links-dev.js';
   const adapterId = '\0oe-style-components-dev.js';
-  const engine = (): string => integration?.provider.id ?? 'style';
-  const sheetCandidates = (): readonly string[] => state.classCandidates.all();
+  const engine = (): string => session.current()?.provider.id ?? 'style';
   const currentCss = async (): Promise<string> => {
-    const resolved = integration;
-    if (resolved === undefined) return '';
-    // Always compile for the CURRENT candidate set, never from a cache: the
-    // served URL is stable by design (see the URL's note), so the response is
-    // the only place the compiled sheet can be fresh.
-    return await resolved.provider.compileComponents({
-      candidates: sheetCandidates(),
+    const provider = session.current()?.provider;
+    if (provider === undefined) return '';
+    // Always compile for the CURRENT candidate set and the CURRENT generator,
+    // never from a cache: the served URL is stable by design (see the URL's
+    // note), so the response is the only place the compiled sheet can be
+    // fresh — including after the engine's configuration has been rebuilt.
+    return await provider.compileComponents({
+      candidates: state.classCandidates.all(),
       sources: new Map(),
     });
   };
   /** A change that may move the admitted candidates or the theme layer. */
   const relevantChange = (file: string): boolean =>
     /\.(?:tsx|css)$/.test(file) ||
-    (integration?.plan.theme ?? []).some((source) => file.endsWith(source));
+    (session.current()?.plan.theme ?? []).some((source) => file.endsWith(source));
 
   return {
     name: 'open:style-components-dev',
@@ -161,11 +127,13 @@ export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
     configResolved(config) {
       root = config.root ?? process.cwd();
       base = config.base ?? '/';
+      session.setRoot(root);
     },
 
     async configureServer(server: ViteDevServer) {
-      const resolved = await resolveIntegration();
+      const resolved = await session.resolve();
       if (resolved === undefined) return;
+      session.attach(server);
       // The sheet's own endpoint: a direct `text/css` response, compiled per
       // request from the current candidate set. Registered before Vite's
       // internal middlewares, so neither the module graph nor the CSS plugin
@@ -273,6 +241,11 @@ export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
         state.classCandidates.remove(file);
         afterCandidatesMoved();
       };
+      // The engine's configuration moved: the session rebuilt the generator,
+      // and the sheet the client already holds was compiled from the old one —
+      // re-evaluate the adapter so it refetches the stable URL and replaces the
+      // same `CSSStyleSheet`.
+      session.onConfigurationChange(afterCandidatesMoved);
       server.watcher.on('change', (file) => {
         void onFile(file).catch((error) => {
           log.error(
@@ -293,18 +266,20 @@ export function devStyleComponentsPlugin(state: OpenPluginState): Plugin {
     },
 
     resolveId(id) {
-      if (integration === undefined) return null;
+      const current = session.current();
+      if (current === undefined) return null;
       // The sheet never enters Vite's module graph: it is served as a plain
       // `text/css` response (see the middleware above). A CSS-typed module id
       // would make Vite wrap the sheet in its dev style-injector, which writes
       // a <style> node at runtime — exactly what this lane forbids.
-      if (id === integration.provider.componentSheetSpecifier) return adapterId;
+      if (id === current.provider.componentSheetSpecifier) return adapterId;
       if (id === STYLE_LINKS_VIRTUAL_ID) return styleLinksId;
       return null;
     },
 
     load(id) {
-      if (integration === undefined) return null;
+      const current = session.current();
+      if (current === undefined) return null;
       if (id === styleLinksId) {
         return [
           '// <generated by open:style-components-dev — dev sheet URLs; do not edit>',

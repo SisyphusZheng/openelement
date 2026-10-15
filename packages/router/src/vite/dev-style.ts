@@ -45,9 +45,9 @@ import {
   tailwindEntryUrl,
   tailwindPlugins,
 } from './tailwind.ts';
-import { createStyleBuildIntegration } from './internal/style-provider.ts';
 import { setFrameworkStylesheets, type OpenPluginState } from './plugin-config.ts';
 import { stylePlanForApp, type ResolvedStyleSelection } from './internal/style-plan.ts';
+import type { DevStyleSession } from './internal/dev-style-session.ts';
 
 const log = createLogger('router-vite:style-dev');
 
@@ -131,7 +131,7 @@ function versionDigest(value: string): string {
  * so a style-less app pays one plan read and nothing else, and no engine's
  * package is ever loaded.
  */
-export function devStylePlugin(state: OpenPluginState): Plugin {
+export function devStylePlugin(state: OpenPluginState, session: DevStyleSession): Plugin {
   let peer: Plugin[] | undefined;
   let entryRoot: string | undefined;
   let entryOptions: ResolvedStyleSelection | undefined;
@@ -161,6 +161,7 @@ export function devStylePlugin(state: OpenPluginState): Plugin {
       // `open:core`'s configureServer, which Vite calls before this plugin's.
       entryRoot = config.root ?? process.cwd();
       resolvedConfig = config;
+      session.setRoot(entryRoot);
     },
 
     /**
@@ -230,19 +231,16 @@ export function devStylePlugin(state: OpenPluginState): Plugin {
 
       // A generated-document engine: the sheet is real CSS by the time it
       // exists, so the dev server serves it from a `text/css` endpoint and the
-      // head links it — no module graph, no style injector.
-      const integration = await createStyleBuildIntegration({
-        root: entryRoot,
-        plan,
-        unocss: state.resolvedOptions.unocss,
-        componentSheetCandidates: () => state.classCandidates.all(),
-        documentCandidates: () => state.classCandidates.allLight(),
-        sources: () => new Map(),
-      });
+      // head links it — no module graph, no style injector. The integration
+      // comes from the dev server's one style session, so this channel and the
+      // component sheet compile from the same loaded configuration.
+      const integration = await session.resolve();
+      if (integration === undefined) return;
+      session.attach(server);
       let version = versionDigest(`${plan.provider}#0`);
       const url = (): string => devDocumentSheetUrl(base, plan.provider, version);
       const css = async (): Promise<string> => {
-        const compile = integration.provider.compileDocument;
+        const compile = session.current()?.provider.compileDocument;
         if (compile === undefined) return '';
         return await compile({
           candidates: state.classCandidates.allLight(),
@@ -257,10 +255,12 @@ export function devStylePlugin(state: OpenPluginState): Plugin {
       generated = {
         url,
         css,
+        // The engine's configuration inputs are NOT this channel's business:
+        // the session watches them and calls back through
+        // `onConfigurationChange` below, which is what keeps one rebuild with
+        // two listeners rather than two channels racing to discover it.
         relevantChange: (file) =>
-          /\.(?:tsx|css)$/.test(file) ||
-          integration.provider.watchFiles.includes(file) ||
-          plan.theme.some((source) => file.endsWith(source)),
+          /\.(?:tsx|css)$/.test(file) || plan.theme.some((source) => file.endsWith(source)),
       };
       server.middlewares.use(async (request, response, next) => {
         const path = (request.url ?? '').split('?', 1)[0];
@@ -300,6 +300,11 @@ export function devStylePlugin(state: OpenPluginState): Plugin {
         setFrameworkStylesheets(state, [url()]);
         server.ws.send({ type: 'full-reload' });
       };
+      // The engine's configuration moved: the generator was rebuilt by the
+      // session, so this sheet's serves are stale at the URL the document
+      // already declares — re-point the link and ask for the one reload the
+      // generated path costs.
+      session.onConfigurationChange(moveVersion);
       let lastIdentity = sourceIdentity;
       server.watcher.on('change', (file) => {
         if (!generated?.relevantChange(file)) return;

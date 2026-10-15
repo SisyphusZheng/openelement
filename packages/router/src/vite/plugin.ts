@@ -21,6 +21,7 @@ import { devIslandClientPlugin } from './dev-island-client.ts';
 import { lazyHonoDevServer } from './dev-server.ts';
 import { devStylePlugin } from './dev-style.ts';
 import { devStyleComponentsPlugin } from './dev-style-components.ts';
+import { createDevStyleSession } from './internal/dev-style-session.ts';
 import { elementStyleLinksPlugin } from './internal/element-style-links.ts';
 import { mdxPlugin } from './plugin-mdx.ts';
 import { createConfigHooks, createOpenPluginState } from './plugin-config.ts';
@@ -72,6 +73,15 @@ export function createOpenPlugin(
   };
 
   const virtualEntryPlugin = createVirtualEntryPlugin(state);
+  /**
+   * ONE style session for the dev server (alpha15 A05): the document sheet and
+   * the component sheet are two views of the same engine, so they compile from
+   * the same provider and the same loaded configuration, and a configuration
+   * change rebuilds one generator that both channels hear about. Built lazily
+   * by the first channel that needs it, since the plan may only become visible
+   * after the manifest scan.
+   */
+  const styleSession = createDevStyleSession(state);
 
   const plugins: Plugin[] = [
     mdxPlugin({ routesDir: state.resolvedOptions.routesDir }),
@@ -87,12 +97,12 @@ export function createOpenPlugin(
     // keeps it out of `vite build` entirely, where the client build's own
     // mount owns the compile. Both channels link through the same head
     // channel, so they still never coexist in one artifact.
-    devStylePlugin(state),
+    devStylePlugin(state, styleSession),
     // alpha15 S lane (S5-A): the dev channel of the component stylesheet —
     // serves the officially compiled sheet at a stable dev URL, feeds the dev
     // DSD link, and hands the client its shared constructable sheet. Placed
     // before the empty-list fallback so its resolutions win in dev.
-    devStyleComponentsPlugin(state),
+    devStyleComponentsPlugin(state, styleSession),
     // alpha15 S lane: the generated SSR/dev entry imports the component
     // stylesheet channel; the build that knows the emitted addresses provides
     // them (the SSG build), and every other channel resolves the empty list.

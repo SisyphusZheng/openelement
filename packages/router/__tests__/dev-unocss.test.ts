@@ -15,13 +15,14 @@
  * The fixture is a workspace member with its own `unocss` install, so the
  * adapter resolves the engine exactly as it does in a packed consumer.
  *
- * NOT covered here: the watcher's own reaction to an edit or a deletion. The
- * dev server this harness boots is `middlewareMode` with the WS channel off,
- * so a filesystem event has no observable effect on a rendered document — the
- * branch stays uncovered rather than being asserted vacuously.
+ * The watcher's own reaction to an edit IS covered — the last row edits the
+ * fixture's `uno.config.ts` and asserts both sheets move. The harness boots the
+ * dev server with the WS channel off, so the notification is observed on
+ * `server.ws.send` rather than over a socket.
  */
 
 import { createServer as createHttpServer } from 'node:http';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import type { ViteDevServer } from 'vite';
@@ -147,4 +148,141 @@ test('the sheet URL is versioned, so a second render declares the same resource'
   const second = await fetchText(`${handle.base}/`);
   const secondHref = /href="([^"]*unocss-document\.[^"]+\.css)"/.exec(second)?.[1];
   expect(secondHref, 'an unchanged state keeps one resource identity').toBe(href);
+});
+
+/** Both dev sheets as the served document declares them. */
+async function devSheets(
+  handle: DevHandle,
+): Promise<{ documentHref: string; componentHref: string; document: string; component: string }> {
+  const doc = await fetchText(`${handle.base}/`);
+  const documentHref = /href="([^"]*unocss-document\.[^"]+\.css)"/.exec(doc)?.[1];
+  const card = doc.slice(doc.indexOf('<probe-unocss-card'), doc.indexOf('</probe-unocss-card>'));
+  const componentHref = /href="([^"]*unocss-components\.[^"]+\.css)"/.exec(card)?.[1];
+  expect(documentHref, 'the document declares its sheet').toBeDefined();
+  expect(componentHref, 'the DSD declares the component sheet').toBeDefined();
+  return {
+    documentHref: documentHref!,
+    componentHref: componentHref!,
+    document: await fetchText(`${handle.base}${documentHref}`),
+    component: await fetchText(`${handle.base}${componentHref}`),
+  };
+}
+
+/**
+ * Poll both sheets until one satisfies `ready`, or return the last read.
+ *
+ * The engine's configuration is an input to BOTH sheets, so the row that proves
+ * a rebuild has to see it in both: the edit below flips the preset's
+ * `important` option, which changes the declaration every compiled utility
+ * carries — in the component sheet as much as in the document sheet, unlike a
+ * theme colour, whose value the component sheet only ever references
+ * (`var(--colors-primary)`) and whose declaration the theme layer owns.
+ */
+async function waitForSheets(
+  handle: DevHandle,
+  hrefs: { documentHref: string; componentHref: string },
+  ready: (sheets: { document: string; component: string }) => boolean,
+): Promise<{ document: string; component: string }> {
+  const deadline = Date.now() + 15_000;
+  let last = { document: '', component: '' };
+  while (Date.now() < deadline) {
+    last = {
+      document: await fetchText(`${handle.base}${hrefs.documentHref}`),
+      component: await fetchText(`${handle.base}${hrefs.componentHref}`),
+    };
+    if (ready(last)) return last;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return last;
+}
+
+/**
+ * The engine's own configuration is an INPUT to both sheets, so editing it has
+ * to reach them the way editing a component does.
+ *
+ * Both channels were built once and never rebuilt: the component channel's
+ * integration was memoized and its relevance test never matched a configuration
+ * file, and the document channel's change identity was made of the theme, the
+ * reset policy and the candidate set — none of which a `uno.config.ts` edit
+ * moves — so its watcher saw the file, compared an unchanged identity and
+ * returned without invalidating anything. The new configuration simply never
+ * arrived at either sheet.
+ *
+ * The URL is deliberately NOT asserted to move: the dev URL is stable by
+ * contract (the DSD link is baked into the served HTML when a page renders
+ * while the adapter is fetched later, so the two samples legitimately disagree
+ * on a version), and freshness rides the content at that URL plus the
+ * notification telling the client to take it.
+ */
+test('a uno.config.ts edit rebuilds the generator and reaches both dev sheets', async () => {
+  const configPath = join(FIXTURE_DIR, 'uno.config.ts');
+  const original = readFileSync(configPath, 'utf8');
+  expect(original, 'the fixture builds its default preset with no options').toContain(
+    'presets: [presetWind4()]',
+  );
+  try {
+    const handle = await bootDev(openElement());
+    const sent: unknown[] = [];
+    handle.server.ws.send = (...args: unknown[]) => {
+      sent.push(args[0]);
+    };
+
+    const before = await devSheets(handle);
+    expect(before.component, 'the component sheet carries the role utility').toContain(
+      '.bg-primary\\/14',
+    );
+    // The token source carries `!important` of its own, so the option under
+    // test is measured by how many declarations carry it, not by its presence.
+    const importantCount = (css: string) => (css.match(/!important/g) ?? []).length;
+    const beforeCounts = {
+      document: importantCount(before.document),
+      component: importantCount(before.component),
+    };
+
+    writeFileSync(
+      configPath,
+      original.replace('presets: [presetWind4()]', 'presets: [presetWind4({ important: true })]'),
+      'utf8',
+    );
+    const after = await waitForSheets(
+      handle,
+      before,
+      (sheets) => importantCount(sheets.component) > beforeCounts.component,
+    );
+    expect(
+      importantCount(after.component),
+      'the component sheet was recompiled from the new configuration',
+    ).toBeGreaterThan(beforeCounts.component);
+    expect(
+      importantCount(after.document),
+      'the document sheet was recompiled from it too',
+    ).toBeGreaterThan(beforeCounts.document);
+    expect(
+      sent.length,
+      'the change was announced to the client, not applied silently',
+    ).toBeGreaterThan(0);
+
+    // A stable URL is the contract: the document still declares the same
+    // resources, and it is their CONTENT that moved.
+    const current = await devSheets(handle);
+    expect(current.documentHref, 'the dev document URL stays stable').toBe(before.documentHref);
+    expect(current.componentHref, 'the dev component URL stays stable').toBe(before.componentHref);
+
+    // A second edit is served from the rebuilt generator, not from one that was
+    // rebuilt once and then froze again.
+    writeFileSync(configPath, original, 'utf8');
+    const final = await waitForSheets(
+      handle,
+      before,
+      (sheets) => importantCount(sheets.component) === beforeCounts.component,
+    );
+    expect(importantCount(final.component), 'the second edit reached the component sheet').toBe(
+      beforeCounts.component,
+    );
+    expect(importantCount(final.document), 'the second edit reached the document sheet too').toBe(
+      beforeCounts.document,
+    );
+  } finally {
+    writeFileSync(configPath, original, 'utf8');
+  }
 });
