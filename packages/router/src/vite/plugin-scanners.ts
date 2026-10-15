@@ -36,6 +36,7 @@ import {
   mergeAdmittedManifests,
 } from './internal/ssg/derived-admission.ts';
 import { PackageAdmissionErrorCode } from '../internal/error-codes.ts';
+import { formatDiagnosticLine, recordBuildDiagnostic } from './internal/build-diagnostics.ts';
 
 const log = createLogger('router-vite');
 
@@ -177,22 +178,40 @@ export async function scanPackageIslandsInto(
   // buildStart error surface does not carry the thrown message to the CLI on
   // rolldown-vite 8 (pre-existing; verified on the alpha15 baseline), and a
   // coded diagnostic that never reaches the developer is not a diagnostic.
+  // Each report class is FIRST an envelope record (#1612) — the machine-
+  // readable exit replays it — and the human line is derived from the same
+  // record, so the `[CODE]` token contract and the envelope cannot drift.
   for (const entry of derived?.manifestLess ?? []) {
-    log.warn(
-      `[${PackageAdmissionErrorCode.MANIFEST_LESS}] The component package "${entry.packageName}" ` +
-        `is imported by this app (${entry.module}) but has no valid OpenElement manifest ` +
-        `(${entry.reason}), so it can never deliver: its components render as unknown elements ` +
-        '(no declarative shadow root, no stylesheet link). Ship a `manifest` export through ' +
-        "the package's `./manifest` subpath, or stop expecting component delivery from it.",
-    );
+    const warning = {
+      code: PackageAdmissionErrorCode.MANIFEST_LESS,
+      severity: 'warning',
+      phase: 'build',
+      message:
+        `The component package "${entry.packageName}" is imported by this app (${entry.module}) ` +
+        `but has no valid OpenElement manifest (${entry.reason}), so it can never deliver: ` +
+        'its components render as unknown elements (no declarative shadow root, no stylesheet link).',
+      file: entry.module,
+      hint:
+        "Ship a `manifest` export through the package's `./manifest` subpath, " +
+        'or stop expecting component delivery from it.',
+    } as const;
+    recordBuildDiagnostic(warning);
+    log.warn(formatDiagnosticLine(warning));
   }
   for (const entry of derived?.dynamicUnproven ?? []) {
-    log.warn(
-      `[${PackageAdmissionErrorCode.DYNAMIC_UNPROVEN}] "${entry.importer}" imports ` +
-        `"${entry.specifier}" (package "${entry.packageName}") only through a dynamic import(), ` +
-        'which the scan cannot prove statically, so the package is not admitted. Declare ' +
-        `"${entry.packageName}" in \`packageIslands\` in openelement.config.ts to admit it.`,
-    );
+    const warning = {
+      code: PackageAdmissionErrorCode.DYNAMIC_UNPROVEN,
+      severity: 'warning',
+      phase: 'build',
+      message:
+        `"${entry.importer}" imports "${entry.specifier}" (package "${entry.packageName}") ` +
+        'only through a dynamic import(), which the scan cannot prove statically, ' +
+        'so the package is not admitted.',
+      file: entry.importer,
+      hint: `Declare "${entry.packageName}" in \`packageIslands\` in openelement.config.ts to admit it.`,
+    } as const;
+    recordBuildDiagnostic(warning);
+    log.warn(formatDiagnosticLine(warning));
   }
 
   const merged = mergeAdmittedManifests({

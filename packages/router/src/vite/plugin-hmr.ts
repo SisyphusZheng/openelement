@@ -18,6 +18,7 @@ import {
   diagnosticPluginError,
   lightRootScopeTag,
   readCompiledArtifactStyles,
+  recordCompilerDiagnostics,
   registerStyleRequest,
   stableModuleId,
   stripInlineSourceMapComment,
@@ -133,6 +134,9 @@ export function createCompilerHooks(
         // used to pass `error.message`, which dropped the location, the frame
         // and the diagnostic code for every Router dev build.
         if (error instanceof CompiledElementError) {
+          // #1612: the same boundary record the standalone plugin keeps — the
+          // build exit drains it when the bundler flattens the thrown error.
+          recordCompilerDiagnostics(error.diagnostics);
           this.error(diagnosticPluginError(error.diagnostics, code, id) ?? error.message);
         }
         throw error;

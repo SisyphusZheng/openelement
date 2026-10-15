@@ -38,6 +38,17 @@ export {
   diagnosticPluginError,
   type PluginDiagnosticError,
 } from './internal/compiler/semantic-core/diagnostics/index.ts';
+// The unified machine-readable consumption surface (#1612): the compiler's
+// already-structured OEC diagnostics projected onto the protocol envelope the
+// build exit aggregates, plus the exit-side record — rolldown flattens the
+// structured record off the thrown error, so the hosts of the projection
+// record at the `this.error()` boundary and the exit drains.
+export {
+  clearCompilerDiagnostics,
+  compilerDiagnosticsToEnvelopes,
+  recordCompilerDiagnostics,
+  takeCompilerDiagnostics,
+} from './internal/compiler/semantic-core/diagnostics/index.ts';
 export {
   analyzeModuleSemantics,
   type ModuleSemanticFacts,

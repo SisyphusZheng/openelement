@@ -1,6 +1,7 @@
 export * from './app-model.js';
 export * from './client-assets.js';
 export * from './data.js';
+export * from './diagnostics.js';
 export * from './errors.js';
 export * from './forbidden-sinks.js';
 export * from './framework.js';

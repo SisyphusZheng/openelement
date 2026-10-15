@@ -45,7 +45,9 @@ const USAGE = [
   'Alias: oe <command> [options] (same entry, same behavior)',
   '',
   'Commands:',
-  '  build                  production build (SSG + client) into dist/',
+  '  build [--diagnostics=json | --diagnostics-file=<path>]',
+  '                         production build (SSG + client) into dist/; the',
+  '                         diagnostics flags add a machine-readable report',
   '  start [--mode=preview] serve the built output; preview is static-only',
   '  version                print the router package version',
   '',
@@ -74,7 +76,9 @@ async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
   if (command === 'build') {
     const { runBuildCli } = await import('./build.ts');
-    await runBuildCli();
+    // The subcommand's own flags ride along (`--diagnostics=json` and
+    // `--diagnostics-file=<path>` open the machine-readable exit, #1612).
+    await runBuildCli(rest);
     return;
   }
   if (command === 'start') {

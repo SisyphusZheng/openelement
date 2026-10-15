@@ -42,7 +42,10 @@ import {
   type SemanticCoreOptions,
   type StaticSidecarDescriptor,
 } from './semantic-core/module-analysis.ts';
-import { diagnosticPluginError } from './semantic-core/diagnostics/index.ts';
+import {
+  diagnosticPluginError,
+  recordCompilerDiagnostics,
+} from './semantic-core/diagnostics/index.ts';
 import { typeCheckEmittedModule } from './semantic-core/type-check.ts';
 import { compiledArtifactClassCandidates } from './compiled-artifact-class-candidates.ts';
 import { readCompiledArtifactStyles } from './compiled-artifact-style-requests.ts';
@@ -345,6 +348,10 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
           // pre-joined display string — the overlay underlines the authored
           // line, and a programmatic consumer reads the location instead of
           // parsing a message back apart.
+          // #1612: rolldown flattens the record off the THROWN error, so the
+          // envelopes are recorded at this boundary and the build exit drains
+          // them — the machine-readable aggregate keeps every OEC code.
+          recordCompilerDiagnostics(error.diagnostics);
           this.error(diagnosticPluginError(error.diagnostics, code, id) ?? error.message);
         }
         throw error;

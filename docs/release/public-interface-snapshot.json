@@ -8,6 +8,7 @@
         "./app-model": "./src/app-model.ts",
         "./client-assets": "./src/client-assets.ts",
         "./data": "./src/data.ts",
+        "./diagnostics": "./src/diagnostics.ts",
         "./errors": "./src/errors.ts",
         "./forbidden-sinks": "./src/forbidden-sinks.ts",
         "./framework": "./src/framework.ts",
@@ -29,7 +30,7 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "874ba6881b7af96ea091b0a140c11e2ec8982a2111b9afec482eb8ca8bd67a6e",
+          "publicShapeSha256": "34b13e4e30cd82981b0b47e9cb16b21a3956aaa5508ea3ce1f8ded84920c6be9",
           "publicSymbols": [
             "ACTION_FETCH_HEADER=value:\"x-openelement-action\"",
             "Action=type:{call:(ctx:{env:Env;formData:FormData;params:Record<string, string>;platform:union(Platform|undefined);request:Request;responseHeaders:Headers;route:Route})=>union(Promise<T>|T)}",
@@ -67,6 +68,13 @@
             "CspConfig=type:{nonce?:union(false|true|undefined);policy?:union(string|undefined);reportOnly?:union(false|true|undefined)}",
             "DATA_OE_LIGHT=value:\"data-oe-light\"",
             "DEFAULT_RENDER_ERROR_CODE=value:\"RENDER_ERROR\"",
+            "DIAGNOSTIC_REPORT_FORMAT=value:\"openelement.diagnostics/1\"",
+            "DiagnosticEnvelope=type:{code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")}",
+            "DiagnosticPhase=type:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\")",
+            "DiagnosticReport=type:{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)}",
+            "DiagnosticReportFormat=type:\"openelement.diagnostics/1\"",
+            "DiagnosticReportParseError=type:{readonly problems:array(string)}|value:{construct:(problems:array(string))=>{readonly problems:array(string)}}",
+            "DiagnosticSeverity=type:union(\"error\"|\"info\"|\"warning\")",
             "DocumentConfig=type:{allowHeadExtrasScripts:union(false|true);headExtras:string;lang:string;title:string}",
             "EMPTY_CLIENT_ASSET_MANIFEST=value:{entry:string;islands:Record<string, ClientIslandAsset>;shared:array(string);styles:array(string)}",
             "ENTRY_REGISTRATION_OWNERS=value:\"__openEntryDefined\"",
@@ -224,14 +232,18 @@
             "WritableSignal=type:{readonly [SIGNAL_BRAND]:true;subscribe:{call:(fn:{call:(value:T)=>void})=>{call:()=>void}};value:T}",
             "camelToKebab=value:{call:(str:string)=>string}",
             "conditionLiteralAllowed=value:{call:(op:unknown,value:unknown)=>union(false|true)}",
+            "diagnosticReport=value:{call:(diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")}))=>{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)}}",
+            "errorToEnvelope=value:{call:(error:{readonly code:string;readonly phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");readonly recoverable:union(false|true);readonly severity:union(\"error\"|\"warning\");readonly statusCode?:union(number|undefined);toJSON:{call:()=>Record<string, unknown>}},options:{hint?:union(string|undefined)})=>{code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")}}",
             "forbiddenSinkReason=value:{call:(kind:union(\"attr\"|\"bool\"|\"prop\"|\"tag\"),name:string)=>union(null|string)}",
             "frameworkError=value:{call:(code:string,message:string,options:Omit<OpenElementErrorOptions, \"code\">)=>{readonly code:string;readonly phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");readonly recoverable:union(false|true);readonly severity:union(\"error\"|\"warning\");readonly statusCode?:union(number|undefined);toJSON:{call:()=>Record<string, unknown>}}}",
             "isAttributeName=value:{call:(value:unknown)=>union(false|true)}",
             "isSafeAttributeName=value:{call:(name:string)=>union(false|true)}",
+            "parseDiagnosticReport=value:{call:(text:string)=>{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)}}",
             "partAnchorEndMarker=value:{call:(index:number)=>string}",
             "partAnchorMarker=value:{call:(index:number)=>string}",
             "raiseFrameworkError=value:{call:(phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\"),code:string,message:string)=>never}",
             "serializeClientAssetsModule=value:{call:(manifest:{entry:string;islands:Record<string, ClientIslandAsset>;shared:array(string);styles:array(string)})=>string}",
+            "serializeDiagnosticReport=value:{call:(report:{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)})=>string}",
             "unsafeStreamFrameAttribute=value:{call:(name:string,value:string)=>union(false|true)}",
             "validatePartProgram=value:{call:(raw:unknown)=>void}"
           ]
@@ -265,6 +277,22 @@
             "ProblemDetails=type:{detail?:union(string|undefined);status:number;title:string;type:string}",
             "ServerRouteContext=type:{env:Env;params:Record<string, string>;platform:union(Platform|undefined);request:Request;responseHeaders:Headers;route:Route}",
             "ServerRouteMetadata=type:{filePath:string;path:string}"
+          ]
+        },
+        "./diagnostics": {
+          "publicShapeSha256": "2889ca100ed40eb74a17a354c3f4982340755db052d52e8b972f61e9389ede6d",
+          "publicSymbols": [
+            "DIAGNOSTIC_REPORT_FORMAT=value:\"openelement.diagnostics/1\"",
+            "DiagnosticEnvelope=type:{code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")}",
+            "DiagnosticPhase=type:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\")",
+            "DiagnosticReport=type:{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)}",
+            "DiagnosticReportFormat=type:\"openelement.diagnostics/1\"",
+            "DiagnosticReportParseError=type:{readonly problems:array(string)}|value:{construct:(problems:array(string))=>{readonly problems:array(string)}}",
+            "DiagnosticSeverity=type:union(\"error\"|\"info\"|\"warning\")",
+            "diagnosticReport=value:{call:(diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")}))=>{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)}}",
+            "errorToEnvelope=value:{call:(error:{readonly code:string;readonly phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");readonly recoverable:union(false|true);readonly severity:union(\"error\"|\"warning\");readonly statusCode?:union(number|undefined);toJSON:{call:()=>Record<string, unknown>}},options:{hint?:union(string|undefined)})=>{code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")}}",
+            "parseDiagnosticReport=value:{call:(text:string)=>{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)}}",
+            "serializeDiagnosticReport=value:{call:(report:{diagnostics:array({code:string;column?:union(number|undefined);file?:union(string|undefined);hint?:union(string|undefined);line?:union(number|undefined);message:string;phase:union(\"build\"|\"csr\"|\"navigation\"|\"render\"|\"ssr\"|\"unknown\"|\"validation\");severity:union(\"error\"|\"info\"|\"warning\")});format:\"openelement.diagnostics/1\";ok:union(false|true)})=>string}"
           ]
         },
         "./errors": {
@@ -1052,7 +1080,7 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "503ee393102399f519f4fc225c4acd82891b71106d0dea1b9adca308d95cab93",
+          "publicShapeSha256": "c9ddd58e5bbd25b5d223422c88f943b14e6636fc4d0ccde4083180b68a594437",
           "publicSymbols": [
             "ClassCandidateRegistry=type:{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}",
             "CompileElementResult=type:{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}",
@@ -1068,12 +1096,14 @@
             "SemanticCoreOptions=type:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)}",
             "StaticSidecarDescriptor=type:StaticSidecarDescriptor",
             "analyzeModuleSemantics=value:{call:(source:string,fileName:string,options:{readonly collectSpecifiers?:union(false|true|undefined);readonly vocabulary?:union(array(ModuleVocabularyDescriptor)|undefined)})=>{compiledElementDecorator:union(false|true);compilerInteractionEvents:array(string);defaultCompiledTag?:union(string|undefined);definePage:union(false|true);definedCustomElementTags:array(string);enhancedForm:union(false|true);exportedTagName?:union(string|undefined);moduleSpecifiers?:union(array(string)|undefined);referencedCustomElementTags:array(string);relativeImports:array(string);unsupportedElementDecorator?:union(string|undefined);usesExportedTagName:union(false|true)}}",
+            "clearCompilerDiagnostics=value:{call:()=>void}",
             "clearStyleRequests=value:{call:()=>void}",
             "compileElementModule=value:{call:(code:string,id:string,options:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)})=>union(null|{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)})}",
             "compileElementProgram=value:{call:(source:string,fileName:string,options:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)})=>{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}}",
             "compiledArtifactClassCandidates=value:{call:(source:string,fileName:string)=>union(array(string)|undefined)}",
             "compiledArtifactStyleRequests=value:{call:(source:string,fileName:string)=>union(array(string)|undefined)}",
             "compiledElementPlugin=value:{call:(options:{candidates?:union(undefined|{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}});resolutionPaths?:union(Record<string, string[]>|undefined);staticSidecars?:union(array(StaticSidecarDescriptor)|undefined);typeCheckEmitted?:union(false|true|undefined);workspaceRoot?:union(string|undefined)})=>Plugin<any>}",
+            "compilerDiagnosticsToEnvelopes=value:{call:(diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number}))=>array(DiagnosticEnvelope)}",
             "createClassCandidateRegistry=value:{call:()=>{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}}",
             "diagnosticPluginError=value:{call:(diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number}),source:string,id:string)=>union(null|{diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number});frame:string;id:string;loc:{column:number;file:string;line:number};message:string})}",
             "emittedModuleTypeChecks=value:{call:(code:string,fileName:string,options:{compilerOptions?:union(CompilerOptions|undefined);extraFiles?:union(Readonly<Record<string, string>>|undefined);paths?:union(Record<string, string[]>|undefined)})=>union(false|true)}",
@@ -1083,6 +1113,7 @@
             "isCompiledElementModule=value:{call:(code:string,id:string)=>union(false|true)}",
             "lightRootScopeTag=value:{call:(program:unknown)=>union(string|undefined)}",
             "readCompiledArtifactStyles=value:{call:(source:string,fileName:string)=>union(undefined|{readonly requests:array(string);readonly scopeTag?:union(string|undefined)})}",
+            "recordCompilerDiagnostics=value:{call:(diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number}))=>void}",
             "registerStyleEdges=value:{call:(id:string,specifiers:array(string),scopeTag:union(string|undefined))=>void}",
             "registerStyleRequest=value:{call:(request:{readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string})=>void}",
             "stableModuleId=value:{call:(file:string,root:union(string|undefined),workspaceRoot:union(string|undefined))=>string}",
@@ -1091,6 +1122,7 @@
             "styleRequestFile=value:{call:(importerId:string,specifier:string)=>string}",
             "styleRequestModuleId=value:{call:(importerId:string,specifier:string,scopeTag:union(string|undefined))=>string}",
             "styleRequestsForImporter=value:{call:(importerId:string)=>array({readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string})}",
+            "takeCompilerDiagnostics=value:{call:()=>array(DiagnosticEnvelope)}",
             "typeCheckEmittedModule=value:{call:(code:string,fileName:string,options:{compilerOptions?:union(CompilerOptions|undefined);extraFiles?:union(Readonly<Record<string, string>>|undefined);paths?:union(Record<string, string[]>|undefined)})=>array({character:number;code:number;file:string;line:number;message:string})}",
             "validatePartProgram=value:(raw: unknown) => asserts raw is PartProgramV2"
           ]
@@ -1199,9 +1231,9 @@
           ]
         },
         "./cli/build": {
-          "publicShapeSha256": "6319eefb11b1476667552c7c75bbf0e1c4dd286143a9eb5af8dd567fa68ba64d",
+          "publicShapeSha256": "57c0dd4eadc9953ce81ba011416afb5656ca8102fa939851e1bb36315c4578dd",
           "publicSymbols": [
-            "runBuildCli=value:{call:()=>Promise<void>}"
+            "runBuildCli=value:{call:(argv:array(string))=>Promise<void>}"
           ]
         },
         "./cli/start": {

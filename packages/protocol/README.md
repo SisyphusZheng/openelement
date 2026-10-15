@@ -14,6 +14,7 @@ into the others' graphs.
 | `@openelement/protocol/app-model`      | Host-agnostic route and asset contracts shared by app and build drivers (the route tree node, matched-path shapes).                          |
 | `@openelement/protocol/client-assets`  | The client asset manifest protocol (#1471): compile-time island identity joined with build output for per-page script wiring.                 |
 | `@openelement/protocol/data`           | The platform-neutral data adapter protocol.                                                                                                  |
+| `@openelement/protocol/diagnostics`    | The machine-readable diagnostics envelope (#1612): one JSON shape every build failure answers on, the `openelement.diagnostics/1` report format, and the fail-closed parser. |
 | `@openelement/protocol/errors`         | The single declaration site of the error contract (#1386): coded error classes, phase catalogs (`RuntimeErrorCode`, `KernelErrorCode`, ...).   |
 | `@openelement/protocol/forbidden-sinks`| The one canonical deny list for every Part Program boundary (compiler, validator, server): sink names that fail closed.                       |
 | `@openelement/protocol/framework`      | Framework, build, layout, routing, and plugin metadata contracts.                                                                          |

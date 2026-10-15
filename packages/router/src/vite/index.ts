@@ -22,6 +22,7 @@
 import { build as viteBuild, type InlineConfig, type Plugin } from 'vite';
 import type { FrameworkOptions } from './framework.ts';
 import { createOpenPlugin } from './plugin.ts';
+import { resetBuildExitRecords } from './internal/build-diagnostics.ts';
 import { DEFAULT_ISLANDS_DIR, DEFAULT_ROUTES_DIR } from './paths.ts';
 
 /** Options for the low-level {@linkcode openPipeline} Vite plugin pipeline. */
@@ -57,6 +58,10 @@ export function openPipeline(config: OpenPipelineConfig = {}): Plugin[] {
  * phases or Vite plugin ordering.
  */
 export async function buildApp(config: InlineConfig = {}): Promise<unknown> {
+  // One build, one process, one set of exit records: the diagnostics envelope
+  // exit (#1612) reads only THIS invocation's recorded diagnostics, never a
+  // previous run's.
+  resetBuildExitRecords();
   return await viteBuild({ configLoader: 'native', ...config });
 }
 
