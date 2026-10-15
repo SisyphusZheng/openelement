@@ -7,10 +7,11 @@
  * declaration (#1209: the decorator identifier must resolve to a runtime
  * named import of `element` from '@openelement/element'; a bare or same-name
  * spelling never admits the module); everything else passes through
- * untouched. Admission is two-staged: a cheap decorator-application prefilter
- * keeps plain modules off the AST path, then the semantic core's binding
- * analysis decides — a module that merely mentions the marker inside a string
- * literal or comment, or spells it through a foreign binding, is not
+ * untouched. Admission is two-staged: a cheap prefilter (a supported module id
+ * whose source contains the decorator's '@' character) keeps plain modules off
+ * the AST path, then the semantic core's binding analysis decides — a module
+ * that merely mentions the marker inside a string literal or comment, or spells
+ * it through a foreign binding, is not
  * compiled. The prefilter is a SUPERSET of what the core admits and of what it
  * rejects: a spelling the core would reject must reach it to fail closed.
  * A module whose decorator provenance is unsupported or ambiguous
@@ -56,32 +57,40 @@ import { type ClassCandidateRegistry } from './tailwind-candidates.ts';
 /**
  * The cheap first stage — NOT a recognizer.
  *
- * It answers one question: could this module be a compiled element module? A
- * decorator application is the only thing every spelling of the authored form
- * has in common — `@element(...)`, an aliased binding
- * (`import { element as defineElement }` with `@defineElement(...)`), and the
- * namespace form the semantic layer REJECTS but must still see in order to fail
- * closed with its provenance diagnostic.
+ * It answers one question: could this module be a compiled element module? The
+ * one grammar-independent fact every authored form shares is the '@' character
+ * of its decorator application. Every spelling of the authored form contains
+ * it — `@element(...)`, an aliased binding (`import { element as
+ * defineElement }` with `@defineElement(...)`), a Unicode alias
+ * (`import { element as 元件 }` with `@元件(...)`) — and so does every spelling
+ * the semantic layer REJECTS but must still see in order to fail closed with
+ * its provenance diagnostic (the namespace form, OEC9027). JavaScript lexing
+ * makes any finer shape un-modelable in a prefilter: identifiers are not ASCII
+ * (Unicode aliases are legal), and the lexer skips comments, so a block comment
+ * between the decorator name and its argument list is a legal decorator
+ * application no identifier-shaped regex admits.
  *
- * The stage this replaces matched the literal substring `@element(`, which
- * answered a different question — "does this module spell the decorator this
- * way?" — and therefore narrowed the CONTRACT rather than the AST path: a legal
- * alias binding never reached the semantic layer that admits it, and an
- * unsupported namespace spelling passed through untouched instead of failing
- * closed. Admission has exactly one authority; a prefilter may only decide
- * whether a module is worth parsing. A false positive here (a `@param(...)` in
- * a doc comment, say) costs one parse and nothing else.
+ * The stages this replaced modeled the decorator-application SHAPE — a literal
+ * `@element(` substring, then an ASCII-identifier-plus-whitespace regex — and
+ * therefore answered "does this module spell the decorator this way?" instead
+ * of "could this module be a compiled element module?", narrowing the CONTRACT
+ * rather than the AST path: legal spellings the semantic core admits never
+ * reached the layer that admits them. Admission has exactly one authority; a
+ * prefilter may only decide whether a module is worth parsing. A false positive
+ * here (any '@' in a string literal, comment, or import specifier) costs one
+ * parse and nothing else; a false negative hides a legal module from its only
+ * admission authority.
  */
-const DECORATOR_APPLICATION = /@[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\(|@\(/;
+const SUPPORTED_MODULE_ID = /\.tsx(?:\?|$)/;
 
 /**
  * Cheap first stage only — NOT a recognizer. The match keeps plain modules off
- * the AST path and may false-positive (a decorator spelled inside a string
- * literal or comment matches); binding provenance and admission are decided
- * exclusively by the semantic core.
+ * the AST path and may false-positive (any '@' — inside a string literal,
+ * comment, or import specifier — matches); binding provenance and admission
+ * are decided exclusively by the semantic core.
  */
 export function isCompiledElementModule(code: string, id: string): boolean {
-  return /\.tsx(?:\?|$)/.test(id) && DECORATOR_APPLICATION.test(code);
+  return SUPPORTED_MODULE_ID.test(id) && code.includes('@');
 }
 
 /**
