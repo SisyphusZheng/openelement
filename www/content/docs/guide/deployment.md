@@ -16,6 +16,15 @@ pnpm dev       # Vite dev server
 
 `pnpm start` serves `dist/` statically and, when `dist/server/index.js` exists, dispatches dynamic routes and mutations to it. Port comes from `OPEN_ELEMENT_PORT` (falling back to `PORT`, default 4173) and host from `OPEN_ELEMENT_HOST`. The same command with `--mode=preview` (`openelement start --mode=preview`) is static-only and refuses to run when `dist/server` exists, pointing at start mode instead — use it only for projects without request-time routes.
 
+### Behind a proxy
+
+The same-origin check that guards form posts compares the browser's `Origin` header against the origin of the request the server sees. A TLS-terminating proxy forwards plain HTTP, so the server's own guess is `http://…` while the browser's is `https://…`, and a perfectly legitimate same-origin POST is rejected as cross-site. Two environment variables state what the server cannot work out for itself:
+
+- `OPEN_ELEMENT_PUBLIC_ORIGIN=https://example.com` — the origin the site is reachable at, as the browser sees it. This is the direct answer and the one to prefer.
+- `OPEN_ELEMENT_TRUST_PROXY=1` — read `Forwarded` / `X-Forwarded-Proto` / `X-Forwarded-Host` from the incoming request. Set this **only** when nothing but your own proxy can reach the port: on a directly reachable server those headers are client input, and trusting them would let a caller choose the origin the check is made against.
+
+With neither set, the origin stays `http://<Host>`, which is correct for a server that answers the internet itself.
+
 ## Static output
 
 `pnpm build` writes the prerendered site into `dist/`:

@@ -38,7 +38,7 @@ import { existsSync } from 'node:fs';
 import process from 'node:process';
 import { join } from 'pathe';
 import type { Server } from 'node:http';
-import { serveFetch, type FetchHandler } from '../internal/node-http.ts';
+import { serveFetch, type FetchHandler, type RequestOriginPolicy } from '../internal/node-http.ts';
 import { formatError } from '@openelement/element';
 import { DEFAULT_OUT_DIR } from '../vite/internal/paths.ts';
 import { extractServeMode, type ServeMode } from '../internal/serve-mode.ts';
@@ -65,6 +65,25 @@ function resolveServePaths(): { root: string; distDir: string; serverEntry: stri
 
 function resolveHostname(): string {
   return process.env['OPEN_ELEMENT_HOST'] ?? '0.0.0.0';
+}
+
+/**
+ * The origin policy for the node bridge (node-http.ts): two explicit operator
+ * declarations, because the request origin decides whether the same-origin
+ * CSRF floor admits a browser's form POST and neither knob may be guessed.
+ *
+ * `OPEN_ELEMENT_PUBLIC_ORIGIN` states the origin the site is reachable at;
+ * `OPEN_ELEMENT_TRUST_PROXY=1` declares that only a proxy the operator
+ * controls can reach this port, which is what makes the `Forwarded` /
+ * `X-Forwarded-*` headers readable. A directly reachable server sets neither,
+ * and keeps the plain `http://<Host>` origin.
+ */
+function resolveOriginPolicy(): RequestOriginPolicy {
+  const publicOrigin = process.env['OPEN_ELEMENT_PUBLIC_ORIGIN'];
+  return {
+    ...(publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin }),
+    ...(process.env['OPEN_ELEMENT_TRUST_PROXY'] === '1' ? { trustProxy: true } : {}),
+  };
 }
 
 /**
@@ -293,7 +312,12 @@ async function runPreview(rest: string[]): Promise<void> {
   // vite-preview parity: a busy port probes the next one upward until one
   // binds (strictPort turns the probe into the actionable failure instead).
   for (let port = listen.port; port <= 65535; port++) {
-    const server = serveFetch({ hostname: listen.hostname, port, handler });
+    const server = serveFetch({
+      hostname: listen.hostname,
+      port,
+      handler,
+      ...resolveOriginPolicy(),
+    });
     const failure = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
       server.once('listening', () => resolve(null));
       server.once('error', (error: NodeJS.ErrnoException) => resolve(error));
@@ -343,7 +367,7 @@ async function runStart(): Promise<void> {
     env: processEnvRecord(),
   });
 
-  const server: Server = serveFetch({ hostname, port, handler });
+  const server: Server = serveFetch({ hostname, port, handler, ...resolveOriginPolicy() });
   // The bind outcome is asynchronous (serveFetch returns before listen
   // settles), so the success line waits for 'listening' and a failed bind
   // answers with one actionable line (#1413 style, no raw stack) instead of
