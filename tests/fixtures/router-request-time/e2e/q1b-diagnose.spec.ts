@@ -49,21 +49,27 @@ test('Q1-B diagnosis: the move sequence on Chromium', async ({ page }) => {
         .slice(skip, skip + 5)
         .map((line) => line.trim().replace(/^at\s+/, ''))
         .join(' <- ');
-    // Insertion / removal entry points, original behaviour preserved.
+    // Insertion / removal entry points, original behaviour preserved. The
+    // overrides keep the DOM generic signatures so callers see the same
+    // types the native methods expose.
     const nodeAppendChild = Node.prototype.appendChild;
-    Node.prototype.appendChild = function (child: Node) {
+    Node.prototype.appendChild = function <T extends Node>(this: Node, child: T): T {
       if (owned(child)) log(`appendChild chars=${(child.textContent ?? '').length} @ ${stack()}`);
-      return nodeAppendChild.call(this, child);
+      return nodeAppendChild.call(this, child) as T;
     };
     const nodeInsertBefore = Node.prototype.insertBefore;
-    Node.prototype.insertBefore = function (child: Node, ref: Node | null) {
+    Node.prototype.insertBefore = function <T extends Node>(
+      this: Node,
+      child: T,
+      ref: Node | null,
+    ): T {
       if (owned(child)) log(`insertBefore chars=${(child.textContent ?? '').length} @ ${stack()}`);
-      return nodeInsertBefore.call(this, child, ref);
+      return nodeInsertBefore.call(this, child, ref) as T;
     };
     const nodeRemoveChild = Node.prototype.removeChild;
-    Node.prototype.removeChild = function (child: Node) {
+    Node.prototype.removeChild = function <T extends Node>(this: Node, child: T): T {
       if (owned(child)) log(`removeChild chars=${(child.textContent ?? '').length} @ ${stack()}`);
-      return nodeRemoveChild.call(this, child);
+      return nodeRemoveChild.call(this, child) as T;
     };
     const elementRemove = Element.prototype.remove;
     Element.prototype.remove = function (this: Element) {

@@ -55,7 +55,7 @@ createServer((nodeRequest, nodeResponse) => {
       const response = await dispatchRequest(request, {
         distDir: ROOT,
         serverMod: serverEntry,
-        env: process.env,
+        env: process.env as Record<string, string>,
         onHandlerError: (error) => console.error('[base-path fixture] handler error:', error),
       });
       nodeResponse.statusCode = response.status;

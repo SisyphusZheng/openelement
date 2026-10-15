@@ -116,7 +116,7 @@ test.describe('open-input control surface', () => {
     // descend into the shadow tree, so page.mouse.move reaches the control —
     // and `:hover` on the control is asserted first, so a platform that failed
     // to hover it would fail here as a hover defect, never as a colour one.
-    const point = await page.evaluate(`(() => {
+    const point = await page.evaluate<{ x: number; y: number } | null>(`(() => {
       const control = ${deepFirstExpr('#username')}?.shadowRoot?.querySelector('input');
       if (!control) return null;
       control.scrollIntoView({ block: 'center' });
@@ -176,7 +176,12 @@ test.describe('open-input control surface', () => {
 
     // The two triggers are genuinely different states: the fieldset drives the
     // form-associated `:state(disabled)`, the attribute the native `:disabled`.
-    const triggers = await page.evaluate(`(() => {
+    const triggers = await page.evaluate<{
+      nativeState: boolean;
+      nativeInnerDisabled: boolean;
+      fieldsetState: boolean;
+      fieldsetHasAttribute: boolean;
+    }>(`(() => {
       const native = ${deepFirstExpr('#native-disabled')};
       const fieldset = ${deepFirstExpr('#locked')};
       return {
@@ -209,7 +214,15 @@ test.describe('open-input control surface', () => {
     const invalid = await hostSurface(page, '#invalid');
     expect(invalid.borderTopColor).not.toBe(resting.borderTopColor);
 
-    const wiring = await page.evaluate(`(() => {
+    const wiring = await page.evaluate<{
+      invalid: string | null;
+      describedBy: string | null;
+      errorMessage: string | null;
+      errorId: string | null;
+      role: string | null;
+      hidden: boolean;
+      text: string | null;
+    }>(`(() => {
       const host = ${deepFirstExpr('#invalid')};
       const input = host?.shadowRoot?.querySelector('input');
       const error = host?.shadowRoot?.querySelector('[part=error]');
@@ -232,7 +245,12 @@ test.describe('open-input control surface', () => {
     expect(wiring.text).toBe('Required field');
 
     // The state is live in both directions, not just an SSR snapshot.
-    const cleared = await page.evaluate(`(() => {
+    const cleared = await page.evaluate<{
+      state: boolean;
+      invalid: string | null;
+      describedBy: string | null;
+      hidden: boolean;
+    }>(`(() => {
       const host = ${deepFirstExpr('#invalid')};
       host.removeAttribute('error');
       const input = host.shadowRoot.querySelector('input');
@@ -292,7 +310,10 @@ test.describe('open-input control surface', () => {
     page,
   }) => {
     await typeInto(page, page.locator('#username input'), 'ada');
-    const state = await page.evaluate(`(() => {
+    const state = await page.evaluate<{
+      attribute: string | null;
+      formValue: FormDataEntryValue | undefined;
+    }>(`(() => {
       const host = ${deepFirstExpr('#username')};
       return {
         attribute: host.getAttribute('value'),

@@ -75,7 +75,7 @@ test('the component sheet reaches inside the declarative shadow root', async ({ 
       paddingLeft: style.paddingLeft,
       borderRadius: style.borderTopLeftRadius,
       backgroundColor: style.backgroundColor,
-      markerColor: marker === null ? '' : getComputedStyle(marker).color,
+      markerColor: marker == null ? '' : getComputedStyle(marker).color,
     };
   });
   expect(shadow, 'the shadow root renders the control').not.toBeNull();

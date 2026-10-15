@@ -111,12 +111,15 @@ async function gatherFailureEvidence(page: Page): Promise<string> {
     const resources = performance
       .getEntriesByType('resource')
       .filter((entry) => entry.name.includes('/client/'))
-      .map((entry) => ({
-        url: entry.name,
-        file: entry.name.split('/').pop() as string,
-        start: Math.round(entry.startTime),
-        end: Math.round(entry.responseEnd),
-      }));
+      .map((raw) => {
+        const entry = raw as PerformanceResourceTiming;
+        return {
+          url: entry.name,
+          file: entry.name.split('/').pop() as string,
+          start: Math.round(entry.startTime),
+          end: Math.round(entry.responseEnd),
+        };
+      });
     // Post-mortem only: the race is already lost, so re-reading the same module
     // cannot mask anything. It separates "never evaluates" from "read too early".
     const readNamespace = async (url: string | undefined) => {

@@ -39,7 +39,7 @@ test.describe('hydration timing', () => {
     await page.addInitScript(() => {
       const original = globalThis.requestIdleCallback;
       globalThis.requestIdleCallback = ((fn: unknown) =>
-        globalThis.setTimeout(() => (fn as () => void)(), 2500)) as typeof original;
+        globalThis.setTimeout(() => (fn as () => void)(), 2500)) as unknown as typeof original;
     });
     await page.goto('/');
     const counter = page.locator('my-counter');
@@ -79,7 +79,7 @@ test.describe('hydration timing', () => {
     await page.addInitScript(() => {
       const original = globalThis.requestIdleCallback;
       globalThis.requestIdleCallback = ((fn: unknown) =>
-        globalThis.setTimeout(() => (fn as () => void)(), 2500)) as typeof original;
+        globalThis.setTimeout(() => (fn as () => void)(), 2500)) as unknown as typeof original;
     });
     await page.goto('/');
     const counter = page.locator('my-counter');

@@ -16,7 +16,7 @@ import { readFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import { serveFetch } from '../../packages/router/src/internal/node-http.ts';
 
-interface StaticServer {
+export interface StaticServer {
   origin: string;
   close(): Promise<void>;
 }

@@ -136,7 +136,7 @@ test.describe('tailwind entry delivery (entry-on + compiled DSD)', () => {
 
     // The theme layer is custom properties delivered by the head link: a
     // shadow-tree element resolves a bundle token through inheritance.
-    const inherited = await page.evaluate(`(() => {
+    const inherited = await page.evaluate<{ card: string; border: string } | null>(`(() => {
       const host = ${deepFirstExpr('open-dialog')};
       const inner = host?.shadowRoot?.querySelector('dialog');
       if (!inner) return null;
@@ -146,9 +146,9 @@ test.describe('tailwind entry delivery (entry-on + compiled DSD)', () => {
         border: style.getPropertyValue('--color-border').trim(),
       };
     })()`);
-    expect(inherited).not.toBeNull();
-    expect(inherited.card).not.toBe('');
-    expect(inherited.border).not.toBe('');
+    expect(inherited, 'the dialog shadow tree resolved').not.toBeNull();
+    expect(inherited!.card).not.toBe('');
+    expect(inherited!.border).not.toBe('');
   });
 });
 

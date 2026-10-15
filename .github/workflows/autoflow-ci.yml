@@ -247,6 +247,7 @@ jobs:
         run: vp run --fail-if-no-match @openelement/www#e2e:chromium
       - name: Light-probe E2E (build fixture first)
         run: |
+          vp run --fail-if-no-match @openelement/fixture-site-light-probe#typecheck
           vp run --fail-if-no-match @openelement/fixture-site-light-probe#build
           vp run --fail-if-no-match @openelement/fixture-site-light-probe#e2e
       - name: Web component interop
@@ -321,7 +322,7 @@ jobs:
           vp run --fail-if-no-match @openelement/fixture-router-native-framework#gate
           vp run --fail-if-no-match @openelement/fixture-router-lit-framework#gate
           vp run --fail-if-no-match @openelement/fixture-router-ui-dogfood#gate
-          vp run --fail-if-no-match @openelement/fixture-router-static-only#build
+          vp run --fail-if-no-match @openelement/fixture-router-static-only#gate
           # The second style engine (alpha15 stage 2B): the probe reads its own
           # build's artifacts through computed styles in all three engines, so
           # the qualified candidate covers the UnoCSS document and component
@@ -329,6 +330,7 @@ jobs:
           vp run --fail-if-no-match @openelement/fixture-router-unocss-probe#gate
       - name: Nitro proofs
         run: |
+          vp run --fail-if-no-match @openelement/fixture-router-nitro#typecheck
           vp run --fail-if-no-match @openelement/fixture-router-nitro#proof:node
           vp run --fail-if-no-match @openelement/fixture-router-nitro#proof:workers
 
