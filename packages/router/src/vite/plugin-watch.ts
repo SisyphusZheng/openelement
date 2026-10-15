@@ -16,6 +16,7 @@ import { RESOLVED_CLIENT_ENTRY_ID } from './dev-island-client.ts';
 import { rescanIslands, rescanRoutes, scanPackageIslandsInto } from './plugin-scanners.ts';
 import { RESOLVED_ENTRY_ID } from './plugin-virtual-modules.ts';
 import type { OpenPluginState } from './plugin-config.ts';
+import { realPathKey } from './internal/real-path-key.ts';
 
 const log = createLogger('router-vite');
 
@@ -38,10 +39,11 @@ export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 
             import('./internal/module-graph-walk.ts').ModuleWalkResolver['resolve']
           >,
       });
-      const absoluteRoutesDir = resolve(process.cwd(), state.resolvedOptions.routesDir!);
-      const absoluteIslandsDir = resolve(
-        process.cwd(),
-        state.resolvedOptions.islandsDir || DEFAULT_ISLANDS_DIR,
+      const absoluteRoutesDir = realPathKey(
+        resolve(process.cwd(), state.resolvedOptions.routesDir!),
+      );
+      const absoluteIslandsDir = realPathKey(
+        resolve(process.cwd(), state.resolvedOptions.islandsDir || DEFAULT_ISLANDS_DIR),
       );
       server.watcher.add(absoluteRoutesDir);
       server.watcher.add(absoluteIslandsDir);
@@ -116,7 +118,7 @@ export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 
       // admission, so change events require the same descriptor rebuild as
       // add/unlink—not only normal client HMR.
       const onRouteChanged = (file: string) => {
-        if (!file.startsWith(absoluteRoutesDir)) return;
+        if (!realPathKey(file).startsWith(absoluteRoutesDir)) return;
         if (!/\.(ts|tsx|js|jsx|mdx)$/.test(file)) return;
         scheduleDescriptorRescan('route', file);
       };
@@ -126,7 +128,7 @@ export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 
       // must be invalidated alongside the SSR entry — otherwise the browser
       // re-requests the cached client map and new islands never hydrate.
       const onIslandChanged = (file: string) => {
-        if (!file.startsWith(absoluteIslandsDir)) return;
+        if (!realPathKey(file).startsWith(absoluteIslandsDir)) return;
         if (!/\.(ts|tsx|js|jsx)$/.test(file)) return;
         scheduleDescriptorRescan('island', file);
       };
