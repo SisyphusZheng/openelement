@@ -439,13 +439,13 @@ export async function ssgRender(
   // ── Post-processing modules ─────────────────────────────────
   const {
     injectCspMeta,
-    injectViewTransitionMeta,
+    injectViewTransitionOptIn,
     injectSpeculationRules,
     buildSpeculationRulesJson,
   } = await import('./postprocess.ts');
 
   if (options.viewTransition !== false) {
-    injectViewTransitionMeta(outputDir);
+    injectViewTransitionOptIn(outputDir);
     log.info('View Transitions meta tag injected');
   }
 

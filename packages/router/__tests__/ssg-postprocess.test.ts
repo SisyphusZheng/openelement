@@ -25,7 +25,7 @@ import {
   injectCspMeta,
   injectIslandPrefetchRules,
   injectSpeculationRules,
-  injectViewTransitionMeta,
+  injectViewTransitionOptIn,
   pageChunkMap,
   routeFromRelativePath,
 } from '../src/vite/internal/ssg/index.ts';
@@ -372,17 +372,51 @@ test('injectCspMeta adds CSP meta tag to HTML files', () => {
   }
 });
 
-test('injectCspMeta uses Report-Only header in report-only mode', () => {
+test('injectCspMeta refuses report-only, because a meta cannot carry it', () => {
+  // `<meta http-equiv>` has no report-only pragma: the static bytes have no way
+  // to deliver `Content-Security-Policy-Report-Only`. Writing the name into the
+  // attribute anyway produced a tag browsers ignore — a monitoring configuration
+  // that silently monitors nothing — so the shape is refused with a code that
+  // names the deliveries which do support it.
   const tmp = makeTempDir();
   try {
     const htmlPath = join(tmp, 'index.html');
     writeFileSync(htmlPath, '<html><head></head><body></body></html>');
 
-    injectCspMeta(tmp, "default-src 'self'", true);
-
+    expect(() => injectCspMeta(tmp, "default-src 'self'", true)).toThrowError(
+      /OE_SSG_CSP_META_UNSUPPORTED|report-only CSP has no static delivery/,
+    );
     const content = readFileSync(htmlPath, 'utf8');
-    expect(content).toContain('Content-Security-Policy-Report-Only');
-    expect(content.includes('"Content-Security-Policy"')).toBeFalsy();
+    expect(content, 'nothing was injected').not.toContain('Content-Security-Policy');
+  } finally {
+    cleanup(tmp);
+  }
+});
+
+test('injectCspMeta refuses directives a meta-delivered policy ignores', () => {
+  // frame-ancestors / report-uri / report-to / sandbox are ignored in a
+  // meta-delivered policy: shipping them would read as enforced and not be.
+  for (const directive of ['frame-ancestors', 'report-uri', 'report-to', 'sandbox']) {
+    const tmp = makeTempDir();
+    try {
+      const htmlPath = join(tmp, 'index.html');
+      writeFileSync(htmlPath, '<html><head></head><body></body></html>');
+      expect(
+        () => injectCspMeta(tmp, `default-src 'self'; ${directive} 'none'`),
+        directive,
+      ).toThrowError(/no static delivery|ignores them|OE_SSG_CSP_META_UNSUPPORTED/);
+      expect(readFileSync(htmlPath, 'utf8'), directive).not.toContain('Content-Security-Policy');
+    } finally {
+      cleanup(tmp);
+    }
+  }
+  // A policy a meta CAN carry still lands.
+  const tmp = makeTempDir();
+  try {
+    const htmlPath = join(tmp, 'index.html');
+    writeFileSync(htmlPath, '<html><head></head><body></body></html>');
+    injectCspMeta(tmp, "default-src 'self'; script-src 'self'");
+    expect(readFileSync(htmlPath, 'utf8')).toContain('Content-Security-Policy');
   } finally {
     cleanup(tmp);
   }
@@ -493,49 +527,59 @@ test('injectCspMeta skips non-HTML files', () => {
   }
 });
 
-// ─── injectViewTransitionMeta ─────────────────────────────────
+// ─── injectViewTransitionOptIn ─────────────────────────────────
 
-test('injectViewTransitionMeta adds meta tag to HTML files', () => {
+test('injectViewTransitionOptIn writes the standard opt-in, not the legacy meta', () => {
+  // The opt-in is the CSS View Transitions Level 2 at-rule. The
+  // `<meta name="view-transition">` spelling was the API's experimental form
+  // and is what this used to write; a meta is not what the specification
+  // defines, so the delivery moved to a document stylesheet.
   const tmp = makeTempDir();
   try {
     const htmlPath = join(tmp, 'index.html');
     writeFileSync(htmlPath, '<html><head></head><body><p>Hello</p></body></html>');
 
-    injectViewTransitionMeta(tmp);
+    injectViewTransitionOptIn(tmp);
 
     const content = readFileSync(htmlPath, 'utf8');
-    expect(content).toContain('view-transition');
-    expect(content).toContain('same-origin');
+    expect(content, 'the at-rule opted the document in').toContain(
+      '@view-transition { navigation: auto; }',
+    );
+    expect(content, 'reduced motion opts back out').toMatch(
+      /@media\s*\(prefers-reduced-motion: reduce\)\s*\{\s*@view-transition\s*\{\s*navigation: none;\s*\}\s*\}/,
+    );
+    expect(content, 'the legacy meta is gone').not.toContain('<meta name="view-transition"');
+    expect(content, 'the block is a plain <style>, engine-independent').toContain('<style>');
   } finally {
     cleanup(tmp);
   }
 });
 
-test('injectViewTransitionMeta does not duplicate on repeated calls', () => {
+test('injectViewTransitionOptIn does not duplicate on repeated calls', () => {
   const tmp = makeTempDir();
   try {
     const htmlPath = join(tmp, 'index.html');
     writeFileSync(htmlPath, '<html><head></head><body></body></html>');
 
-    injectViewTransitionMeta(tmp);
-    injectViewTransitionMeta(tmp);
+    injectViewTransitionOptIn(tmp);
+    injectViewTransitionOptIn(tmp);
 
     const content = readFileSync(htmlPath, 'utf8');
-    const count = (content.match(/view-transition/g) || []).length;
+    const count = (content.match(/@view-transition \{ navigation: auto; \}/g) || []).length;
     expect(count).toEqual(1);
   } finally {
     cleanup(tmp);
   }
 });
 
-test('injectViewTransitionMeta recurses into subdirectories', () => {
+test('injectViewTransitionOptIn recurses into subdirectories', () => {
   const tmp = makeTempDir();
   try {
     mkdirSync(join(tmp, 'guide'));
     writeFileSync(join(tmp, 'index.html'), '<html><head></head><body></body></html>');
     writeFileSync(join(tmp, 'guide', 'page.html'), '<html><head></head><body></body></html>');
 
-    injectViewTransitionMeta(tmp);
+    injectViewTransitionOptIn(tmp);
 
     expect(readFileSync(join(tmp, 'index.html'), 'utf8')).toContain('view-transition');
     expect(readFileSync(join(tmp, 'guide', 'page.html'), 'utf8')).toContain('view-transition');
@@ -544,7 +588,7 @@ test('injectViewTransitionMeta recurses into subdirectories', () => {
   }
 });
 
-test('injectViewTransitionMeta skips non-HTML files', () => {
+test('injectViewTransitionOptIn skips non-HTML files', () => {
   const tmp = makeTempDir();
   try {
     const htmlPath = join(tmp, 'index.html');
@@ -552,7 +596,7 @@ test('injectViewTransitionMeta skips non-HTML files', () => {
     writeFileSync(htmlPath, '<html><head></head><body></body></html>');
     writeFileSync(txtPath, 'Not HTML');
 
-    injectViewTransitionMeta(tmp);
+    injectViewTransitionOptIn(tmp);
 
     const txtContent = readFileSync(txtPath, 'utf8');
     expect(txtContent).toEqual('Not HTML');
@@ -561,13 +605,13 @@ test('injectViewTransitionMeta skips non-HTML files', () => {
   }
 });
 
-test('injectViewTransitionMeta handles HTML without <head> tag', () => {
+test('injectViewTransitionOptIn handles HTML without <head> tag', () => {
   const tmp = makeTempDir();
   try {
     const htmlPath = join(tmp, 'no-head.html');
     writeFileSync(htmlPath, '<html><body><p>No head</p></body></html>');
 
-    injectViewTransitionMeta(tmp);
+    injectViewTransitionOptIn(tmp);
 
     const content = readFileSync(htmlPath, 'utf8');
     expect(content).toContain('view-transition');
@@ -576,24 +620,23 @@ test('injectViewTransitionMeta handles HTML without <head> tag', () => {
   }
 });
 
-test('injectViewTransitionMeta still injects when body text mentions view-transition', () => {
-  // Regression: changelog page content contains "view-transition" as text,
-  // which previously caused the injection to be skipped.
-  // Fix: check for '<meta name="view-transition"' instead of 'view-transition'.
+test('injectViewTransitionOptIn still injects when body text mentions the at-rule', () => {
+  // Regression, in the new spelling: a changelog page whose prose names
+  // `@view-transition` must still receive the opt-in. The guard tests the
+  // declaration, not the name.
   const tmp = makeTempDir();
   try {
     const htmlPath = join(tmp, 'changelog.html');
     writeFileSync(
       htmlPath,
-      '<html><head></head><body><p>We added view-transition support in v0.9.2</p></body></html>',
+      '<html><head></head><body><p>We switched to @view-transition in v0.41</p></body></html>',
     );
 
-    injectViewTransitionMeta(tmp);
+    injectViewTransitionOptIn(tmp);
 
     const content = readFileSync(htmlPath, 'utf8');
-    // Should have the meta tag injected (not skipped because of body text)
-    const matchCount = (content.match(/<meta name="view-transition"/g) || []).length;
-    expect(matchCount).toEqual(1);
+    const matchCount = (content.match(/@view-transition \{ navigation: auto; \}/g) || []).length;
+    expect(matchCount, 'the opt-in was injected, not skipped for the body text').toEqual(1);
   } finally {
     cleanup(tmp);
   }

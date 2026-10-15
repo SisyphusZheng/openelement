@@ -5,7 +5,7 @@
  * No Vite dependency - these functions only read/write files.
  *
  * Post-processing pipeline (called after SSG rendering):
- * 1. injectViewTransitionMeta() - enable cross-page View Transitions
+ * 1. injectViewTransitionOptIn() - enable cross-page View Transitions
  * 2. injectSpeculationRules() - prefetch/prerender for navigation performance
  * 3. injectCspMeta() - Content-Security-Policy meta tag
  *
@@ -17,6 +17,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createLogger } from '@openelement/element';
+import { buildError, SsgRenderErrorCode } from '../../../internal/error-codes.ts';
 import { visitHtmlFiles, walkHtmlFileEntries } from '../html-files.ts';
 import { readTagName, routeFromRelativePath, skipThroughClosingTag } from './island-manifest.ts';
 import { buildIslandPrefetchLinks } from './speculation-rules.ts';
@@ -50,11 +51,33 @@ function insertAfterHead(html: string, content: string): string {
 // ─── Public API ────────────────────────────────────────────────────────
 
 /**
+ * Directives a `<meta>`-delivered policy cannot carry.
+ *
+ * The CSP grammar has no meta form for these: a policy that arrives through
+ * `<meta http-equiv>` has `frame-ancestors`, `report-uri` and `sandbox` ignored
+ * outright, and `report-to` is useless there because the endpoint group comes
+ * from a `Reporting-Endpoints` response header a meta cannot set. Shipping them
+ * anyway would be a policy that reads as enforced and is not — the exact "false
+ * sense of security" the HTML specification warns about for security headers in
+ * `<meta>`. The request-time path delivers a real header and carries all four.
+ */
+const META_IGNORED_DIRECTIVES = ['frame-ancestors', 'report-uri', 'report-to', 'sandbox'] as const;
+
+/**
  * Inject CSP <meta> tag into all HTML files (SSG-only).
  *
  * For static sites, CSP is enforced via <meta http-equiv="Content-Security-Policy">
- * rather than HTTP headers. Nonce-based CSP is NOT supported for SSG
- * (nonces must be per-request and unpredictable - impossible in static files).
+ * rather than HTTP headers. Two shapes have no meta delivery and are refused
+ * with a code rather than shipped ineffective:
+ *
+ * - a REPORT-ONLY policy: `http-equiv` has no report-only pragma, so the only
+ *   ways to deliver one are a real HTTP header (the request-time route does
+ *   this) or the host's own header configuration;
+ * - a policy carrying a directive from {@linkcode META_IGNORED_DIRECTIVES},
+ *   which a meta-delivered policy ignores.
+ *
+ * Nonce-based CSP is NOT supported for SSG (nonces must be per-request and
+ * unpredictable - impossible in static files).
  */
 export function injectCspMeta(
   dir: string,
@@ -62,6 +85,33 @@ export function injectCspMeta(
   reportOnly = false,
   nonce = false,
 ): void {
+  if (reportOnly) {
+    throw buildError(
+      SsgRenderErrorCode.CSP_META_UNSUPPORTED,
+      '[openElement] a report-only CSP has no static delivery: `<meta http-equiv>` carries ' +
+        '`Content-Security-Policy` and nothing else, so there is no report-only pragma for the ' +
+        'prerendered bytes to use. Deliver it as a real header instead — a request-time route ' +
+        'with `middleware.csp.reportOnly` does, and a host that configures response headers ' +
+        '(Cloudflare Pages `_headers`, Netlify, nginx) can for a purely static deployment. ' +
+        'Set `middleware.csp.reportOnly` to false to enforce the policy from the static meta.',
+    );
+  }
+
+  const offending = META_IGNORED_DIRECTIVES.filter((directive) =>
+    new RegExp(`(?:^|;)\\s*${directive}\\b`, 'i').test(cspPolicy),
+  );
+  if (offending.length > 0) {
+    throw buildError(
+      SsgRenderErrorCode.CSP_META_UNSUPPORTED,
+      `[openElement] the CSP policy carries ${offending.join(', ')}, which a ` +
+        '`<meta http-equiv="Content-Security-Policy">` cannot enforce — the meta delivery ' +
+        'ignores them, so the prerendered bytes would carry a policy that reads as enforced ' +
+        'and is not. Deliver the policy as a real HTTP header (a request-time route, or the ' +
+        'host’s own header configuration) to use these directives, or remove them for the ' +
+        'static meta.',
+    );
+  }
+
   if (nonce) {
     log.warn(
       'CSP nonce is not supported for SSG static output. ' +
@@ -70,7 +120,7 @@ export function injectCspMeta(
     );
   }
 
-  const headerName = reportOnly ? 'Content-Security-Policy-Report-Only' : 'Content-Security-Policy';
+  const headerName = 'Content-Security-Policy';
   const escapedPolicy = cspPolicy.replace(/"/g, '&quot;');
   const metaTag = `  <meta http-equiv="${headerName}" content="${escapedPolicy}">`;
 
@@ -83,27 +133,45 @@ export function injectCspMeta(
 // ─── View Transitions API ─────────────────────────────────────────────
 
 /**
- * Inject View Transitions meta tag into all HTML files.
+ * Inject the cross-document View Transition opt-in into all HTML files.
  *
- * The View Transitions API (Chrome 111+, Safari 18+, Firefox 129+) enables
- * smooth cross-page animations for MPA (Multi-Page App) navigation.
- * For SSG sites, this is a single meta tag - zero JavaScript required.
+ * The opt-in is the `@view-transition` at-rule (CSS View Transitions Level 2):
+ * a document stylesheet declaring `navigation: auto` opts the current and
+ * destination documents into a transition for a same-origin navigation. The
+ * `<meta name="view-transition">` this used to write was the API's early
+ * experimental spelling; the at-rule is what the specification defines, and it
+ * is what engines now implement.
  *
- * When a user clicks a link, the browser automatically creates a cross-fade
- * transition between the old and new page. No SPA routing needed.
+ * Two facts the at-rule form lets this delivery state and the meta could not:
  *
- * Supported browsers: Chrome 111+, Edge 111+, Safari 18+, Firefox 129+.
- * Unsupported browsers silently ignore the meta tag (graceful degradation).
+ * - `prefers-reduced-motion: reduce` opts back out. A cross-document fade is
+ *   motion the user asked not to be given, and honouring the preference is the
+ *   default here.
+ * - An engine without the at-rule ignores an unknown at-rule inside a
+ *   stylesheet, exactly as it ignored the meta tag — no script, no feature
+ *   detection, no runtime cost.
  *
- * @see https://developer.mozilla.org/en-US/docs/Web/API/View_Transitions_API
- * @see https://chromestatus.com/feature/5190686707568640
+ * The block is a plain `<style>` in the head, so the capability does not depend
+ * on a style engine being selected: it is CSS the platform reads.
+ *
+ * @see https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@view-transition
  */
-export function injectViewTransitionMeta(dir: string): void {
-  const metaTag = '  <meta name="view-transition" content="same-origin">';
-
+export function injectViewTransitionOptIn(dir: string): void {
+  /**
+   * The opt-in declaration is the injection's own marker: prose mentioning
+   * `@view-transition` (a changelog entry, say) must not read as "already
+   * injected", which is why the guard tests the declaration and not the name.
+   */
+  const optIn = '@view-transition { navigation: auto; }';
+  const styleBlock = [
+    '  <style>',
+    `    ${optIn}`,
+    '    @media (prefers-reduced-motion: reduce) { @view-transition { navigation: none; } }',
+    '  </style>',
+  ].join('\n');
   visitHtmlFiles(dir, (content) => {
-    if (content.includes('<meta name="view-transition"')) return null;
-    return insertAfterHead(content, metaTag);
+    if (content.includes(optIn)) return null;
+    return insertAfterHead(content, styleBlock);
   });
 }
 

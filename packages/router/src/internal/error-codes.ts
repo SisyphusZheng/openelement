@@ -121,6 +121,14 @@ export const SsgRenderErrorCode = {
   STATIC_NON_200: 'OE_SSG_STATIC_NON_200',
   /** A prerender route path resolves outside the output directory. */
   PRERENDER_PATH_ESCAPED: 'OE_SSG_PRERENDER_PATH_ESCAPED',
+  /**
+   * A CSP policy was asked to ride a `<meta http-equiv>` in a shape that
+   * element cannot carry: the report-only variant (which has no `http-equiv`
+   * pragma at all) or a directive the meta delivery ignores. The static
+   * delivery cannot honour it, so the build says which directives and which
+   * delivery does instead of shipping a policy that is silently not enforced.
+   */
+  CSP_META_UNSUPPORTED: 'OE_SSG_CSP_META_UNSUPPORTED',
 } as const;
 
 /**
