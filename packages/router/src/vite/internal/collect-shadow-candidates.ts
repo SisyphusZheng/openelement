@@ -117,10 +117,12 @@ export async function collectShadowClassCandidates(
     } catch {
       continue;
     }
-    if (!source.includes('@element(')) {
-      if (registerArtifactCandidates(source, file, options.candidates)) contributed += 1;
-      continue;
-    }
+    // No local prefilter: `compileElementModule` carries the one admission
+    // gate, and duplicating it here is how this pass grew its own copy of the
+    // `@element(` substring bug — a module whose decorator arrives through an
+    // alias (`import { element as defineElement }`) skipped the compiler
+    // entirely and registered as an already-compiled artifact instead. The
+    // gate is cheap enough to run for a config-declared module list.
     let compiled: ReturnType<typeof compileElementModule>;
     try {
       compiled = compileElementModule(source, file, { staticSidecars: [ISLAND_ADMISSION] });

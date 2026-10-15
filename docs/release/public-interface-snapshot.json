@@ -1052,9 +1052,8 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "a528319cd439b824f0c629e8fa84cf43f5f08207b6901b32b45f1b810a203dbe",
+          "publicShapeSha256": "027c31dec8053fb81581489892e33c2b8a29a6862dbcc40fb984b23c9b29ad3a",
           "publicSymbols": [
-            "COMPILED_ELEMENT_MARKER=value:\"@element(\"",
             "ClassCandidateRegistry=type:{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}",
             "CompileElementResult=type:{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}",
             "CompiledElementError=type:{readonly diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number})}|value:{construct:(diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number}))=>{readonly diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number})}}",

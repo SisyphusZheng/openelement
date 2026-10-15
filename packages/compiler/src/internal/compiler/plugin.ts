@@ -7,11 +7,13 @@
  * declaration (#1209: the decorator identifier must resolve to a runtime
  * named import of `element` from '@openelement/element'; a bare or same-name
  * spelling never admits the module); everything else passes through
- * untouched. Admission is two-staged: a cheap `@element(` substring prefilter
+ * untouched. Admission is two-staged: a cheap decorator-application prefilter
  * keeps plain modules off the AST path, then the semantic core's binding
  * analysis decides — a module that merely mentions the marker inside a string
  * literal or comment, or spells it through a foreign binding, is not
- * compiled. A module whose decorator provenance is unsupported or ambiguous
+ * compiled. The prefilter is a SUPERSET of what the core admits and of what it
+ * rejects: a spelling the core would reject must reach it to fail closed.
+ * A module whose decorator provenance is unsupported or ambiguous
  * (type-only import, namespace access, conflicting bindings, re-export) is
  * routed to the compiler so the build fails closed with a source-located
  * OEC9027 diagnostic; other unsupported grammar in a genuinely decorated
@@ -51,23 +53,39 @@ import {
 } from './style-requests.ts';
 import { type ClassCandidateRegistry } from './tailwind-candidates.ts';
 
-/** The authored substring every compiled element module contains (`@element(`), used as the cheap prefilter. */
-export const COMPILED_ELEMENT_MARKER = '@element(';
+/**
+ * The cheap first stage — NOT a recognizer.
+ *
+ * It answers one question: could this module be a compiled element module? A
+ * decorator application is the only thing every spelling of the authored form
+ * has in common — `@element(...)`, an aliased binding
+ * (`import { element as defineElement }` with `@defineElement(...)`), and the
+ * namespace form the semantic layer REJECTS but must still see in order to fail
+ * closed with its provenance diagnostic.
+ *
+ * The stage this replaces matched the literal substring `@element(`, which
+ * answered a different question — "does this module spell the decorator this
+ * way?" — and therefore narrowed the CONTRACT rather than the AST path: a legal
+ * alias binding never reached the semantic layer that admits it, and an
+ * unsupported namespace spelling passed through untouched instead of failing
+ * closed. Admission has exactly one authority; a prefilter may only decide
+ * whether a module is worth parsing. A false positive here (a `@param(...)` in
+ * a doc comment, say) costs one parse and nothing else.
+ */
+const DECORATOR_APPLICATION = /@[A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*\s*\(|@\(/;
 
 /**
- * Cheap first stage only — NOT a recognizer. The substring match exists to
- * keep plain modules off the AST path and may false-positive (string literals
- * and comments match); it may also false-negative on namespace-qualified
- * spellings (`@ns.element(...)`), which are unsupported by the grammar anyway
- * (#1209). Binding provenance and admission are decided exclusively by the
- * semantic core.
+ * Cheap first stage only — NOT a recognizer. The match keeps plain modules off
+ * the AST path and may false-positive (a decorator spelled inside a string
+ * literal or comment matches); binding provenance and admission are decided
+ * exclusively by the semantic core.
  */
 export function isCompiledElementModule(code: string, id: string): boolean {
-  return /\.tsx(?:\?|$)/.test(id) && code.includes(COMPILED_ELEMENT_MARKER);
+  return /\.tsx(?:\?|$)/.test(id) && DECORATOR_APPLICATION.test(code);
 }
 
 /**
- * Precise second stage behind the substring prefilter: a canonically bound
+ * Precise second stage behind the prefilter: a canonically bound
  * `@element(...)` decorator application on a class declaration (provenance
  * decided by the semantic core's intrinsic-binding model). Modules that only
  * mention the marker in a string literal or comment, or spell it through a

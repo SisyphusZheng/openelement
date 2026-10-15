@@ -9,7 +9,6 @@
  * points.
  */
 export {
-  COMPILED_ELEMENT_MARKER,
   compiledElementPlugin,
   registerStyleEdges,
   compileElementModule,

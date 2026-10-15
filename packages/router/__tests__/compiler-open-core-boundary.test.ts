@@ -91,9 +91,9 @@ test('open:core hands the real map to Vite without a double map story', () => {
 });
 
 test('open:core applies the compiler admission gate to marker mentions', () => {
-  // '@element(' appears only inside a string literal and comments — the cheap
-  // substring prefilter matches, but no real decorator exists, so the default
-  // pipeline passes the module through instead of failing the build.
+  // A decorator application appears only inside a string literal and comments —
+  // the cheap shape prefilter matches, but no real decorator exists, so the
+  // default pipeline passes the module through instead of failing the build.
   const mentionOnly = [
     'const docs = "decorate with @element(\'oe-string\') to opt in";',
     "// @element('oe-line-comment') is what a real opt-in looks like",
@@ -104,4 +104,28 @@ test('open:core applies the compiler admission gate to marker mentions', () => {
   expect(
     coreTransform().call(failingContext(), mentionOnly, '/project/app/components/mention.tsx'),
   ).toEqual(null);
+});
+
+test('open:core compiles an aliased decorator binding the same way as the canonical one', () => {
+  // The Router is the second host of the compiler's admission gate, so the
+  // alias has to survive here too: a prefilter that only knew the literal
+  // `@element(` spelling left this module untouched through open:core while the
+  // semantic layer would have admitted it.
+  const aliased = [
+    "import { element as defineElement, OpenElement, property } from '@openelement/element';",
+    "@defineElement('oe-boundary-alias')",
+    'export class BoundaryAlias extends OpenElement {',
+    '  @property({ reflect: true }) count = 0;',
+    '  render() { return <span>{this.count}</span>; }',
+    '}',
+  ].join('\n');
+  const transformed = coreTransform().call(failingContext(), aliased, FILE) as {
+    code: string;
+    map?: { mappings: string };
+  } | null;
+  expect(transformed, 'open:core must compile what the semantic core admits').not.toEqual(null);
+  expect(transformed!.code).toContain('oe-boundary-alias');
+  expect(transformed!.code).toContain("from '@openelement/element'");
+  // The alias never survives into the emitted module.
+  expect(transformed!.code.includes('defineElement'), transformed!.code).toBe(false);
 });
