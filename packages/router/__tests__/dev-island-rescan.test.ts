@@ -105,7 +105,12 @@ test('openPlugin: island file added during dev triggers descriptor + client map 
     const watcher = new TestFileWatcher();
     const sent: unknown[] = [];
     const invalidated: string[] = [];
-    core.configureServer!({
+    // Awaited: a rejection here (the hook's first act awaits the package
+    // admission scan) would otherwise float and the watcher registrations
+    // below it would silently never install — the CI timeout with a dead
+    // pipeline is exactly that signature, and awaiting surfaces the real
+    // error instead of a two-second-later mystery.
+    await core.configureServer!({
       config: { root: dir },
       watcher,
       hot: { send: (payload: unknown) => sent.push(payload) },
