@@ -206,6 +206,47 @@ test('the sheet URL is versioned, so a second render declares the same resource'
   expect(secondHref, 'an unchanged state keeps one resource identity').toBe(href);
 });
 
+test('a uno.config.ts edit re-points the served head link at a new versioned URL', async () => {
+  // The generated-path dev contract: the rebuilt generator re-points the head
+  // link, not just the bytes behind the old URL. The link is baked twice —
+  // applyResolvedOptions refreshes state.headExtrasValue, but the entry
+  // DESCRIPTOR captured the old value and the virtual entry renders from the
+  // descriptor — so the move must rebuild the descriptor and invalidate the
+  // entry module, or every page keeps serving the stale link forever while
+  // the sheet behind it has already moved (the packed consumer's dev leg
+  // pinned exactly this).
+  const configPath = join(FIXTURE_DIR, 'uno.config.ts');
+  const original = readFileSync(configPath, 'utf8');
+  try {
+    const handle = await bootDev(openElement());
+    const hrefBefore = /href="([^"]*unocss-document\.[^"]+\.css)"/.exec(
+      await fetchText(`${handle.base}/`),
+    )?.[1];
+    expect(hrefBefore, 'the document declares a versioned resource').toBeDefined();
+
+    writeFileSync(
+      configPath,
+      original.replace('presets: [presetWind4()]', 'presets: [presetWind4({ important: true })]'),
+      'utf8',
+    );
+    let hrefAfter: string | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      hrefAfter = /href="([^"]*unocss-document\.[^"]+\.css)"/.exec(
+        await fetchText(`${handle.base}/`),
+      )?.[1];
+      if (hrefAfter !== undefined && hrefAfter !== hrefBefore) break;
+    }
+    expect(hrefAfter, 'the served head link re-pointed at a new version').not.toEqual(hrefBefore);
+    expect(hrefAfter, 'the new link answers the recompiled sheet').toBeDefined();
+    const moved = await fetch(`${handle.base}${hrefAfter}`);
+    expect(moved.status).toBe(200);
+    expect(moved.headers.get('content-type')).toContain('text/css');
+  } finally {
+    writeFileSync(configPath, original, 'utf8');
+  }
+});
+
 /** Both dev sheets as the served document declares them. */
 async function devSheets(
   handle: DevHandle,
@@ -318,10 +359,21 @@ test('a uno.config.ts edit rebuilds the generator and reaches both dev sheets', 
       'the change was announced to the client, not applied silently',
     ).toBeGreaterThan(0);
 
-    // A stable URL is the contract: the document still declares the same
-    // resources, and it is their CONTENT that moved.
+    // The URL contract split by channel: the COMPONENT sheet's dev URL is
+    // stable (it recompiles per request in place), while the DOCUMENT sheet's
+    // link RE-POINTS at a new versioned URL — the generated-path contract
+    // (dev-style.ts's moveVersion, setFrameworkStylesheets's "a re-resolution
+    // re-points the framework's link"). This suite's earlier pin asserted the
+    // document URL stayed stable; that pinned the incomplete move — the head
+    // extras were baked into an entry descriptor nothing rebuilt, so the link
+    // could never re-point — as if it were the contract. The descriptor now
+    // rebuilds on the move, and the dedicated row above pins the re-point
+    // end-to-end.
     const current = await devSheets(handle);
-    expect(current.documentHref, 'the dev document URL stays stable').toBe(before.documentHref);
+    expect(
+      current.documentHref,
+      'the dev document link re-pointed at a new versioned URL',
+    ).not.toBe(before.documentHref);
     expect(current.componentHref, 'the dev component URL stays stable').toBe(before.componentHref);
 
     // A second edit is served from the rebuilt generator, not from one that was

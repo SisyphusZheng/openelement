@@ -46,6 +46,8 @@ import {
   tailwindPlugins,
 } from './tailwind.ts';
 import { setFrameworkStylesheets, type OpenPluginState } from './plugin-config.ts';
+import { RESOLVED_ENTRY_ID } from './plugin-virtual-modules.ts';
+import { generateEntry } from './plugin-scanners.ts';
 import { stylePlanForApp, type ResolvedStyleSelection } from './internal/style-plan.ts';
 import type { DevStyleSession } from './internal/dev-style-session.ts';
 
@@ -298,6 +300,25 @@ export function devStylePlugin(state: OpenPluginState, session: DevStyleSession)
       const moveVersion = (): void => {
         version = versionDigest(`${sourceIdentity}#${Date.now()}`);
         setFrameworkStylesheets(state, [url()]);
+        // The served link is baked twice: applyResolvedOptions (called above)
+        // refreshes state.headExtrasValue, but the entry DESCRIPTOR captured
+        // the old value and the virtual entry module renders from the
+        // descriptor. Rebuild the descriptor from the phase-1 scan facts (the
+        // #1028 rescan sequence minus the filesystem rescan — the only fact
+        // that moved is the stylesheet hrefs) and invalidate the entry module
+        // so the dev server re-evaluates it on the next request.
+        generateEntry(
+          state,
+          state.ctx.phase1.cachedRoutes ?? [],
+          state.ctx.phase1.islandTagNames,
+          state.ctx.phase1.packageManifests,
+          state.ctx.phase1.islandFiles,
+        );
+        if (state.entryDescriptor) {
+          state.ctx.phase1.ssrAdmissionPlan = state.entryDescriptor.ssrAdmissionPlan;
+        }
+        const entry = server.moduleGraph.getModuleById(RESOLVED_ENTRY_ID);
+        if (entry) server.moduleGraph.invalidateModule(entry);
         server.ws.send({ type: 'full-reload' });
       };
       // The engine's configuration moved: the generator was rebuilt by the
