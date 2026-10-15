@@ -327,13 +327,17 @@
       "id": "e5",
       "kind": "element",
       "tag": "p",
-      "path": []
+      "path": [
+        0
+      ]
     },
     {
       "id": "e6",
       "kind": "element",
       "tag": "p",
-      "path": []
+      "path": [
+        0
+      ]
     },
     {
       "id": "e7",

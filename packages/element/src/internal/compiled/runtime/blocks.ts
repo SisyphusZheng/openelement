@@ -40,6 +40,7 @@ import {
   signalOf,
   subscribeWrites,
 } from './program-kernel.ts';
+import { installBranchValueParts } from './parts.ts';
 import { mountNodes } from './fresh-dom.ts';
 
 /**
@@ -279,6 +280,16 @@ export function buildWhen(
     undefined,
     parent,
   );
+  // The active branch's own value sinks bind here, on the branch scope —
+  // they die with the branch and re-bind when the other one mounts (alpha15).
+  installBranchValueParts(
+    ctx,
+    block.branchScope,
+    block.nodes,
+    part.index,
+    current ? 'on' : 'off',
+    'fresh',
+  );
   subscribeWrites(
     ctx,
     scope,
@@ -313,6 +324,16 @@ export function updateWhen(block: WhenBlock, value: unknown): void {
       block.itemPart,
       undefined,
       parent,
+    );
+    // The new branch carries its own sinks; the old branch's died with its
+    // scope above, so no stale binding or dirty DOM survives the swap.
+    installBranchValueParts(
+      block.ctx,
+      branchScope,
+      nodes,
+      block.part.index,
+      next ? 'on' : 'off',
+      'fresh',
     );
     insertNodesBefore(parent, nodes, block.end);
   } catch (error) {

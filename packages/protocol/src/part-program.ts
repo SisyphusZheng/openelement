@@ -750,23 +750,72 @@ function validateItemValueFields(
   });
 }
 
-function validatePartPath(
-  template: ProgramTreeNode[],
-  path: unknown,
-  where: string,
-  elementIds: Set<string>,
-): string {
-  if (!isIntegerArray(path) || path.length === 0) fail(`${where}.path must target an element`);
-  let nodes = template;
+/** Non-throwing walk of one node list: the node a fixed-Part path lands on. */
+function probePath(nodes: ProgramTreeNode[], path: number[]): ProgramTreeNode | undefined {
+  let list = nodes;
   let node: ProgramTreeNode | undefined;
   for (const index of path) {
-    node = nodes[index];
-    if (!node) fail(`${where}.path [${path.join(',')}] is unresolved`);
-    nodes = node.k === 'el' ? node.children : [];
+    node = list[index];
+    if (!node) return undefined;
+    list = node.k === 'el' ? node.children : [];
   }
-  if (!node || node.k !== 'el') fail(`${where}.path must target an element`);
-  if (!elementIds.has(node.id)) fail(`${where}.path targets an unknown element`);
-  return node.id;
+  return node;
+}
+
+/**
+ * True when `path` resolves within some when-Block branch tree to the element
+ * `nodeId` names — the branch-sink attribution test. Element ids are globally
+ * unique across the template and every branch tree, so the id match is exact:
+ * the same branch-relative suffix can exist in both branches, but only the
+ * owning branch's element carries the sink's location node id.
+ */
+function branchTreeOwnsPath(
+  parts: ProgramPart[],
+  path: number[],
+  nodeId: string,
+): ProgramElementNode | undefined {
+  for (const part of parts) {
+    if (part.k !== 'when') continue;
+    for (const tree of [part.on, part.off]) {
+      const node = probePath(tree, path);
+      if (node && node.k === 'el' && node.id === nodeId) return node;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Where one fixed Part's path lives: on the main template (anchor-precedence
+ * rules apply) or inside a when-Block branch (branch-relative; the branch
+ * tree holds no anchors by construction, so precedence is structural).
+ * Fail-closed on every shape that resolves to neither. `nodeId` is validated
+ * present for sink locations by {@linkcode validateLocation} before this runs;
+ * the guard keeps the optional wire shape honest.
+ */
+function validateFixedPartTarget(
+  template: ProgramTreeNode[],
+  parts: ProgramPart[],
+  path: number[],
+  where: string,
+  nodeId: string | undefined,
+  allowBranch: boolean,
+): { site: 'template' | 'branch'; node: ProgramElementNode } {
+  if (nodeId === undefined) fail(`${where} location node is invalid`);
+  if (!isIntegerArray(path) || path.length === 0) fail(`${where}.path must target an element`);
+  const templateNode = probePath(template, path);
+  if (templateNode && templateNode.k === 'el' && templateNode.id === nodeId) {
+    validateFixedPartPath(template, path, where);
+    return { site: 'template', node: templateNode };
+  }
+  if (allowBranch) {
+    const branchNode = branchTreeOwnsPath(parts, path, nodeId);
+    if (branchNode) return { site: 'branch', node: branchNode };
+  } else if (branchTreeOwnsPath(parts, path, nodeId)) {
+    fail(`${where} targets a Block-branch element; events and refs stay outside blocks`);
+  }
+  if (!templateNode) fail(`${where}.path [${path.join(',')}] is unresolved`);
+  if (templateNode.k !== 'el') fail(`${where}.path must target an element`);
+  fail(`${where} location node does not match path`);
 }
 
 function validateAnchorPath(
@@ -926,6 +975,10 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
   if (!Array.isArray(raw.parts)) fail('parts must be an array');
   const parts = raw.parts as ProgramPart[];
   const anchorPartCounts = new Map<number, number>();
+  // Fixed Parts whose target lives inside a when-Block branch tree: their
+  // branch-relative paths never walk the main template, so the closing
+  // anchor-precedence pass skips them (it re-derives nothing they own).
+  const branchOwnedParts = new Set<number>();
   parts.forEach((part, position) => {
     if (!isRecord(part)) fail(`parts[${position}] must be an object`);
     if (part.index !== position) fail(`parts[${position}].index must equal its position`);
@@ -946,7 +999,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
         break;
       case 'prop':
       case 'attr':
-      case 'bool':
+      case 'bool': {
         validateKeys(
           part,
           ['k', 'index', 'signal', 'name', 'path', 'location'],
@@ -967,89 +1020,85 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
         }
         if (part.location.kind !== 'sink') fail(`parts[${position}] ${part.k} must own a sink`);
         if (
-          validatePartPath(
+          validateFixedPartTarget(
             raw.template as ProgramTreeNode[],
+            parts,
             part.path,
             `parts[${position}]`,
-            elementIds,
-          ) !== part.location.node
+            part.location.node,
+            true,
+          ).site === 'branch'
         ) {
-          fail(`parts[${position}] location node does not match path`);
+          branchOwnedParts.add(part.index);
         }
         if (!samePath(part.location.path, part.path)) {
           fail(`parts[${position}] location path does not match path`);
         }
         break;
+      }
       case 'class':
-      case 'style':
+      case 'style': {
         validateKeys(part, ['k', 'index', 'signal', 'path', 'location'], `parts[${position}]`);
         if (!isIdentifier(part.signal) || part.location.kind !== 'sink') {
           fail(`parts[${position}] ${part.k} is invalid`);
         }
         if (
-          validatePartPath(
+          validateFixedPartTarget(
             raw.template as ProgramTreeNode[],
+            parts,
             part.path,
             `parts[${position}]`,
-            elementIds,
-          ) !== part.location.node
+            part.location.node,
+            true,
+          ).site === 'branch'
         ) {
-          fail(`parts[${position}] location node does not match path`);
+          branchOwnedParts.add(part.index);
         }
         if (!samePath(part.location.path, part.path)) {
           fail(`parts[${position}] location path does not match path`);
         }
         break;
+      }
       case 'html': {
         validateKeys(part, ['k', 'index', 'signal', 'path', 'location'], `parts[${position}]`);
         if (!isIdentifier(part.signal) || part.location.kind !== 'sink') {
           fail(`parts[${position}] html is invalid`);
         }
-        const htmlTargetId = validatePartPath(
+        const htmlTarget = validateFixedPartTarget(
           raw.template as ProgramTreeNode[],
+          parts,
           part.path,
           `parts[${position}]`,
-          elementIds,
+          part.location.node,
+          true,
         );
-        if (htmlTargetId !== part.location.node) {
-          fail(`parts[${position}] location node does not match path`);
-        }
-        if (!samePath(part.location.path, part.path)) {
-          fail(`parts[${position}] location path does not match path`);
-        }
+        if (htmlTarget.site === 'branch') branchOwnedParts.add(part.index);
         // The HTML sink owns its target's whole content: the target must be a
         // childless element (the serializer would overwrite program children).
-        let htmlTarget: ProgramTreeNode | undefined;
-        let htmlNodes = raw.template as ProgramTreeNode[];
-        for (const pathIndex of part.path) {
-          htmlTarget = htmlNodes[pathIndex];
-          htmlNodes = htmlTarget?.k === 'el' ? htmlTarget.children : [];
-        }
-        if (htmlTarget?.k !== 'el' || htmlTarget.children.length > 0) {
+        if (htmlTarget.node.children.length > 0) {
           fail(`parts[${position}] html sink target must be a childless element`);
         }
         break;
       }
-      case 'ref':
+      case 'ref': {
         validateKeys(part, ['k', 'index', 'ref', 'path', 'location'], `parts[${position}]`);
         if (!isIdentifier(part.ref) || part.location.kind !== 'sink') {
           fail(`parts[${position}] ref is invalid`);
         }
-        if (
-          validatePartPath(
-            raw.template as ProgramTreeNode[],
-            part.path,
-            `parts[${position}]`,
-            elementIds,
-          ) !== part.location.node
-        ) {
-          fail(`parts[${position}] location node does not match path`);
-        }
+        validateFixedPartTarget(
+          raw.template as ProgramTreeNode[],
+          parts,
+          part.path,
+          `parts[${position}]`,
+          part.location.node,
+          false,
+        );
         if (!samePath(part.location.path, part.path)) {
           fail(`parts[${position}] location path does not match path`);
         }
         break;
-      case 'event':
+      }
+      case 'event': {
         validateKeys(
           part,
           ['k', 'index', 'event', 'handler', 'action', 'path', 'location'],
@@ -1067,20 +1116,19 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
         }
         validateEventAction(part.action, `parts[${position}].action`);
         if (part.location.kind !== 'sink') fail(`parts[${position}] event must own a sink`);
-        if (
-          validatePartPath(
-            raw.template as ProgramTreeNode[],
-            part.path,
-            `parts[${position}]`,
-            elementIds,
-          ) !== part.location.node
-        ) {
-          fail(`parts[${position}] event location node does not match path`);
-        }
+        validateFixedPartTarget(
+          raw.template as ProgramTreeNode[],
+          parts,
+          part.path,
+          `parts[${position}]`,
+          part.location.node,
+          false,
+        );
         if (!samePath(part.location.path, part.path)) {
           fail(`parts[${position}] location path does not match path`);
         }
         break;
+      }
       case 'when':
         validateKeys(
           part,
@@ -1100,7 +1148,11 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
           new Map(),
           elementLocations,
           [],
-          [],
+          // Branch element locations record the branch node-list address —
+          // root at [0], the same node-list indexing a fixed branch sink's
+          // path uses (alpha15). (each item templates keep the historical
+          // subtree-root [] form; they carry no fixed sinks.)
+          [0],
         );
         validateTreeNodes(
           part.off,
@@ -1111,7 +1163,7 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
           new Map(),
           elementLocations,
           [],
-          [],
+          [0],
         );
         validateAnchorPath(
           raw.template as ProgramTreeNode[],
@@ -1189,6 +1241,11 @@ export function validatePartProgram(raw: unknown): asserts raw is PartProgram {
 
   for (const part of parts) {
     if (part.k === 'text' || part.k === 'when' || part.k === 'each') continue;
+    // A branch-owned sink's path is branch-relative and never walks the main
+    // template; the branch tree holds no anchors (allowAnchors is false), so
+    // the anchor-precedence rule is structural there and the pass re-derives
+    // nothing it owns.
+    if (branchOwnedParts.has(part.index)) continue;
     validateFixedPartPath(raw.template as ProgramTreeNode[], part.path, `parts[${part.index}]`);
   }
 

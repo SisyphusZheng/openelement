@@ -1370,3 +1370,169 @@ describe('compiled-element alpha.11 - inline conditional class (#1556)', () => {
     expect(meta.deps).toEqual(['count', 'items']);
   });
 });
+
+describe('compiled-element alpha15 - when-branch attribute sinks', () => {
+  test('a branch admits this.<property> attribute sinks (both branches, attr and bool)', () => {
+    const source = [
+      "import { element, OpenElement, property } from '@openelement/element';",
+      "@element('oe-branch-sinks')",
+      'export class BranchSinks extends OpenElement {',
+      '  @property({ type: Boolean, reflect: false }) flag = false;',
+      '  @property({ reflect: false }) label = "A";',
+      '  @property({ reflect: false }) off = "B";',
+      '  @property({ type: Boolean, reflect: false }) armed = false;',
+      '  render() {',
+      '    return <div>',
+      '      {this.flag ?',
+      '        <b data-label={this.label} hidden={this.armed}>on</b> :',
+      '        <i title={this.off}>off</i>}',
+      '    </div>;',
+      '  }',
+      '}',
+    ].join('\n');
+    const { program } = compileElementProgram(source, '/project/app/islands/branch-sinks.tsx');
+
+    // The when Block keeps its shape; the two branch attr sinks ride as their
+    // own Parts, one per branch, each path branch-relative.
+    const whenPart = program.parts.find((part: { k: string }) => part.k === 'when') as {
+      index: number;
+      on: unknown[];
+      off: unknown[];
+    };
+    expect(whenPart, 'the when Block lowered').toBeTruthy();
+    expect(whenPart.on.length).toEqual(1);
+    expect(whenPart.off.length).toEqual(1);
+
+    const attrParts = program.parts.filter((part: { k: string }) => part.k === 'attr') as Array<{
+      signal: string;
+      name: string;
+      path: number[];
+      index: number;
+    }>;
+    const boolParts = program.parts.filter((part: { k: string }) => part.k === 'bool') as Array<{
+      signal: string;
+      name: string;
+      path: number[];
+    }>;
+    const dataLabel = attrParts.find((part) => part.name === 'data-label');
+    expect(dataLabel, 'the on-branch attr sink lowered').toBeTruthy();
+    expect(dataLabel!.signal).toEqual('label');
+    expect(dataLabel!.path).toEqual([0]);
+    const title = attrParts.find((part) => part.name === 'title');
+    expect(title, 'the off-branch attr sink lowered').toBeTruthy();
+    expect(title!.signal).toEqual('off');
+    expect(title!.path).toEqual([0]);
+    const hidden = boolParts.find((part) => part.name === 'hidden');
+    expect(hidden, 'the on-branch bool sink lowered').toBeTruthy();
+    expect(hidden!.signal).toEqual('armed');
+
+    // Every branch sink names its branch element (the location contract).
+    for (const sink of [...attrParts, ...boolParts]) {
+      expect(sink.path.length).toBeGreaterThan(0);
+    }
+    // The compiler's own wire validation ran inside compileElementProgram —
+    // reaching this line means the emitted program validates.
+  });
+
+  test('a dynamic class sink lowers inside a branch', () => {
+    const source = [
+      "import { element, OpenElement, property } from '@openelement/element';",
+      "@element('oe-branch-class')",
+      'export class BranchClass extends OpenElement {',
+      '  @property({ type: Boolean, reflect: false }) flag = false;',
+      '  @property({ reflect: false }) tone = "loud";',
+      '  render() {',
+      '    return <div>{this.flag ? <b class={this.tone}>on</b> : <i class="calm">off</i>}</div>;',
+      '  }',
+      '}',
+    ].join('\n');
+    const { program } = compileElementProgram(source, '/project/app/islands/branch-class.tsx');
+    const classParts = program.parts.filter((part: { k: string }) => part.k === 'class') as Array<{
+      signal: string;
+      path: number[];
+    }>;
+    expect(classParts.length).toEqual(1);
+    expect(classParts[0].signal).toEqual('tone');
+    expect(classParts[0].path).toEqual([0]);
+  });
+
+  test('branch events still fail closed, naming the boundary', () => {
+    const source = [
+      "import { element, OpenElement, property } from '@openelement/element';",
+      "@element('oe-branch-event')",
+      'export class BranchEvent extends OpenElement {',
+      '  @property({ type: Boolean, reflect: false }) flag = false;',
+      '  pick(): void {}',
+      '  render() {',
+      '    return <div>{this.flag ? <b onClick={this.pick}>on</b> : <i>off</i>}</div>;',
+      '  }',
+      '}',
+    ].join('\n');
+    const error = assertThrowsIncludes(
+      () => compileElementProgram(source, '/project/app/islands/branch-event.tsx'),
+      CompiledElementError,
+      'OEC9012',
+    );
+    expect(error.message).toContain('branches admit attribute bindings');
+    expect(error.message).toContain('events');
+  });
+
+  test('branch refs still fail closed, naming the boundary', () => {
+    const source = [
+      "import { element, OpenElement, property } from '@openelement/element';",
+      "@element('oe-branch-ref')",
+      'export class BranchRef extends OpenElement {',
+      '  @property({ type: Boolean, reflect: false }) flag = false;',
+      '  @property({ reflect: false, attribute: false }) node: unknown = null;',
+      '  render() {',
+      '    return <div>{this.flag ? <b ref={this.node}>on</b> : <i>off</i>}</div>;',
+      '  }',
+      '}',
+    ].join('\n');
+    const error = assertThrowsIncludes(
+      () => compileElementProgram(source, '/project/app/islands/branch-ref.tsx'),
+      CompiledElementError,
+      'OEC9012',
+    );
+    expect(error.message).toContain('branches admit attribute bindings');
+    expect(error.message).toContain('ref');
+  });
+
+  test('inline conditional class inside a branch still fails closed', () => {
+    const source = [
+      "import { element, OpenElement, property } from '@openelement/element';",
+      "@element('oe-branch-cond-class')",
+      'export class BranchCondClass extends OpenElement {',
+      '  @property({ type: Boolean, reflect: false }) flag = false;',
+      '  @property({ type: Boolean, reflect: false }) hot = false;',
+      '  render() {',
+      "    return <div>{this.flag ? <b class={this.hot ? 'a' : 'b'}>on</b> : <i>off</i>}</div>;",
+      '  }',
+      '}',
+    ].join('\n');
+    assertThrowsIncludes(
+      () => compileElementProgram(source, '/project/app/islands/branch-cond-class.tsx'),
+      CompiledElementError,
+      'OEC9012',
+    );
+  });
+
+  test('branch text interpolation still fails closed (attributes only, no anchors in branches)', () => {
+    const source = [
+      "import { element, OpenElement, property } from '@openelement/element';",
+      "@element('oe-branch-text')",
+      'export class BranchText extends OpenElement {',
+      '  @property({ type: Boolean, reflect: false }) flag = false;',
+      '  @property({ reflect: false }) label = "x";',
+      '  render() {',
+      '    return <div>{this.flag ? <b>{this.label}</b> : <i>off</i>}</div>;',
+      '  }',
+      '}',
+    ].join('\n');
+    assertThrowsIncludes(
+      () => compileElementProgram(source, '/project/app/islands/branch-text.tsx'),
+      CompiledElementError,
+      'OEC9012',
+    );
+  });
+});

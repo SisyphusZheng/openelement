@@ -21,7 +21,7 @@ The compiler lowers every `@element` module into a Part Program — a serializab
 | JSX composes by tag name | lowercase intrinsic elements and custom-element hosts (`<my-counter>`) | a class value as the tag (`<ChildCard />`) (`OEC9010`) |
 | `innerHTML` carries the explicit trust gesture | `@property({ type: Object, reflect: false, attribute: false }) body = trustedHtml(...)` plus `innerHTML={this.body} trustedHtml` | a `String`-typed source, a plain string value, a value with no `trustedHtml()` brand (`OEC9026`) |
 | Text reads properties | `{this.label}`, `{this.count}`, literal text | a method call or any other expression in a text position (`OEC9013`) |
-| Branches are fully static | `{this.flag ? <b>on</b> : <i>off</i>}`, `{this.count > 5 && <p>over</p>}` | a branch that is not a single static JSX element; a nested ternary (`OEC9012`) |
+| Branches bind, they don't act | `{this.flag ? <b data-label={this.label}>on</b> : <i title={this.off}>off</i>}` — each branch is one static element whose attributes may bind `this.<property>` | a branch that is not a single static JSX element; a nested ternary; an event handler, a `ref`, or an inline conditional class inside a branch (`OEC9012`) |
 | `render()` is one return | `render() { return <main>…</main>; }` | locals before the return, two root elements, a fragment root, text as the root (`OEC9007`) |
 | Failures happen at runtime | a `throw` inside a lifecycle method such as `connectedCallback()` | `if (…) throw` inside `render()` (`OEC9007`) — authored throws are not compilable; boundaries catch runtime failures |
 | Handlers are method references | `onClick={this.pick}` or a single-action arrow | `onClick={this.pick()}` and other inline call expressions (`OEC9016`) |
@@ -330,9 +330,9 @@ export default class MyProfile extends OpenElement {
 render() { return <p>{this.name.trim()}</p>; }
 ```
 
-## Branches are fully static
+## Branches bind, they don't act
 
-A conditional lowers to a `when` Block, so each branch must be exactly one static JSX element (optionally with its own Parts). A branch whose shape depends on runtime data — a ternary that lands on a non-element expression, a nested ternary — cannot be represented, and the fix is a `computed(...)` boolean that the branch tests.
+A conditional lowers to a `when` Block, so each branch must be exactly one static JSX element. A branch element's attributes may bind `this.<property>` — the attribute sink rides the branch (SSR serializes the active branch's value, hydration and CSR bind it branch-scoped, and a signal flip swaps branches without leaving the old branch's DOM behind) — but a branch cannot act: no text interpolation, no nested ternary, and no event handlers, `refs`, or inline conditional classes inside a branch. Those stay outside the Block, on the surrounding elements. A branch whose shape depends on runtime data — a ternary that lands on a non-element expression — cannot be represented, and the fix is a `computed(...)` boolean that the branch tests.
 
 ```tsx
 import { element, OpenElement, property } from '@openelement/element';
@@ -342,15 +342,24 @@ export class MyStatus extends OpenElement {
   @property({ reflect: false, type: Boolean })
   ready = false;
 
+  @property({ reflect: false })
+  label = 'Status';
+
   render() {
-    return <div>{this.ready ? <b>Ready</b> : <i>Waiting</i>}</div>;
+    return (
+      <div onClick={this.pick}>
+        {this.ready ? <b data-label={this.label}>Ready</b> : <i title={this.label}>Waiting</i>}
+      </div>
+    );
   }
 }
 ```
 
 ```text
-// rejected: a branch must be one static JSX element — OEC9012
+// rejected: a branch element binds attributes, it does not interpolate text — OEC9012
 render() { return <div>{this.ready ? <b>{this.label}</b> : <i>Waiting</i>}</div>; }
+// rejected: handlers stay outside blocks — OEC9012
+render() { return <div>{this.ready ? <b onClick={this.pick}>Ready</b> : <i>Waiting</i>}</div>; }
 // and a text-only ternary is not a Block at all:
 render() { return <div>{this.ready ? 'yes' : 'no'}</div>; }
 ```

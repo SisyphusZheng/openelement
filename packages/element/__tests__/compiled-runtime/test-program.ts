@@ -119,7 +119,11 @@ function buildNodes(
     const plainPath = [...plainPrefix, position];
     if (node.k === 'el') {
       const id = `e${state.nextElementId++}`;
-      const elementPath = subtreeRoot && position === 0 ? [] : [...elementPrefix, position];
+      // A subtree root sits at its node-list address: [] for an each item
+      // template (historical form), [0] for a when branch (alpha15 — the
+      // node-list indexing a fixed branch sink's path uses).
+      const elementPath =
+        subtreeRoot && position === 0 ? [...elementPrefix] : [...elementPrefix, position];
       state.elements.push({ id, tag: node.tag as string, path: elementPath });
       return {
         k: 'el',
@@ -141,18 +145,21 @@ function buildNodes(
 }
 
 function resolveElementId(template: BuiltNode[], path: number[], partIndex: number): string {
-  let nodes = template;
+  const direct = resolveElementIdIn(template, path);
+  if (direct !== undefined) return direct;
+  // Branch-relative sink path (alpha15): the target lives in a when branch.
+  throw new Error(`test program spec: parts[${partIndex}].path is unresolved`);
+}
+
+function resolveElementIdIn(nodes: BuiltNode[], path: number[]): string | undefined {
+  let list = nodes;
   let node: BuiltNode | undefined;
   for (const index of path) {
-    node = nodes[index];
-    if (!node) {
-      throw new Error(`test program spec: parts[${partIndex}].path is unresolved`);
-    }
-    nodes = node.children ?? [];
+    node = list[index];
+    if (!node) return undefined;
+    list = node.children ?? [];
   }
-  if (!node || node.k !== 'el' || node.id === undefined) {
-    throw new Error(`test program spec: parts[${partIndex}].path must target an element`);
-  }
+  if (!node || node.k !== 'el' || node.id === undefined) return undefined;
   return node.id;
 }
 
@@ -172,12 +179,19 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
   const template = buildNodes(spec.template, [], [], false, state);
 
   // Block subtrees are walked in part order, after the template, matching the
-  // compiler's identity assignment discipline.
+  // compiler's identity assignment discipline. when-Branch element locations
+  // record the branch node-list address (root at [0] — alpha15, the same
+  // convention a fixed branch sink's path uses); each item templates keep the
+  // historical subtree-root [] form.
+  const builtWhenTrees: BuiltNode[][] = [];
   const parts = spec.parts.map((part) => {
     const built: Record<string, unknown> = { ...part };
     if (part.k === 'when') {
-      built.on = buildNodes(part.on ?? [], [], [], true, state);
-      built.off = buildNodes(part.off ?? [], [], [], true, state);
+      const on = buildNodes(part.on ?? [], [], [0], true, state);
+      const off = buildNodes(part.off ?? [], [], [0], true, state);
+      built.on = on;
+      built.off = off;
+      builtWhenTrees.push(on, off);
     } else if (part.k === 'each') {
       built.item = buildNodes(part.item ?? [], [], [], true, state);
     }
@@ -191,11 +205,24 @@ export function testProgram(spec: TestProgramSpec): PartProgram {
   const blockPartIds = new Set<string>();
   const blocks: Array<Record<string, unknown>> = [];
   const dependencies: Array<Record<string, unknown>> = [];
+
+  // Sink-target resolution: a spec path names a template address, or (alpha15)
+  // a branch-relative address into one of the when trees built above.
+  const resolveSinkNodeId = (path: number[], partIndex: number): string => {
+    const direct = resolveElementIdIn(template, path);
+    if (direct !== undefined) return direct;
+    for (const tree of builtWhenTrees) {
+      const nested = resolveElementIdIn(tree, path);
+      if (nested !== undefined) return nested;
+    }
+    return resolveElementId(template, path, partIndex);
+  };
+
   for (const part of spec.parts) {
     const locationId = `p${part.index}`;
     if (FIXED_KINDS.has(part.k)) {
       const path = part.path as number[];
-      const node = resolveElementId(template, path, part.index);
+      const node = resolveSinkNodeId(path, part.index);
       parts[part.index].location = { id: locationId, kind: 'sink', path, node };
       locations.push({ id: locationId, kind: 'sink', part: part.index, node, path });
     } else {

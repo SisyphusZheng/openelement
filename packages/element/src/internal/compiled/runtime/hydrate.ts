@@ -34,6 +34,7 @@ import {
   createContext,
   displayValue,
   fail,
+  fixedPartsAtNode,
   fixedPartsAtPath,
   isComment,
   isElement,
@@ -47,7 +48,13 @@ import {
   signalOf,
   subscribeWrites,
 } from './program-kernel.ts';
-import { attachFixedParts, resolvePath, type TextPartSlot, updateTextPart } from './parts.ts';
+import {
+  attachFixedParts,
+  installBranchValueParts,
+  resolvePath,
+  type TextPartSlot,
+  updateTextPart,
+} from './parts.ts';
 import { createRevivableInstance } from './revive.ts';
 // Block Parts hydrate and update through the builders seam (#1548): a
 // blocks-free bundle (an app whose Part Programs carry no when/each Parts)
@@ -124,12 +131,22 @@ function expectComment(node: Node, marker: string, path: string, owner: Hydratio
   return node;
 }
 
-function dynamicAttributeNames(ctx: MountContext, path: number[]): Set<string> {
+function dynamicAttributeNames(ctx: MountContext, path: number[], nodeId?: string): Set<string> {
   const names = new Set<string>();
   for (const part of fixedPartsAtPath(ctx, path)) {
     if (part.k === 'attr' || part.k === 'prop' || part.k === 'bool') names.add(part.name);
     if (part.k === 'class') names.add('class');
     if (part.k === 'style') names.add('style');
+  }
+  // Branch-owned sinks attribute by element id (alpha15): their paths are
+  // branch-relative, so the walk path finds nothing — the sink's own
+  // location element id is the identity.
+  if (nodeId !== undefined) {
+    for (const part of fixedPartsAtNode(ctx, nodeId)) {
+      if (part.k === 'attr' || part.k === 'prop' || part.k === 'bool') names.add(part.name);
+      if (part.k === 'class') names.add('class');
+      if (part.k === 'style') names.add('style');
+    }
   }
   return names;
 }
@@ -142,7 +159,7 @@ function hydrateElementAttributes(
   programPath: number[],
   owner: HydrationOwner,
 ): void {
-  const dynamic = dynamicAttributeNames(ctx, programPath);
+  const dynamic = dynamicAttributeNames(ctx, programPath, node.id);
   // Per-item attribute slots are verified with their item context by the
   // caller; they are not static drift.
   for (const [name] of node.iattrs ?? []) dynamic.add(name);
@@ -288,6 +305,18 @@ interface StreamHydrationState {
   ranges: Map<number, StreamHydrationRange>;
 }
 
+/**
+ * One branch-sink binding deferred to the attach phase (alpha15): the when
+ * Block's claimed nodes plus the branch scope the sinks install on. Like the
+ * deferred subscriptions, nothing binds until the complete scan passed.
+ */
+export interface DeferredBranchInstall {
+  scope: LifetimeScope;
+  nodes: readonly Node[];
+  whenIndex: number;
+  which: 'on' | 'off';
+}
+
 export function hydrateNodes(
   ctx: MountContext,
   parent: Node,
@@ -303,6 +332,7 @@ export function hydrateNodes(
   itemValueSlots?: ItemValueSlot[],
   itemAttrSlots?: ItemAttrSlot[],
   stream?: StreamHydrationState,
+  branchInstalls?: DeferredBranchInstall[],
 ): number {
   const at = (index: number): Node => {
     const node = parent.childNodes[index];
@@ -384,7 +414,9 @@ export function hydrateNodes(
       }
       // A trusted-HTML sink owns the target's whole content: the subtree is
       // opaque to the hydration (the program declares no structure inside it).
-      const hasHtmlSink = fixedPartsAtPath(ctx, nodeProgramPath).some((part) => part.k === 'html');
+      const hasHtmlSink =
+        fixedPartsAtPath(ctx, nodeProgramPath).some((part) => part.k === 'html') ||
+        fixedPartsAtNode(ctx, node.id).some((part) => part.k === 'html');
       const ownsExpandedSubtree =
         node.children.length === 0 &&
         node.tag.includes('-') &&
@@ -409,6 +441,7 @@ export function hydrateNodes(
               itemValueSlots,
               itemAttrSlots,
               stream,
+              branchInstalls,
             );
       if (consumed !== dom.childNodes.length) {
         hydrateFailure(`${nodePath}.children`, 'unexpected trailing nodes', owner);
@@ -480,10 +513,11 @@ export function hydrateNodes(
         cursor,
         active ? part.on : part.off,
         `${nodePath}.branch`,
-        // Block subtrees hold no fixed-Part targets (the validator rejects
-        // fixed paths crossing or preceded by an anchor), so the recursion
-        // keeps the anchor's canonical path: resetting to [] would collide
-        // with template-level sink paths and misidentify dynamic attributes.
+        // Branch content keeps the anchor's canonical walk-path prefix:
+        // resetting to [] would collide with template-level walk paths and
+        // misidentify dynamic attributes. Branch sinks attribute themselves
+        // by their own element id (fixedPartsAtNode), so the shared suffix
+        // both branches may carry never crosses attribution (alpha15).
         nodeProgramPath,
         branchScope,
         scopedOwner,
@@ -493,6 +527,7 @@ export function hydrateNodes(
         itemValueSlots,
         undefined,
         stream,
+        branchInstalls,
       );
       const end = expectComment(
         at(cursor++),
@@ -514,6 +549,14 @@ export function hydrateNodes(
       // The ownership record a reconnect re-arms (revive.ts).
       ctx.bindings.set(part.index, block);
       partScope.addRangeCleanup(() => removeNodes(block.nodes));
+      // The claimed branch's own value sinks bind at attach time, on the
+      // branch scope (alpha15) — staged like every other subscription.
+      branchInstalls?.push({
+        scope: branchScope,
+        nodes: block.nodes,
+        whenIndex: part.index,
+        which: active ? 'on' : 'off',
+      });
       pending.push({
         scope: partScope,
         signal: part.signal,
@@ -753,6 +796,9 @@ function validateFixedPartTargets(
 ): void {
   for (const part of ctx.program.parts) {
     if (!isFixedPart(part)) continue;
+    // A branch-owned sink's path is a branch-relative address; it resolves
+    // when its branch mounts, never from the claim root.
+    if (ctx.branchParts.owned.has(part.index)) continue;
     try {
       resolvePath(root, part.path, `${part.k} Part`, rootOffset);
     } catch {
@@ -793,6 +839,7 @@ function scanHydration(
   options: CompiledHydrationOptions,
   pending: DeferredSubscription[],
   stream?: StreamHydrationState,
+  branchInstalls?: DeferredBranchInstall[],
 ): number {
   const owner: RootHydrationOwner = { kind: 'root', root };
   const styleNodeCount = leadingStaticStyleNodeCount(root, options, owner);
@@ -815,6 +862,7 @@ function scanHydration(
     undefined,
     undefined,
     stream,
+    branchInstalls,
   );
   if (consumed !== root.childNodes.length) {
     hydrateFailure('template', 'unexpected trailing nodes', owner);
@@ -850,6 +898,7 @@ export function hydrateExistingDom(
   for (;;) {
     const ctx = createContext(normalizePartProgram(program), host, ownerScope);
     const pending: DeferredSubscription[] = [];
+    const branchInstalls: DeferredBranchInstall[] = [];
     const streamed = new Set(options.streamParts ?? []);
     const unresolved = new Set(options.pendingParts ?? []);
     const isStream = options.streamParts !== undefined || options.pendingParts !== undefined;
@@ -873,12 +922,26 @@ export function hydrateExistingDom(
           root,
         });
       }
-      const cursorStart = scanHydration(ctx, root, options, pending, stream);
+      const cursorStart = scanHydration(ctx, root, options, pending, stream, branchInstalls);
       if (stream && stream.ranges.size !== unresolved.size) {
         hydrateFailure('template', 'pending Part has no owned range', { kind: 'root', root });
       }
       for (const deferred of pending) {
         subscribeWrites(ctx, deferred.scope, deferred.signal, deferred.fn);
+      }
+      // The claimed branches' own value sinks bind last, on their branch
+      // scopes (alpha15): claim mode keeps the served values, a rebuilt root
+      // gets the live ones exactly as fresh creation would apply them.
+      const branchMode = rootRebuilt ? 'fresh' : 'claim';
+      for (const install of branchInstalls) {
+        installBranchValueParts(
+          ctx,
+          install.scope,
+          install.nodes,
+          install.whenIndex,
+          install.which,
+          branchMode,
+        );
       }
       // A rebuilt root carries no live values yet: fixed Parts apply their
       // initial values exactly as fresh creation would. A Block-range recovery

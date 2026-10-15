@@ -348,13 +348,17 @@
       "id": "e4",
       "kind": "element",
       "tag": "p",
-      "path": []
+      "path": [
+        0
+      ]
     },
     {
       "id": "e5",
       "kind": "element",
       "tag": "p",
-      "path": []
+      "path": [
+        0
+      ]
     },
     {
       "id": "p3",

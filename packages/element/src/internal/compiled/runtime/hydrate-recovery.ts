@@ -21,6 +21,7 @@ import type { MountContext } from './program-kernel.ts';
 import {
   displayValue,
   fail,
+  fixedPartsAtNode,
   fixedPartsAtPath,
   itemAttrValue,
   itemValue,
@@ -28,12 +29,14 @@ import {
   signalOf,
   subscribeWrites,
 } from './program-kernel.ts';
+import { applyBranchSinkInitials, installBranchValueParts } from './parts.ts';
 import { blockBuildersOrFail } from './blocks-seam.ts';
 import {
   hydrateFailure,
   hydrateItemRecords,
   hydrateNodes,
   type CompiledHydrationOptions,
+  type DeferredBranchInstall,
   type DeferredSubscription,
   isStaticStyleNode,
   PartProgramHydrationError,
@@ -86,6 +89,7 @@ export function resolveStreamRange(
     }
     const scope = range.scope.child();
     const subscriptions: DeferredSubscription[] = [];
+    const branchInstalls: DeferredBranchInstall[] = [];
     try {
       const consumed = hydrateNodes(
         ctx,
@@ -102,12 +106,23 @@ export function resolveStreamRange(
         undefined,
         undefined,
         { streamed: new Set([index]), pending: new Set(), ranges: new Map() },
+        branchInstalls,
       );
       if (consumed !== finish + 1) {
         hydrateFailure(range.path, 'stream Part has unexpected trailing nodes', range.owner);
       }
       for (const deferred of subscriptions) {
         subscribeWrites(ctx, deferred.scope, deferred.signal, deferred.fn);
+      }
+      for (const install of branchInstalls) {
+        installBranchValueParts(
+          ctx,
+          install.scope,
+          install.nodes,
+          install.whenIndex,
+          install.which,
+          'fresh',
+        );
       }
       return;
     } catch (error) {
@@ -193,7 +208,12 @@ function buildRecoveryBlockContent(
 ): Node[] {
   if (part.k === 'when') {
     const active = blockBuildersOrFail().whenActive(part, signalOf(ctx, part.signal).value);
-    return buildStaticRecoveryNodes(doc, active ? part.on : part.off);
+    const which = active ? 'on' : 'off';
+    const nodes = buildStaticRecoveryNodes(doc, active ? part.on : part.off);
+    // The rebuilt branch carries its own sinks' values (no subscriptions —
+    // the retried claim re-arms the live bindings on the fresh scope).
+    applyBranchSinkInitials(ctx, nodes, part.index, which);
+    return nodes;
   }
   const items = hydrateItemRecords(part, signalOf(ctx, part.signal).value, `parts[${part.index}]`, {
     kind: 'root',
@@ -230,7 +250,9 @@ function buildRecoveryTemplateNodes(
     if (node.k === 'el') {
       const element = doc.createElement(node.tag);
       for (const [name, value] of node.attrs) element.setAttribute(name, value);
-      const hasHtmlSink = fixedPartsAtPath(ctx, nodePath).some((part) => part.k === 'html');
+      const hasHtmlSink =
+        fixedPartsAtPath(ctx, nodePath).some((part) => part.k === 'html') ||
+        fixedPartsAtNode(ctx, node.id).some((part) => part.k === 'html');
       if (!hasHtmlSink) {
         for (const child of buildRecoveryTemplateNodes(ctx, doc, node.children, nodePath)) {
           element.appendChild(child);

@@ -125,6 +125,16 @@ const DOM_PROPERTY_NAMES = new Set([
   'value',
 ]);
 
+/**
+ * The one boundary sentence every when-branch rejection names (alpha15):
+ * a branch element admits `this.<property>` attribute sinks, but event
+ * handlers, refs and inline conditional classes stay outside blocks — a
+ * branch has no anchor of its own, so only attribute-bound state is
+ * representable inside it.
+ */
+const BRANCH_BOUNDARY =
+  'Block branches admit attribute bindings; events and refs stay outside blocks';
+
 function isIdentifier(value: string): boolean {
   return /^[A-Za-z_$][A-Za-z0-9_$]*$/.test(value);
 }
@@ -505,7 +515,13 @@ export class Lowering {
       }
       const expr = unwrapExpression(init.expression);
       if (/^on[A-Z]/.test(name)) {
-        if (staticOnly) this.fail(prop, 'OEC9012', 'Block branches must be fully static');
+        if (staticOnly) {
+          this.fail(
+            prop,
+            'OEC9012',
+            `${BRANCH_BOUNDARY} — an event handler cannot bind inside a branch`,
+          );
+        }
         this.lowerEvent(name, expr, path, prop, elementId);
         continue;
       }
@@ -513,23 +529,41 @@ export class Lowering {
         if (isCustomHost) {
           this.fail(prop, 'OEC9017', `custom-element host <${tag}> may not carry a ref`);
         }
-        if (staticOnly) this.fail(prop, 'OEC9012', 'Block branches must be fully static');
+        if (staticOnly) {
+          this.fail(prop, 'OEC9012', `${BRANCH_BOUNDARY} — a ref cannot bind inside a branch`);
+        }
         const ref = this.fieldAccess(expr);
         if (!ref) this.fail(prop, 'OEC9011', 'ref must reference this.<field>');
         this.addPart({ k: 'ref', ref, path }, path, prop, elementId);
         continue;
       }
       // Inline conditional class (#1556): admitted on intrinsic elements in
-      // the dynamic grammar. Block branches keep their fully-static rule and
-      // custom-element hosts keep today's diagnostics — both fall through to
-      // the unchanged admission below, so fail-closed is untouched.
-      if (name === 'class' && !staticOnly && !isCustomHost && ts.isConditionalExpression(expr)) {
-        this.lowerConditionalClass(expr, path, prop, elementId);
-        continue;
+      // the dynamic grammar. Block branches keep their boundary — a branch
+      // admits plain attribute sinks only, and a synthesized conditional-class
+      // computed is one dynamic form too many inside one — and
+      // custom-element hosts keep today's diagnostics. Both fail closed here
+      // with the located boundary diagnostic instead of the generic
+      // unsupported-expression one.
+      if (name === 'class' && ts.isConditionalExpression(expr)) {
+        if (staticOnly) {
+          this.fail(
+            prop,
+            'OEC9012',
+            `${BRANCH_BOUNDARY} — an inline conditional class cannot bind inside a branch`,
+          );
+        }
+        if (!isCustomHost) {
+          this.lowerConditionalClass(expr, path, prop, elementId);
+          continue;
+        }
       }
       const field = this.fieldAccess(expr);
       if (field) {
-        if (staticOnly) this.fail(prop, 'OEC9012', 'Block branches must be fully static');
+        // alpha15: a when-branch element admits `this.<property>` attribute
+        // sinks — the sink Part's path is branch-relative (the branch tree has
+        // no anchors of its own), the runtime binds it branch-scoped, and the
+        // serializer attributes it by the branch element's own id. Events and
+        // refs failed above; this is the whole widening.
         // Security sinks are classified before host lowering: an innerHTML sink
         // is the same TrustedHtml boundary on an intrinsic element and on a
         // custom-element host, so the custom-host prop lowering below must not
@@ -1000,13 +1034,17 @@ export class Lowering {
         branch.openingElement.tagName,
         branch.openingElement.attributes,
         [...branch.children],
-        [],
+        // The branch root's address within the branch node list — the same
+        // node-list indexing the main template root uses ([0]). Branch sinks
+        // derive their runtime/serializer addresses from it, and the branch
+        // element locations record the same convention.
+        [0],
         branch,
         true,
       );
     }
     if (ts.isJsxSelfClosingElement(branch)) {
-      return this.lowerElement(branch.tagName, branch.attributes, [], [], branch, true);
+      return this.lowerElement(branch.tagName, branch.attributes, [], [0], branch, true);
     }
     this.fail(near, 'OEC9012', 'conditional Block branches must be single static JSX elements');
   }

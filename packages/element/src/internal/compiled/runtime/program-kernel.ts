@@ -33,6 +33,101 @@ export type ProgramFixedPart = Extract<
   { k: 'attr' | 'prop' | 'bool' | 'class' | 'style' | 'html' | 'event' | 'ref' }
 >;
 
+/** The fixed value sinks a when-Block branch can own (events/refs stay outside blocks). */
+export type ProgramBranchSinkPart = Extract<
+  PartProgramV2['parts'][number],
+  { k: 'attr' | 'prop' | 'bool' | 'class' | 'style' | 'html' }
+>;
+
+/**
+ * The branch-sink plan of one program (alpha15): which fixed value sinks a
+ * when Block's branches own, per branch. Attribution is by the sink's
+ * location element id — ids are globally unique across the template and every
+ * branch tree, so the plan is exact even where both branches carry a sink at
+ * the same branch-relative suffix. Built once per MountContext; a program
+ * without when Parts plans nothing.
+ */
+export interface BranchPartPlan {
+  /** Branch-owned value sinks keyed by the owning when Part's index. */
+  readonly byWhen: ReadonlyMap<
+    number,
+    { on: ProgramBranchSinkPart[]; off: ProgramBranchSinkPart[] }
+  >;
+  /** Indexes of every branch-owned fixed Part (the root attach walks skip them). */
+  readonly owned: ReadonlySet<number>;
+}
+
+function collectElementIds(nodes: readonly ProgramTreeNode[], out: Set<string>): void {
+  for (const node of nodes) {
+    if (node.k === 'el') {
+      out.add(node.id);
+      collectElementIds(node.children, out);
+    }
+  }
+}
+
+/** True when `path` walks the branch tree to the element `nodeId` names. */
+function branchResolves(
+  tree: readonly ProgramTreeNode[],
+  path: readonly number[],
+  nodeId: string,
+): boolean {
+  let list = tree;
+  let node: ProgramTreeNode | undefined;
+  for (const index of path) {
+    node = list[index];
+    if (!node) return false;
+    list = node.k === 'el' ? node.children : [];
+  }
+  return !!node && node.k === 'el' && node.id === nodeId;
+}
+
+/**
+ * The location element id of one fixed value sink. The wire validator pins
+ * every sink location to carry its target node, so a validated program never
+ * misses it; the guard keeps the optional wire shape honest at the boundary.
+ */
+function sinkNodeId(part: ProgramBranchSinkPart): string {
+  const nodeId = part.location.node;
+  if (nodeId === undefined) {
+    fail(RuntimeErrorCode.PATH_UNRESOLVED, `[compiled-runtime] ${part.k} Part has no sink node`);
+  }
+  return nodeId;
+}
+
+function buildBranchPartPlan(program: PartProgramV2): BranchPartPlan {
+  const byWhen = new Map<number, { on: ProgramBranchSinkPart[]; off: ProgramBranchSinkPart[] }>();
+  const owned = new Set<number>();
+  const whens = program.parts.filter((part) => part.k === 'when');
+  if (whens.length === 0) return { byWhen, owned };
+  const valueSinks = program.parts.filter(
+    (part): part is ProgramBranchSinkPart =>
+      part.k === 'attr' ||
+      part.k === 'prop' ||
+      part.k === 'bool' ||
+      part.k === 'class' ||
+      part.k === 'style' ||
+      part.k === 'html',
+  );
+  if (valueSinks.length === 0) return { byWhen, owned };
+  const templateIds = new Set<string>();
+  collectElementIds(program.template, templateIds);
+  for (const when of whens) {
+    const on: ProgramBranchSinkPart[] = [];
+    const off: ProgramBranchSinkPart[] = [];
+    for (const sink of valueSinks) {
+      if (templateIds.has(sinkNodeId(sink))) continue;
+      if (branchResolves(when.on, sink.path, sinkNodeId(sink))) on.push(sink);
+      else if (branchResolves(when.off, sink.path, sinkNodeId(sink))) off.push(sink);
+    }
+    if (on.length > 0 || off.length > 0) {
+      byWhen.set(when.index, { on, off });
+      for (const sink of [...on, ...off]) owned.add(sink.index);
+    }
+  }
+  return { byWhen, owned };
+}
+
 /** The retained binding of one Part anchor (see MountContext.bindings). */
 export type PartBinding = TextPartSlot | WhenBlock | EachBlock;
 
@@ -80,6 +175,11 @@ export interface MountContext {
   rootScope: LifetimeScope;
   fixedPartsByPath: Map<string, ProgramFixedPart[]>;
   /**
+   * The program's branch-sink plan (alpha15): the fixed value sinks a
+   * when Block owns per branch, and the index set the root attach walks skip.
+   */
+  branchParts: BranchPartPlan;
+  /**
    * The DOM ownership record of this program instance: one retained binding
    * per Part anchor (text slot, when Block, each Block). Built by whichever
    * executor materialized the DOM (fresh creation or the initial claim) and
@@ -107,6 +207,7 @@ export function createContext(
     host,
     rootScope: ownerScope?.child() ?? new LifetimeScope(),
     fixedPartsByPath,
+    branchParts: buildBranchPartPlan(program),
     bindings: new Map(),
   };
 }
@@ -220,6 +321,21 @@ export function fixedPartsAtPath(ctx: MountContext, path: number[]): ProgramFixe
   return parts.sort((left, right) => left.index - right.index);
 }
 
+/**
+ * The fixed value sinks one template element owns by its stable id — the
+ * branch-sink complement of {@linkcode fixedPartsAtPath}: a branch sink's
+ * path is branch-relative, so claim-time checks attribute it to the element
+ * node it names, not to a template walk path.
+ */
+export function fixedPartsAtNode(ctx: MountContext, nodeId: string): ProgramFixedPart[] {
+  const out: ProgramFixedPart[] = [];
+  for (const sides of ctx.branchParts.byWhen.values()) {
+    for (const sink of [...sides.on, ...sides.off]) {
+      if (sink.location.node === nodeId) out.push(sink);
+    }
+  }
+  return out.sort((left, right) => left.index - right.index);
+}
 export function isComment(node: Node): node is Comment {
   return node.nodeType === 8;
 }

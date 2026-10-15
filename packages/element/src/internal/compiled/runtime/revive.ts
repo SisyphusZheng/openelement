@@ -41,6 +41,7 @@ import { LifetimeScope } from '../lifetime-scope.ts';
 import {
   type CompiledProgramInstance,
   fail,
+  fixedPartsAtNode,
   fixedPartsAtPath,
   isComment,
   isElement,
@@ -50,7 +51,13 @@ import {
   signalOf,
   subscribeWrites,
 } from './program-kernel.ts';
-import { attachFixedParts, reconcileTextPart, type TextPartSlot, updateTextPart } from './parts.ts';
+import {
+  attachFixedParts,
+  installBranchValueParts,
+  reconcileTextPart,
+  type TextPartSlot,
+  updateTextPart,
+} from './parts.ts';
 import { attachItemEvents, blockBuildersOrFail } from './blocks-seam.ts';
 import type { EachBlock, EachEntry, WhenBlock } from './blocks.ts';
 
@@ -192,7 +199,9 @@ function verifyNodes(
       }
       cursor++;
       const nodeProgramPath = [...programPath, index];
-      const hasHtmlSink = fixedPartsAtPath(ctx, nodeProgramPath).some((part) => part.k === 'html');
+      const hasHtmlSink =
+        fixedPartsAtPath(ctx, nodeProgramPath).some((part) => part.k === 'html') ||
+        fixedPartsAtNode(ctx, node.id).some((part) => part.k === 'html');
       // The same owned-subtree cases the claim walk honors: a trusted-HTML
       // sink, an expanded light island, and a projected slot own their
       // children; their content is not part of the parent's program nodes.
@@ -262,6 +271,20 @@ function armBinding(ctx: MountContext, scope: LifetimeScope, index: number): voi
     });
     // Only a branch flip rebuilds: an unchanged branch keeps its nodes.
     builders.updateWhen(block, signalOf(ctx, part.signal).value);
+    // A kept branch's own value sinks died with the disposed scopes (alpha15):
+    // a rebuilt branch re-installed inside updateWhen, so only the kept one
+    // needs a fresh branch scope and re-bind here.
+    if (block.branchScope.disposed) {
+      block.branchScope = partScope.child();
+      installBranchValueParts(
+        ctx,
+        block.branchScope,
+        block.nodes,
+        part.index,
+        block.current ? 'on' : 'off',
+        'fresh',
+      );
+    }
     return;
   }
   const block = binding as EachBlock;
