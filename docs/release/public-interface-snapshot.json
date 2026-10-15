@@ -1052,7 +1052,7 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "027c31dec8053fb81581489892e33c2b8a29a6862dbcc40fb984b23c9b29ad3a",
+          "publicShapeSha256": "503ee393102399f519f4fc225c4acd82891b71106d0dea1b9adca308d95cab93",
           "publicSymbols": [
             "ClassCandidateRegistry=type:{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}",
             "CompileElementResult=type:{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}",
@@ -1063,6 +1063,7 @@
             "ModuleSemanticFacts=type:{compiledElementDecorator:union(false|true);compilerInteractionEvents:array(string);defaultCompiledTag?:union(string|undefined);definePage:union(false|true);definedCustomElementTags:array(string);enhancedForm:union(false|true);exportedTagName?:union(string|undefined);moduleSpecifiers?:union(array(string)|undefined);referencedCustomElementTags:array(string);relativeImports:array(string);unsupportedElementDecorator?:union(string|undefined);usesExportedTagName:union(false|true)}",
             "ModuleSemanticsOptions=type:{readonly collectSpecifiers?:union(false|true|undefined);readonly vocabulary?:union(array(ModuleVocabularyDescriptor)|undefined)}",
             "ModuleVocabularyDescriptor=type:ModuleVocabularyDescriptor",
+            "PluginDiagnosticError=type:{diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number});frame:string;id:string;loc:{column:number;file:string;line:number};message:string}",
             "RegisteredStyleRequest=type:{readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string}",
             "SemanticCoreOptions=type:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)}",
             "StaticSidecarDescriptor=type:StaticSidecarDescriptor",
@@ -1074,6 +1075,7 @@
             "compiledArtifactStyleRequests=value:{call:(source:string,fileName:string)=>union(array(string)|undefined)}",
             "compiledElementPlugin=value:{call:(options:{candidates?:union(undefined|{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}});resolutionPaths?:union(Record<string, string[]>|undefined);staticSidecars?:union(array(StaticSidecarDescriptor)|undefined);typeCheckEmitted?:union(false|true|undefined);workspaceRoot?:union(string|undefined)})=>Plugin<any>}",
             "createClassCandidateRegistry=value:{call:()=>{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}}",
+            "diagnosticPluginError=value:{call:(diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number}),source:string,id:string)=>union(null|{diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number});frame:string;id:string;loc:{column:number;file:string;line:number};message:string})}",
             "emittedModuleTypeChecks=value:{call:(code:string,fileName:string,options:{compilerOptions?:union(CompilerOptions|undefined);extraFiles?:union(Readonly<Record<string, string>>|undefined);paths?:union(Record<string, string[]>|undefined)})=>union(false|true)}",
             "getStyleRequest=value:{call:(moduleId:string)=>union(undefined|{readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string})}",
             "hasElementDecoratorApplication=value:{call:(code:string,id:string)=>union(false|true)}",
