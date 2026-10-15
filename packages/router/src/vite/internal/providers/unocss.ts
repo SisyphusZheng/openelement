@@ -47,10 +47,12 @@
  * the roles would be silently absent), so it fails closed and names both
  * supported shapes.
  *
- * FAILURE POSTURE. A resolvable `unocss` that produces an empty sheet for a
- * non-empty candidate set is a defect of the adapter, never a silently
- * unstyled document: it fails closed. A loadable config that the generator
- * rejects surfaces the config loader's own diagnostic.
+ * FAILURE POSTURE. Failures keep their codes: a missing peer, an unloadable
+ * configuration, a declared source that cannot be resolved, a `@theme` source
+ * this adapter cannot compile, and a document sheet that compiles to nothing at
+ * all. A COMPONENT sheet that compiles to nothing is not in that list — a
+ * zero-match compile is the engine's answer for an application's own native-CSS
+ * hooks, and it is delivered as the empty sheet it is.
  */
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -176,16 +178,47 @@ function resolveDeclaredConfigPath(root: string, declared: string): string {
  * a resolution step, not a CSS transform: nothing inside the imported text is
  * rewritten.
  *
+ * An `@import` is an at-rule with a prelude, and the prelude's conditions are
+ * part of its meaning:
+ *
+ *     @import <url> [layer | layer(name)]? [supports(cond)]? <media-query-list>? ;
+ *
+ * The child's rules are inlined wrapped in the at-rules those conditions
+ * denote — `layer` outermost, then `supports`, then `media`, which is the
+ * nesting the spec defines for them. Matching only the bare form (as this
+ * adapter first did) left `@import './child.css' layer(tokens)` untouched: the
+ * child's tokens never reached the sheet at all, and the surviving `@import`
+ * was not the browser's to resolve either.
+ *
+ * Comments are not syntax. The scan runs over a copy of the text whose comments
+ * are blanked to spaces (same length, so offsets still address the original),
+ * which is what keeps `@theme` mentioned in a comment from being read as
+ * Tailwind's at-rule and a commented-out `@import` from being resolved.
+ *
  * The one shape this adapter cannot honour is Tailwind's `@theme` at-rule
  * (nothing here compiles it, so the roles it declares would be silently
  * absent), and it fails closed naming both supported shapes.
  */
-function readThemeSource(root: string, source: string, seen: Set<string> = new Set()): string {
+function readThemeSource(
+  root: string,
+  source: string,
+  state: InlineState = newInlineState(),
+): string {
   const file = resolveThemeSource(root, source);
-  if (seen.has(file)) return `/* circular @import skipped: ${source} */\n`;
-  seen.add(file);
+  // A cycle is a file reached while it is still being read; a repeat is one
+  // already inlined down another branch. Both stop here, and they are reported
+  // apart because only the first is a defect in the source.
+  if (state.active.has(file)) return `/* circular @import skipped: ${source} */\n`;
+  if (state.inlined.has(file)) {
+    return `/* repeated @import skipped (already inlined): ${source} */\n`;
+  }
+  state.active.add(file);
+  state.inlined.add(file);
   const text = readFileSync(file, 'utf8');
-  if (text.includes(TAILWIND_THEME_AT_RULE)) {
+  // Everything below reads the blanked view and writes the original; the two
+  // stay aligned because a comment keeps its length.
+  const scanned = blankComments(text);
+  if (scanned.includes(TAILWIND_THEME_AT_RULE)) {
     throw buildError(
       PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE,
       `[unocss] the declared style source "${source}" carries Tailwind's ` +
@@ -195,22 +228,130 @@ function readThemeSource(root: string, source: string, seen: Set<string> = new S
         'sources, and (b) the role table in `uno.config.ts`’s own `theme` key.',
     );
   }
-  return text.replace(CSS_IMPORT_RE, (whole, _quote: string, specifier: string) => {
+  // The scan walks the BLANKED view while the output is cut from the original;
+  // the two stay aligned because a comment keeps its length, so an import
+  // written inside a comment is skipped and every other byte is preserved.
+  let output = '';
+  let cursor = 0;
+  for (const match of scanned.matchAll(CSS_IMPORT_RE)) {
+    const specifier = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? '';
+    const prelude = match[6] ?? '';
     // A scheme URL, a protocol-relative URL or a root-absolute URL is not this
     // device's to resolve: the browser owns it and it stays exactly as written.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(specifier) || specifier.startsWith('//')) return whole;
-    if (specifier.startsWith('/')) return whole;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(specifier) || specifier.startsWith('//')) continue;
+    if (specifier.startsWith('/')) continue;
     // A local specifier that cannot be resolved fails closed here rather than
     // reaching the browser: an inlined sheet has no resolver to fall back on,
     // and a silently dropped token file is the "half-styled" failure this
     // adapter exists to prevent.
     const resolved = resolveThemeSource(root, specifier, dirname(file));
-    return `/* @import '${specifier}' */\n${readThemeSource(root, resolved, seen)}`;
-  });
+    const child = readThemeSource(root, resolved, state);
+    output += text.slice(cursor, match.index);
+    output += `/* @import '${specifier}' */\n${applyImportConditions(child, parseImportConditions(prelude, specifier))}`;
+    cursor = match.index + match[0].length;
+  }
+  state.active.delete(file);
+  return output + text.slice(cursor);
 }
 
-/** One `@import "…"` / `@import url(…)` statement of a theme source. */
-const CSS_IMPORT_RE = /@import\s+(?:url\(\s*)?(['"])([^'"]+)\1\s*\)?\s*;/g;
+/** The two walk facts: what is being read now, and what has been inlined. */
+interface InlineState {
+  /** Files on the current chain — a second visit is a cycle. */
+  readonly active: Set<string>;
+  /** Files already inlined anywhere — a second visit is a repeat. */
+  readonly inlined: Set<string>;
+}
+
+function newInlineState(): InlineState {
+  return { active: new Set(), inlined: new Set() };
+}
+
+/**
+ * A copy of `text` with every comment blanked to spaces — same length, same
+ * line breaks — so a scan cannot read syntax out of prose while replacements
+ * still address the original text.
+ */
+function blankComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '));
+}
+
+/** One `@import` statement, with its URL and the rest of its prelude. */
+const CSS_IMPORT_RE =
+  /@import\s+(?:url\(\s*(?:'([^']*)'|"([^"]*)"|([^'")\s]*))\s*\)|'([^']*)'|"([^"]*)")[ \t]*([^;]*);/g;
+
+/** The conditions one `@import` prelude carries, in the order it carries them. */
+interface ImportConditions {
+  /** `layer` (the anonymous form) or `layer(name)`. */
+  readonly layer?: string | true;
+  /** The `supports(...)` condition, without the parentheses that wrapped it. */
+  readonly supports?: string;
+  /** Whatever followed: a media query list. */
+  readonly media?: string;
+}
+
+/**
+ * Read an `@import` prelude's conditions. Blank comments come in, so the text
+ * is the at-rule's own; anything the grammar does not recognise lands in
+ * `media` and is carried through verbatim rather than dropped.
+ */
+function parseImportConditions(raw: string, specifier: string): ImportConditions {
+  const conditions: { layer?: string | true; supports?: string; media?: string } = {};
+  let rest = raw.trim();
+  const layer = /^layer(?:\s*\(\s*([^)]*)\s*\))?/i.exec(rest);
+  if (layer !== null) {
+    conditions.layer = layer[1] === undefined || layer[1].trim() === '' ? true : layer[1].trim();
+    rest = rest.slice(layer[0].length).trim();
+  }
+  const supports = /^supports\s*\(/i.exec(rest);
+  if (supports !== null) {
+    const balanced = readBalanced(rest, supports[0].length - 1);
+    if (balanced === null) {
+      throw buildError(
+        PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE,
+        `[unocss] the declared style source imports "${specifier}" with an unbalanced ` +
+          `\`supports(...)\` condition, which cannot be transcribed: ${rest}`,
+      );
+    }
+    conditions.supports = balanced.value.trim();
+    rest = rest.slice(balanced.end + 1).trim();
+  }
+  if (rest !== '') conditions.media = rest;
+  return conditions;
+}
+
+/** The text between the parenthesis at `open` and its match, and where it closed. */
+function readBalanced(text: string, open: number): { value: string; end: number } | null {
+  let depth = 0;
+  for (let index = open; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '(') depth += 1;
+    else if (character === ')') {
+      depth -= 1;
+      if (depth === 0) return { value: text.slice(open + 1, index), end: index };
+    }
+  }
+  return null;
+}
+
+/**
+ * Transcribe an import's conditions onto the inlined child: `layer` outermost,
+ * then `supports`, then `media` — the nesting CSS Cascade defines for a
+ * conditional import, spelled as the at-rules a reader can see.
+ */
+function applyImportConditions(child: string, conditions: ImportConditions): string {
+  let wrapped = child;
+  if (conditions.media !== undefined) wrapped = `@media ${conditions.media} {\n${wrapped}\n}`;
+  if (conditions.supports !== undefined) {
+    wrapped = `@supports (${conditions.supports}) {\n${wrapped}\n}`;
+  }
+  if (conditions.layer !== undefined) {
+    wrapped =
+      conditions.layer === true
+        ? `@layer {\n${wrapped}\n}`
+        : `@layer ${conditions.layer} {\n${wrapped}\n}`;
+  }
+  return wrapped;
+}
 
 /**
  * Resolve one theme-source path: relative paths against their importer, bare
@@ -314,14 +455,28 @@ async function buildGenerator(
   return { generator, watchFiles, documentPrefix };
 }
 
-/** The empty-compile guard: enabled + admitted candidates ⇒ CSS must exist. */
-function assertCompiled(css: string, sheet: 'document' | 'components', candidates: number): string {
+/**
+ * The document sheet's emptiness guard.
+ *
+ * A COMPONENT sheet may legitimately be empty: the engine compiled the
+ * candidate set successfully and matched nothing, which is exactly what an
+ * application's own native-CSS hooks are — a class it styles itself is not a
+ * utility request. Reading the candidate count as evidence that a rule must
+ * exist turned that answer into a false failure, so the guard lives only where
+ * the engine is expected to produce a layer unconditionally.
+ *
+ * The document sheet carries the resolved preset's preflight layers (theme
+ * variables, `@property` declarations, and the base reset when the application
+ * owns the document), so an enabled pipeline that produces nothing at all has
+ * produced no theme either — that is a defect of the adapter, never silence.
+ */
+function assertDocumentCompiled(css: string): string {
   if (css.trim() !== '') return css;
   throw buildError(
     PresetErrorCode.UNOCSS_EMPTY_COMPILE,
-    `[unocss] the ${sheet} sheet compiled to no CSS (${candidates} admitted candidate(s)). ` +
-      'An enabled entry with admitted candidates must produce a sheet — an empty compile is a ' +
-      'defect of the adapter, never a silently unstyled document.',
+    '[unocss] the document sheet compiled to no CSS. An enabled entry always carries the ' +
+      'resolved preset’s preflight layers (theme variables at minimum), so an empty compile ' +
+      'is a defect of the adapter, never a silently unstyled document.',
   );
 }
 
@@ -359,9 +514,12 @@ export async function createUnocssProvider(
     watchFiles,
 
     async compileComponents({ candidates }) {
+      // A zero-match compile is an answer, not a failure: the engine compiled
+      // every admitted candidate and none of them is a utility the application
+      // asked the engine to produce. An empty sheet is the delivery for it.
       if (candidates.length === 0) return '';
       const { css } = await generator.generate(candidates, { preflights: false });
-      return assertCompiled(css, 'components', candidates.length);
+      return css;
     },
 
     async compileDocument({ candidates, sources }) {
@@ -373,8 +531,7 @@ export async function createUnocssProvider(
       // enabled pipeline with zero matched utilities still ships the theme the
       // declared roles live in.
       const sheet = [documentPrefix(), css].filter((part) => part.trim() !== '').join('\n');
-      if (sheet.trim() === '') return assertCompiled('', 'document', tokens.length);
-      return sheet;
+      return assertDocumentCompiled(sheet);
     },
   };
 }

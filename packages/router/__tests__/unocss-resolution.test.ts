@@ -71,6 +71,27 @@ test.afterAll(async () => {
   await rm(SCRATCH, { recursive: true, force: true });
 });
 
+/** One integration over the fixture's engine, with no theme override. */
+async function integrationForFixture(): Promise<
+  Awaited<ReturnType<typeof createStyleBuildIntegration>>
+> {
+  const declaration = {};
+  const plan = resolveStylePlan({
+    root: FIXTURE_ROOT,
+    tailwind: undefined,
+    unocss: declaration,
+    declarations: [],
+  });
+  return await createStyleBuildIntegration({
+    root: FIXTURE_ROOT,
+    plan: plan!,
+    unocss: declaration,
+    componentSheetCandidates: () => [],
+    documentCandidates: () => [],
+    sources: () => new Map(),
+  });
+}
+
 test('an imported theme source is resolved and inlined depth-first', async () => {
   await mkdir(SCRATCH, { recursive: true });
   await writeFile(join(SCRATCH, 'palette.css'), ':root { --probe-palette: 1; }\n', 'utf8');
@@ -116,6 +137,101 @@ test('an @import the browser owns is left exactly as written', async () => {
     'https://example.invalid/fonts.css',
   );
   expect(css, 'a root-absolute URL is the browser’s').toContain("'/local-public.css'");
+});
+
+test('an @import with a layer() condition is inlined INTO that layer', async () => {
+  // `@import './child.css' layer(tokens)` is an at-rule with a prelude, not a
+  // bare import: dropping the condition would put the child's rules in the
+  // wrong cascade layer, and failing to match the statement at all leaves the
+  // child out of the sheet entirely — the roles it declares simply vanish.
+  await mkdir(SCRATCH, { recursive: true });
+  await writeFile(join(SCRATCH, 'layer-child.css'), ':root { --probe-layered: 1; }\n', 'utf8');
+  await writeFile(
+    join(SCRATCH, 'layer-entry.css'),
+    "@import './layer-child.css' layer(tokens);\n:root { --probe-layer-entry: 1; }\n",
+    'utf8',
+  );
+  const { document } = await withTheme([`.probe-${process.pid}/layer-entry.css`]);
+  const css = await document();
+  expect(css, 'the child was inlined').toContain('--probe-layered: 1');
+  expect(css, 'the condition survived as the at-rule it means').toMatch(
+    /@layer\s+tokens\s*\{[\s\S]*--probe-layered/,
+  );
+  // The provenance comment records what was resolved; a live statement would
+  // end in a semicolon and would be the browser's to fetch.
+  expect(css, 'no live @import statement survives').not.toMatch(
+    /@import\s+'\.\/layer-child\.css'\s*;/,
+  );
+  expect(css, 'the resolution is recorded').toContain("/* @import './layer-child.css' */");
+});
+
+test('an @import with supports() and media conditions keeps both', async () => {
+  await mkdir(SCRATCH, { recursive: true });
+  await writeFile(join(SCRATCH, 'cond-child.css'), ':root { --probe-cond: 1; }\n', 'utf8');
+  await writeFile(
+    join(SCRATCH, 'cond-entry.css'),
+    "@import './cond-child.css' supports(display: grid) screen and (min-width: 40em);\n",
+    'utf8',
+  );
+  const { document } = await withTheme([`.probe-${process.pid}/cond-entry.css`]);
+  const css = await document();
+  expect(css, 'the child was inlined').toContain('--probe-cond: 1');
+  expect(css, 'the media condition survived').toMatch(
+    /@media\s+screen and \(min-width: 40em\)\s*\{[\s\S]*--probe-cond/,
+  );
+  expect(css, 'the supports condition survived').toMatch(
+    /@supports\s+\(display: grid\)\s*\{[\s\S]*--probe-cond/,
+  );
+});
+
+test('an anonymous layer condition is transcribed too', async () => {
+  await mkdir(SCRATCH, { recursive: true });
+  await writeFile(join(SCRATCH, 'anon-child.css'), ':root { --probe-anon: 1; }\n', 'utf8');
+  await writeFile(join(SCRATCH, 'anon-entry.css'), "@import './anon-child.css' layer;\n", 'utf8');
+  const { document } = await withTheme([`.probe-${process.pid}/anon-entry.css`]);
+  const css = await document();
+  expect(css, 'the child was inlined').toContain('--probe-anon: 1');
+  expect(css, 'the anonymous layer survived').toMatch(/@layer\s*\{[\s\S]*--probe-anon/);
+});
+
+test('a comment is not syntax: @theme and @import inside one are inert', async () => {
+  await mkdir(SCRATCH, { recursive: true });
+  await writeFile(
+    join(SCRATCH, 'commented.css'),
+    [
+      '/* Tailwind users write @theme { --color-primary: red; } here.',
+      "   A commented-out import follows: @import './nowhere.css'; */",
+      ':root { --probe-commented: 1; }',
+      '/* a trailing comment mentioning @theme again */',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const { document } = await withTheme([`.probe-${process.pid}/commented.css`]);
+  const css = await document();
+  expect(css, 'the real declaration reached the sheet').toContain('--probe-commented: 1');
+  expect(css, 'the comment is still a comment').toContain('@theme { --color-primary: red; }');
+  expect(css, 'a commented-out import is not resolved').toContain("@import './nowhere.css';");
+});
+
+test('a source imported twice is inlined once, and says so', async () => {
+  // A diamond, not a cycle: both branches import the same sheet. The adapter
+  // inlines each source once — a token file's second copy would be redundant
+  // rules — and the sheet records the second import rather than dropping it
+  // silently.
+  await mkdir(SCRATCH, { recursive: true });
+  await writeFile(join(SCRATCH, 'shared.css'), ':root { --probe-shared: 1; }\n', 'utf8');
+  await writeFile(join(SCRATCH, 'left.css'), "@import './shared.css';\n", 'utf8');
+  await writeFile(join(SCRATCH, 'right.css'), "@import './shared.css';\n", 'utf8');
+  await writeFile(
+    join(SCRATCH, 'diamond.css'),
+    "@import './left.css';\n@import './right.css';\n",
+    'utf8',
+  );
+  const { document } = await withTheme([`.probe-${process.pid}/diamond.css`]);
+  const css = await document();
+  expect(css, 'the shared sheet contributed').toContain('--probe-shared: 1');
+  expect(css.split('--probe-shared: 1').length - 1, 'inlined exactly once').toBe(1);
 });
 
 test('a local @import that cannot be resolved fails closed', async () => {
@@ -192,6 +308,33 @@ test('an absolute theme-source path resolves without the app root', async () => 
   const { document } = await withTheme([absolute]);
   const css = await document();
   expect(css, 'an absolute path is read as one').toContain('--probe-absolute: 1');
+});
+
+test('an opaque candidate with no utility behind it compiles to an empty sheet', async () => {
+  // A class name the engine has no rule for is not a failure. The compiler
+  // reports "compiled, matched nothing" — which is what an application's own
+  // native-CSS hook (`my-semantic-hook`, styled by its own stylesheet) is — and
+  // the adapter must deliver the empty sheet that answer describes rather than
+  // diagnosing it as a broken pipeline. A candidate count is not evidence that
+  // a rule must exist.
+  const integration = await integrationForFixture();
+  const css = await integration.provider.compileComponents({
+    candidates: ['my-semantic-hook'],
+    sources: new Map(),
+  });
+  expect(css.trim(), 'a zero-match compile is an empty sheet, not an error').toBe('');
+});
+
+test('a candidate the engine CAN compile still produces its sheet', async () => {
+  const integration = await integrationForFixture();
+  const css = await integration.provider.compileComponents({
+    candidates: ['my-semantic-hook', 'gap-2'],
+    sources: new Map(),
+  });
+  expect(css, 'the one real utility still compiles').toMatch(/\.gap-2\s*\{/);
+  expect(css, 'the opaque hook contributed nothing, as it should').not.toContain(
+    'my-semantic-hook',
+  );
 });
 
 test('a document sheet that compiles to nothing at all is a coded failure', async () => {

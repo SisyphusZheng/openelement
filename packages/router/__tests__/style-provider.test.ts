@@ -327,17 +327,33 @@ test('theme sources resolve their own @import chain, including a bare package su
   expect(css, 'the imported file’s own variables are present').toContain('--violet-7');
 });
 
-test('a candidate set that compiles to nothing is a coded failure, never an empty sheet', async () => {
+test('a candidate set that compiles to nothing is an empty sheet, not a failure', async () => {
+  // A class name the engine has no rule for is not a defect to diagnose. The
+  // engine COMPILED the set and matched nothing, which is what an application's
+  // own native-CSS hooks are: `not-a-utility-token-at-all` is styled by the
+  // application's stylesheet, not by a generated utility. An admitted candidate
+  // is not a promise that a rule exists for it.
   const integration = await integrationFor(fixturePlan(), FIXTURE_DECLARATION);
-  const code = await errorCodeOf(() =>
-    integration.provider.compileComponents({
-      // A token no preset can compile: the candidate was admitted by the
-      // compiler, so an empty compile is the adapter's defect, not silence.
-      candidates: ['not-a-utility-token-at-all'],
-      sources: new Map(),
-    }),
+  const css = await integration.provider.compileComponents({
+    candidates: ['not-a-utility-token-at-all', 'my-semantic-hook'],
+    sources: new Map(),
+  });
+  expect(css.trim(), 'a zero-match compile is delivered as the empty sheet it is').toBe('');
+  // The same provider still compiles a candidate the engine knows.
+  const real = await integration.provider.compileComponents({
+    candidates: ['not-a-utility-token-at-all', 'gap-2'],
+    sources: new Map(),
+  });
+  expect(real, 'the real utility still compiles alongside the opaque hooks').toMatch(
+    /\.gap-2\s*\{/,
   );
-  expect(code).toBe(PresetErrorCode.UNOCSS_EMPTY_COMPILE);
+  // The coded failures this adapter keeps are the ones about the PIPELINE — a
+  // missing engine, an unloadable configuration, an unresolvable source, a
+  // `@theme` source it cannot compile, a document sheet that is empty because
+  // the preset produced no layers at all. Each has its own row here.
+  expect(PresetErrorCode.UNOCSS_EMPTY_COMPILE, 'the document guard still owns the code').toBe(
+    'OE_PRESET_UNOCSS_EMPTY_COMPILE',
+  );
 });
 
 test('a missing engine is a coded failure, not a silent skip', async () => {
