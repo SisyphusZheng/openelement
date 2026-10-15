@@ -30,7 +30,7 @@ import { DEFAULT_ISLANDS_DIR } from './internal/paths.ts';
 import { compilerBehaviorDeclarations } from './internal/ssg/client-admission.ts';
 import { runtimeModulePath } from './internal/runtime-module-path.ts';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
-import { COMPONENT_SHEET_SPECIFIER } from './tailwind.ts';
+import type { DevStyleSession } from './internal/dev-style-session.ts';
 
 const VIRTUAL_CLIENT_ENTRY_ID = 'virtual:open-client-entry';
 // Exported for plugin.ts: the dev watcher invalidates this module when the
@@ -44,6 +44,7 @@ const CLIENT_ENTRY_PUBLIC_PATH = 'client/islands/client.js';
 export function devIslandClientPlugin(
   options: FrameworkOptions,
   ctx: OpenElementBuildContext,
+  styleSession: DevStyleSession,
 ): Plugin {
   let base = '/';
 
@@ -79,8 +80,17 @@ export function devIslandClientPlugin(
       return null;
     },
 
-    load(id) {
+    async load(id) {
       if (id !== RESOLVED_CLIENT_ENTRY_ID) return;
+      // The entry registers the component-sheet adapter the SELECTED engine
+      // owns — the same owner the built entry resolves it from
+      // (cli/build-client.ts reads styleIntegration.provider), so a client
+      // upgrade on any engine's dev app recognizes the sheet its DSD declares
+      // instead of failing closed on an unexpected stylesheet resource. The
+      // build additionally gates on discovered candidates to keep the
+      // permanent bundle lean; dev's candidate set is live at request time,
+      // so an engine being selected is the whole condition here.
+      const utilitySheet = (await styleSession.resolve())?.provider.componentSheetSpecifier;
       const root = process.cwd();
       const islandsDir = options.islandsDir || DEFAULT_ISLANDS_DIR;
       // #569: an island-free app with data-open-enhance forms still needs the
@@ -120,10 +130,11 @@ export function devIslandClientPlugin(
       return generateClientEntry(islandEntries, {
         enhancedForms,
         renderer: options.renderer,
-        // alpha15 S lane (S5-A): the dev entry registers the shared component
-        // stylesheet through the same adapter protocol the built entry uses,
-        // so a client-created shadow component is styled in dev too.
-        ...(options.tailwind ? { utilitySheet: COMPONENT_SHEET_SPECIFIER } : {}),
+        // alpha15 S lane (S5-A), provider-generalized by the closeout: the
+        // dev entry registers the shared component stylesheet through the
+        // same adapter protocol the built entry uses, resolved from the
+        // selected provider rather than hardcoded to one engine.
+        ...(utilitySheet === undefined ? {} : { utilitySheet }),
         ...(mightUseBlocks ? {} : { includeBlocksRuntime: false }),
       });
     },

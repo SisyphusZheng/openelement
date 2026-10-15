@@ -114,7 +114,10 @@ test('openPlugin: island file added during dev triggers descriptor + client map 
     expect(ctx.phase1.ssrAdmissionPlan.renderableTags.join(',')).toContain('my-counter');
     const entryAfter = String(virtualEntry.load!(RESOLVED_ENTRY_ID));
     expect(entryAfter).toContain('my-counter');
-    const clientAfter = String(devIslandClient.load!(RESOLVED_CLIENT_ENTRY_ID));
+    // The client entry's load resolves the style session before generating
+    // (the component-sheet adapter comes from the selected provider), so it is
+    // async like every other load hook that awaits state.
+    const clientAfter = String(await devIslandClient.load!(RESOLVED_CLIENT_ENTRY_ID));
     expect(clientAfter).toContain('my-counter');
 
     // Removing the island re-scans back down.
@@ -124,7 +127,7 @@ test('openPlugin: island file added during dev triggers descriptor + client map 
     expect(ctx.phase1.islandTagNames).toEqual(['first-island']);
     const entryFinal = String(virtualEntry.load!(RESOLVED_ENTRY_ID));
     expect(entryFinal.includes('my-counter')).toEqual(false);
-    const clientFinal = String(devIslandClient.load!(RESOLVED_CLIENT_ENTRY_ID));
+    const clientFinal = String(await devIslandClient.load!(RESOLVED_CLIENT_ENTRY_ID));
     expect(clientFinal.includes('my-counter')).toEqual(false);
   } finally {
     process.chdir(previousCwd);
