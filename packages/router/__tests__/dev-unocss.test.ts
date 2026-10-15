@@ -111,6 +111,36 @@ test('the dev document links the ENGINE-generated sheet and that URL answers it'
   );
 });
 
+test('a theme source url() target keeps its source base and answers the real bytes in dev', async () => {
+  // The fixture's declared token source references `./probe-swatch.svg` NEXT
+  // TO ITSELF. The dev sheet is served from `/.openElement/<engine>-document.…
+  // .css`, so a target left relative to the source would be a request the dev
+  // server cannot answer. The provider rebases it onto the sheet's base; the
+  // request the sheet then makes resolves to the actual file and the real
+  // bytes come back — constructed here as the browser would construct it,
+  // from the served sheet's own URL.
+  const handle = await bootDev(openElement());
+  const doc = await fetchText(`${handle.base}/`);
+  const href = /<link rel="stylesheet" href="([^"]*unocss-document\.[^"]+\.css)" \/>/.exec(
+    doc,
+  )?.[1];
+  expect(href, 'the dev head links the document sheet').toBeDefined();
+  const css = await fetchText(`${handle.base}${href}`);
+  const target = /--probe-swatch:\s*url\('([^']+)'\)/.exec(css)?.[1];
+  expect(target, 'the swatch reference survives into the dev sheet').toBeDefined();
+  expect(
+    target,
+    'the reference is not the source-relative spelling (it must resolve from the sheet URL)',
+  ).not.toBe('./probe-swatch.svg');
+  const resolved = new URL(target!, `${handle.base}${href}`).href;
+  const response = await fetch(resolved);
+  expect(response.status, 'the rebased reference answers 200').toBe(200);
+  expect(response.headers.get('content-type'), 'the real asset, as its own type').toContain(
+    'image/svg',
+  );
+  expect(await response.text(), 'the real bytes, not a 404 page').toContain('<rect');
+});
+
 test('the dev DSD declares the component sheet and the adapter carries the sheet protocol', async () => {
   const handle = await bootDev(openElement());
   const doc = await fetchText(`${handle.base}/`);

@@ -38,14 +38,17 @@
  * guarantee still holds because automatic mode by definition has no
  * application declaration and therefore no application preset set.
  *
- * THEME SOURCES. Declared `theme` sources are plain CSS and are included
- * verbatim: an UnoCSS sheet is real CSS by the time it exists, so a
- * token/role file (Open Props, a package's `:root` block) needs no
+ * THEME SOURCES. Declared `theme` sources are plain CSS and are included with
+ * their own meaning intact: an UnoCSS sheet is real CSS by the time it exists,
+ * so a token/role file (Open Props, a package's `:root` block) needs no
  * engine-specific transform — this is what makes the theme source independent
- * of the utility generator. A source that carries Tailwind's `@theme` at-rule
- * is the one shape this adapter cannot honour (nothing would compile it and
- * the roles would be silently absent), so it fails closed and names both
- * supported shapes.
+ * of the utility generator. What the source cannot carry verbatim is resolved,
+ * never transformed: its `@import`s are inlined (every occurrence, conditions
+ * intact) and its relative `url()` targets are rebased onto the sheet's
+ * compile base so the referenced files are emitted beside it. A source that
+ * carries Tailwind's `@theme` at-rule is the one shape this adapter cannot
+ * honour (nothing would compile it and the roles would be silently absent), so
+ * it fails closed and names both supported shapes.
  *
  * FAILURE POSTURE. Failures keep their codes: a missing peer, an unloadable
  * configuration, a declared source that cannot be resolved, a `@theme` source
@@ -58,10 +61,39 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { dirname, isAbsolute, join, resolve } from 'pathe';
+import { dirname, isAbsolute, join, relative, resolve } from 'pathe';
 import { PresetErrorCode, buildError } from '../../../internal/error-codes.ts';
 import type { StyleSheetCompileInput, StyleProvider } from '../style-provider.ts';
 import type { ResolvedStyleSelection } from '../style-plan.ts';
+import { generatedSheetBase } from '../generated-sheets.ts';
+
+/**
+ * The CSS parser and the value parser. Both are CommonJS packages resolved
+ * from THIS package's own dependency tree (the same seam the peers below use),
+ * and both are real parsers: the document grammar (at-rules, declarations,
+ * comments, strings, escapes) belongs to postcss, and the grammar inside a
+ * value (an `@import` prelude, a `url()` argument) belongs to
+ * postcss-value-parser. Nothing in this module scans CSS text by hand.
+ */
+const requireFromHere = createRequire(import.meta.url);
+const postcss = requireFromHere('postcss') as typeof import('postcss');
+const parseValue = requireFromHere('postcss-value-parser') as typeof import('postcss-value-parser');
+
+/** The postcss AST types this module walks, read off the parser's own surface. */
+type CssRoot = ReturnType<typeof postcss.parse>;
+type CssAtRule = ReturnType<typeof postcss.atRule>;
+type CssChildNode = CssRoot['nodes'][number];
+
+/** One node of a parsed CSS value, in the shape the value parser hands back. */
+interface CssValueNode {
+  readonly type: 'word' | 'string' | 'div' | 'space' | 'function' | 'comment' | 'unicode-range';
+  value: string;
+  quote?: string;
+  /** The whitespace a separator or function wraps (`: x`, `( … )`). */
+  before?: string;
+  after?: string;
+  nodes?: CssValueNode[];
+}
 
 /** The generator surface this adapter consumes (the official public shape). */
 interface UnoGeneratorLike {
@@ -169,31 +201,56 @@ function resolveDeclaredConfigPath(root: string, declared: string): string {
 }
 
 /**
- * Include one declared theme source verbatim, resolving the one thing that
- * cannot travel verbatim: its `@import`s. A token file composes other token
- * files (`@import 'open-props/style'`, `@import './colors.css'`), and the
- * browser cannot resolve a bare specifier — so each import is resolved through
- * the platform resolver (bare specifiers from the app root, relative ones
- * against their importer) and inlined depth-first, with a cycle guard. This is
- * a resolution step, not a CSS transform: nothing inside the imported text is
- * rewritten.
+ * Include one declared theme source, resolving the two things that cannot
+ * travel verbatim: its `@import`s and its relative `url()` targets.
  *
- * An `@import` is an at-rule with a prelude, and the prelude's conditions are
- * part of its meaning:
+ * IMPORTS. A token file composes other token files (`@import
+ * 'open-props/style'`, `@import './colors.css'`), and the browser cannot
+ * resolve a bare specifier — so each import is resolved through the platform
+ * resolver (bare specifiers from the app root, relative ones against their
+ * importer) and inlined depth-first, in the order the file states them. This
+ * is a resolution step, not a CSS transform: nothing inside the imported text
+ * is rewritten except the two facts below.
  *
- *     @import <url> [layer | layer(name)]? [supports(cond)]? <media-query-list>? ;
+ * The document grammar is read by postcss, so the shapes a text scan cannot
+ * tell apart are distinct nodes here: a comment is a comment, a declaration's
+ * string value is a value, and an at-rule is an at-rule. `@import './x.css'`
+ * spelled inside a `content:` string is data; `@theme` spelled inside a
+ * comment is prose; neither is syntax, and neither is processed. (The first
+ * resolver matched `@import` with a regular expression over blanked text and
+ * rewrote a string's content into resolved CSS — the failure a real parser
+ * makes unreachable.)
  *
- * The child's rules are inlined wrapped in the at-rules those conditions
- * denote — `layer` outermost, then `supports`, then `media`, which is the
- * nesting the spec defines for them. Matching only the bare form (as this
- * adapter first did) left `@import './child.css' layer(tokens)` untouched: the
- * child's tokens never reached the sheet at all, and the surviving `@import`
- * was not the browser's to resolve either.
+ * EVERY OCCURRENCE. Per CSS Cascade 5's import processing, every `@import`
+ * OCCURRENCE participates independently: the sheet is constructed once per
+ * occurrence, at its own position, under its own conditions. The same file
+ * imported into two layers lands in both — so a repeat is inlined again, and
+ * only the read is shared (the byte cache below). The one termination the
+ * spec's model never reaches is a cycle, a file reached while its own chain is
+ * still reading it; that chain is cut, and the cut is recorded in the sheet.
+ * The first resolver conflated the two facts and deduplicated by file, which
+ * left `@import './child.css' layer(b)` after `layer(a)` delivering an empty
+ * layer — not what the source says.
  *
- * Comments are not syntax. The scan runs over a copy of the text whose comments
- * are blanked to spaces (same length, so offsets still address the original),
- * which is what keeps `@theme` mentioned in a comment from being read as
- * Tailwind's at-rule and a commented-out `@import` from being resolved.
+ * CONDITIONS. An `@import` prelude is `@import <url> [layer |
+ * layer(name)]? [supports(cond)]? <media-query-list>? ;` and its conditions
+ * are part of its meaning: the child's rules are inlined wrapped in the
+ * at-rules those conditions denote — `layer` outermost, then `supports`, then
+ * `media`, the nesting CSS Cascade defines. Matching only the bare form (as
+ * this resolver first did) left `@import './child.css' layer(tokens)`
+ * untouched: the child's tokens never reached the sheet at all.
+ *
+ * URL TARGETS. A theme source that paints with a file next to itself
+ * (`url('./swatch.svg')`) states that file relative to ITS OWN directory, but
+ * the sheet it is inlined into is delivered from the framework's compile base
+ * (`{@linkcode generatedSheetBase}` in build, the same `/.openElement/` URL
+ * namespace in dev) — a target left as written would be a request nothing
+ * answers. Every relative target that names a file on disk is therefore
+ * rebased onto the compile base, where the shared generated-sheet emitter
+ * emits the referenced bytes as a real asset of the build and resolves the
+ * reference to that asset's URL. Data URLs, fragments, root-absolute and
+ * scheme targets are not this rebase's to move; a relative target that names
+ * no file is left exactly as written rather than invented.
  *
  * The one shape this adapter cannot honour is Tailwind's `@theme` at-rule
  * (nothing here compiles it, so the roles it declares would be silently
@@ -204,80 +261,175 @@ function readThemeSource(
   source: string,
   state: InlineState = newInlineState(),
 ): string {
-  const file = resolveThemeSource(root, source);
-  // A cycle is a file reached while it is still being read; a repeat is one
-  // already inlined down another branch. Both stop here, and they are reported
-  // apart because only the first is a defect in the source.
-  if (state.active.has(file)) return `/* circular @import skipped: ${source} */\n`;
-  if (state.inlined.has(file)) {
-    return `/* repeated @import skipped (already inlined): ${source} */\n`;
-  }
-  state.active.add(file);
-  state.inlined.add(file);
-  const text = readFileSync(file, 'utf8');
-  // Everything below reads the blanked view and writes the original; the two
-  // stay aligned because a comment keeps its length.
-  const scanned = blankComments(text);
-  if (scanned.includes(TAILWIND_THEME_AT_RULE)) {
-    throw buildError(
-      PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE,
-      `[unocss] the declared style source "${source}" carries Tailwind's ` +
-        `\`${TAILWIND_THEME_AT_RULE}\` at-rule, which UnoCSS does not compile — the roles it ` +
-        'declares would be silently absent from the document sheet. UnoCSS accepts (a) ' +
-        'plain-CSS token files (`:root { --color-…: … }`, e.g. Open Props) as `theme` ' +
-        'sources, and (b) the role table in `uno.config.ts`’s own `theme` key.',
-    );
-  }
-  // The scan walks the BLANKED view while the output is cut from the original;
-  // the two stay aligned because a comment keeps its length, so an import
-  // written inside a comment is skipped and every other byte is preserved.
-  let output = '';
-  let cursor = 0;
-  for (const match of scanned.matchAll(CSS_IMPORT_RE)) {
-    const specifier = match[1] ?? match[2] ?? match[3] ?? match[4] ?? match[5] ?? '';
-    const prelude = match[6] ?? '';
-    // A scheme URL, a protocol-relative URL or a root-absolute URL is not this
-    // device's to resolve: the browser owns it and it stays exactly as written.
-    if (/^[a-z][a-z0-9+.-]*:/i.test(specifier) || specifier.startsWith('//')) continue;
-    if (specifier.startsWith('/')) continue;
-    // A local specifier that cannot be resolved fails closed here rather than
-    // reaching the browser: an inlined sheet has no resolver to fall back on,
-    // and a silently dropped token file is the "half-styled" failure this
-    // adapter exists to prevent.
-    const resolved = resolveThemeSource(root, specifier, dirname(file));
-    const child = readThemeSource(root, resolved, state);
-    output += text.slice(cursor, match.index);
-    output += `/* @import '${specifier}' */\n${applyImportConditions(child, parseImportConditions(prelude, specifier))}`;
-    cursor = match.index + match[0].length;
-  }
-  state.active.delete(file);
-  return output + text.slice(cursor);
-}
-
-/** The two walk facts: what is being read now, and what has been inlined. */
-interface InlineState {
-  /** Files on the current chain — a second visit is a cycle. */
-  readonly active: Set<string>;
-  /** Files already inlined anywhere — a second visit is a repeat. */
-  readonly inlined: Set<string>;
-}
-
-function newInlineState(): InlineState {
-  return { active: new Set(), inlined: new Set() };
+  return inlineThemeFile(root, resolveThemeSource(root, source), source, state).toString();
 }
 
 /**
- * A copy of `text` with every comment blanked to spaces — same length, same
- * line breaks — so a scan cannot read syntax out of prose while replacements
- * still address the original text.
+ * The two walk facts: which files the current chain is still reading (the
+ * cycle guard), and the bytes already read (shared between import occurrences
+ * — the read may be reused, the semantics may not be dropped).
  */
-function blankComments(text: string): string {
-  return text.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, ' '));
+interface InlineState {
+  /** Files on the current chain — a second visit is a cycle. */
+  readonly active: Set<string>;
+  /** Files whose bytes were read — a repeat re-parses, never re-reads. */
+  readonly cache: Map<string, string>;
 }
 
-/** One `@import` statement, with its URL and the rest of its prelude. */
-const CSS_IMPORT_RE =
-  /@import\s+(?:url\(\s*(?:'([^']*)'|"([^"]*)"|([^'")\s]*))\s*\)|'([^']*)'|"([^"]*)")[ \t]*([^;]*);/g;
+function newInlineState(): InlineState {
+  return { active: new Set(), cache: new Map() };
+}
+
+/**
+ * Parse one theme file into a processed tree: imports inlined, url targets
+ * rebased, `@theme` refused. Returns the tree so an import site can splice the
+ * child's nodes under its own conditions; the walk's entry point stringifies.
+ */
+function inlineThemeFile(root: string, file: string, source: string, state: InlineState): CssRoot {
+  // A cycle is a file reached while it is still being read; a repeat is one
+  // reached again from a finished branch. Only the first stops here, and it is
+  // recorded in the sheet rather than followed forever.
+  if (state.active.has(file)) {
+    const cut = postcss.root();
+    cut.append(
+      postcss.comment({
+        text: `circular @import skipped: ${source}`,
+        // The stringifier renders raws.left/right around the text; the
+        // padding lives there, not in the text, or it doubles.
+        raws: { left: ' ', right: ' ' },
+      }),
+    );
+    return cut as CssRoot;
+  }
+  state.active.add(file);
+  try {
+    let text = state.cache.get(file);
+    if (text === undefined) {
+      text = readFileSync(file, 'utf8');
+      state.cache.set(file, text);
+    }
+    let tree: CssRoot;
+    try {
+      tree = postcss.parse(text, { from: file }) as CssRoot;
+    } catch (cause) {
+      throw buildError(
+        PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE,
+        `[unocss] the declared style source "${source}" is not parseable CSS ` +
+          `(${cause instanceof Error ? cause.message : String(cause)}). Theme sources are ` +
+          'inlined through a real CSS parser, so a file it cannot parse cannot reach the sheet.',
+        { cause: cause instanceof Error ? cause : undefined },
+      );
+    }
+    // Tailwind's `@theme` is an AT-RULE. A real `@theme { … }` block anywhere
+    // in the source is the one shape this adapter cannot honour, and it fails
+    // closed; a comment and a string value are different node types, and a
+    // real parser never confuses them.
+    tree.walkAtRules((node) => {
+      if (node.name.toLowerCase() !== 'theme') return;
+      throw buildThemeSourceIncompatible(source);
+    });
+    // Root-level `@import` at-rules, in document order; each occurrence is
+    // replaced in place by its resolution (a comment naming it, then the
+    // child's rules under the prelude's conditions).
+    for (const node of [...tree.nodes]) {
+      if (node.type !== 'atrule' || node.name.toLowerCase() !== 'import') continue;
+      inlineImportAtRule(root, node as CssAtRule, file, state);
+    }
+    rebaseThemeUrls(tree, root, file);
+    return tree;
+  } finally {
+    state.active.delete(file);
+  }
+}
+
+/** The coded refusal for a source that carries Tailwind's `@theme` at-rule. */
+function buildThemeSourceIncompatible(source: string) {
+  return buildError(
+    PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE,
+    `[unocss] the declared style source "${source}" carries Tailwind's ` +
+      `\`${TAILWIND_THEME_AT_RULE}\` at-rule, which UnoCSS does not compile — the roles it ` +
+      'declares would be silently absent from the document sheet. UnoCSS accepts (a) ' +
+      'plain-CSS token files (`:root { --color-…: … }`, e.g. Open Props) as `theme` ' +
+      'sources, and (b) the role table in `uno.config.ts`’s own `theme` key.',
+  );
+}
+
+/**
+ * Replace one `@import` at-rule with its resolution. The statement's
+ * prelude is read by the value parser (strings, `url()` functions, escapes and
+ * all); a prelude this reader cannot parse is left exactly as written — the
+ * browser owns the diagnostic, and rewriting what was not understood is how
+ * CSS gets corrupted.
+ */
+function inlineImportAtRule(
+  root: string,
+  atRule: CssAtRule,
+  importer: string,
+  state: InlineState,
+): void {
+  const prelude = parseValue(atRule.params) as unknown as { nodes: CssValueNode[] };
+  const nodes = prelude.nodes;
+  let index = 0;
+  const nextMeaningful = (): CssValueNode | undefined => {
+    while (index < nodes.length && nodes[index]!.type === 'space') index += 1;
+    return nodes[index];
+  };
+  const specifier = readImportSpecifier(nextMeaningful());
+  if (specifier === undefined || specifier === '') return;
+  index += 1;
+  // A scheme URL, a protocol-relative URL or a root-absolute URL is not this
+  // device's to resolve: the browser owns it and it stays exactly as written.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(specifier) || specifier.startsWith('//')) return;
+  if (specifier.startsWith('/')) return;
+  const conditions = readImportConditions(nodes, index);
+  const resolved = resolveThemeSource(root, specifier, dirname(importer));
+  const child = inlineThemeFile(root, resolved, specifier, state);
+  // The child's rules, wrapped in the at-rules the conditions denote (layer
+  // outermost, then supports, then media — the nesting CSS Cascade defines),
+  // replace the import statement; a comment records what was resolved, so the
+  // sheet's own text shows the resolution instead of a live statement.
+  let payload: CssChildNode[] = child.nodes.map((node) => node.clone());
+  if (conditions.media !== undefined) {
+    const media = postcss.atRule({ name: 'media', params: conditions.media });
+    media.append(payload);
+    payload = [media as CssChildNode];
+  }
+  if (conditions.supports !== undefined) {
+    const supports = postcss.atRule({ name: 'supports', params: `(${conditions.supports})` });
+    supports.append(payload);
+    payload = [supports as CssChildNode];
+  }
+  if (conditions.layer !== undefined) {
+    const layer = postcss.atRule({
+      name: 'layer',
+      params: conditions.layer === true ? '' : conditions.layer,
+    });
+    layer.append(payload);
+    payload = [layer as CssChildNode];
+  }
+  const provenance = postcss.comment({
+    text: `@import '${specifier}'`,
+    // The stringifier renders raws.left/right around the text; the padding
+    // lives there, not in the text, or it doubles.
+    raws: { left: ' ', right: ' ' },
+  });
+  provenance.raws.before = atRule.raws.before;
+  if (payload.length > 0) payload[0]!.raws.before = '\n';
+  atRule.replaceWith(provenance, ...payload);
+}
+
+/** The URL or string of an `@import` prelude's first meaningful node. */
+function readImportSpecifier(node: CssValueNode | undefined): string | undefined {
+  if (node === undefined) return undefined;
+  if (node.type === 'string') return node.value;
+  if (node.type === 'function' && node.value.toLowerCase() === 'url') {
+    const inner = (node.nodes ?? []).filter((item) => item.type !== 'space');
+    if (inner.length === 1 && (inner[0]!.type === 'string' || inner[0]!.type === 'word')) {
+      return inner[0]!.value;
+    }
+  }
+  return undefined;
+}
 
 /** The conditions one `@import` prelude carries, in the order it carries them. */
 interface ImportConditions {
@@ -290,67 +442,134 @@ interface ImportConditions {
 }
 
 /**
- * Read an `@import` prelude's conditions. Blank comments come in, so the text
- * is the at-rule's own; anything the grammar does not recognise lands in
- * `media` and is carried through verbatim rather than dropped.
+ * Read an `@import` prelude's conditions off the parsed value: `layer` (word
+ * or function) first, then `supports(...)`, then whatever follows as the media
+ * query list. Nodes the grammar does not place land in `media` and are carried
+ * through verbatim rather than dropped.
  */
-function parseImportConditions(raw: string, specifier: string): ImportConditions {
+function readImportConditions(nodes: CssValueNode[], from: number): ImportConditions {
   const conditions: { layer?: string | true; supports?: string; media?: string } = {};
-  let rest = raw.trim();
-  const layer = /^layer(?:\s*\(\s*([^)]*)\s*\))?/i.exec(rest);
-  if (layer !== null) {
-    conditions.layer = layer[1] === undefined || layer[1].trim() === '' ? true : layer[1].trim();
-    rest = rest.slice(layer[0].length).trim();
+  let index = from;
+  const meaningful = (): CssValueNode | undefined => {
+    while (index < nodes.length && nodes[index]!.type === 'space') index += 1;
+    return nodes[index];
+  };
+  let node = meaningful();
+  if (node?.type === 'word' && node.value.toLowerCase() === 'layer') {
+    conditions.layer = true;
+    index += 1;
+    node = meaningful();
+  } else if (node?.type === 'function' && node.value.toLowerCase() === 'layer') {
+    const name = serializeCssValue(node.nodes ?? []).trim();
+    conditions.layer = name === '' ? true : name;
+    index += 1;
+    node = meaningful();
   }
-  const supports = /^supports\s*\(/i.exec(rest);
-  if (supports !== null) {
-    const balanced = readBalanced(rest, supports[0].length - 1);
-    if (balanced === null) {
-      throw buildError(
-        PresetErrorCode.UNOCSS_THEME_SOURCE_INCOMPATIBLE,
-        `[unocss] the declared style source imports "${specifier}" with an unbalanced ` +
-          `\`supports(...)\` condition, which cannot be transcribed: ${rest}`,
-      );
-    }
-    conditions.supports = balanced.value.trim();
-    rest = rest.slice(balanced.end + 1).trim();
+  if (node?.type === 'function' && node.value.toLowerCase() === 'supports') {
+    conditions.supports = serializeCssValue(node.nodes ?? []).trim();
+    index += 1;
   }
-  if (rest !== '') conditions.media = rest;
+  const media = serializeCssValue(nodes.slice(index)).trim();
+  if (media !== '') conditions.media = media;
   return conditions;
 }
 
-/** The text between the parenthesis at `open` and its match, and where it closed. */
-function readBalanced(text: string, open: number): { value: string; end: number } | null {
-  let depth = 0;
-  for (let index = open; index < text.length; index += 1) {
-    const character = text[index];
-    if (character === '(') depth += 1;
-    else if (character === ')') {
-      depth -= 1;
-      if (depth === 0) return { value: text.slice(open + 1, index), end: index };
+/**
+ * Serialize parsed value nodes back to CSS text. The parser preserved the
+ * source's whitespace and quoting as nodes (a separator keeps the spaces
+ * around it in `before`/`after`, a function the ones inside its parentheses),
+ * so this is a walk of the AST, not a scan of text: words, strings,
+ * separators, raw whitespace runs, and functions (named or the anonymous
+ * `(...)` grouping) round-trip exactly.
+ */
+function serializeCssValue(nodes: readonly CssValueNode[]): string {
+  let out = '';
+  for (const node of nodes) {
+    if (node.type === 'space' || node.type === 'word' || node.type === 'unicode-range') {
+      out += node.value;
+    } else if (node.type === 'div') {
+      out += `${node.before ?? ''}${node.value}${node.after ?? ''}`;
+    } else if (node.type === 'string') {
+      out += `${node.quote ?? '"'}${node.value}${node.quote ?? '"'}`;
+    } else if (node.type === 'comment') {
+      out += `/*${node.value}*/`;
+    } else if (node.type === 'function') {
+      out += `${node.value}(${node.before ?? ''}${serializeCssValue(node.nodes ?? [])}${
+        node.after ?? ''
+      })`;
+    } else {
+      out += node.value;
     }
   }
-  return null;
+  return out;
 }
 
 /**
- * Transcribe an import's conditions onto the inlined child: `layer` outermost,
- * then `supports`, then `media` — the nesting CSS Cascade defines for a
- * conditional import, spelled as the at-rules a reader can see.
+ * Rebase every relative `url()` target of one theme file onto the sheet's
+ * compile base. The target a source states is relative to ITS directory; the
+ * inlined sheet is delivered from {@linkcode generatedSheetBase}. A target is
+ * rebased only when the file it names exists — a relative target that names
+ * nothing is left exactly as written, never invented into a different lie.
  */
-function applyImportConditions(child: string, conditions: ImportConditions): string {
-  let wrapped = child;
-  if (conditions.media !== undefined) wrapped = `@media ${conditions.media} {\n${wrapped}\n}`;
-  if (conditions.supports !== undefined) {
-    wrapped = `@supports (${conditions.supports}) {\n${wrapped}\n}`;
-  }
-  if (conditions.layer !== undefined) {
-    wrapped =
-      conditions.layer === true
-        ? `@layer {\n${wrapped}\n}`
-        : `@layer ${conditions.layer} {\n${wrapped}\n}`;
-  }
-  return wrapped;
+function rebaseThemeUrls(tree: CssRoot, root: string, file: string): void {
+  const urlBase = generatedSheetBase(root);
+  tree.walkDecls((decl) => {
+    const parsed = parseValue(decl.value) as unknown as { nodes: CssValueNode[] };
+    let changed = false;
+    for (const node of parsed.nodes) {
+      if (node.type !== 'function' || node.value.toLowerCase() !== 'url') continue;
+      const inner = (node.nodes ?? []).filter((item) => item.type !== 'space');
+      if (inner.length !== 1) continue;
+      const item = inner[0]!;
+      if (item.type !== 'string' && item.type !== 'word') continue;
+      const target = item.value;
+      if (!isRelativeUrlTarget(target)) continue;
+      const { path, suffix } = splitUrlSuffix(target);
+      const resolvedFile = resolve(dirname(file), path.replaceAll(/\\(.)/g, '$1'));
+      if (!existsSync(resolvedFile)) continue;
+      const rebased = relative(urlBase, resolvedFile);
+      if (rebased === '') continue;
+      const quote = item.type === 'string' && item.quote !== undefined ? item.quote : '"';
+      node.nodes = [
+        {
+          type: 'string',
+          value: escapeCssString(`${rebased}${suffix}`, quote),
+          quote,
+        },
+      ];
+      changed = true;
+    }
+    if (!changed) return;
+    decl.value = serializeCssValue(parsed.nodes);
+    // postcss prefers a declaration's raw value (raws.value.raw) over `value`
+    // when serializing; the rewrite must be what reaches the sheet.
+    delete decl.raws.value;
+  });
+}
+
+/** True for a `url()` target a relative rebase owns (see the module doc). */
+function isRelativeUrlTarget(target: string): boolean {
+  return (
+    target !== '' &&
+    !target.startsWith('/') &&
+    !target.startsWith('//') &&
+    !target.startsWith('data:') &&
+    !target.startsWith('#') &&
+    !/^[a-z][a-z0-9+.-]*:/i.test(target)
+  );
+}
+
+/** A target's path part and its trailing query/fragment, kept verbatim. */
+function splitUrlSuffix(target: string): { path: string; suffix: string } {
+  const cut = target.search(/[?#]/);
+  return cut === -1
+    ? { path: target, suffix: '' }
+    : { path: target.slice(0, cut), suffix: target.slice(cut) };
+}
+
+/** Escape one path for the CSS string it is written into. */
+function escapeCssString(value: string, quote: string): string {
+  return value.replaceAll('\\', '\\\\').replaceAll(quote, `\\${quote}`);
 }
 
 /**
@@ -448,10 +667,19 @@ async function buildGenerator(
       { cause: cause instanceof Error ? cause : undefined },
     );
   }
-  const documentPrefix = (): string =>
-    plan.theme
-      .map((source) => `/* declared style source: ${source} */\n${readThemeSource(root, source)}`)
+  const documentPrefix = (): string => {
+    // One walk state across the declared sources: the byte cache is shared (a
+    // file two sources import is read once), and each source is its own root —
+    // its chain is fully unwound before the next begins, so the cycle guard
+    // stays per-chain.
+    const state = newInlineState();
+    return plan.theme
+      .map(
+        (source) =>
+          `/* declared style source: ${source} */\n${readThemeSource(root, source, state)}`,
+      )
       .join('\n');
+  };
   return { generator, watchFiles, documentPrefix };
 }
 

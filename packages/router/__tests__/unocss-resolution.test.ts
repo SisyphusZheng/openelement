@@ -15,6 +15,7 @@ import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import type { Plugin } from 'vite';
 import { expect, test } from 'vitest';
 import { PresetErrorCode } from '../src/internal/error-codes.ts';
 import {
@@ -41,7 +42,11 @@ async function errorCodeOf(run: () => unknown): Promise<string | undefined> {
 async function withTheme(
   theme: readonly string[],
   sources: Array<[string, string]> = [],
-): Promise<{ plan: ResolvedStyleSelection; document: () => Promise<string> }> {
+): Promise<{
+  plan: ResolvedStyleSelection;
+  integration: Awaited<ReturnType<typeof createStyleBuildIntegration>>;
+  document: () => Promise<string>;
+}> {
   const declaration = { theme: [...theme] };
   const plan = resolveStylePlan({
     root: FIXTURE_ROOT,
@@ -59,6 +64,7 @@ async function withTheme(
   });
   return {
     plan: plan!,
+    integration,
     document: async () =>
       await integration.provider.compileDocument!({
         candidates: [],
@@ -194,6 +200,133 @@ test('an anonymous layer condition is transcribed too', async () => {
   expect(css, 'the anonymous layer survived').toMatch(/@layer\s*\{[\s\S]*--probe-anon/);
 });
 
+test("a theme source's relative url() target resolves from the sheet's compile base and is emitted as a real asset", async () => {
+  // A token file that paints with a file NEXT TO ITSELF. The generated sheet
+  // does not live in that directory — it is delivered from the framework's
+  // compile base (`<root>/.openElement` in build, the `/.openElement/` URL
+  // namespace in dev) — so a target left relative to the source would be a
+  // request nothing answers. The provider therefore rebases every relative
+  // `url()` target of a theme source onto the compile base, and this build's
+  // emitter (the shared generated-sheet protocol) then emits the referenced
+  // bytes as a real asset and resolves the reference to that asset's URL.
+  // Everything else — data URLs, fragments, root-absolute and scheme targets —
+  // stays exactly as the source wrote it.
+  await mkdir(SCRATCH, { recursive: true });
+  const pictureBytes = Buffer.from(
+    '<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>\n',
+    'utf8',
+  );
+  await writeFile(join(SCRATCH, 'picture.svg'), pictureBytes);
+  await writeFile(
+    join(SCRATCH, 'painted.css'),
+    [
+      ".probe-paint { background-image: url('./picture.svg'); }",
+      ".probe-data { background-image: url('data:image/gif;base64,R0lGOD'); }",
+      ".probe-public { background-image: url('/probe-public.svg'); }",
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const { integration, document } = await withTheme([`.probe-${process.pid}/painted.css`]);
+  const css = await document();
+  const rebased = `url('../.probe-${process.pid}/picture.svg')`;
+  expect(css, 'the target is rebased onto the compile base, still relative').toContain(rebased);
+  expect(css, 'the original source-relative spelling is gone').not.toContain(
+    "url('./picture.svg')",
+  );
+  expect(css, 'a data URL is not this provider’s to move').toContain(
+    'data:image/gif;base64,R0lGOD',
+  );
+  expect(css, 'a root-absolute URL is the deployment’s').toContain('/probe-public.svg');
+
+  // The emitter half, driven the way the build drives it: the rebased target
+  // resolves, the referenced bytes are EMITTED as their own asset, and the
+  // sheet's placeholder resolves to that asset's URL.
+  const assets: Array<{
+    referenceId: string;
+    fileName: string;
+    source: string | Uint8Array;
+    named: boolean;
+  }> = [];
+  let counter = 0;
+  const context = {
+    environment: { config: { base: '/' } },
+    emitFile(file: {
+      type: 'asset';
+      fileName?: string;
+      name?: string;
+      source: string | Uint8Array;
+    }): string {
+      counter += 1;
+      assets.push({
+        referenceId: `ref-${counter}`,
+        fileName: file.fileName ?? `assets/${file.name ?? 'unnamed'}`,
+        source: file.source,
+        named: file.fileName === undefined,
+      });
+      return `ref-${counter}`;
+    },
+    getFileName(): string {
+      return 'assets/probe-picture-EMITTED.svg';
+    },
+  };
+  const plugin = integration.sheetPlugins[0] as Plugin;
+  await (plugin.buildStart as (this: unknown) => Promise<void>).call(context);
+  const emittedPicture = assets.find(
+    (asset) => asset.named && asset.fileName.endsWith('picture.svg'),
+  );
+  expect(emittedPicture, 'the referenced file was emitted beside the sheet').toBeDefined();
+  expect(
+    Buffer.from(emittedPicture!.source as Uint8Array).equals(pictureBytes),
+    'the emitted asset carries the referenced bytes',
+  ).toBe(true);
+  const sheet = assets.find((asset) => asset.fileName === integration.documentRecord?.fileName);
+  expect(sheet, 'the document sheet was emitted').toBeDefined();
+
+  const bundle: Record<string, { type: 'asset'; source: string | Uint8Array }> = {
+    [sheet!.fileName]: { type: 'asset', source: sheet!.source },
+  };
+  (plugin.generateBundle as unknown as (options: unknown, bundle: unknown) => void).call(
+    { environment: { config: { base: '/' } }, getFileName: context.getFileName },
+    {},
+    bundle,
+  );
+  const resolved = bundle[sheet!.fileName]!.source;
+  const finalCss = typeof resolved === 'string' ? resolved : Buffer.from(resolved).toString('utf8');
+  expect(finalCss, 'no placeholder survives generation').not.toContain('__OE_COMPONENT_URL__');
+  expect(finalCss, 'the sheet addresses the emitted asset').toContain(
+    "url('/assets/probe-picture-EMITTED.svg')",
+  );
+  expect(finalCss, 'the unownable targets are untouched').toContain('data:image/gif;base64,R0lGOD');
+});
+
+test('a string is data, not syntax: at-rule spelling inside one is inert', async () => {
+  // Both reproduction shapes: a `content:` string that SPELLS `@theme` is a
+  // value of a declaration — not an at-rule, so the Tailwind refusal must not
+  // fire — and a `content:` string that SPELLS an @import names a file that
+  // does not exist, so a scan that read it as syntax would try to resolve
+  // `./never-on-disk.css` and fail the compile. The strings are data; the file
+  // is never touched and both reach the sheet byte for byte.
+  await mkdir(SCRATCH, { recursive: true });
+  await writeFile(
+    join(SCRATCH, 'strings.css'),
+    [
+      '.probe-theme::before { content: "@theme"; }',
+      '.probe-import::before { content: "@import \'./never-on-disk.css\';"; }',
+      ':root { --probe-string-safe: 1; }',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const { document } = await withTheme([`.probe-${process.pid}/strings.css`]);
+  const css = await document();
+  expect(css, 'a string that spells @theme is a string').toContain('"@theme"');
+  expect(css, 'a string that spells an @import is a string').toContain(
+    "@import './never-on-disk.css';",
+  );
+  expect(css, 'the source compiled').toContain('--probe-string-safe: 1');
+});
+
 test('a comment is not syntax: @theme and @import inside one are inert', async () => {
   await mkdir(SCRATCH, { recursive: true });
   await writeFile(
@@ -214,11 +347,15 @@ test('a comment is not syntax: @theme and @import inside one are inert', async (
   expect(css, 'a commented-out import is not resolved').toContain("@import './nowhere.css';");
 });
 
-test('a source imported twice is inlined once, and says so', async () => {
-  // A diamond, not a cycle: both branches import the same sheet. The adapter
-  // inlines each source once — a token file's second copy would be redundant
-  // rules — and the sheet records the second import rather than dropping it
-  // silently.
+test('a diamond inlines every occurrence — a repeat is not a cycle', async () => {
+  // A diamond, not a cycle: both branches import the same sheet. CSS Cascade 5
+  // processes every @import OCCURRENCE (each construction contributes the
+  // imported sheet's rules at its own position — the same file imported into
+  // two layers must land in both), so a repeat is inlined again: only reading
+  // work may be shared, never the semantics. The previous assertion here
+  // ("inlined exactly once") was the adapter's old dedup rule leaking into the
+  // test, not a property of CSS; see the two-layers case below for the shape
+  // the dedup broke.
   await mkdir(SCRATCH, { recursive: true });
   await writeFile(join(SCRATCH, 'shared.css'), ':root { --probe-shared: 1; }\n', 'utf8');
   await writeFile(join(SCRATCH, 'left.css'), "@import './shared.css';\n", 'utf8');
@@ -230,8 +367,42 @@ test('a source imported twice is inlined once, and says so', async () => {
   );
   const { document } = await withTheme([`.probe-${process.pid}/diamond.css`]);
   const css = await document();
-  expect(css, 'the shared sheet contributed').toContain('--probe-shared: 1');
-  expect(css.split('--probe-shared: 1').length - 1, 'inlined exactly once').toBe(1);
+  expect(
+    css.split('--probe-shared: 1').length - 1,
+    'every import occurrence contributes its sheet',
+  ).toBe(2);
+  expect(
+    css.split("/* @import './shared.css' */").length - 1,
+    'each resolution is recorded at its own position',
+  ).toBe(2);
+});
+
+test('the same file imported into two layers lands in both (CSS Cascade 5)', async () => {
+  // The reproduction that forced the repeat/cycle split: one file, imported
+  // twice, into DIFFERENT layers. Deduplicating the second occurrence left
+  // layer(b) empty — the file's rules exist in layer(a) only, which is not
+  // what the source says. Per CSS Cascade 5's import processing each import
+  // occurrence participates independently; the bytes may be read once.
+  await mkdir(SCRATCH, { recursive: true });
+  await writeFile(join(SCRATCH, 'twice.css'), ':root { --probe-twice: 1; }\n', 'utf8');
+  await writeFile(
+    join(SCRATCH, 'two-layers.css'),
+    "@import './twice.css' layer(a);\n@import './twice.css' layer(b);\n",
+    'utf8',
+  );
+  const { document } = await withTheme([`.probe-${process.pid}/two-layers.css`]);
+  const css = await document();
+  const layerA = css.indexOf('@layer a');
+  const layerB = css.indexOf('@layer b');
+  const first = css.indexOf('--probe-twice: 1');
+  const second = css.indexOf('--probe-twice: 1', first + 1);
+  expect(layerA, 'layer(a) is in the sheet').toBeGreaterThan(-1);
+  expect(first, 'the first occurrence is inside layer(a)').toBeGreaterThan(layerA);
+  expect(layerB, 'layer(b) is in the sheet').toBeGreaterThan(layerA);
+  expect(
+    second,
+    'the second occurrence is inside layer(b) — not deduplicated away',
+  ).toBeGreaterThan(layerB);
 });
 
 test('a local @import that cannot be resolved fails closed', async () => {

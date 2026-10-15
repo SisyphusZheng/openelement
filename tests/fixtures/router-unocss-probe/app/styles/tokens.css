@@ -20,3 +20,10 @@
   --color-ring: var(--violet-8);
   --color-destructive: var(--red-7);
 }
+
+/* A relative asset reference beside the token file: the generated sheet is
+   delivered from elsewhere, so the reference must keep resolving against THIS
+   file's directory (the provider rebases it onto the sheet's compile base). */
+:root {
+  --probe-swatch: url('./probe-swatch.svg');
+}
