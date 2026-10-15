@@ -263,7 +263,7 @@ export default class OpenLayout extends OpenElement {
                 </svg>
               </a>
               <details class='relative'>
-                <summary class='flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full border border-border bg-popover/74 p-0 text-muted-foreground transition-all duration-150 ease-[ease] hover:border-[color-mix(in_srgb,var(--color-foreground)_25%,var(--color-border))] hover:bg-accent hover:text-foreground min-[901px]:hidden'>
+                <summary class='flex h-10 w-10 cursor-pointer list-none items-center justify-center rounded-full border border-border bg-popover/74 p-0 text-muted-foreground transition-all duration-150 ease-[ease] hover:border-[color-mix(in_srgb,var(--color-foreground)_25%,var(--color-border))] hover:bg-accent hover:text-foreground min-[1041px]:hidden'>
                   <span class='sr-only'>{this.menuOpen}</span>
                   <span class='text-(length:--text-xl) leading-none' aria-hidden='true'>
                     {'☰'}

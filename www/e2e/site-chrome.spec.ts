@@ -127,6 +127,59 @@ test.describe('Site chrome: docs sidebar', () => {
   });
 });
 
+test.describe('Site chrome: the header always offers one navigation affordance', () => {
+  // The desktop pill and the mobile disclosure used to change over at different
+  // tiers — the pill appeared at 1041px while the disclosure was hidden from
+  // 901px — which left 901–1040 with NEITHER: no primary navigation in the
+  // header at all, on a laptop-width window. The two now switch at the same
+  // point, and this row walks each side of it plus both boundary pixels.
+  const TIERS = [
+    { width: 900, affordance: 'mobile' },
+    { width: 901, affordance: 'mobile' },
+    { width: 1040, affordance: 'mobile' },
+    { width: 1041, affordance: 'desktop' },
+  ] as const;
+
+  for (const tier of TIERS) {
+    test(`at ${tier.width}px the header navigates through the ${tier.affordance} affordance`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: tier.width, height: 900 });
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+
+      const pill = page.getByRole('navigation', { name: 'Primary navigation' });
+      const summary = page.locator('open-layout header summary').first();
+      const mobileNav = page.getByRole('navigation', { name: 'Mobile navigation' });
+
+      if (tier.affordance === 'mobile') {
+        await expect(summary, 'the disclosure is the affordance here').toBeVisible();
+        await expect(pill, 'the desktop pill is not offered').toBeHidden();
+
+        // A real keyboard path: focus the disclosure and open it with Enter.
+        await summary.focus();
+        await page.keyboard.press('Enter');
+        await expect(summary.locator('xpath=..')).toHaveAttribute('open', '');
+        const target = mobileNav.getByRole('link', { name: 'Roadmap' });
+        await expect(target, 'the disclosure carries the primary links').toBeVisible();
+        await target.focus();
+        await page.keyboard.press('Enter');
+        await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe('/roadmap');
+        return;
+      }
+
+      await expect(pill, 'the pill is the affordance here').toBeVisible();
+      await expect(summary, 'the mobile disclosure is gone').toBeHidden();
+
+      // The pill's links are reachable by keyboard and they navigate.
+      const target = pill.getByRole('link', { name: 'Roadmap' });
+      await target.focus();
+      await page.keyboard.press('Enter');
+      await expect.poll(() => new URL(page.url()).pathname, { timeout: 10_000 }).toBe('/roadmap');
+    });
+  }
+});
+
 test.describe('Site chrome: footer', () => {
   for (const route of ['/', '/guide/getting-started', '/architecture/dsd']) {
     test(`footer on ${route} exposes the four labeled navigation columns`, async ({ page }) => {

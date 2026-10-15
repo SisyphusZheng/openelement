@@ -30,6 +30,14 @@ export {
   type CompileElementResult,
   type ElementCompilerDiagnostic,
 } from './internal/compiler/semantic-core/compile.ts';
+// The ONE diagnostic projection every host of the compiler reports through
+// (the standalone Vite plugin and the Router's `open:core` transform): a
+// structured `{id, loc, frame, diagnostics}` record, so a consumer reads the
+// authored location instead of parsing a pre-joined string back apart.
+export {
+  diagnosticPluginError,
+  type PluginDiagnosticError,
+} from './internal/compiler/semantic-core/diagnostics/index.ts';
 export {
   analyzeModuleSemantics,
   type ModuleSemanticFacts,

@@ -12,8 +12,10 @@
 import { readFile } from 'node:fs/promises';
 import type { Plugin } from 'vite';
 import {
+  CompiledElementError,
   compiledArtifactClassCandidates,
   compileElementModule,
+  diagnosticPluginError,
   lightRootScopeTag,
   readCompiledArtifactStyles,
   registerStyleRequest,
@@ -123,7 +125,16 @@ export function createCompilerHooks(
           map: result.map,
         };
       } catch (error) {
-        if (error instanceof Error) this.error(error.message);
+        // The SAME projection the standalone compiler plugin reports through
+        // (#1413): a structured `{id, loc, frame, diagnostics}` record, so the
+        // dev overlay underlines the authored line and a programmatic consumer
+        // reads the location instead of parsing it back out of a message. Both
+        // hosts of one compiler must hand the build the same shape — this hook
+        // used to pass `error.message`, which dropped the location, the frame
+        // and the diagnostic code for every Router dev build.
+        if (error instanceof CompiledElementError) {
+          this.error(diagnosticPluginError(error.diagnostics, code, id) ?? error.message);
+        }
         throw error;
       }
     },
