@@ -37,7 +37,13 @@ export function transformIslandSource(
   if (!/\.(?:ts|tsx|js|jsx)$/.test(modulePath)) {
     return { code: source, islands: [] };
   }
-  const normalizedIslandsDir = normalizeSeparators(islandsDir).replace(/^\/+|\/+$/g, '');
+  // Segment-wise trim (linear, no backtracking quantifiers): the analyzer
+  // flags replace(/^\/+|\/+$/g) on library input, and slicing says the same
+  // thing without it.
+  let normalizedIslandsDir = normalizeSeparators(islandsDir);
+  while (normalizedIslandsDir.startsWith('/')) normalizedIslandsDir = normalizedIslandsDir.slice(1);
+  while (normalizedIslandsDir.endsWith('/'))
+    normalizedIslandsDir = normalizedIslandsDir.slice(0, -1);
 
   // Only transform files in the islands directory. The needle is
   // segment-anchored on both sides (`app/islands-backup` never matches) and
