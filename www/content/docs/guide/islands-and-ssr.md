@@ -40,7 +40,7 @@ Light islands are the practical route for utility-first styling. A shadow root i
 
 ## Small runtime
 
-What ships is the set of island chunks a page declares plus the generated claim code — there is no framework runtime that every page must load. A page with no interactive module loads no framework JavaScript at all, and a page whose islands are all `'visible'` pays nothing until the reader scrolls to them.
+What ships is the set of island chunks a page declares plus the generated claim code — there is no framework runtime that every page must load. A page with no interactive module loads none of its island chunks; while the app has any island (or enhanced form), a small app-wide claim bootstrap — about 2 KB gzipped — is the one script such a page carries. A page whose islands are all `'visible'` pays nothing until the reader scrolls to them.
 
 That budget is the reason the static surface matters. Anything that can be expressed as markup — content, layout, documentation, even fully styled interactive-looking components — should stay static DSD; islands are reserved for state and browser APIs. Component code is identical in both cases, so the decision is a one-line declaration rather than a rewrite, and it can be revisited when the component's real requirements become clear.
 

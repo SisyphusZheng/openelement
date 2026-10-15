@@ -5,8 +5,10 @@ scaffold it elsewhere with `npm create @openelement <project-name>` —
 a static-first openElement app that shows its own costs. The landing page
 carries two islands (`my-counter`, an interactive counter, and `live-timer`,
 a client-only elapsed-time readout); every other page, including `/about`,
-is prerendered HTML and CSS with no islands at all. The badge on each
-section names what it costs the client.
+is prerendered HTML and CSS with no islands of its own — no island chunk is
+fetched there; the only script such a page carries is the app-wide claim
+bootstrap (about 2 KB gzipped) that runs while the app has any island. The
+badge on each section names what it costs the client.
 
 Docs and guides: https://openelement.org
 
@@ -22,14 +24,14 @@ without editing this file.
 
 ## The JS cost map
 
-| Surface                              | Ships JavaScript?     | Why                                   |
-| ------------------------------------ | --------------------- | ------------------------------------- |
-| `/` hero + architecture sections     | no                    | prerendered markup, styled with CSS   |
-| `/` counter island (`my-counter`)    | yes, hydrates on idle | the one interactive piece             |
-| `/` live timer island (`live-timer`) | yes, client-only      | a live clock has nothing to prerender |
-| `/about`                             | no islands at all     | fully static SSG output               |
-| `/api/ping`                          | no (server)           | a plain `Request → Response` handler  |
-| `/404` (unmatched paths)             | no (server)           | dynamic 404 from the styled 404 page  |
+| Surface                              | Ships JavaScript?     | Why                                      |
+| ------------------------------------ | --------------------- | ---------------------------------------- |
+| `/` hero + architecture sections     | no                    | prerendered markup, styled with CSS      |
+| `/` counter island (`my-counter`)    | yes, hydrates on idle | the one interactive piece                |
+| `/` live timer island (`live-timer`) | yes, client-only      | a live clock has nothing to prerender    |
+| `/about`                             | no islands of its own | fully static SSG output, no island chunk |
+| `/api/ping`                          | no (server)           | a plain `Request → Response` handler     |
+| `/404` (unmatched paths)             | no (server)           | dynamic 404 from the styled 404 page     |
 
 The badge on each section is a Tailwind utility string on the span itself
 (`bg-ok/8 text-ok` for a static section, `bg-brand-soft text-brand` for an
