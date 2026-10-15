@@ -534,13 +534,19 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
   // `inject` channel that owns the one script/link serializer. `packageIslands`
   // additionally becomes the SSR externalization list: a package whose island
   // modules the build admits must be BUNDLED, not imported at run time, and the
-  // config surface deliberately has no separate key for that derivation.
+  // config surface deliberately has no separate key for that derivation. The
+  // EXPLICIT entries derive it here; scan-time-derived packages are appended by
+  // the scan (plugin-scanners) once the derivation knows them.
   const headScripts = HEAD_INJECT_FIELDS.scripts(headBlock?.scripts);
   const headStylesheets = HEAD_INJECT_FIELDS.stylesheets(headBlock?.stylesheets);
   const packageIslands =
-    overrides.packageIslands ?? (inline['packageIslands'] as string[] | undefined);
-  const derivedNoExternal =
-    packageIslands && packageIslands.length > 0 ? packageIslands : undefined;
+    overrides.packageIslands ??
+    (inline['packageIslands'] as string[] | 'auto' | 'manual' | undefined);
+  // Only an array carries explicit packages; 'auto' and 'manual' name the
+  // derivation mode and contribute none (spreading the string would smear its
+  // characters into the list).
+  const explicitPackageIslands = Array.isArray(packageIslands) ? packageIslands : [];
+  const derivedNoExternal = explicitPackageIslands.length > 0 ? explicitPackageIslands : undefined;
   const inlineFragments = inlineInject?.headFragments ?? [];
   const inlineScripts = inlineInject?.scripts ?? [];
   const inlineStylesheets = inlineInject?.stylesheets ?? [];
@@ -559,7 +565,9 @@ export function resolveAppConfig(input: ResolveAppConfigInput): ResolvedAppConfi
         : { stylesheets: [...inlineStylesheets, ...headStylesheets] }),
     };
   }
-  if (packageIslands !== undefined) options.packageIslands = [...packageIslands];
+  if (packageIslands !== undefined) {
+    options.packageIslands = Array.isArray(packageIslands) ? [...packageIslands] : packageIslands;
+  }
   if (derivedNoExternal !== undefined) {
     // The derivation ADDS: a caller that stated its own `ssr.noExternal` on
     // the inline face keeps every entry, with the declared packages appended

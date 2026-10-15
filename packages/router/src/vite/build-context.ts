@@ -60,11 +60,19 @@ class Phase1Meta {
   /** Local island metadata indexed by tag name. */
   islandMeta: Record<string, Partial<IslandDecl>> = {};
 
-  /** Package manifests discovered from npm packages */
+  /** Package manifests discovered from npm packages (explicit and scan-derived alike) */
   packageManifests: OpenElementPackageManifest[] = [];
 
   /** Package island declarations extracted from manifests */
   packageIslandDecls: IslandDecl[] = [];
+
+  /**
+   * The resolved admission mode (`packageIslands`): 'auto' (the default — the
+   * scan derives the set) or 'manual' (derivation off). The client build reads
+   * it to pick the unadmitted-package report's owner: under auto the scan
+   * reports, under manual the discovery walk does.
+   */
+  packageAdmissionMode: 'auto' | 'manual' = 'auto';
 
   /** SSR admission plan produced before SSR entry generation. */
   ssrAdmissionPlan: SsrAdmissionPlan | null = null;

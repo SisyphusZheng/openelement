@@ -38,6 +38,7 @@
  */
 
 import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
 import { analyzeModuleSemantics } from '@openelement/compiler';
 
 /** The plugin-context surface the walk needs (a real Vite/Rolldown context). */
@@ -60,6 +61,13 @@ export interface ModuleWalkResult {
     readonly unresolved: number;
     readonly dynamic: number;
   };
+  /**
+   * Dynamic `import('literal')` specifiers, collected only when the caller
+   * opts in (`collectDynamicImports`). A dynamic import is not a static edge
+   * and never enters `files` — the record exists so the caller can diagnose
+   * what the scan-time reachability contract cannot prove.
+   */
+  readonly dynamicImports: ReadonlyArray<{ specifier: string; importer: string }>;
   /** True when the walk stopped at `maxModules` (a reported, not silent, stop). */
   readonly truncated: boolean;
 }
@@ -74,13 +82,14 @@ const DEFAULT_MAX_MODULES = 4000;
 export async function walkModuleGraph(
   resolver: ModuleWalkResolver,
   seeds: Iterable<string>,
-  options: { maxModules?: number } = {},
+  options: { maxModules?: number; collectDynamicImports?: boolean } = {},
 ): Promise<ModuleWalkResult> {
   const maxModules = options.maxModules ?? DEFAULT_MAX_MODULES;
   const files: string[] = [];
   const visited = new Set<string>();
   const queue: string[] = [];
   const skipped = { external: 0, virtual: 0, nonSource: 0, unresolved: 0, dynamic: 0 };
+  const dynamicImports: Array<{ specifier: string; importer: string }> = [];
   let truncated = false;
 
   const enqueue = (id: string): void => {
@@ -103,6 +112,11 @@ export async function walkModuleGraph(
       source = await readFile(file, 'utf8');
     } catch {
       continue;
+    }
+    if (options.collectDynamicImports === true) {
+      for (const specifier of dynamicImportSpecifiersOf(source, file)) {
+        dynamicImports.push({ specifier, importer: file });
+      }
     }
     for (const specifier of staticSpecifiersOf(source, file)) {
       let resolved: { id: string; external?: boolean | 'absolute' | 'relative' } | null;
@@ -135,7 +149,7 @@ export async function walkModuleGraph(
     }
   }
 
-  return { files, skipped, truncated };
+  return { files, skipped, dynamicImports, truncated };
 }
 
 /**
@@ -150,4 +164,39 @@ function staticSpecifiersOf(source: string, file: string): readonly string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * The dynamic `import('literal')` specifiers one source spells — the facts a
+ * static walk cannot follow, recorded so a caller can diagnose them instead of
+ * guessing. A non-literal (computed) argument is invisible here by the same
+ * contract: nothing statically provable, nothing reported.
+ */
+function dynamicImportSpecifiersOf(source: string, file: string): readonly string[] {
+  const specifiers: string[] = [];
+  let sourceFile: ts.SourceFile;
+  try {
+    sourceFile = ts.createSourceFile(
+      file,
+      source,
+      ts.ScriptTarget.Latest,
+      /* setParentNodes */ false,
+      file.endsWith('.tsx') || file.endsWith('.jsx') ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    );
+  } catch {
+    return specifiers;
+  }
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      node.expression.kind === ts.SyntaxKind.ImportKeyword &&
+      node.arguments.length === 1 &&
+      ts.isStringLiteralLike(node.arguments[0]!)
+    ) {
+      specifiers.push(node.arguments[0]!.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(sourceFile, visit);
+  return specifiers;
 }

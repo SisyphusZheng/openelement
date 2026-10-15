@@ -60,7 +60,6 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import type { Plugin, ViteDevServer } from 'vite';
 import {
@@ -90,7 +89,8 @@ import {
 } from '@openelement/protocol/style-sheet';
 import { buildError, ClientBuildErrorCode } from '../../internal/error-codes.ts';
 import { scopeLightRootCss } from './light-css-scope.ts';
-import { dirname as posixDirname, join, relative as posixRelative } from 'pathe';
+import { dirname as posixDirname, relative as posixRelative } from 'pathe';
+import { owningPackageName, packageNameAt } from './package-identity.ts';
 
 /**
  * The `\0`-virtual graph id prefix. The registry key rides base64url-encoded
@@ -609,13 +609,12 @@ export function serverRenderedStyleEdgesPlugin(
   emission: Pick<StyleAssetEmission, 'emit'>,
   candidates: ClassCandidateRegistry,
   /**
-   * The packages this app ADMITTED (`packageIslands`, read from the scanned
-   * manifests). The discovery pass uses them for one thing: telling an app that
-   * a component package it merely IMPORTS is not delivered. `packageIslands` is
-   * the admission channel — an ordinary import reaches the package's modules,
-   * but nothing renders them as components (no DSD, no stylesheet link) — and
-   * before this the app saw only an unknown element and, at best, an orphan CSS
-   * asset. Never fatal: the import is legal, it just does not deliver.
+   * The packages this app ADMITTED (the scanned manifests — explicit and
+   * scan-derived alike). The discovery pass uses them for one thing: telling an
+   * app that a component package it merely IMPORTS is not delivered. Under the
+   * AUTO admission default the scan owns that reporting (it knows the derived
+   * set and the manifest-less owners directly), so `admissionMode` 'auto'
+   * silences this walk-based report; 'manual' keeps it verbatim.
    */
   admittedPackages: readonly string[] = [],
   /**
@@ -626,6 +625,12 @@ export function serverRenderedStyleEdgesPlugin(
    * the selected engine's integration owns its own source detection (Tailwind).
    */
   sources?: Map<string, string>,
+  /**
+   * The admission mode the scan resolved (`packageIslands`, default 'auto'):
+   * 'auto' silences the walk-based unadmitted-package report in favor of the
+   * scan's own diagnostics; 'manual' keeps the report.
+   */
+  admissionMode: 'auto' | 'manual' = 'auto',
 ): Plugin {
   let admitted = false;
   let edges: Map<string, RegisteredStyleRequest> | undefined;
@@ -658,6 +663,7 @@ export function serverRenderedStyleEdgesPlugin(
         new Set(admittedPackages),
         sources,
         resolvedRoot,
+        admissionMode,
       );
     },
     // The module-LOADING phase: reaching a sheet's text through Vite's `?inline`
@@ -696,6 +702,8 @@ async function discoverServerRenderedModules(
   sources?: Map<string, string>,
   /** The Vite build's resolved root (the plugin's `configResolved`); the process working directory only stands in when absent. */
   root?: string,
+  /** The admission mode the scan resolved; 'auto' owns the reporting, so the walk stays silent. */
+  admissionMode: 'auto' | 'manual' = 'auto',
 ): Promise<Map<string, RegisteredStyleRequest>> {
   const roots = [...seeds.files];
   for (const specifier of seeds.specifiers) {
@@ -779,7 +787,13 @@ async function discoverServerRenderedModules(
     registerArtifactCandidates(source, file, candidates);
     elementFiles.push(file);
   }
-  reportUnadmittedComponentPackages.call(this, elementFiles, admittedPackages, effectiveRoot);
+  reportUnadmittedComponentPackages.call(
+    this,
+    elementFiles,
+    admittedPackages,
+    effectiveRoot,
+    admissionMode,
+  );
   // The registered request objects themselves — never a re-derived key. The
   // previous form rebuilt each edge's graph id and decoded it back through
   // `getStyleRequest`, a round-trip that does not hold for every registry key
@@ -812,14 +826,19 @@ async function discoverServerRenderedModules(
  *
  * A warning, never a failure: importing a package module is legal in its own
  * right (a shared helper, a type, an application that styles the raw tag), and
- * only the app can know which it meant.
+ * only the app can know which it meant. Under AUTO admission the scan owns the
+ * reporting (a derived package is admitted, a manifest-less one is reported
+ * there), so the walk keeps its mouth shut — this report is the manual-mode
+ * boundary.
  */
 function reportUnadmittedComponentPackages(
   this: { warn(message: string): void; info(message: string): void },
   elementFiles: readonly string[],
   admittedPackages: ReadonlySet<string>,
   root: string,
+  mode: 'auto' | 'manual',
 ): void {
+  if (mode === 'auto') return;
   const appPackageName = packageNameAt(root);
   const offenders = new Set<string>();
   for (const file of elementFiles) {
@@ -848,31 +867,6 @@ function reportUnadmittedComponentPackages(
         '`packageIslands` in openelement.config.ts to admit its declarations.',
     );
   }
-}
-
-/** The name of the nearest enclosing package.json, walking up from `file`. */
-function owningPackageName(file: string): string | undefined {
-  return packageNameAt(posixDirname(file));
-}
-
-/** The package name of the nearest package.json at or above `dir`. */
-function packageNameAt(dir: string): string | undefined {
-  let current = dir;
-  for (let depth = 0; depth < 12; depth++) {
-    const manifest = join(current, 'package.json');
-    if (existsSync(manifest)) {
-      try {
-        const parsed = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: unknown };
-        if (typeof parsed.name === 'string' && parsed.name !== '') return parsed.name;
-      } catch {
-        // An unreadable package.json is not a package root; keep walking.
-      }
-    }
-    const parent = posixDirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  return undefined;
 }
 
 /**

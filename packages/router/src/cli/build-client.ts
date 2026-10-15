@@ -948,15 +948,20 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         seeds,
         styleAssetEmission,
         shadowCandidateRegistry,
-        // Admission is `packageIslands` (read into the scanned manifests): the
-        // discovery pass uses the list to tell the app when a component package
-        // it merely IMPORTS is not delivered. See the plugin's parameter note.
+        // Admission is the scanned manifests (explicit and scan-derived alike):
+        // the discovery pass uses the list to tell the app when a component
+        // package it merely IMPORTS is not delivered. See the plugin's
+        // parameter note.
         (ctx.phase1.packageManifests ?? []).map((manifest) => manifest.packageName),
         // The walk's own reads, republished for a provider whose extractors
         // consume source (alpha15 stage 2B). Absent — not empty — when the
         // selected engine's integration owns its own detection, so a Tailwind
         // build pays nothing for a map it will never read.
         isSourceExtractingProvider ? walkedSources : undefined,
+        // Under AUTO the scan owns the unadmitted-package report (it knows the
+        // derived set and the manifest-less owners directly); the walk-based
+        // report is the manual-mode boundary.
+        ctx.phase1.packageAdmissionMode ?? 'auto',
       ),
       // The engine's sheet half: it sits AFTER the discovery pass, so its
       // `buildStart` compile reads the candidates that pass registered — never

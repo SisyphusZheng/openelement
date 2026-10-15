@@ -16,6 +16,7 @@ import {
   defaultClientConditions,
   loadConfigFromFile,
   type Plugin,
+  type ResolvedConfig,
 } from 'vite';
 import type { FrameworkOptions } from './framework.ts';
 import type { SsgBehaviorOptions } from '@openelement/protocol/ssg';
@@ -178,6 +179,14 @@ export interface OpenPluginState {
    * imports, alias (defect B) — both on the first scan and on a dev rescan.
    */
   resolveModule?: ModuleWalkResolver;
+  /**
+   * The RESOLVED Vite config, captured in `configResolved`. The scan-time
+   * package admission derivation runs AFTER this hook returned (in
+   * `buildStart`), so the derived packages' SSR externalization cannot ride
+   * the `config` hook's return value — it is appended to this live config's
+   * `ssr.noExternal`, the same list the dev server's SSR environment reads.
+   */
+  resolvedConfig?: ResolvedConfig;
 }
 
 function applyResolvedOptions(state: OpenPluginState, merged: FrameworkOptions): void {
@@ -439,6 +448,11 @@ export function createConfigHooks(
 
     configResolved(cfg) {
       state.viteRoot = cfg.root;
+      // Captured for the scan-time admission derivation: the derived packages'
+      // SSR externalization is appended to this live config's `ssr.noExternal`
+      // in buildStart (after this hook returned), the same list the dev
+      // server's SSR environment externalizes by (see the state field's note).
+      state.resolvedConfig = cfg;
       // The resolved config's alias table is the ACTUAL one — the user config
       // merged with every plugin's `config` hook output and normalized by
       // Vite. Save it unconditionally: an earlier partial state (only what

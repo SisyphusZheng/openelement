@@ -583,6 +583,34 @@ test('app config: inline packageIslands also derives noExternal', () => {
   expect(resolved.options.ssr).toEqual({ noExternal: ['@acme/components'] });
 });
 
+// ─── alpha15: packageIslands admits the 'auto' | 'manual' mode spellings ───
+
+test('app config: the mode spellings pass through and derive no noExternal', () => {
+  // 'auto' is the default spelled out; 'manual' turns the derivation off.
+  // Neither carries a package list — a mode string smeared into noExternal
+  // would bundle the characters of the word.
+  for (const spelling of ['auto', 'manual'] as const) {
+    const resolved = resolveAppConfig({
+      root: process.cwd(),
+      configFile: '/tmp/openelement.config.ts',
+      importedConfig: defineConfig({ packageIslands: spelling }),
+    });
+    expect(resolved.options.packageIslands, spelling).toEqual(spelling);
+    expect(resolved.options.ssr, `no externalization derives from ${spelling}`).toEqual(undefined);
+  }
+});
+
+test('app config: an unknown mode string still fails closed', () => {
+  const code = errorCodeOf(() =>
+    resolveAppConfig({
+      root: process.cwd(),
+      configFile: '/tmp/openelement.config.ts',
+      importedConfig: defineConfig({ packageIslands: 'automatic' as never }),
+    }),
+  );
+  expect(code).toEqual('CONFIG_INVALID');
+});
+
 test('app config: the derivation ADDS to an inline ssr.noExternal list', () => {
   // Replacing the caller's own list would silently un-bundle a package they
   // asked to bundle — the derivation is a union, deduplicated.

@@ -234,13 +234,14 @@ export interface OpenElementUserConfig {
         props?: Record<string, unknown>;
       };
   /**
-   * Extra package names whose island modules the build admits (e.g.
-   * `['@openelement/ui']`). The loader folds this list into the SSR
-   * externalization list the bundler needs, so a package listed here is
-   * bundled rather than imported at run time; there is no separate
-   * `ssr.noExternal` key.
+   * How component packages are admitted. Omitted or `'auto'` (the default):
+   * the scan derives the set from the package element modules the app really
+   * imports, and an array adds explicit entries (explicit outranks a derived
+   * claim on a shared tag). `'manual'`: the escape hatch — derivation off,
+   * only listed packages are admitted, an imported-but-unlisted package is
+   * reported with the explicit fix.
    */
-  packageIslands?: string[];
+  packageIslands?: string[] | 'auto' | 'manual';
   /** Document head channel (structured entries only). */
   head?: OpenElementHeadConfig;
   /** Stylesheet channel. */
@@ -481,7 +482,14 @@ export function assertValidUserConfig(value: unknown): asserts value is OpenElem
   }
 
   if (packageIslands !== undefined) {
-    assertStringArray('packageIslands', packageIslands);
+    if (
+      packageIslands !== 'auto' &&
+      packageIslands !== 'manual' &&
+      !Array.isArray(packageIslands)
+    ) {
+      throw typeError('packageIslands', `'auto', 'manual', or an array of strings`, packageIslands);
+    }
+    if (Array.isArray(packageIslands)) assertStringArray('packageIslands', packageIslands);
   }
 
   if (head !== undefined) {

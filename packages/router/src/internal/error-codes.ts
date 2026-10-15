@@ -304,6 +304,38 @@ export const PackageIslandErrorCode = {
 } as const;
 
 /**
+ * Stable codes for the AUTO package admission derivation
+ * (`vite/internal/ssg/derived-admission.ts`). Phase `build`.
+ *
+ * The coded ERROR is a failed build. The two coded WARNINGS carry their code
+ * as a `[OE_PACKAGE_ADMISSION_…]` token in the diagnostic text — a warning is
+ * not an OpenElementError, and the token keeps the classification contract
+ * (a host matches by code, never by prose) for the report severity too.
+ */
+export const PackageAdmissionErrorCode = {
+  /**
+   * Two packages claim the same delivered tag and the derivation cannot pick
+   * an owner (neither claimant is explicitly declared). Declare the intended
+   * owner in `packageIslands` — an explicit entry outranks a derived claim.
+   */
+  TAG_CONFLICT: 'OE_PACKAGE_ADMISSION_TAG_CONFLICT',
+  /**
+   * A package-owned element module the app imports has no valid OpenElement
+   * manifest, so it can never deliver (the one true mistake class the
+   * unadmitted-package report keeps under auto). Fix the package (ship a
+   * `manifest` export through its `./manifest` subpath) or stop expecting
+   * component delivery from it.
+   */
+  MANIFEST_LESS: 'OE_PACKAGE_ADMISSION_MANIFEST_LESS',
+  /**
+   * A package element module is reached only through a dynamic `import()`,
+   * which the scan-time reachability contract cannot prove. Declare the
+   * package explicitly in `packageIslands` to admit it.
+   */
+  DYNAMIC_UNPROVEN: 'OE_PACKAGE_ADMISSION_DYNAMIC_UNPROVEN',
+} as const;
+
+/**
  * Stable codes for the route-file scanner
  * (`vite/internal/ssg/route-scanner.ts`). Phase `build`: these reject a
  * routes tree whose file grammar would generate a broken or shadowed entry.

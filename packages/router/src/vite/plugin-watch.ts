@@ -26,9 +26,18 @@ export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 
       // Vite runs this hook BEFORE `buildStart`, and the Tailwind dev channels
       // resolve their plan in their own `configureServer` — so the package
       // manifest scan runs here first: a declared compilation requirement
-      // (a declared package requirement) must be visible before those hooks decide
-      // pipeline exists. Same function as buildStart's scan (idempotent).
-      await scanPackageIslandsInto(state);
+      // (a declared or scan-derived package requirement) must be visible before
+      // those hooks decide the pipeline exists. Same function as buildStart's
+      // scan (idempotent): the routes have not been scanned yet, so the
+      // derivation walks the islands/layouts it can see, and buildStart's pass
+      // completes the set from the full graph. The dev server's own plugin
+      // container stands in for the buildStart resolver capture.
+      await scanPackageIslandsInto(state, [], {
+        resolve: (specifier, importer) =>
+          server.pluginContainer.resolveId(specifier, importer) as ReturnType<
+            import('./internal/module-graph-walk.ts').ModuleWalkResolver['resolve']
+          >,
+      });
       const absoluteRoutesDir = resolve(process.cwd(), state.resolvedOptions.routesDir!);
       const absoluteIslandsDir = resolve(
         process.cwd(),

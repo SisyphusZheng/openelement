@@ -182,8 +182,27 @@ export interface FrameworkOptions {
   routesDir?: string;
   /** Directory island modules are discovered in. Defaults to `app/islands`. */
   islandsDir?: string;
-  /** Extra package names whose island modules the build admits, e.g. `['@openelement/ui']`. */
-  packageIslands?: string[];
+  /**
+   * How the build admits component packages whose modules the application
+   * imports.
+   *
+   * - omitted or `'auto'` (the default): the scan derives the admitted set at
+   *   scan time — every package-owned element module the app's routes, pages,
+   *   layouts, islands and components really reach (bundler-resolved) is
+   *   attributed to its owner package (nearest `package.json`), and a package
+   *   with a valid OpenElement manifest is admitted. An array value merges with
+   *   the derivation; an explicit entry outranks a derived claim when two
+   *   packages claim the same tag.
+   * - `'manual'`: derivation off — the pre-auto behavior. Nothing is admitted
+   *   unless listed, and an imported-but-unlisted component package is
+   *   reported with the explicit fix.
+   * - `string[]`: admitted explicitly, on top of the derivation (auto mode).
+   *
+   * A package whose modules the app imports but which carries no valid
+   * manifest is never admitted (there is nothing to admit) and is reported —
+   * the one true mistake class the report keeps under auto.
+   */
+  packageIslands?: string[] | 'auto' | 'manual';
   /** Layout declaration; `false` disables the layout, `'default'` uses the built-in one. */
   layout?: LayoutConfig;
   /** Named layout declarations keyed by layout name. */

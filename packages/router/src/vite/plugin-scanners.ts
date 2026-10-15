@@ -31,6 +31,11 @@ import { resolveIslandDeliveryTags } from './internal/ssg/delivery.ts';
 import type { OpenPluginState } from './plugin-config.ts';
 import type { ModuleWalkResolver } from './internal/module-graph-walk.ts';
 import { collectShadowClassCandidates } from './internal/collect-shadow-candidates.ts';
+import {
+  deriveAdmittedPackages,
+  mergeAdmittedManifests,
+} from './internal/ssg/derived-admission.ts';
+import { PackageAdmissionErrorCode } from '../internal/error-codes.ts';
 
 const log = createLogger('router-vite');
 
@@ -118,19 +123,86 @@ async function scanRoutesAndStaticComponents(state: OpenPluginState): Promise<Ro
  * Scan the admitted packages' manifests into ctx.
  *
  * The ONE owner of "which packages are admitted, and what do their manifests
- * declare": the build/dev `buildStart` calls it, and so does the dev server
+ * declare". The build/dev `buildStart` calls it, and so does the dev server
  * phase (`configureServer`), which Vite runs BEFORE `buildStart` — the Tailwind
  * dev channels must answer a declared compilation requirement in
  * their own `configureServer`, and the manifest scan is the only thing that
  * makes that requirement visible. Both callers run the same function over the
  * same package list, so running it twice is idempotent, not a second scanner.
+ *
+ * Under the AUTO admission default (the value omitted, 'auto', or an explicit
+ * array) the scan first DERIVES the admitted set from the app's real module
+ * graph — every package-owned element module the routes, islands, layouts and
+ * components reach, attributed by its owner package (`deriveAdmittedPackages`).
+ * Explicit entries merge on top and outrank a derived claim on a shared tag
+ * (`mergeAdmittedManifests`); 'manual' turns the derivation off entirely.
  */
-export async function scanPackageIslandsInto(state: OpenPluginState): Promise<void> {
-  const packageNames = state.resolvedOptions.packageIslands;
-  if (!packageNames || packageNames.length === 0) return;
-  state.ctx.phase1.packageManifests = await scanPackageManifests([...packageNames]);
-  const manifests = state.ctx.phase1.packageManifests;
+export async function scanPackageIslandsInto(
+  state: OpenPluginState,
+  routes: RouteEntry[],
+  resolveModule?: ModuleWalkResolver,
+): Promise<void> {
+  const declared = state.resolvedOptions.packageIslands;
+  const mode: 'auto' | 'manual' = declared === 'manual' ? 'manual' : 'auto';
+  const explicit = Array.isArray(declared) ? [...new Set(declared)] : [];
+  state.ctx.phase1.packageAdmissionMode = mode;
+
+  // The explicit list keeps the manifest scan's fail-closed behavior verbatim
+  // (a listed package claimed component-packageness: missing, absent or
+  // malformed manifests are coded failures). Resolution anchors at the app
+  // root, the same anchor the consumer's own node_modules defines.
+  const explicitManifests =
+    explicit.length > 0 ? await scanPackageManifests(explicit, process.cwd()) : [];
+
+  // Derivation FIRST (so its facts precede every phase1 consumer): the
+  // admitted set is the app's real render graph, not its dependency list.
+  const resolve = resolveModule ?? state.resolveModule;
+  const derived =
+    mode === 'auto' && resolve !== undefined
+      ? await deriveAdmittedPackages({
+          root: process.cwd(),
+          resolve,
+          routes,
+          routesDir: state.resolvedOptions.routesDir!,
+          islandsDir: state.resolvedOptions.islandsDir || DEFAULT_ISLANDS_DIR,
+          islandFiles: state.ctx.phase1.islandFiles,
+          layout: state.resolvedOptions.layout,
+          layouts: state.resolvedOptions.layouts,
+        })
+      : undefined;
+
+  // The diagnostics land BEFORE auto's effective surface: what the derivation
+  // could not admit is named, with the fix, before anything consumes the set.
+  // The two fatal classes also print through the log first — the bundler's
+  // buildStart error surface does not carry the thrown message to the CLI on
+  // rolldown-vite 8 (pre-existing; verified on the alpha15 baseline), and a
+  // coded diagnostic that never reaches the developer is not a diagnostic.
+  for (const entry of derived?.manifestLess ?? []) {
+    log.warn(
+      `[${PackageAdmissionErrorCode.MANIFEST_LESS}] The component package "${entry.packageName}" ` +
+        `is imported by this app (${entry.module}) but has no valid OpenElement manifest ` +
+        `(${entry.reason}), so it can never deliver: its components render as unknown elements ` +
+        '(no declarative shadow root, no stylesheet link). Ship a `manifest` export through ' +
+        "the package's `./manifest` subpath, or stop expecting component delivery from it.",
+    );
+  }
+  for (const entry of derived?.dynamicUnproven ?? []) {
+    log.warn(
+      `[${PackageAdmissionErrorCode.DYNAMIC_UNPROVEN}] "${entry.importer}" imports ` +
+        `"${entry.specifier}" (package "${entry.packageName}") only through a dynamic import(), ` +
+        'which the scan cannot prove statically, so the package is not admitted. Declare ' +
+        `"${entry.packageName}" in \`packageIslands\` in openelement.config.ts to admit it.`,
+    );
+  }
+
+  const merged = mergeAdmittedManifests({
+    explicit: explicitManifests,
+    derived: derived?.manifests ?? [],
+  });
+  const manifests = merged.manifests;
+  state.ctx.phase1.packageManifests = manifests;
   if (manifests.length === 0) return;
+
   // Extract island declarations from manifests.
   state.ctx.phase1.packageIslandDecls = buildPackageIslandDecls(
     manifests,
@@ -139,6 +211,40 @@ export async function scanPackageIslandsInto(state: OpenPluginState): Promise<vo
   log.info(
     `Package islands: ${state.ctx.phase1.packageIslandDecls.map((i) => i.tagName).join(', ')}`,
   );
+  syncDerivedNoExternal(state, manifests);
+}
+
+/**
+ * Append the scan-admitted packages to the SSR externalization list.
+ *
+ * The config loader derives `ssr.noExternal` from the EXPLICIT list at
+ * config-resolution time; the derivation runs later (buildStart), so the
+ * derived names are appended here — to `resolvedOptions` (the object the
+ * Phase 2 client build reads) and to the live RESOLVED config (the list the
+ * dev server's SSR environment externalizes by). Additive with dedup: a
+ * caller's own entries are never displaced.
+ */
+function syncDerivedNoExternal(
+  state: OpenPluginState,
+  manifests: readonly { packageName: string }[],
+): void {
+  const names = manifests.map((manifest) => manifest.packageName);
+  const options = state.resolvedOptions;
+  const existing = options.ssr?.noExternal ?? [];
+  const merged = [...new Set([...existing, ...names])];
+  if (merged.length !== existing.length) {
+    options.ssr = { ...options.ssr, noExternal: merged };
+  }
+  const resolvedSsr = state.resolvedConfig?.ssr as
+    | { noExternal?: (string | RegExp)[] | true }
+    | undefined;
+  if (resolvedSsr === undefined) return;
+  if (resolvedSsr.noExternal === true) return; // absorbing value; nothing to add
+  const resolvedExisting = resolvedSsr.noExternal ?? [];
+  const resolvedMerged = [...new Set([...resolvedExisting, ...names])];
+  if (resolvedMerged.length !== resolvedExisting.length) {
+    resolvedSsr.noExternal = resolvedMerged;
+  }
 }
 
 /** Rescan the islands dir into ctx; returns the islands root for later reuse. */
@@ -212,12 +318,10 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
         const islandsRoot = await scanIslandsIntoCtx(state);
         const islandFiles = state.ctx.phase1.islandFiles;
 
-        if (
-          state.resolvedOptions.packageIslands &&
-          state.resolvedOptions.packageIslands.length > 0
-        ) {
-          await scanPackageIslandsInto(state);
-        }
+        // Auto admission derives the package set from the scanned graph, so
+        // the admission scan runs on EVERY build now — the value may be an
+        // explicit list, 'auto'/'manual', or omitted (auto default).
+        await scanPackageIslandsInto(state, routes);
 
         // Cache routes for lazy load() regeneration.
         state.ctx.phase1.cachedRoutes = routes;
