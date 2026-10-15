@@ -54,6 +54,25 @@ async function waitFor(predicate: () => boolean, what: string): Promise<void> {
   }
 }
 
+/**
+ * CI-forensics helper (island-rescan flake on linux runners): on timeout,
+ * snapshot the observable pipeline state so the failure says WHICH stage
+ * stalled — no reload sent (queue never ran) vs reload sent but count off.
+ */
+function pipelineSnapshot(
+  ctx: OpenElementBuildContext,
+  sent: unknown[],
+  invalidated: string[],
+): string {
+  return JSON.stringify({
+    sentCount: sent.length,
+    sentFirst: sent[0] ?? null,
+    invalidated,
+    islandTags: ctx.phase1.islandTagNames ?? null,
+    cwd: process.cwd(),
+  });
+}
+
 test('openPlugin: island file added during dev triggers descriptor + client map rescan (#1062)', async () => {
   const dir = realpathSync(await mkdtemp(join(tmpdir(), 'oe-island-rescan-')));
   const previousCwd = process.cwd();
@@ -101,7 +120,18 @@ test('openPlugin: island file added during dev triggers descriptor + client map 
     await writeFile(join(islandsDir, 'my-counter.ts'), COUNTER_ISLAND);
     watcher.emit('add', join(islandsDir, 'my-counter.ts'));
 
-    await waitFor(() => sent.length === 1, 'full-reload after island rescan');
+    try {
+      await waitFor(() => sent.length === 1, 'full-reload after island rescan');
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Timed out')) {
+        // Give a straggler rescan one more second, then report the pipeline
+        // state: CI reproduces this deterministically where local machines
+        // never do, and the snapshot names the stalled stage.
+        await new Promise((r) => setTimeout(r, 1000));
+        error.message += ` [pipeline: ${pipelineSnapshot(ctx, sent, invalidated)}]`;
+      }
+      throw error;
+    }
     expect(sent[0]).toEqual({ type: 'full-reload' });
     // Both virtual entries must be invalidated: the SSR entry carries the
     // island map/admission plan, the client entry the hydration map.
