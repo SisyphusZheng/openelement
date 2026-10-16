@@ -10,6 +10,7 @@
     "./jsx-dev-runtime": "./src/jsx-dev-runtime.ts",
     "./authoring": "./src/authoring.ts",
     "./html": "./src/html.ts",
+    "./server": "./src/server.ts",
     "./logger": "./src/logger.ts",
     "./build-utils": "./src/build-utils.ts",
     "./client-only": "./src/client-only.ts",

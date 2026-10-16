@@ -292,6 +292,19 @@ export const AuthoringErrorCode = {
   INVALID_TAG_NAME: 'OE_INVALID_TAG_NAME',
   /** A `wrapInDocument` meta entry uses an attribute name HTML forbids. */
   UNSAFE_META_ATTRIBUTE: 'OE_UNSAFE_META_ATTRIBUTE',
+  /**
+   * A server constructor (`__h`) attribute name is unsafe: it fails the one
+   * canonical safe-attribute-name predicate (event handlers and forbidden
+   * sinks included). The compiler-generated call sites cannot produce one —
+   * the runtime check is the boundary for direct helper misuse.
+   */
+  UNSAFE_ATTRIBUTE_NAME: 'OE_UNSAFE_ATTRIBUTE_NAME',
+  /**
+   * A URL-carrying attribute value (`href`, `src`, `action`, `formaction`,
+   * `xlink:href`) carries a script-bearing scheme, screened by the ONE shared
+   * stream-frame URL policy. The value never reaches markup.
+   */
+  UNSAFE_URL_SINK: 'OE_UNSAFE_URL_SINK',
   /** A `wrapInDocument` structuredData entry is not a JSON-LD document. */
   INVALID_STRUCTURED_DATA: 'OE_INVALID_STRUCTURED_DATA',
   /** An `html` sink received a string that was not marked trusted. */

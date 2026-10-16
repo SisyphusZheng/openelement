@@ -30,14 +30,14 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "82e8cd89544a22754edc675214d55aa73d7590fbf192dbfda9886a0fdee2ab32",
+          "publicShapeSha256": "c242613522d66e00fff0c4fe9ce33169db7abfc3a7f88dc94880014fca105c9b",
           "publicSymbols": [
             "ACTION_FETCH_HEADER=value:\"x-openelement-action\"",
             "Action=type:{call:(ctx:{env:Env;formData:FormData;params:Record<string, string>;platform:union(Platform|undefined);request:Request;responseHeaders:Headers;route:Route})=>union(Promise<T>|T)}",
             "ActionContext=type:{env:Env;formData:FormData;params:Record<string, string>;platform:union(Platform|undefined);request:Request;responseHeaders:Headers;route:Route}",
             "ActionResult=type:union({data?:union(Failure|undefined);status:number;type:\"failure\"}|{location:string;status:number;type:\"redirect\"})",
             "ApiRouteDecl=type:{filePath:string;importPath:string;kind:\"api\";path:string;varName:string}",
-            "AuthoringErrorCode=value:{INVALID_STRUCTURED_DATA:\"OE_INVALID_STRUCTURED_DATA\";INVALID_TAG_NAME:\"OE_INVALID_TAG_NAME\";PARAMS_ATTRIBUTE_TOO_LARGE:\"OE_PARAMS_ATTRIBUTE_TOO_LARGE\";UNSAFE_META_ATTRIBUTE:\"OE_UNSAFE_META_ATTRIBUTE\";UNTRUSTED_HTML_SINK:\"OE_UNTRUSTED_HTML_SINK\"}",
+            "AuthoringErrorCode=value:{INVALID_STRUCTURED_DATA:\"OE_INVALID_STRUCTURED_DATA\";INVALID_TAG_NAME:\"OE_INVALID_TAG_NAME\";PARAMS_ATTRIBUTE_TOO_LARGE:\"OE_PARAMS_ATTRIBUTE_TOO_LARGE\";UNSAFE_ATTRIBUTE_NAME:\"OE_UNSAFE_ATTRIBUTE_NAME\";UNSAFE_META_ATTRIBUTE:\"OE_UNSAFE_META_ATTRIBUTE\";UNSAFE_URL_SINK:\"OE_UNSAFE_URL_SINK\";UNTRUSTED_HTML_SINK:\"OE_UNTRUSTED_HTML_SINK\"}",
             "BuildArtifacts=type:{clientAssets:array({fileName:string;sizeBytes:number;source:union(Uint8Array<ArrayBufferLike>|string)});errors:array(string);manifest:{islands:array({dsd?:union(false|true|undefined);hydrate?:union(\"idle\"|\"load\"|\"media\"|\"none\"|\"only\"|\"visible\"|undefined);isPackage?:union(false|true|undefined);modulePath:string;reason?:union(string|undefined);source?:union(\"local\"|\"nested\"|\"package\"|undefined);ssr?:union(false|true|undefined);tagName:string});requestTimeRoutes?:union(array(string)|undefined);routes:array({isDynamic:union(false|true);kind:union(\"api\"|\"page\");path:string;tagName?:union(string|undefined)})};pages:array({errors:array({message:string;route?:union(string|undefined)});html:string;path:string});success:union(false|true);warnings:array(string)}",
             "BuildClientAsset=type:{fileName:string;sizeBytes:number;source:union(Uint8Array<ArrayBufferLike>|string)}",
             "BuildI18nOptions=type:{defaultLocale?:union(string|undefined);locales:array(string)}",
@@ -296,9 +296,9 @@
           ]
         },
         "./errors": {
-          "publicShapeSha256": "70db6be3e996a7895516c7fb232ada5536ba98dd891b0c185ede7bfcd1d35068",
+          "publicShapeSha256": "bd23625f56cac7ab2f136ba82c531ff5e7baf4ca095c727133d77d8439bcfccd",
           "publicSymbols": [
-            "AuthoringErrorCode=value:{INVALID_STRUCTURED_DATA:\"OE_INVALID_STRUCTURED_DATA\";INVALID_TAG_NAME:\"OE_INVALID_TAG_NAME\";PARAMS_ATTRIBUTE_TOO_LARGE:\"OE_PARAMS_ATTRIBUTE_TOO_LARGE\";UNSAFE_META_ATTRIBUTE:\"OE_UNSAFE_META_ATTRIBUTE\";UNTRUSTED_HTML_SINK:\"OE_UNTRUSTED_HTML_SINK\"}",
+            "AuthoringErrorCode=value:{INVALID_STRUCTURED_DATA:\"OE_INVALID_STRUCTURED_DATA\";INVALID_TAG_NAME:\"OE_INVALID_TAG_NAME\";PARAMS_ATTRIBUTE_TOO_LARGE:\"OE_PARAMS_ATTRIBUTE_TOO_LARGE\";UNSAFE_ATTRIBUTE_NAME:\"OE_UNSAFE_ATTRIBUTE_NAME\";UNSAFE_META_ATTRIBUTE:\"OE_UNSAFE_META_ATTRIBUTE\";UNSAFE_URL_SINK:\"OE_UNSAFE_URL_SINK\";UNTRUSTED_HTML_SINK:\"OE_UNTRUSTED_HTML_SINK\"}",
             "ClaimErrorCode=value:{DYNAMIC_NODE_IN_STATIC_REGION:\"OE_CLAIM_DYNAMIC_NODE_IN_STATIC_REGION\";ITEM_TEMPLATE_ANCHOR:\"OE_CLAIM_ITEM_TEMPLATE_ANCHOR\";PRE_UPGRADE_EVENTS_INVALID:\"OE_CLAIM_PRE_UPGRADE_EVENTS_INVALID\";STRUCTURE_MISMATCH:\"OPEN_ELEMENT_COMPILED_CLAIM_MISMATCH\"}",
             "CompilerErrorCode=value:{DIAGNOSTICS:\"OE_COMPILER_DIAGNOSTICS\";INVALID_SOURCE:\"OE_COMPILER_INVALID_SOURCE\"}",
             "ContextErrorCode=value:{SERVICE_DISPOSED:\"OE_CONTEXT_SERVICE_DISPOSED\"}",
@@ -590,7 +590,8 @@
         "./jsx-dev-runtime": "./src/jsx-dev-runtime.ts",
         "./jsx-runtime": "./src/jsx-runtime.ts",
         "./logger": "./src/logger.ts",
-        "./no-blocks": "./src/no-blocks.ts"
+        "./no-blocks": "./src/no-blocks.ts",
+        "./server": "./src/server.ts"
       },
       "declarations": {
         ".": {
@@ -1069,6 +1070,15 @@
             "unsafeStreamFrameAttribute=value:(name: string, value: string) => boolean",
             "wrapInDocument=value:{call:(html:string,options:{allowHeadExtrasScripts?:union(false|true|undefined);clientScript?:union(string|undefined);cspNonce?:union(string|undefined);dangerouslyHeadFragments?:union(array(string)|undefined);devScripts?:union(string|undefined);headExtras?:union(string|undefined);lang?:union(string|undefined);links?:union(array({href:string;hreflang?:union(string|undefined);rel:string})|undefined);meta?:union(undefined|{description?:union(string|undefined);tags?:union(array(Record<string, string | number | boolean>)|undefined)});scripts?:union(array({code?:union(string|undefined);src?:union(string|undefined);type?:union(string|undefined)})|undefined);streamBootstrap?:union(string|undefined);structuredData?:union(array(Record<string, unknown>)|undefined);styleLinks?:union(array(string)|undefined);title?:union(string|undefined)})=>string}"
           ]
+        },
+        "./server": {
+          "publicShapeSha256": "08df75e087dd95628cdecbd8f402c3ee8e7efa06a3815748d025ec6c9bf52030",
+          "publicSymbols": [
+            "SsrSourceInfo=type:{route?:union(string|undefined);source?:union(string|undefined)}",
+            "__h=value:{call:(tag:string,attrs:union(Record<string, unknown>|undefined),children:union(array(unknown)|undefined))=>string}",
+            "__ssr=value:{call:(tag:string,props:union(Record<string, unknown>|undefined),sourceInfo:union(undefined|{route?:union(string|undefined);source?:union(string|undefined)}))=>string}",
+            "__t=value:{call:(value:unknown)=>string}"
+          ]
         }
       }
     },
@@ -1080,26 +1090,29 @@
       },
       "declarations": {
         ".": {
-          "publicShapeSha256": "9f3f133086e37887568b3346ddca8f360b09c872bcd792242c57e9cf9b66d623",
+          "publicShapeSha256": "01dcc047d18cb96243881622ee5d4960c946ece097743af8498953cfa6f072c2",
           "publicSymbols": [
             "ClassCandidateRegistry=type:{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}}",
             "CompileElementResult=type:{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}",
+            "CompileServerComponentResult=type:{classCandidates?:union(array(string)|undefined);code:string;components:array(string);map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown}}",
             "CompiledElementError=type:{readonly diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number})}|value:{construct:(diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number}))=>{readonly diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number})}}",
             "ElementCompilerDiagnostic=type:{character:number;code:string;end:number;file:string;line:number;message:string;start:number}",
             "EmittedModuleDiagnostic=type:{character:number;code:number;file:string;line:number;message:string}",
             "EmittedModuleTypeCheckOptions=type:{compilerOptions?:union(CompilerOptions|undefined);extraFiles?:union(Readonly<Record<string, string>>|undefined);paths?:union(Record<string, string[]>|undefined)}",
-            "ModuleSemanticFacts=type:{compiledElementDecorator:union(false|true);compilerInteractionEvents:array(string);defaultCompiledTag?:union(string|undefined);definePage:union(false|true);definedCustomElementTags:array(string);enhancedForm:union(false|true);exportedTagName?:union(string|undefined);moduleSpecifiers?:union(array(string)|undefined);referencedCustomElementTags:array(string);relativeImports:array(string);templatePage?:union(false|true|undefined);unsupportedElementDecorator?:union(string|undefined);usesExportedTagName:union(false|true)}",
+            "ModuleSemanticFacts=type:{compiledElementDecorator:union(false|true);compilerInteractionEvents:array(string);defaultCompiledTag?:union(string|undefined);definePage:union(false|true);definedCustomElementTags:array(string);enhancedForm:union(false|true);exportedTagName?:union(string|undefined);moduleSpecifiers?:union(array(string)|undefined);referencedCustomElementTags:array(string);relativeImports:array(string);serverFunctionComponents:array(string);templatePage?:union(false|true|undefined);unsupportedElementDecorator?:union(string|undefined);usesExportedTagName:union(false|true)}",
             "ModuleSemanticsOptions=type:{readonly collectSpecifiers?:union(false|true|undefined);readonly vocabulary?:union(array(ModuleVocabularyDescriptor)|undefined)}",
             "ModuleVocabularyDescriptor=type:ModuleVocabularyDescriptor",
             "PluginDiagnosticError=type:{diagnostics:array({character:number;code:string;end:number;file:string;line:number;message:string;start:number});frame:string;id:string;loc:{column:number;file:string;line:number};message:string}",
             "RegisteredStyleRequest=type:{readonly file:string;readonly importer:string;readonly moduleId:string;readonly scopeTag?:union(string|undefined);readonly specifier:string}",
             "SemanticCoreOptions=type:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)}",
+            "ServerComponentCompileOptions=type:{readonly compiledTags?:union(array(string)|undefined);readonly resolveModule?:union(undefined|{call:(specifier:string)=>union(string|undefined)})}",
             "StaticSidecarDescriptor=type:StaticSidecarDescriptor",
-            "analyzeModuleSemantics=value:{call:(source:string,fileName:string,options:{readonly collectSpecifiers?:union(false|true|undefined);readonly vocabulary?:union(array(ModuleVocabularyDescriptor)|undefined)})=>{compiledElementDecorator:union(false|true);compilerInteractionEvents:array(string);defaultCompiledTag?:union(string|undefined);definePage:union(false|true);definedCustomElementTags:array(string);enhancedForm:union(false|true);exportedTagName?:union(string|undefined);moduleSpecifiers?:union(array(string)|undefined);referencedCustomElementTags:array(string);relativeImports:array(string);templatePage?:union(false|true|undefined);unsupportedElementDecorator?:union(string|undefined);usesExportedTagName:union(false|true)}}",
+            "analyzeModuleSemantics=value:{call:(source:string,fileName:string,options:{readonly collectSpecifiers?:union(false|true|undefined);readonly vocabulary?:union(array(ModuleVocabularyDescriptor)|undefined)})=>{compiledElementDecorator:union(false|true);compilerInteractionEvents:array(string);defaultCompiledTag?:union(string|undefined);definePage:union(false|true);definedCustomElementTags:array(string);enhancedForm:union(false|true);exportedTagName?:union(string|undefined);moduleSpecifiers?:union(array(string)|undefined);referencedCustomElementTags:array(string);relativeImports:array(string);serverFunctionComponents:array(string);templatePage?:union(false|true|undefined);unsupportedElementDecorator?:union(string|undefined);usesExportedTagName:union(false|true)}}",
             "clearCompilerDiagnostics=value:{call:()=>void}",
             "clearStyleRequests=value:{call:()=>void}",
             "compileElementModule=value:{call:(code:string,id:string,options:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)})=>union(null|{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)})}",
             "compileElementProgram=value:{call:(source:string,fileName:string,options:{readonly staticSidecars?:union(array(StaticSidecarDescriptor)|undefined)})=>{classCandidates?:union(array(string)|undefined);code:string;map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown};program:PartProgramV2;styleRequests?:union(array(string)|undefined)}}",
+            "compileServerComponentModule=value:{call:(source:string,fileName:string,options:{readonly compiledTags?:union(array(string)|undefined);readonly resolveModule?:union(undefined|{call:(specifier:string)=>union(string|undefined)})})=>union(null|{classCandidates?:union(array(string)|undefined);code:string;components:array(string);map:{file:string;mappings:string;names:array(string);sources:array(string);sourcesContent:array(string);version:3;x_openElement?:unknown}})}",
             "compiledArtifactClassCandidates=value:{call:(source:string,fileName:string)=>union(array(string)|undefined)}",
             "compiledArtifactStyleRequests=value:{call:(source:string,fileName:string)=>union(array(string)|undefined)}",
             "compiledElementPlugin=value:{call:(options:{candidates?:union(undefined|{all:{call:()=>array(string)};allLight:{call:()=>array(string)};allShadow:{call:()=>array(string)};forModule:{call:(moduleId:string)=>array(string)};has:{call:()=>union(false|true)};register:{call:(moduleId:string,candidates:array(string),options:{shadow:union(false|true)})=>void};remove:{call:(moduleId:string)=>void}});resolutionPaths?:union(Record<string, string[]>|undefined);staticSidecars?:union(array(StaticSidecarDescriptor)|undefined);typeCheckEmitted?:union(false|true|undefined);workspaceRoot?:union(string|undefined)})=>Plugin<any>}",
