@@ -523,12 +523,20 @@ export function compileServerComponentModule(
  * enters through a helper boundary.
  */
 class ConstructorEmitter {
-  constructor(
-    private readonly sf: ts.SourceFile,
-    private readonly lowering: Lowering,
-    private readonly parameter: string,
-    private readonly fail: CompilerFail,
-  ) {}
+  // Plain field declarations, not parameter properties: the compiler's
+  // shipped source runs under Node's strip-only transform inside packed
+  // consumers, which rejects the parameter-property syntax.
+  private readonly sf: ts.SourceFile;
+  private readonly lowering: Lowering;
+  private readonly parameter: string;
+  private readonly fail: CompilerFail;
+
+  constructor(sf: ts.SourceFile, lowering: Lowering, parameter: string, fail: CompilerFail) {
+    this.sf = sf;
+    this.lowering = lowering;
+    this.parameter = parameter;
+    this.fail = fail;
+  }
 
   emit(root: ProgramTreeNode): string {
     return this.node(root);
