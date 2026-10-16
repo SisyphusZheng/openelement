@@ -199,6 +199,13 @@ const COMPUTED_FIELD_SUBJECTS: ComputedBodySubjects = {
  * fields, and nested non-arrow functions fail closed (OEC9024). Returns the
  * source-signal dependency list (declaration order) and the body text with
  * every `this.<field>` read rewritten to `__s.<field>.value`.
+ *
+ * `binding` (alpha15 server lane) switches the read accessor from
+ * `this.<field>` to `<parameter>.<field>` (a server function component's
+ * props parameter): the same declared-field table and the same messages —
+ * only the accessor spelling differs, and no signal-record rewrite applies
+ * (the generated constructor reads the props object directly). The default
+ * keeps the class path's behavior and messages byte-identical.
  */
 export function validateComputedExpressionBody(
   body: ts.Expression,
@@ -207,6 +214,7 @@ export function validateComputedExpressionBody(
   computedFieldNames: ReadonlySet<string>,
   fail: CompilerFail,
   subjects: ComputedBodySubjects = COMPUTED_FIELD_SUBJECTS,
+  binding?: { readonly parameter: string },
 ): { deps: string[]; bodyText: string } {
   const deps: string[] = [];
   const replacements: Array<{ start: number; end: number; name: string }> = [];
@@ -218,6 +226,33 @@ export function validateComputedExpressionBody(
         `${subjects.actor} may not nest non-arrow functions — hoist the function to module ` +
           'scope and import it',
       );
+    }
+    if (binding !== undefined) {
+      if (
+        ts.isPropertyAccessExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === binding.parameter
+      ) {
+        const name = node.name.text;
+        if (computedFieldNames.has(name)) {
+          fail(
+            node,
+            'OEC9024',
+            `${subjects.single} may not read computed field "${name}" — read its source ` +
+              `${binding.parameter}.<property> inputs instead (computed fields cannot chain)`,
+          );
+        }
+        if (!plainFieldNames.has(name)) {
+          fail(
+            node,
+            'OEC9024',
+            `${subjects.plural} may only read ${binding.parameter}.<declared property> (found ` +
+              `${binding.parameter}.${name})`,
+          );
+        }
+        if (!deps.includes(name)) deps.push(name);
+        return;
+      }
     }
     if (ts.isPropertyAccessExpression(node) && node.expression.kind === ts.SyntaxKind.ThisKeyword) {
       const name = node.name.text;

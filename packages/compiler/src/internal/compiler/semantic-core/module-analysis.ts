@@ -47,6 +47,17 @@ export interface ModuleSemanticFacts {
    * the element-registration surfaces.
    */
   templatePage?: boolean;
+  /**
+   * The exported functions whose body is a single return of JSX — the
+   * server-only TSX function components this module declares (alpha15 server
+   * lane). Discovery is structural and deterministic: `export function`
+   * declarations (named, not default) with exactly one return statement of a
+   * JSX element, or `export const` arrows with a JSX expression body. The
+   * fact is the cheap graph-walker face; admission and lowering stay the
+   * compile entry's job (`compileServerComponentModule`), which fails closed
+   * on everything this scan only reports. Sorted alphabetically.
+   */
+  serverFunctionComponents: string[];
   usesExportedTagName: boolean;
   enhancedForm: boolean;
   defaultCompiledTag?: string;
@@ -427,6 +438,64 @@ function isCustomElementTag(value: string): boolean {
   return /^[a-z][a-z0-9]*(-[a-z0-9]+)+$/.test(value);
 }
 
+/**
+ * The exported name of a function declaration / single-declarator variable
+ * statement that {@link isExportedServerComponentDeclaration} admitted.
+ */
+export function serverComponentName(statement: ts.Statement): string {
+  if (ts.isFunctionDeclaration(statement)) return statement.name?.text ?? '';
+  const declaration = (statement as ts.VariableStatement).declarationList.declarations[0];
+  return ts.isIdentifier(declaration.name) ? declaration.name.text : '';
+}
+
+function returnsJsx(expression: ts.Expression | undefined): boolean {
+  const value =
+    expression && ts.isParenthesizedExpression(expression) ? expression.expression : expression;
+  return value !== undefined && (ts.isJsxElement(value) || ts.isJsxSelfClosingElement(value));
+}
+
+/**
+ * The structural server function component shapes the fact scan reports:
+ * a named `export function` whose body is exactly one `return <jsx>` or an
+ * `export const` arrow whose expression body is JSX. The compile entry
+ * (`compileServerComponentModule`) re-derives the same shapes with
+ * fail-closed diagnostics; this scan only answers "is there something to
+ * compile here" for the module graph walker.
+ */
+export function isExportedServerComponentDeclaration(statement: ts.Statement): boolean {
+  const modifiers = ts.canHaveModifiers(statement) ? (ts.getModifiers(statement) ?? []) : [];
+  const exported = modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword);
+  if (!exported) return false;
+  if (ts.isFunctionDeclaration(statement)) {
+    if (
+      statement.name === undefined ||
+      modifiers.some((modifier) => modifier.kind === ts.SyntaxKind.DefaultKeyword) ||
+      statement.body === undefined ||
+      !ts.isBlock(statement.body)
+    ) {
+      return false;
+    }
+    const returns = statement.body.statements.filter(ts.isReturnStatement);
+    return (
+      statement.body.statements.length === 1 &&
+      returns.length === 1 &&
+      returnsJsx(returns[0].expression)
+    );
+  }
+  if (ts.isVariableStatement(statement)) {
+    const declarations = statement.declarationList.declarations;
+    if (declarations.length !== 1 || !ts.isIdentifier(declarations[0].name)) return false;
+    const initializer = declarations[0].initializer;
+    return (
+      initializer !== undefined &&
+      ts.isArrowFunction(initializer) &&
+      !ts.isBlock(initializer.body) &&
+      returnsJsx(initializer.body)
+    );
+  }
+  return false;
+}
+
 function stringArgument(call: ts.CallExpression, index = 0): string | undefined {
   const argument = call.arguments[index];
   return argument && (ts.isStringLiteral(argument) || ts.isNoSubstitutionTemplateLiteral(argument))
@@ -522,8 +591,12 @@ export function analyzeModuleSemantics(
   const defined = new Set<string>();
   const referenced = new Set<string>();
   const interactionEvents = new Set<string>();
+  const serverComponents = new Set<string>();
 
   for (const statement of sourceFile.statements) {
+    if (isExportedServerComponentDeclaration(statement)) {
+      serverComponents.add(serverComponentName(statement));
+    }
     if (
       ts.isVariableStatement(statement) &&
       statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
@@ -704,6 +777,7 @@ export function analyzeModuleSemantics(
     ...(exportedTagName === undefined ? {} : { exportedTagName }),
     definePage,
     ...(templatePage ? { templatePage: true } : {}),
+    serverFunctionComponents: [...serverComponents].sort(),
     usesExportedTagName,
     enhancedForm,
     ...(defaultCompiledTag === undefined ? {} : { defaultCompiledTag }),

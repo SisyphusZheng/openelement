@@ -30,6 +30,17 @@ export {
   type CompileElementResult,
   type ElementCompilerDiagnostic,
 } from './internal/compiler/semantic-core/compile.ts';
+// The server-only TSX function component lane (alpha15): the admission and
+// generative lowering entry — the same lowering walk as the @element class
+// path, emitting `__h`/`__t`/`__ssr` constructor code instead of a Part
+// Program. Discovery facts ride analyzeModuleSemantics
+// (serverFunctionComponents); the host build calls this entry for the modules
+// its graph walk finds.
+export {
+  compileServerComponentModule,
+  type CompileServerComponentResult,
+  type ServerComponentCompileOptions,
+} from './internal/compiler/semantic-core/server-component.ts';
 // The ONE diagnostic projection every host of the compiler reports through
 // (the standalone Vite plugin and the Router's `open:core` transform): a
 // structured `{id, loc, frame, diagnostics}` record, so a consumer reads the

@@ -50,6 +50,25 @@ export interface GeneratedHandler {
  */
 export const SYNTHESIZED_COMPUTED_LOCAL = '__openelementComputed';
 
+/**
+ * The server function component binding surface (alpha15 server lane): when
+ * set, the ONE lowering walk reads component state from the component
+ * function's `props` parameter instead of `this`, resolves uppercase JSX tags
+ * against the imported server function components, and records which
+ * custom-element hosts the host build admitted as compiled components
+ * (rendered through `__ssr`). Every other rule — attribute-name safety, sink
+ * denial, the trustedHtml boundary, the single-return grammar, the OEC
+ * diagnostics — is exactly the @element class path's: one semantic authority.
+ */
+export interface ServerComponentBindings {
+  /** The component function's single parameter (fixed `props` by admission). */
+  readonly parameter: string;
+  /** JSX identifier tag → the local binding the generated call targets. */
+  readonly components: ReadonlyMap<string, string>;
+  /** Custom-element host tags the build admitted as compiled components (`__ssr`). */
+  readonly compiledTags: ReadonlySet<string>;
+}
+
 /** Lowering inputs beyond the analyzed module shape. */
 export interface LoweringOptions {
   /**
@@ -59,6 +78,11 @@ export interface LoweringOptions {
    * {@linkcode SYNTHESIZED_COMPUTED_LOCAL} and adds the import.
    */
   readonly computedLocal: string | null;
+  /**
+   * Server function component mode (alpha15 server lane). Absent: the walk
+   * behaves byte-identically to the @element class path.
+   */
+  readonly server?: ServerComponentBindings;
 }
 
 /** Distributive input union for addPart (Omit<union> collapses; do not use). */
@@ -241,6 +265,19 @@ export class Lowering {
    * to the official Tailwind compiler as explicit candidates.
    */
   readonly classCandidates = new Set<string>();
+  /**
+   * Server mode side tables (alpha15 server lane): the nested server function
+   * component calls (element id → the recorded call shape, props entries as
+   * verbatim value texts) and the custom-element hosts the build admitted as
+   * compiled components (`__ssr`). The tree stays Part Program vocabulary —
+   * the code generator consumes these alongside it.
+   */
+  readonly componentCalls = new Map<
+    string,
+    { component: string; propsEntries: Array<[string, string]>; children: ProgramTreeNode[] }
+  >();
+  readonly ssrCalls = new Set<string>();
+  private readonly server?: ServerComponentBindings;
   private readonly plainFieldNames: Set<string>;
   private readonly computedFieldNames: Set<string>;
   private readonly sf: ts.SourceFile;
@@ -265,6 +302,7 @@ export class Lowering {
     this.computedFieldNames = new Set(this.computedNames);
     this.sourceBindsComputed = options.computedLocal !== null;
     this.options = options;
+    this.server = options.server;
   }
 
   fail(node: ts.Node, code: string, message: string): never {
@@ -382,6 +420,18 @@ export class Lowering {
     ) {
       return value.name.text;
     }
+    // Server mode: the component function's `props` parameter plays the
+    // field role — the same field-name table, the same sink classification,
+    // one accessor spelling difference.
+    if (
+      this.server !== undefined &&
+      ts.isPropertyAccessExpression(value) &&
+      ts.isIdentifier(value.expression) &&
+      value.expression.text === this.server.parameter &&
+      this.fieldNames.has(value.name.text)
+    ) {
+      return value.name.text;
+    }
     return null;
   }
 
@@ -427,6 +477,15 @@ export class Lowering {
     staticOnly = false,
   ): ProgramTreeNode {
     const tag = tagNameNode.getText(this.sf);
+    // Server function components (alpha15 server lane): an uppercase JSX tag
+    // is a nested server function component — composed by a DIRECT function
+    // call to the imported binding, resolved at compile time from the
+    // authored imports. The class grammar rejects identifier tags
+    // (composition by tag name); the server lane's composition channel is the
+    // import, so the same walk branches here before the intrinsic-tag rule.
+    if (this.server !== undefined && ts.isIdentifier(tagNameNode) && /^[A-Z]/.test(tag)) {
+      return this.lowerComponentElement(tagNameNode, attributes, children, path, sourceNode);
+    }
     // alpha.8: custom-element hosts (<x-y>) are admitted as nested hosts — the
     // page/layout composition renders them as host tags that the server entry
     // expands per the SSR admission plan. They carry static literal attributes
@@ -447,6 +506,12 @@ export class Lowering {
     if (tagReason !== null) this.fail(tagNameNode, 'OEC9010', tagReason);
     const attrs: Array<[string, string]> = [];
     const elementId = this.reserveElement(tag, path, sourceNode);
+    // Server function components: a build-admitted compiled host renders
+    // through `__ssr` — the component path's literal runtime function. The
+    // recording rides the ordinary host walk (attributes cross as raw props).
+    if (this.server !== undefined && isCustomHost && this.server.compiledTags.has(tag)) {
+      this.ssrCalls.add(elementId);
+    }
     const attributeNames = new Set<string>();
     let trustedHtmlCapability = false;
     for (const prop of attributes.properties) {
@@ -477,6 +542,18 @@ export class Lowering {
         init !== undefined &&
         ts.isJsxExpression(init) &&
         init.expression !== undefined;
+      // Server function components render static HTML: event handlers are a
+      // client-only construct, refused with the server-lane code (the class
+      // path's handler lowering never runs here).
+      if (this.server !== undefined && /^on[A-Z]/.test(name)) {
+        this.fail(
+          prop,
+          'OEC9031',
+          `event handlers are a client-only construct — a server function component renders ` +
+            `static HTML and may not carry ${name}; interactivity belongs to an @element island ` +
+            '(a compiled component), not to server markup',
+        );
+      }
       if (isCustomHost && (isDynamicEvent || /^on[A-Z]/.test(name))) {
         this.fail(
           prop,
@@ -552,6 +629,15 @@ export class Lowering {
         continue;
       }
       if (name === 'ref') {
+        if (this.server !== undefined) {
+          this.fail(
+            prop,
+            'OEC9031',
+            'refs are a client-only construct — a server function component renders static HTML ' +
+              'and may not carry a ref; element access belongs to an @element island (a compiled ' +
+              'component), not to server markup',
+          );
+        }
         if (isCustomHost) {
           this.fail(
             prop,
@@ -673,9 +759,30 @@ export class Lowering {
       );
     }
 
+    const lowered = this.lowerChildren(children, staticOnly, path);
+    if (VOID_TAGS.has(tag)) {
+      const child = children.find((candidate) => hasMeaningfulJsxChild(this.sf, candidate));
+      if (child) {
+        this.fail(child, 'OEC9013', `void element <${tag}> may not have children`);
+      }
+    }
+    return this.addElement(elementId, tag, attrs, lowered);
+  }
+
+  /**
+   * The one children walk both the class path and the server component
+   * branch share: JSX text cleaning, expression children (field read /
+   * literal / when / each), nested elements, and the fragments-and-spreads
+   * rejection. `elementPath` is the owning element's own address.
+   */
+  private lowerChildren(
+    children: ts.JsxChild[],
+    staticOnly: boolean,
+    elementPath: number[],
+  ): ProgramTreeNode[] {
     const lowered: ProgramTreeNode[] = [];
     for (const child of children) {
-      const childPath = [...path, lowered.length];
+      const childPath = [...elementPath, lowered.length];
       if (ts.isJsxText(child)) {
         const value = cleanJsxText(child.text);
         if (value === '') continue;
@@ -713,13 +820,97 @@ export class Lowering {
           'children in a single element',
       );
     }
-    if (VOID_TAGS.has(tag)) {
-      const child = children.find((candidate) => hasMeaningfulJsxChild(this.sf, candidate));
-      if (child) {
-        this.fail(child, 'OEC9013', `void element <${tag}> may not have children`);
-      }
+    return lowered;
+  }
+
+  /**
+   * Server function components: one uppercase JSX tag — a nested server
+   * function component reference. The call composes by DIRECT function call
+   * to the imported binding: attribute values cross as raw props (literals
+   * or `props.<field>` reads — the callee's own compiled body escapes at its
+   * sinks), and JSX children compose the `children` prop through the same
+   * children walk every other element takes.
+   */
+  private lowerComponentElement(
+    tagNameNode: ts.JsxTagNameExpression,
+    attributes: ts.JsxAttributes,
+    children: ts.JsxChild[],
+    path: number[],
+    sourceNode: ts.Node,
+  ): ProgramTreeNode {
+    const name = tagNameNode.getText(this.sf);
+    const local = this.server!.components.get(name);
+    if (local === undefined) {
+      this.fail(
+        tagNameNode,
+        'OEC9032',
+        `<${name}> is not a server function component — import it from the module that exports ` +
+          'it (a server function component composes only by direct call to another server ' +
+          'function component; @element components compose by tag name)',
+      );
     }
-    return this.addElement(elementId, tag, attrs, lowered);
+    const elementId = this.reserveElement(local!, path, sourceNode);
+    const propsEntries: Array<[string, string]> = [];
+    for (const prop of attributes.properties) {
+      if (ts.isJsxSpreadAttribute(prop)) {
+        this.fail(
+          prop,
+          'OEC9011',
+          'spread attributes are not supported by the compiler grammar — write each attribute ' +
+            'explicitly (a literal or a this.<property> sink)',
+        );
+      }
+      if (!ts.isIdentifier(prop.name)) {
+        this.fail(prop, 'OEC9032', 'component prop names must be plain identifiers');
+      }
+      const propName = prop.name.text;
+      if (/^on[A-Z]/.test(propName)) {
+        this.fail(
+          prop,
+          'OEC9031',
+          `event handlers are a client-only construct — a server function component renders ` +
+            `static HTML and may not carry ${propName}; interactivity belongs to an @element ` +
+            'island (a compiled component), not to server markup',
+        );
+      }
+      const initializer = prop.initializer;
+      if (initializer === undefined) {
+        propsEntries.push([propName, 'true']);
+        continue;
+      }
+      if (ts.isStringLiteral(initializer)) {
+        propsEntries.push([propName, JSON.stringify(initializer.text)]);
+        continue;
+      }
+      if (!ts.isJsxExpression(initializer) || !initializer.expression) {
+        this.fail(
+          prop,
+          'OEC9032',
+          `component prop "${propName}" must be a literal or a props.<field> read`,
+        );
+      }
+      const expr = unwrapExpression(initializer.expression!);
+      const field = this.fieldAccess(expr);
+      if (field !== null) {
+        propsEntries.push([propName, `${this.server!.parameter}.${field}`]);
+        continue;
+      }
+      const literal = literalValue(expr, this.sf);
+      if (literal === undefined) {
+        this.fail(
+          prop,
+          'OEC9032',
+          `component prop "${propName}" must be a literal or a props.<field> read — arbitrary ` +
+            'expressions are outside the server function grammar',
+        );
+      }
+      propsEntries.push([propName, JSON.stringify(literal)]);
+    }
+    const childNodes = this.lowerChildren(children, false, path);
+    this.componentCalls.set(elementId, { component: local!, propsEntries, children: childNodes });
+    // The tree node is a placeholder: the code generator emits the recorded
+    // call, never a tag.
+    return this.addElement(elementId, local!, [], []);
   }
 
   private lowerEvent(
@@ -889,12 +1080,15 @@ export class Lowering {
         single: 'conditional class condition',
         plural: 'conditional class conditions',
       },
+      this.server === undefined ? undefined : { parameter: this.server.parameter },
     );
     if (deps.length === 0) {
       this.fail(
         sourceNode,
         'OEC9011',
-        'conditional class conditions must read at least one this.<property>',
+        `conditional class conditions must read at least one ${
+          this.server === undefined ? 'this' : this.server.parameter
+        }.<property>`,
       );
     }
     const computedName = this.options.computedLocal ?? SYNTHESIZED_COMPUTED_LOCAL;
@@ -1016,6 +1210,23 @@ export class Lowering {
   ): ProgramTreeNode | null {
     if (!child.expression) return null;
     const expr = unwrapExpression(child.expression);
+    // Server function components: the composition channel is the `children`
+    // prop — an undeclared read gets its own fix instead of the generic
+    // unsupported-expression rejection.
+    if (
+      this.server !== undefined &&
+      ts.isPropertyAccessExpression(expr) &&
+      ts.isIdentifier(expr.expression) &&
+      expr.expression.text === this.server.parameter &&
+      expr.name.text === 'children'
+    ) {
+      this.fail(
+        child,
+        'OEC9032',
+        `${this.server.parameter}.children is not declared — add \`children?: string\` to the ` +
+          'props type: the JSX children a caller nests compose it as one final-HTML string',
+      );
+    }
     const field = this.fieldAccess(expr);
     if (field) {
       // alpha15 widened branches to admit this.<property> attribute sinks; text
@@ -1342,6 +1553,15 @@ export class Lowering {
       // item and dispatches with (event, item). Custom-element hosts inside
       // item templates stay handler-free, matching the host rule above.
       if (/^on[A-Z]/.test(name)) {
+        if (this.server !== undefined) {
+          this.fail(
+            prop,
+            'OEC9031',
+            `event handlers are a client-only construct — a server function component renders ` +
+              `static HTML and may not carry ${name}; interactivity belongs to an @element island ` +
+              '(a compiled component), not to server markup',
+          );
+        }
         if (isCustomHost) {
           this.fail(
             prop,
