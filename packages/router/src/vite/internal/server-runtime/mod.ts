@@ -72,6 +72,7 @@ export {
   createPagePropsRuntime,
   localeFromPath,
   pageDefinition,
+  renderFunctionPage,
   routeMeta,
 } from './page-render.ts';
 export type {

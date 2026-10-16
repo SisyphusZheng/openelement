@@ -21,12 +21,30 @@
 
 import { OpenElementError } from '@openelement/element/authoring';
 
-/** Stable codes for the page-authoring surfaces (`definePage`/`defineHtmlPage`). */
+/**
+ * Stable codes for the page-authoring surfaces
+ * (`definePage`/`defineHtmlPage`, plus the server function page's render
+ * seam).
+ */
 export const PageErrorCode = {
-  /** First argument is not the compiled page element class. */
+  /** First argument is not the compiled page element class (or component function). */
   NOT_COMPILED_CLASS: 'OE_PAGE_NOT_COMPILED_CLASS',
   /** defineHtmlPage() first argument is not a render function (#1568). */
   TEMPLATE_RENDER: 'OE_PAGE_TEMPLATE_RENDER',
+  /**
+   * The server function page render seam received a page whose render is
+   * not a function (a malformed descriptor, or a route module whose default
+   * export never went through definePage's function branch).
+   */
+  FUNCTION_RENDER: 'OE_PAGE_FUNCTION_RENDER',
+  /**
+   * The server function page props carried the reserved `children` key. The
+   * compiled `props.children` channel is trusted final HTML produced by the
+   * COMPILER from the caller's own JSX children; page props come from loader
+   * data, so a `children` key there is an injection attempt and is refused
+   * before the render function runs.
+   */
+  FUNCTION_PROPS: 'OE_PAGE_FUNCTION_PROPS',
   /** Descriptor is not an object, or carries a field the contract removed. */
   DESCRIPTOR_SHAPE: 'OE_PAGE_DESCRIPTOR_SHAPE',
   /** `route` intent is unsupported (`route.path`, mistyped `layout`). */

@@ -188,6 +188,15 @@ export interface PageRouteDecl {
    * instead of the compiled serializer.
    */
   htmlPage?: boolean;
+  /**
+   * The server function page fact (alpha15 server lane): the exported server
+   * function component the route's `export default definePage(Component)`
+   * named — compiled into the module by the server component lane. No element
+   * class exists to register; both render channels render through the
+   * descriptor's render function (the compiled constructor) and feed the same
+   * renderer/layout/document wraps.
+   */
+  functionPage?: string;
 }
 
 /** One island the build admits: tag, module path, and delivery facts. */

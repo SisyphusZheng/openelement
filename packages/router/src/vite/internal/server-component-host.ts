@@ -1,0 +1,101 @@
+/**
+ * The server function component lane's host bindings (alpha15 server lane).
+ *
+ * The compiler package stays node-free and filesystem-free: the class path
+ * receives everything it needs from authored source, while the server lane's
+ * nested composition needs the SOURCES of the modules a route imports
+ * (compile-time resolution, so a nested server function component composes by
+ * direct call). This module is the router host's binding of that capability —
+ * one resolver and one admission-tag read, shared by every host that runs the
+ * lane (the dev transform, the client build, the SSG bundle, the style-edge
+ * discovery walk, and the class-candidate collection pass), so no host grows
+ * a second source-resolution policy.
+ */
+
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { dirname, isAbsolute, resolve } from 'pathe';
+
+/** Module extensions whose text can carry (or import to) compiled programs. */
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts'] as const;
+
+/** Host inputs for the resolver factory. */
+export interface ServerComponentHostOptions {
+  /** The Vite project root; project-relative importer ids anchor here. */
+  readonly root: string;
+  /**
+   * The workspace root when the caller knows it: a module id outside the
+   * project root is typically a linked workspace package, so it resolves
+   * back to a real path under this anchor.
+   */
+  readonly workspaceRoot?: string | undefined;
+}
+
+/** Resolve one specifier+importer pair to that module's source, or null. */
+export type ServerComponentModuleResolver = (specifier: string, importer: string) => string | null;
+
+/** Probe a path without extension assumptions into an existing source file. */
+function probeSourceFile(base: string): string | null {
+  const withoutExtension = /\.(?:[cm]?[tj]sx?)$/.test(base)
+    ? base.replace(/\.(?:[cm]?[tj]sx?)$/, '')
+    : base;
+  const stems = withoutExtension === base ? [base] : [base, withoutExtension];
+  for (const stem of stems) {
+    for (const candidate of [
+      stem,
+      ...SOURCE_EXTENSIONS.map((extension) => `${stem}${extension}`),
+      ...SOURCE_EXTENSIONS.map((extension) => `${stem}/index${extension}`),
+    ]) {
+      try {
+        return readFileSync(candidate, 'utf8');
+      } catch {
+        // Not a readable file at this spelling; keep probing.
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Create the source resolver the server component lane composes through.
+ *
+ * Importer ids arrive as the compiler's stable ids (project-relative POSIX
+ * spellings, absolute ones passed through): a relative specifier probes the
+ * importer's directory (extension and index variants included), a
+ * root-absolute one anchors at the project root, and a bare one resolves
+ * through the importing file's own Node resolution — the same shapes the
+ * bundler understands. An unreadable target answers null, which the compiler
+ * turns into its coded unresolvable-import rejection; nothing here reads a
+ * file the lane did not ask for.
+ */
+export function createServerComponentSourceResolver(
+  options: ServerComponentHostOptions,
+): ServerComponentModuleResolver {
+  const root = options.root;
+  return (specifier, importer) => {
+    const clean = specifier.split('?', 1)[0]!.split('#', 1)[0]!;
+    if (clean === '') return null;
+    const importerFile = isAbsolute(importer) ? importer : resolve(root, importer);
+    if (clean.startsWith('.')) return probeSourceFile(resolve(dirname(importerFile), clean));
+    if (clean.startsWith('/')) return probeSourceFile(resolve(root, clean.slice(1)));
+    try {
+      return probeSourceFile(createRequire(importerFile).resolve(clean));
+    } catch {
+      return null;
+    }
+  };
+}
+
+/**
+ * The admission tag set for the lane's `__ssr` routing: the build-admitted
+ * static component tags. Only those are registered in the generated entry's
+ * SSR registry, so only those can render through `__ssr`; islands and foreign
+ * hosts emit their tag as-is and upgrade through the island pipeline (a tag
+ * in this set but absent from the registry would fail closed at render, which
+ * is exactly why the set must stay the registered subset).
+ */
+export function serverComponentAdmissionTags(
+  staticComponents: readonly { tagName: string }[] | undefined,
+): string[] {
+  return [...new Set((staticComponents ?? []).map((component) => component.tagName))].sort();
+}

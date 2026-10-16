@@ -16,11 +16,13 @@ export {
 } from './authoring.ts';
 export type {
   ActionOutcome,
+  FunctionPageComponent,
   HtmlPageModule,
   HtmlPageRender,
   IslandConfig,
   IslandDeliveryStrategy,
   JsonValue,
+  OpenElementFunctionPageDescriptor,
   OpenElementHtmlPageDescriptor,
   OpenElementPageDescriptor,
   PageComponentConstructor,
@@ -29,6 +31,7 @@ export type {
   PageHeadResolver,
   PagePropsContext,
   PagePropsProjector,
+  ServerPageComponent,
   StructuredDataEntry,
 } from './authoring.ts';
 

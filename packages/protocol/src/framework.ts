@@ -133,6 +133,17 @@ export interface RouteEntry {
    * never produces island, claim, or client-chunk output.
    */
   htmlPage?: boolean;
+  /**
+   * The server function page fact (alpha15 server lane): the exported server
+   * function component the route's `export default definePage(Component)` was
+   * called over. Present only when the argument is a plain identifier
+   * resolving to a component THIS module declares — an inline arrow or an
+   * unexported local never records it (the R1 admission rule mirrored, so a
+   * shape whose JSX would escape to runtime is never admitted). The generated
+   * entry registers nothing for the route and renders it through the
+   * descriptor's compiled render function.
+   */
+  functionPage?: string;
   /** Source text captured during scanning when includeSource is enabled. */
   source?: string;
   /**

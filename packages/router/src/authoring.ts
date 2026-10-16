@@ -386,7 +386,63 @@ export type PageComponentConstructor<
   openElementPage: OpenElementPageDescriptor<Data, Params>;
 };
 
+/**
+ * A compiled server page component function (alpha15 server lane): the route
+ * module's exported TSX component after the server component lane compiled it
+ * — props in, final HTML out. While authoring, the TSX function's inferred
+ * type is JSX.Element-returning (the compiler owns the body), so this type
+ * admits every function shape; the runtime discriminant in definePage() is
+ * the authority on which branch a value takes.
+ */
+export type ServerPageComponent = (...args: never[]) => unknown;
+
+/**
+ * The function-page descriptor the pipeline reads
+ * (`module.default.openElementPage` with `kind: 'function-page'`): same
+ * metadata/projector shape as {@link OpenElementPageDescriptor} plus the
+ * compiled component function — no element class exists, so the generated
+ * entry registers nothing and renders through the render function.
+ */
+export interface OpenElementFunctionPageDescriptor<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+> {
+  kind: 'function-page';
+  route?: PageRouteIntent;
+  head?: PageHead | PageHeadResolver<Data, Params>;
+  renderIntent: NormalizedPageRenderIntent;
+  props?: PagePropsProjector<Data, Params>;
+  error?: PageErrorProjector<Data, Params>;
+  render: ServerPageComponent;
+}
+
+/** The route-module default export shape a definePage() component call produces. */
+export type FunctionPageComponent<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+> = ServerPageComponent & {
+  openElementPage: OpenElementFunctionPageDescriptor<Data, Params>;
+};
+
 const PAGE_DESCRIPTOR_FIELDS = new Set(['route', 'head', 'renderIntent', 'props', 'error']);
+
+/**
+ * The class-branch discriminant of definePage()'s first argument. Two shapes
+ * are element CLASSES: a value carrying the compiled Part Program
+ * (`__partProgram` — the field every class the compiled-element transform
+ * emits declares, so a compiled page class is recognized structurally), and
+ * an ES class (class syntax defines `prototype` as a NON-writable own
+ * property; a plain function's `prototype` is writable and an arrow function
+ * has none). The second arm preserves the class path for classes that
+ * legitimately carry no compiled program — the LitElement page classes
+ * defineLitPage() funnels through this same definePage(). Everything else
+ * function-shaped is a server function page.
+ */
+function isElementPageClass(component: (...args: never[]) => unknown): boolean {
+  if ((component as { __partProgram?: unknown }).__partProgram !== undefined) return true;
+  const prototype = Object.getOwnPropertyDescriptor(component, 'prototype');
+  return prototype !== undefined && prototype.writable === false;
+}
 
 /**
  * Attach a page descriptor to a compiled page element class.
@@ -404,6 +460,24 @@ const PAGE_DESCRIPTOR_FIELDS = new Set(['route', 'head', 'renderIntent', 'props'
  *     head: { title: 'Home' },
  *     props: ({ data }) => ({ heading: data?.heading ?? '' }),
  *   });
+ *
+ * The server function page form (alpha15 server lane) passes the module's
+ * exported TSX component function instead — the compiler has already lowered
+ * it to a generative HTML constructor, so the same call admits it as a
+ * `kind: 'function-page'` descriptor whose render IS that function:
+ *
+ *   export function Home(props: { heading: string }) {
+ *     return <main><h1>{props.heading}</h1></main>;
+ *   }
+ *   export const loader = async () => ({ heading: 'Home' });
+ *   export default definePage(Home, { head: { title: 'Home' } });
+ *
+ * Runtime discriminant (one rule, no text sniffing): a first argument that is
+ * an element CLASS — a value carrying `__partProgram` (what the compiled-
+ * element transform emits) or class syntax (its `prototype` is a non-writable
+ * own property; plain functions and arrows are not classes) — takes the class
+ * branch; any other function takes the function-page branch. Non-functions
+ * fail closed with NOT_COMPILED_CLASS.
  */
 export function definePage<
   Data = unknown,
@@ -411,13 +485,22 @@ export function definePage<
 >(
   componentClass: CustomElementConstructor,
   descriptor?: PageDescriptorInput<Data, Params>,
-): PageComponentConstructor<Data, Params> {
-  if (
-    typeof componentClass !== 'function' ||
-    // Arrow functions are not constructors (no prototype): the compiled page
-    // element class must be one.
-    !componentClass.prototype
-  ) {
+): PageComponentConstructor<Data, Params>;
+export function definePage<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+>(
+  component: ServerPageComponent,
+  descriptor?: PageDescriptorInput<Data, Params>,
+): FunctionPageComponent<Data, Params>;
+export function definePage<
+  Data = unknown,
+  Params extends Record<string, string> = Record<string, string>,
+>(
+  componentOrClass: CustomElementConstructor | ServerPageComponent,
+  descriptor?: PageDescriptorInput<Data, Params>,
+): PageComponentConstructor<Data, Params> | FunctionPageComponent<Data, Params> {
+  if (typeof componentOrClass !== 'function') {
     throw authoringError(
       PageErrorCode.NOT_COMPILED_CLASS,
       `${ERROR_PREFIX} definePage() requires the compiled page element class as its first ` +
@@ -427,6 +510,7 @@ export function definePage<
         'never definePage(HomePage(), …).',
     );
   }
+  const isClass = isElementPageClass(componentOrClass as (...args: never[]) => unknown);
   if (descriptor !== undefined) {
     if (typeof descriptor !== 'object' || descriptor === null || Array.isArray(descriptor)) {
       throw authoringError(
@@ -522,8 +606,7 @@ export function definePage<
       );
     }
   }
-  const pageDescriptor: OpenElementPageDescriptor<Data, Params> = {
-    kind: 'page',
+  const sharedDescriptor = {
     ...(descriptor?.route !== undefined ? { route: descriptor.route } : {}),
     ...(descriptor?.head !== undefined ? { head: descriptor.head } : {}),
     renderIntent: {
@@ -534,12 +617,34 @@ export function definePage<
     ...(descriptor?.error !== undefined ? { error: descriptor.error } : {}),
   };
 
-  Object.defineProperty(componentClass, 'openElementPage', {
+  if (isClass) {
+    const pageDescriptor: OpenElementPageDescriptor<Data, Params> = {
+      kind: 'page',
+      ...sharedDescriptor,
+    };
+    Object.defineProperty(componentOrClass, 'openElementPage', {
+      value: pageDescriptor,
+      writable: true,
+      configurable: true,
+    });
+    return componentOrClass as PageComponentConstructor<Data, Params>;
+  }
+
+  // Server function page (alpha15 server lane): the compiled component
+  // function IS the render. The descriptor attaches to the function itself —
+  // the route module's default export.
+  const render = componentOrClass as ServerPageComponent;
+  const pageDescriptor: OpenElementFunctionPageDescriptor<Data, Params> = {
+    kind: 'function-page',
+    ...sharedDescriptor,
+    render,
+  };
+  Object.defineProperty(render, 'openElementPage', {
     value: pageDescriptor,
     writable: true,
     configurable: true,
   });
-  return componentClass as PageComponentConstructor<Data, Params>;
+  return render as FunctionPageComponent<Data, Params>;
 }
 
 /**
