@@ -9,9 +9,10 @@
 
 import process from 'node:process';
 import type { Plugin, ViteDevServer } from 'vite';
-import { createLogger, formatError } from '@openelement/element';
+import { createLogger } from '@openelement/element';
 import { relative, resolve } from 'pathe';
 import { DEFAULT_ISLANDS_DIR } from './internal/paths.ts';
+import { reportRecoveryFailure } from './internal/build-diagnostics.ts';
 import { RESOLVED_CLIENT_ENTRY_ID } from './dev-island-client.ts';
 import { rescanIslands, rescanRoutes, scanPackageIslandsInto } from './plugin-scanners.ts';
 import { RESOLVED_ENTRY_ID } from './plugin-virtual-modules.ts';
@@ -109,7 +110,11 @@ export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 
             .catch((err: unknown) => {
               // A broken source must not poison the queue: the next edit chains
               // after this handled rejection and gets a fresh rescan attempt.
-              log.error(`Descriptor rescan failed: ${formatError(err)}`);
+              // The handled rejection is the dev channel's only report of the
+              // failure (#1616): it names the failure's code per the envelope
+              // when the failure carries one, and the served entry keeps the
+              // last good descriptor.
+              reportRecoveryFailure(log, 'Descriptor rescan failed', err);
             });
         }, 25);
       };

@@ -40,9 +40,10 @@
 import type { ViteDevServer } from 'vite';
 import { realpathSync } from 'node:fs';
 import { basename, dirname, sep } from 'node:path';
-import { createLogger, formatError } from '@openelement/element';
+import { createLogger } from '@openelement/element';
 import { createStyleBuildIntegration, type StyleBuildIntegration } from './style-provider.ts';
 import { stylePlanForApp } from './style-plan.ts';
+import { reportRecoveryFailure } from './build-diagnostics.ts';
 import type { OpenPluginState } from '../plugin-config.ts';
 
 const log = createLogger('router-vite:style-session');
@@ -168,9 +169,15 @@ export function createDevStyleSession(state: OpenPluginState): DevStyleSession {
       const react = (file: string): void => {
         if (!configurationInputs.has(realKey(file))) return;
         void rebuild(file).catch((error: unknown) => {
-          log.error(
+          // The handled rejection is the operator's only signal (#1616): the
+          // report names the failure's code per the envelope, and the safe
+          // state is stated — the served sheets keep the previously loaded
+          // configuration until a fix lands and the next change rebuilds.
+          reportRecoveryFailure(
+            log,
             `reloading the style configuration after ${file} failed — the served sheets keep ` +
-              `the previously loaded configuration: ${formatError(error)}`,
+              `the previously loaded configuration`,
+            error,
           );
         });
       };

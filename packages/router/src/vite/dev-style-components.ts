@@ -37,10 +37,11 @@
 
 import process from 'node:process';
 import type { Plugin, ViteDevServer } from 'vite';
-import { createLogger, formatError } from '@openelement/element';
+import { createLogger } from '@openelement/element';
 import { collectShadowClassCandidates } from './internal/collect-shadow-candidates.ts';
 import { STYLE_LINKS_VIRTUAL_ID } from './internal/element-style-links.ts';
 import type { DevStyleSession } from './internal/dev-style-session.ts';
+import { reportRecoveryFailure } from './internal/build-diagnostics.ts';
 import { devClientModulePath } from './internal/dev-client-path.ts';
 import type { OpenPluginState } from './plugin-config.ts';
 
@@ -248,17 +249,21 @@ export function devStyleComponentsPlugin(state: OpenPluginState, session: DevSty
       session.onConfigurationChange(afterCandidatesMoved);
       server.watcher.on('change', (file) => {
         void onFile(file).catch((error) => {
-          log.error(
+          reportRecoveryFailure(
+            log,
             `${engine()} component sheet: re-registering ${file} failed — the served sheet ` +
-              `keeps the previous facts: ${formatError(error)}`,
+              `keeps the previous facts`,
+            error,
           );
         });
       });
       server.watcher.on('add', (file) => {
         void onFile(file).catch((error) => {
-          log.error(
+          reportRecoveryFailure(
+            log,
             `${engine()} component sheet: registering ${file} failed — the served sheet ` +
-              `keeps the previous facts: ${formatError(error)}`,
+              `keeps the previous facts`,
+            error,
           );
         });
       });

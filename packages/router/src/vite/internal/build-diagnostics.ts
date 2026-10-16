@@ -22,12 +22,15 @@
 
 import type { DiagnosticEnvelope, DiagnosticReport } from '@openelement/protocol/diagnostics';
 import { diagnosticReport, errorToEnvelope } from '@openelement/protocol/diagnostics';
-import { CompilerErrorCode, ErrorCode } from '@openelement/protocol/errors';
+import { CompilerErrorCode, ErrorCode, OpenElementError } from '@openelement/protocol/errors';
 import {
   clearCompilerDiagnostics,
   compilerDiagnosticsToEnvelopes,
   takeCompilerDiagnostics,
 } from '@openelement/compiler';
+import { createLogger, formatError, type Logger } from '@openelement/element';
+
+const log = createLogger('router-vite');
 
 /** The warnings recorded during the current build, in report order. */
 let recorded: DiagnosticEnvelope[] = [];
@@ -73,6 +76,53 @@ export function formatDiagnosticLine(envelope: DiagnosticEnvelope): string {
     : '';
   const hint = envelope.hint ? ` ${envelope.hint}` : '';
   return `[${envelope.code}] ${envelope.message}${location}${hint}`;
+}
+
+// ─── The scan-phase fatal report (#1616) ────────────────────────────
+
+/**
+ * Report one scan-phase fatal and hand it back to throw — the established
+ * log-before-throw pattern (#1616).
+ *
+ * WHY THIS EXISTS. On rolldown-vite 8 the bundler's `buildStart` error surface
+ * does not carry the thrown message to the CLI (pre-existing; verified on the
+ * alpha15 baseline): a scan-phase fatal that only THROWS is a diagnostic the
+ * developer never sees — the build walks on with a half-empty scan and fails
+ * later with a misleading downstream error. The interim contract, until the
+ * bundler is fixed (out of scope here), is that every scan-phase fatal
+ * REPORTS FIRST, through both channels of the diagnostics envelope (#1612):
+ * the human line (`[CODE] …`) reaches the build log, and the envelope is
+ * recorded so the machine-readable exit replays it even when the throw itself
+ * is swallowed. The error is returned, not thrown, so the raise site keeps its
+ * own `throw` (the fail-closed semantics stay visible at the raise site).
+ *
+ * Every scan-phase fatal goes through this ONE seam — a fatal that throws
+ * without reporting is exactly the defect class this lane closed.
+ */
+export function reportScanFatal(
+  error: OpenElementError,
+  options: { hint?: string } = {},
+): OpenElementError {
+  const envelope = errorToEnvelope(error, options);
+  recordBuildDiagnostic(envelope);
+  log.error(formatDiagnosticLine(envelope));
+  return error;
+}
+
+/**
+ * Report a HANDLED failure — a recovery path that keeps serving and must not
+ * swallow the reason (#1616). The dev server's recovery channels (style
+ * configuration reload, candidate re-registration, descriptor rescan) catch
+ * failures and keep the last good state; the report is the operator's only
+ * signal, so it names the failure's code per the envelope (#1612) when the
+ * failure carries one, and the prose reason either way.
+ */
+export function reportRecoveryFailure(channel: Logger, headline: string, error: unknown): void {
+  const coded =
+    error instanceof OpenElementError
+      ? formatDiagnosticLine(errorToEnvelope(error))
+      : formatError(error);
+  channel.error(`${headline}: ${coded}`);
 }
 
 // ─── Failure walking ────────────────────────────────────────────────

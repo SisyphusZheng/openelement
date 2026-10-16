@@ -11,6 +11,7 @@ import { createLogger } from '@openelement/element';
 import { normalizeSeparators, pathToTagName } from '@openelement/element/build-utils';
 import { hasControlCharacter } from '../../../internal/control-characters.ts';
 import { buildError, PackageIslandErrorCode } from '../../../internal/error-codes.ts';
+import { reportScanFatal } from '../build-diagnostics.ts';
 import { type DeclaredStyleSource, STYLE_DIALECTS } from '../style-plan.ts';
 import { safeReadDir, safeReadFile, safeStat } from './route-scanner-fs.ts';
 import {
@@ -853,9 +854,15 @@ export async function scanPackageManifests(
       continue;
     }
     if (load.status === 'missing-package') {
-      throw buildError(
-        PackageIslandErrorCode.PACKAGE_MISSING,
-        `Package "${pkg}" is not installed: install it or remove it from the package-island list`,
+      // reportScanFatal first (#1616): the buildStart error surface does not
+      // carry a thrown message to the CLI on rolldown-vite 8 — a fatal that
+      // only throws never reaches the developer, and the build walks on to a
+      // misleading downstream failure.
+      throw reportScanFatal(
+        buildError(
+          PackageIslandErrorCode.PACKAGE_MISSING,
+          `Package "${pkg}" is not installed: install it or remove it from the package-island list`,
+        ),
       );
     }
     if (load.status === 'no-manifest') {
@@ -869,27 +876,21 @@ export async function scanPackageManifests(
         );
         continue;
       }
-      throw new OpenElementError(`Package ${pkg} does not export a manifest`, {
-        code: 'PACKAGE_MANIFEST_ERROR',
-        statusCode: 500,
-        recoverable: false,
-      });
+      throw reportScanFatal(
+        buildError('PACKAGE_MANIFEST_ERROR', `Package ${pkg} does not export a manifest`),
+      );
     }
     if (load.status === 'invalid') {
-      throw new OpenElementError(`Invalid manifest in ${pkg}: ${load.reason}`, {
-        code: 'PACKAGE_MANIFEST_ERROR',
-        statusCode: 500,
-        recoverable: false,
-      });
+      throw reportScanFatal(
+        buildError('PACKAGE_MANIFEST_ERROR', `Invalid manifest in ${pkg}: ${load.reason}`),
+      );
     }
-    throw new OpenElementError(
-      `Failed to scan package manifest from "${pkg}": ${formatError(load.error)}`,
-      {
-        code: 'PACKAGE_SCAN_ERROR',
-        statusCode: 500,
-        recoverable: false,
-        cause: load.error instanceof Error ? load.error : undefined,
-      },
+    throw reportScanFatal(
+      buildError(
+        'PACKAGE_SCAN_ERROR',
+        `Failed to scan package manifest from "${pkg}": ${formatError(load.error)}`,
+        { cause: load.error instanceof Error ? load.error : undefined },
+      ),
     );
   }
 

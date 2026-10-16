@@ -624,7 +624,21 @@ async function resolveUnoConfig(
   const { loadConfig } = await loadConfigModule(unocssEntry);
   const declared =
     declaredConfig === undefined ? undefined : resolveDeclaredConfigPath(root, declaredConfig);
-  const loaded = await loadConfig(root, declared);
+  // A configuration file that exists but cannot be LOADED (a syntax error, a
+  // throwing module) is the same coded class as one the generator rejects
+  // (#1616): the recovery channels downstream report by code, so the loader's
+  // raw failure is wrapped into the envelope dialect here.
+  let loaded: Awaited<ReturnType<typeof loadConfig>>;
+  try {
+    loaded = await loadConfig(root, declared);
+  } catch (cause) {
+    throw buildError(
+      PresetErrorCode.UNOCSS_CONFIG_UNLOADABLE,
+      `[unocss] the project UnoCSS configuration could not be loaded` +
+        ` (${root}${declared === undefined ? '' : `, config: ${declared}`}).`,
+      { cause: cause instanceof Error ? cause : undefined },
+    );
+  }
   const watchFiles = loaded.sources
     .map((source) => (typeof source === 'string' ? source : source.filepath))
     .filter((file): file is string => typeof file === 'string' && file !== '');

@@ -36,7 +36,11 @@ import {
   mergeAdmittedManifests,
 } from './internal/ssg/derived-admission.ts';
 import { PackageAdmissionErrorCode } from '../internal/error-codes.ts';
-import { formatDiagnosticLine, recordBuildDiagnostic } from './internal/build-diagnostics.ts';
+import {
+  formatDiagnosticLine,
+  recordBuildDiagnostic,
+  reportScanFatal,
+} from './internal/build-diagnostics.ts';
 
 const log = createLogger('router-vite');
 
@@ -485,11 +489,23 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
           `Routes: ${pageCount} page(s), ${apiCount} API route(s), ` + `${totalIslands} island(s)`,
         );
       } catch (err) {
-        throw new OpenElementError(`Route scan failed: ${formatError(err)}`, {
-          code: 'ROUTE_SCAN_ERROR',
-          statusCode: 500,
-          recoverable: false,
-        });
+        // The scan-phase fatal wrapper (#1616). Reported through the ONE
+        // log-before-throw seam: on rolldown-vite 8 the buildStart error
+        // surface does not carry the thrown message to the CLI (pre-existing;
+        // verified on the alpha15 baseline), so a scan failure that only
+        // throws leaves the operator with a misleading downstream error (an
+        // empty scan fails SSG with OE_SSG_ROUTE_INFO_EMPTY, never the scan's
+        // own verdict). The cause is preserved so the exit walk carries the
+        // producer code underneath.
+        throw reportScanFatal(
+          new OpenElementError(`Route scan failed: ${formatError(err)}`, {
+            code: 'ROUTE_SCAN_ERROR',
+            statusCode: 500,
+            recoverable: false,
+            phase: 'build',
+            ...(err instanceof Error ? { cause: err } : {}),
+          }),
+        );
       }
     },
   };

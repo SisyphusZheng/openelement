@@ -33,6 +33,7 @@ import type { OpenElementPackageManifest, RouteEntry } from '../../framework.ts'
 import { createLogger } from '@openelement/element';
 import { ROUTER_MODULE_VOCABULARY } from '@openelement/protocol/module-vocabulary';
 import { buildError, PackageAdmissionErrorCode } from '../../../internal/error-codes.ts';
+import { reportScanFatal } from '../build-diagnostics.ts';
 import { owningPackageName, owningPackageRoot, packageNameAt } from '../package-identity.ts';
 import { walkModuleGraph, type ModuleWalkResolver } from '../module-graph-walk.ts';
 import { loadPackageManifest } from './island-scanner.ts';
@@ -171,17 +172,19 @@ export async function deriveAdmittedPackages(
     if (load.status === 'invalid') {
       // A manifest PRESENT but broken is a failed component package, not an
       // unknown one: fail closed with the manifest scan's own code — the same
-      // verdict an explicitly listed package would get. Printed before it is
-      // thrown: the bundler's buildStart error surface does not carry the
-      // thrown message to the CLI on rolldown-vite 8 (pre-existing; verified
-      // on the alpha15 baseline), and a coded diagnostic that never reaches
-      // the developer is not a diagnostic.
-      const message =
-        `[PACKAGE_MANIFEST_ERROR] Invalid manifest in ${packageName}: ${load.reason}. ` +
-        'The package is imported by this app as a component package; fix its manifest export ' +
-        '(packageName + declarations) or stop importing its element modules.';
-      log.error(message);
-      throw buildError('PACKAGE_MANIFEST_ERROR', message);
+      // verdict an explicitly listed package would get. Reported through the
+      // scan-phase fatal seam (#1616): the bundler's buildStart error surface
+      // does not carry the thrown message to the CLI on rolldown-vite 8
+      // (pre-existing; verified on the alpha15 baseline), and a coded
+      // diagnostic that never reaches the developer is not a diagnostic.
+      throw reportScanFatal(
+        buildError(
+          'PACKAGE_MANIFEST_ERROR',
+          `Invalid manifest in ${packageName}: ${load.reason}. ` +
+            'The package is imported by this app as a component package; fix its manifest export ' +
+            '(packageName + declarations) or stop importing its element modules.',
+        ),
+      );
     }
     throw load.error;
   }
@@ -331,16 +334,18 @@ export function mergeAdmittedManifests(input: MergeAdmittedManifestsInput): Merg
       .map((owner) => owner.packageName)
       .sort()
       .join('", "');
-    // Printed before it is thrown: the bundler's buildStart error surface
-    // does not carry the thrown message to the CLI on rolldown-vite 8
-    // (pre-existing; verified on the alpha15 baseline).
-    const message =
-      `Two derived component packages claim the tag <${tag}>: "${names}". The scan cannot ` +
-      'pick an owner for a tag two packages both declare. Declare the intended owner in ' +
-      '`packageIslands` in openelement.config.ts (an explicit entry outranks a derived ' +
-      "claim), or stop importing one of the packages' element modules.";
-    log.error(`[${PackageAdmissionErrorCode.TAG_CONFLICT}] ${message}`);
-    throw buildError(PackageAdmissionErrorCode.TAG_CONFLICT, message);
+    // Reported through the scan-phase fatal seam (#1616): the bundler's
+    // buildStart error surface does not carry the thrown message to the CLI
+    // on rolldown-vite 8 (pre-existing; verified on the alpha15 baseline).
+    throw reportScanFatal(
+      buildError(
+        PackageAdmissionErrorCode.TAG_CONFLICT,
+        `Two derived component packages claim the tag <${tag}>: "${names}". The scan cannot ` +
+          'pick an owner for a tag two packages both declare. Declare the intended owner in ' +
+          '`packageIslands` in openelement.config.ts (an explicit entry outranks a derived ' +
+          "claim), or stop importing one of the packages' element modules.",
+      ),
+    );
   }
 
   // Explicit priority: a derived declaration whose tag an explicit package
