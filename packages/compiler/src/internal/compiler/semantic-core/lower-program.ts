@@ -1211,14 +1211,17 @@ export class Lowering {
     if (!child.expression) return null;
     const expr = unwrapExpression(child.expression);
     // Server function components: the composition channel is the `children`
-    // prop — an undeclared read gets its own fix instead of the generic
-    // unsupported-expression rejection.
+    // prop — an UNDECLARED read gets its own fix instead of the generic
+    // unsupported-expression rejection; a declared read lowers through the
+    // ordinary field path and the code generator emits it raw (compiler-
+    // produced final HTML).
     if (
       this.server !== undefined &&
       ts.isPropertyAccessExpression(expr) &&
       ts.isIdentifier(expr.expression) &&
       expr.expression.text === this.server.parameter &&
-      expr.name.text === 'children'
+      expr.name.text === 'children' &&
+      !this.fieldNames.has('children')
     ) {
       this.fail(
         child,

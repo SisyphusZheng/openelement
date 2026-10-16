@@ -48,6 +48,20 @@ export interface ModuleSemanticFacts {
    */
   templatePage?: boolean;
   /**
+   * The server function page fact (alpha15 server lane): the first argument
+   * of a default-exported `definePage(…)` call when that argument is an
+   * identifier resolving to a server function component THIS module
+   * declares. A function component never carries a Part Program, so the
+   * route cannot be a compiled class page; the host build renders it through
+   * the component function. Spread-conditional: absent for class pages,
+   * template pages and non-page modules. The scan is order-independent (the
+   * module's server function components are collected before the page call
+   * is judged), so a default export written above its component declaration
+   * admits identically. An inline arrow or an unexported local — the shapes
+   * whose JSX would otherwise escape to runtime — never records the fact.
+   */
+  pageComponentName?: string;
+  /**
    * The exported functions whose body is a single return of JSX — the
    * server-only TSX function components this module declares (alpha15 server
    * lane). Discovery is structural and deterministic: `export function`
@@ -585,6 +599,7 @@ export function analyzeModuleSemantics(
   // .mdx routes are function-component pages the mdx plugin compiles to a
   // class — they are pages, but not template-page definitions.
   let templatePage = false;
+  let pageComponentName: string | undefined;
   let usesExportedTagName = false;
   let enhancedForm = false;
   let defaultCompiledTag: string | undefined;
@@ -593,10 +608,18 @@ export function analyzeModuleSemantics(
   const interactionEvents = new Set<string>();
   const serverComponents = new Set<string>();
 
+  // The server-function-component set is collected BEFORE the page-call
+  // judgement so the pageComponentName fact is order-independent: a default
+  // export written above its component declaration admits identically (the
+  // pre-pass is the same isExportedServerComponentDeclaration predicate the
+  // main loop reports from — one shape authority).
   for (const statement of sourceFile.statements) {
     if (isExportedServerComponentDeclaration(statement)) {
       serverComponents.add(serverComponentName(statement));
     }
+  }
+
+  for (const statement of sourceFile.statements) {
     if (
       ts.isVariableStatement(statement) &&
       statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)
@@ -634,6 +657,26 @@ export function analyzeModuleSemantics(
       if (matchedPageBinding) {
         definePage = true;
         if (matchedPageBinding.kind === 'template-page-definition') templatePage = true;
+        // The server function page (alpha15): only the native definePage
+        // binding (not defineHtmlPage's template kind, not the lit factory
+        // whose first argument is a tag string) can admit a component
+        // function. The first argument must be a plain identifier that
+        // resolves to a server function component THIS module declares — an
+        // inline arrow or an unexported local would ship runtime JSX, and the
+        // server lane has no interpreter (the R1 admission rule mirrored).
+        if (
+          matchedPageBinding.kind === 'page-definition' &&
+          matchedPageBinding.exportName === 'definePage'
+        ) {
+          const firstArgument = statement.expression.arguments[0];
+          if (
+            firstArgument !== undefined &&
+            ts.isIdentifier(firstArgument) &&
+            serverComponents.has(firstArgument.text)
+          ) {
+            pageComponentName = firstArgument.text;
+          }
+        }
       }
     }
 
@@ -777,6 +820,7 @@ export function analyzeModuleSemantics(
     ...(exportedTagName === undefined ? {} : { exportedTagName }),
     definePage,
     ...(templatePage ? { templatePage: true } : {}),
+    ...(pageComponentName === undefined ? {} : { pageComponentName }),
     serverFunctionComponents: [...serverComponents].sort(),
     usesExportedTagName,
     enhancedForm,

@@ -35,8 +35,11 @@ export {
 // path, emitting `__h`/`__t`/`__ssr` constructor code instead of a Part
 // Program. Discovery facts ride analyzeModuleSemantics
 // (serverFunctionComponents); the host build calls this entry for the modules
-// its graph walk finds.
+// its graph walk finds. `compileServerComponentIfAdmitted` is the host-side
+// admission bridge: class-lane modules and component-less modules answer
+// null, everything else compiles through the lane.
 export {
+  compileServerComponentIfAdmitted,
   compileServerComponentModule,
   type CompileServerComponentResult,
   type ServerComponentCompileOptions,

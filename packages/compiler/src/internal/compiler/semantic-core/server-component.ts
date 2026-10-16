@@ -40,6 +40,7 @@ import {
   failAt,
 } from './compiler-diagnostics.ts';
 import {
+  analyzeModuleSemantics,
   createModuleIntrinsicBindings,
   isExportedServerComponentDeclaration,
   serverComponentName,
@@ -514,6 +515,37 @@ export function compileServerComponentModule(
     components: candidates.map(serverComponentName).sort(),
     ...(classCandidates.size === 0 ? {} : { classCandidates: [...classCandidates].sort() }),
   };
+}
+
+/**
+ * The host-build admission bridge: compile `code` through the server function
+ * component lane when — and only when — this module belongs to it.
+ *
+ * - a module carrying a compiled-element decorator (or an unsupported
+ *   decorator spelling, which the class lane compiles so it fails closed with
+ *   OEC9027) belongs to the class lane: null;
+ * - a module with no discovered server function component has nothing to
+ *   admit: null;
+ * - a non-`.tsx` id can never carry the JSX grammar: null;
+ * - the cheap `export` + `<` prefilter (the same conservative superset idea
+ *   the class lane's prefilter uses) keeps plainly inert modules off the
+ *   parse.
+ *
+ * Everything else goes through {@link compileServerComponentModule}, whose
+ * diagnostics fail the build closed.
+ */
+export function compileServerComponentIfAdmitted(
+  code: string,
+  id: string,
+  options: ServerComponentCompileOptions = {},
+): CompileServerComponentResult | null {
+  if (!/\.tsx(?:\?|$)/.test(id)) return null;
+  if (!code.includes('export') || !code.includes('<')) return null;
+  const facts = analyzeModuleSemantics(code, id);
+  if (facts.compiledElementDecorator || facts.unsupportedElementDecorator !== undefined)
+    return null;
+  if (facts.serverFunctionComponents.length === 0) return null;
+  return compileServerComponentModule(code, id, options);
 }
 
 /**

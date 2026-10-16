@@ -42,6 +42,7 @@ import {
   type SemanticCoreOptions,
   type StaticSidecarDescriptor,
 } from './semantic-core/module-analysis.ts';
+import { compileServerComponentIfAdmitted } from './semantic-core/server-component.ts';
 import {
   diagnosticPluginError,
   recordCompilerDiagnostics,
@@ -207,6 +208,23 @@ export interface CompiledElementPluginOptions {
    * the right shape for a build that consumes none (e.g. the SSR half).
    */
   candidates?: ClassCandidateRegistry;
+  /**
+   * Host-supplied resolver for the server function component lane's nested
+   * imports (`resolveModule` of {@link compileServerComponentModule}): given
+   * a specifier and the importing module id, return that module's SOURCE so
+   * a nested server function component composes by direct call. Omitting it
+   * (or answering undefined) keeps nested composition a coded rejection.
+   * The compiler itself never reads the filesystem — resolution stays the
+   * host's job, so this option carries the host's capability rather than a
+   * path convention.
+   */
+  resolveServerComponentModule?: (specifier: string, importer: string) => string | null;
+  /**
+   * The custom-element host tags the host build admitted as @element compiled
+   * components: JSX children in a server function component ride
+   * `__ssr(tag, props)` for those tags and an emitted-as-is tag otherwise.
+   */
+  compiledTags?: readonly string[];
 }
 
 /**
@@ -266,13 +284,40 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
         const compiled = compileElementModule(code, moduleId, {
           staticSidecars: options.staticSidecars,
         });
+        // The server function component lane (alpha15): the class lane
+        // declined (no compiled-element decorator), so the module may still
+        // be a server function page/component — an exported JSX-returning
+        // function the compiler lowers into __h/__t/__ssr constructors. The
+        // class candidates a function module proves are LIGHT-root facts
+        // (no element class, no shadow root). Style edges are honestly
+        // SKIPPED: a function page owns no element class to hang the DSD
+        // `<link>` on, and a registered edge with no consumer would emit an
+        // orphan CSS asset (the demand-shape discipline the style pipeline
+        // documents).
+        const serverCompiled =
+          compiled === null
+            ? compileServerComponentIfAdmitted(code, moduleId, {
+                ...(options.resolveServerComponentModule === undefined
+                  ? {}
+                  : {
+                      resolveModule: (specifier: string) => {
+                        const resolved = options.resolveServerComponentModule!(specifier, moduleId);
+                        return resolved ?? undefined;
+                      },
+                    }),
+                ...(options.compiledTags === undefined
+                  ? {}
+                  : { compiledTags: options.compiledTags }),
+              })
+            : null;
         // An ALREADY-compiled artifact (a package's shipped module) has no
         // authored grammar left to compile, but its `.css` imports are the
         // same style edges the authored path registers — recovered through the
         // artifact read (compiled-artifact-style-requests.ts) so the packed
         // form is admitted identically to the workspace-source form (#1558/
         // KR-10). This transform stays the registry's one writer.
-        const artifact = compiled ? undefined : readCompiledArtifactStyles(code, id);
+        const artifact =
+          compiled || serverCompiled ? undefined : readCompiledArtifactStyles(code, id);
         const styleRequests = compiled?.styleRequests ?? artifact?.requests;
         // The compiled module's `.css` edges travel to the intercepting host
         // plugin through the style-edge registry — keyed by the id the
@@ -304,6 +349,12 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
               // classes live in document DOM and the document entry covers them.
               shadow: compiled.program.root.kind !== 'light',
             });
+          } else if (serverCompiled !== null) {
+            // A server function component has no element class and no root —
+            // its output is document DOM, so its classes are LIGHT facts.
+            options.candidates.register(id, serverCompiled.classCandidates ?? [], {
+              shadow: false,
+            });
           } else {
             // An already-compiled artifact (a shipped package module): its
             // candidates were proven at pack time and travel in the module
@@ -313,6 +364,28 @@ export function compiledElementPlugin(options: CompiledElementPluginOptions = {}
               shadow: true,
             });
           }
+        }
+        if (serverCompiled !== null) {
+          if (options.typeCheckEmitted) {
+            const diagnostics = typeCheckEmittedModule(serverCompiled.code, moduleId, {
+              paths: options.resolutionPaths,
+            });
+            const first = diagnostics[0];
+            if (first) {
+              this.error({
+                id,
+                loc: { file: id, line: first.line, column: first.character },
+                message:
+                  `[open:compiled-element] the server component lane emitted a module that does ` +
+                  `not type-check (${diagnostics.length} diagnostic(s); TS${first.code}: ` +
+                  `${first.message}). This is a compiler defect — report it with the authored ` +
+                  'module that triggered it.',
+              });
+            }
+          }
+          // The lane emits no inline map comment (the artifact is standalone
+          // TS without a map tail), so no strip is needed.
+          return { code: serverCompiled.code, map: serverCompiled.map };
         }
         // The edge registration above is the whole job for an adopted
         // artifact: it ships as its own emitted module, nothing to compile or
