@@ -31,6 +31,7 @@ import { resolveIslandDeliveryTags } from './internal/ssg/delivery.ts';
 import type { OpenPluginState } from './plugin-config.ts';
 import type { ModuleWalkResolver } from './internal/module-graph-walk.ts';
 import { collectShadowClassCandidates } from './internal/collect-shadow-candidates.ts';
+import { serverComponentAdmissionTags } from './internal/server-component-host.ts';
 import {
   deriveAdmittedPackages,
   mergeAdmittedManifests,
@@ -382,6 +383,7 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
                 resolve: true,
               })),
             ],
+            serverComponentTags: serverComponentAdmissionTags(state.ctx.phase1.staticComponents),
           });
         }
 

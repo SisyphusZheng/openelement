@@ -341,9 +341,12 @@ export function renderEntry(desc: EntryDescriptor): string {
     // overwrites registrations it made itself.
     // #1568: template pages are skipped — their default export is a plain
     // descriptor record, not a class, and a template route must never touch
-    // the SSR registry (zero client semantics).
+    // the SSR registry (zero client semantics). alpha15 server lane: a
+    // server function page is skipped for the same reason — its default
+    // export is the compiled component function, and no element class exists
+    // to register.
     for (const route of desc.pageRoutes) {
-      if (route.htmlPage) continue;
+      if (route.htmlPage || route.functionPage !== undefined) continue;
       const tagNameExpr = pageRouteTagExpr(route.varName, route.tagName);
       lines.push(
         `try { __registerSsrComponent(${tagNameExpr}, ${route.varName}.default); } catch (err) { console.error('[ssg] Failed to register route custom element ${tagNameExpr}:', err); throw err; }`,

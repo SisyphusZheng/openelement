@@ -69,6 +69,10 @@ import {
 } from '../vite/internal/style-assets.ts';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { ROUTER_MODULE_VOCABULARY } from '@openelement/protocol/module-vocabulary';
+import {
+  createServerComponentSourceResolver,
+  serverComponentAdmissionTags,
+} from '../vite/internal/server-component-host.ts';
 import { compilerBehaviorDeclarations } from '../vite/internal/ssg/client-admission.ts';
 import { sortAliasEntries } from '../vite/alias-utils.ts';
 import { formatError } from '@openelement/element';
@@ -962,6 +966,10 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         // derived set and the manifest-less owners directly); the walk-based
         // report is the manual-mode boundary.
         ctx.phase1.packageAdmissionMode ?? 'auto',
+        // The admitted static component tags (alpha15 server lane): the
+        // walk's server function component compile routes nested compiled
+        // hosts through `__ssr` for exactly this set.
+        serverComponentAdmissionTags(ctx.phase1.staticComponents),
       ),
       // The engine's sheet half: it sits AFTER the discovery pass, so its
       // `buildStart` compile reads the candidates that pass registered — never
@@ -986,6 +994,16 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         // write path and the discovery pass share exactly this instance, and no
         // other build's facts can reach it.
         candidates: shadowCandidateRegistry,
+        // The server function component lane (alpha15): route modules whose
+        // class-lane compile declines compile into `__h`/`__t`/`__ssr`
+        // constructors through the same transform — the client build must
+        // lower them exactly as the dev and SSG hosts do, or the route
+        // module would ship authored JSX.
+        resolveServerComponentModule: createServerComponentSourceResolver({
+          root,
+          workspaceRoot: findBuildWorkspaceRoot(root) ?? undefined,
+        }),
+        compiledTags: serverComponentAdmissionTags(ctx.phase1.staticComponents),
       }),
       // intercepts the compiled modules' authored `.css` imports before
       // vite's CSS plugin, emits the real `.css` assets, and hands the sheet

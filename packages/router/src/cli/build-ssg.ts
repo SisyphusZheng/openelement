@@ -51,6 +51,10 @@ import {
 import { clearStyleRequests, compiledElementPlugin } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { serverStyleAssetPlugin } from '../vite/internal/style-assets.ts';
+import {
+  createServerComponentSourceResolver,
+  serverComponentAdmissionTags,
+} from '../vite/internal/server-component-host.ts';
 import { normalizeViteAliases } from '../vite/alias-utils.ts';
 import {
   CHUNK_SIZE_WARNING_LIMIT_KB,
@@ -461,7 +465,10 @@ async function buildSSG(
         // Keep SSR lowering identical to the outer Vite and client builds;
         // this inline build has its own plugin list. The compiled modules
         // here register the same `.css` style edges the client build
-        // intercepted — the SSR half of the protocol.
+        // intercepted — the SSR half of the protocol. The server function
+        // component lane (alpha15) rides the same transform: nested
+        // composition resolves through the host source resolver and admitted
+        // static component tags route nested hosts through `__ssr`.
         compiledElementPlugin({
           // Linked workspace packages sit outside the project root; without the
           // workspace anchor their absolute ids would land in the source maps.
@@ -469,6 +476,11 @@ async function buildSSG(
           // Route/island sources carry the island delivery policy statement;
           // the compiler admits it only through the injected descriptor.
           staticSidecars: [ISLAND_ADMISSION],
+          resolveServerComponentModule: createServerComponentSourceResolver({
+            root,
+            workspaceRoot: findBuildWorkspaceRoot(root) ?? undefined,
+          }),
+          compiledTags: serverComponentAdmissionTags(staticComponents),
         }),
         // serves the server half of the style edge protocol — the
         // sheet adapter embeds the authored .css file's bytes, the same bytes

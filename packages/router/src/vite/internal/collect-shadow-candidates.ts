@@ -28,10 +28,12 @@ import { createRequire } from 'node:module';
 import {
   type ClassCandidateRegistry,
   compileElementModule,
+  compileServerComponentIfAdmitted,
   compiledArtifactClassCandidates,
 } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { join, resolve } from 'pathe';
+import { createServerComponentSourceResolver } from './server-component-host.ts';
 
 /** One module the collection pass should compile. */
 export interface CandidateModule {
@@ -52,6 +54,13 @@ export interface CollectShadowCandidatesOptions {
   readonly modules: readonly CandidateModule[];
   /** The owner's registry — never a shared one. */
   readonly candidates: ClassCandidateRegistry;
+  /**
+   * The admitted static component tags (alpha15 server lane): a server
+   * function component module compiles through the lane so its LIGHT class
+   * candidates register exactly like a class module's. Omitted: the lane
+   * still compiles (with no `__ssr`-routed nested hosts).
+   */
+  readonly serverComponentTags?: readonly string[];
 }
 
 /**
@@ -131,6 +140,30 @@ export async function collectShadowClassCandidates(
       continue;
     }
     if (compiled === null) {
+      // The server function component lane (alpha15): a route module carrying
+      // an exported JSX-returning function. Its classes are LIGHT facts (no
+      // element class, no shadow root) — the same registry, the same
+      // authoritative registration.
+      let serverCompiled: ReturnType<typeof compileServerComponentIfAdmitted>;
+      try {
+        serverCompiled = compileServerComponentIfAdmitted(source, file, {
+          resolveModule: (specifier) =>
+            createServerComponentSourceResolver({ root: options.root })(specifier, file) ??
+            undefined,
+          ...(options.serverComponentTags === undefined
+            ? {}
+            : { compiledTags: options.serverComponentTags }),
+        });
+      } catch {
+        // The authoritative compile reports diagnostics; see the module header.
+        continue;
+      }
+      if (serverCompiled !== null) {
+        const tokens = serverCompiled.classCandidates ?? [];
+        options.candidates.register(file, tokens, { shadow: false });
+        if (tokens.length > 0) contributed += 1;
+        continue;
+      }
       if (registerArtifactCandidates(source, file, options.candidates)) contributed += 1;
       continue;
     }

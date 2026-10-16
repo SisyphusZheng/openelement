@@ -65,6 +65,7 @@ import type { Plugin, ViteDevServer } from 'vite';
 import {
   type ClassCandidateRegistry,
   compileElementModule,
+  compileServerComponentIfAdmitted,
   readCompiledArtifactStyles,
   getStyleRequest,
   hasStyleImporter,
@@ -76,6 +77,7 @@ import {
   styleRequestsForImporter,
 } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
+import { createServerComponentSourceResolver } from './server-component-host.ts';
 import { walkModuleGraph } from './module-graph-walk.ts';
 import {
   registerArtifactCandidates,
@@ -631,6 +633,12 @@ export function serverRenderedStyleEdgesPlugin(
    * scan's own diagnostics; 'manual' keeps the report.
    */
   admissionMode: 'auto' | 'manual' = 'auto',
+  /**
+   * The admitted static component tags (alpha15 server lane): the walk's
+   * server function component compile routes nested compiled hosts through
+   * `__ssr` for exactly this set.
+   */
+  serverComponentTags: readonly string[] = [],
 ): Plugin {
   let admitted = false;
   let edges: Map<string, RegisteredStyleRequest> | undefined;
@@ -664,6 +672,7 @@ export function serverRenderedStyleEdgesPlugin(
         sources,
         resolvedRoot,
         admissionMode,
+        serverComponentTags,
       );
     },
     // The module-LOADING phase: reaching a sheet's text through Vite's `?inline`
@@ -704,6 +713,8 @@ async function discoverServerRenderedModules(
   root?: string,
   /** The admission mode the scan resolved; 'auto' owns the reporting, so the walk stays silent. */
   admissionMode: 'auto' | 'manual' = 'auto',
+  /** The admitted static component tags the server function component lane routes through `__ssr`. */
+  serverComponentTags: readonly string[] = [],
 ): Promise<Map<string, RegisteredStyleRequest>> {
   const roots = [...seeds.files];
   for (const specifier of seeds.specifiers) {
@@ -732,6 +743,10 @@ async function discoverServerRenderedModules(
   }
   const effectiveRoot = root ?? process.cwd();
   const workspaceRoot = findBuildWorkspaceRoot(effectiveRoot) ?? undefined;
+  const serverComponentResolver = createServerComponentSourceResolver({
+    root: effectiveRoot,
+    workspaceRoot,
+  });
   const walk = await walkModuleGraph(this, roots);
   if (walk.truncated) {
     this.warn(
@@ -769,6 +784,24 @@ async function discoverServerRenderedModules(
       // understands — relative, `#imports`, alias, package exports.
       registerCandidatesFromCompiled(file, compiled, candidates);
       elementFiles.push(file);
+      continue;
+    }
+    // The server function component lane (alpha15): a route module carrying
+    // an exported JSX-returning function compiles into `__h`/`__t`/`__ssr`
+    // constructors. Its class candidates are LIGHT facts (no element class,
+    // no shadow root), and its style EDGES are honestly skipped — a function
+    // page owns no element class to hang the DSD `<link>` on, and a
+    // registered edge with no consumer would emit an orphan CSS asset.
+    const serverCompiled = compileServerComponentIfAdmitted(
+      source,
+      stableModuleId(file, effectiveRoot, workspaceRoot),
+      {
+        resolveModule: (specifier) => serverComponentResolver(specifier, file) ?? undefined,
+        compiledTags: serverComponentTags,
+      },
+    );
+    if (serverCompiled !== null) {
+      candidates.register(file, serverCompiled.classCandidates ?? [], { shadow: false });
       continue;
     }
     // A SHIPPED (already compiled) module — a package consumed from node_modules

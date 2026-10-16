@@ -15,6 +15,7 @@ import {
   CompiledElementError,
   compiledArtifactClassCandidates,
   compileElementModule,
+  compileServerComponentIfAdmitted,
   diagnosticPluginError,
   lightRootScopeTag,
   readCompiledArtifactStyles,
@@ -29,6 +30,10 @@ import {
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { styleAssetGraphId } from './internal/style-assets.ts';
 import { devClientModulePath } from './internal/dev-client-path.ts';
+import {
+  createServerComponentSourceResolver,
+  serverComponentAdmissionTags,
+} from './internal/server-component-host.ts';
 import type { OpenPluginState } from './plugin-config.ts';
 
 /**
@@ -55,20 +60,39 @@ export function createCompilerHooks(
   return {
     transform(code, id) {
       try {
+        const moduleId = stableModuleId(id, state.viteRoot, state.workspaceRoot);
         const result = compileElementModule(
           code,
-          stableModuleId(id, state.viteRoot, state.workspaceRoot),
+          moduleId,
           // The island delivery policy statement is admitted only through
           // the injected descriptor; the dev style-asset plugin
           // (open:style-assets-dev) serves the `.css` edges the compile
           // registers.
           { staticSidecars: [ISLAND_ADMISSION] },
         );
+        // The server function component lane (alpha15): when the class lane
+        // declined, a route module carrying an exported JSX-returning
+        // function compiles into `__h`/`__t`/`__ssr` constructors. Nested
+        // composition resolves through the host resolver (the compiler never
+        // reads the filesystem); the admitted static component tags route
+        // nested compiled hosts through `__ssr`.
+        const serverComponentResolver = createServerComponentSourceResolver({
+          root: state.viteRoot ?? process.cwd(),
+          workspaceRoot: state.workspaceRoot,
+        });
+        const serverResult =
+          result === null
+            ? compileServerComponentIfAdmitted(code, moduleId, {
+                resolveModule: (specifier) =>
+                  serverComponentResolver(specifier, moduleId) ?? undefined,
+                compiledTags: serverComponentAdmissionTags(state.ctx.phase1.staticComponents),
+              })
+            : null;
         // A shipped compiled artifact (a package's emitted module) has no
         // authored grammar left to compile, but its `.css` imports are the
         // same style edges — recovered through the artifact read so dev admits
         // the packed form exactly as the build does (#1558/KR-10).
-        const artifact = result ? undefined : readCompiledArtifactStyles(code, id);
+        const artifact = result || serverResult ? undefined : readCompiledArtifactStyles(code, id);
         const styleRequests = result?.styleRequests ?? artifact?.requests;
         // the compiled-element transform is the style-edge
         // registry's one writer — this hook is that transform's dev host
@@ -105,12 +129,21 @@ export function createCompilerHooks(
             // classes live in document DOM and the document entry covers them.
             shadow: result.program.root.kind !== 'light',
           });
+        } else if (serverResult !== null) {
+          // A server function component has no element class and no root —
+          // its output is document DOM, so its classes are LIGHT facts.
+          state.classCandidates.register(id, serverResult.classCandidates ?? [], {
+            shadow: false,
+          });
         } else {
           // A shipped artifact module carries its candidates (S5-B): the dev
           // binding registers the packed form exactly as the build binding.
           state.classCandidates.register(id, compiledArtifactClassCandidates(code, id) ?? [], {
             shadow: true,
           });
+        }
+        if (serverResult !== null) {
+          return { code: serverResult.code, map: serverResult.map };
         }
         // The edge registration is the whole job for an adopted artifact:
         // it ships as its own module, nothing to compile or hand back.

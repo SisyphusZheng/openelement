@@ -176,10 +176,29 @@ test('definePage() descriptor renders through the compiled serializer', () => {
   expect(out.includes('Hello from definePage')).toEqual(true);
 });
 
-test('definePage() requires the compiled class as its first argument', () => {
+test('definePage() admits a plain function as a server function page (alpha15)', () => {
+  // The contract change: an arrow/function first argument is now the server
+  // function page form — the compiler lowers the exported component function
+  // to HTML constructors and definePage records the function-page descriptor.
+  const render = (props: { title: string }) => `<main>${props.title}</main>`;
+  const page = definePage(render as never) as unknown as {
+    openElementPage: { kind: string; render: unknown };
+  };
+  expect(page.openElementPage.kind).toEqual('function-page');
+  expect(page.openElementPage.render).toEqual(render);
+});
+
+test('definePage() still requires a function — non-function arguments keep NOT_COMPILED_CLASS', () => {
   assertThrowsIncludes(
     () => {
-      definePage((() => null) as never);
+      definePage({} as never);
+    },
+    Error,
+    'requires the compiled page element class',
+  );
+  assertThrowsIncludes(
+    () => {
+      definePage(42 as never);
     },
     Error,
     'requires the compiled page element class',
@@ -439,7 +458,9 @@ test('defineIslandConfig() rejects non-canonical island metadata', () => {
 test('#1413 authoring errors: definePage() failure modes carry codes and remediation', () => {
   const Page = makeCompiledPageClass('classified-page', 'classified');
   const cases: Array<[() => unknown, string]> = [
-    [() => definePage((() => null) as never), PageErrorCode.NOT_COMPILED_CLASS],
+    // The non-function shape keeps NOT_COMPILED_CLASS (the function shape is
+    // the alpha15 server function page now — its own admission below).
+    [() => definePage(42 as never), PageErrorCode.NOT_COMPILED_CLASS],
     [() => definePage(Page, [] as never), PageErrorCode.DESCRIPTOR_SHAPE],
     [() => definePage(Page, { render: () => null } as never), PageErrorCode.DESCRIPTOR_SHAPE],
     [() => definePage(Page, { route: { path: '/x' } } as never), PageErrorCode.ROUTE_INTENT],

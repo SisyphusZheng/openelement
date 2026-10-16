@@ -160,6 +160,20 @@ export function buildEntryDescriptor(
       names: ['mergeChannelHeaders'],
       alias: '__mergeChannelHeaders',
     });
+    // The server function page render seam (alpha15 server lane): the
+    // compiled constructor function is called through the typed runtime
+    // module, which owns the two boundary checks (render is a function;
+    // props never carry the compiler-owned `children` channel). Renderer-
+    // neutral: a function page produces HTML directly, so the native and lit
+    // adapters emit the same call site. Emitted only when a function-page
+    // route exists, so a class-page-only entry stays byte-identical.
+    if (routes.some((route) => route.functionPage !== undefined)) {
+      imports.push({
+        from: '@openelement/router/server-runtime',
+        names: ['renderFunctionPage'],
+        alias: '__renderFunctionPage',
+      });
+    }
     // The action POST protocol (CSRF floor, dispatch, classification,
     // problem+json, PRG, the 303 coercion and the 500 error mapping) is the
     // imported runtime module; the entry
@@ -428,6 +442,10 @@ export function buildEntryDescriptor(
         // registers nothing for them and renders them through the
         // descriptor's render function.
         ...(r.htmlPage === true ? { htmlPage: true } : {}),
+        // alpha15 server lane: a server function page carries no element
+        // class either — the compiled component function is the render, and
+        // the entry registers nothing for the route.
+        ...(r.functionPage === undefined ? {} : { functionPage: r.functionPage }),
         ...(r.streamManifest ? { streamManifest: r.streamManifest } : {}),
       };
     });
