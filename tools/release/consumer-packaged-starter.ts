@@ -38,6 +38,11 @@
  *   preview  the router bin's `start --mode=preview` fails closed with start
  *            guidance (the starter is dynamic, #601); the starter ships no
  *            preview script (owner ruling 2026-10-09)
+ *   agent    the agent-workflow break/fix round (#1617, alpha15 A8): a
+ *            refused style source is introduced, the packed CLI's #1612
+ *            envelope is parsed, the fix is derived from public artifacts
+ *            alone, and the repaired build must deliver the authored rule
+ *            (packed-agent-round.ts)
  *
  * Every leg asserts over-the-wire output, not just a green exit. Gated in CI
  * via the `consumer:packaged` root task (verify:core task chain).
@@ -51,6 +56,7 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { runProcess } from './consumer-packaged-shared.ts';
+import { runAgentWorkflowRound } from './packed-agent-round.ts';
 import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { readPackages } from '../lib/package-graph.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
@@ -965,6 +971,33 @@ async function main(): Promise<void> {
       );
     }
     console.log('Packed router bin preview fail-closed guidance passed.');
+
+    // Lifecycle leg 8 — the agent workflow (#1617, alpha15 A8): the packed
+    // starter is broken with a documented failure class, the packed build CLI's
+    // #1612 envelope is parsed, the fix is derived from public artifacts alone
+    // (the diagnostic's own recipe + the public error reference), and the
+    // repaired app must build clean AND deliver the authored rule. The round
+    // rides this gate (no new CI lane) and runs LAST: it rewrites app files.
+    //
+    // The closed-world assertion is re-stated immediately before the round:
+    // everything the round reads is the installed app, the build's own output,
+    // or the public docs origin — never this checkout.
+    await assertConsumerDoesNotResolveIntoRepository(join(starter, 'node_modules'));
+    const agentRound = await runAgentWorkflowRound({
+      appDir: starter,
+      run: (command, args, label) => {
+        console.log(`Agent-workflow round: ${label}`);
+        return run(command, [...args], starter, BUILD_TIMEOUT_MS, npmEnv);
+      },
+      docsOrigin: process.env.OPENELEMENT_AGENT_DOCS_ORIGIN,
+      docsWhenUnreachable: process.env.OPENELEMENT_AGENT_ROUND_OFFLINE === '1' ? 'skip' : 'fail',
+    });
+    console.log(
+      `Packed agent-workflow round passed: ${agentRound.failureCode} surfaced through the ` +
+        `envelope, the fix was derived from public artifacts, docs=${agentRound.docs.status}` +
+        `${agentRound.docs.url === undefined ? '' : ` (${agentRound.docs.url})`}, the repaired ` +
+        `build is clean and the authored rule reached ${agentRound.deliveredRule}.`,
+    );
   } finally {
     await rm(tmp, { recursive: true }).catch(() => undefined);
   }
