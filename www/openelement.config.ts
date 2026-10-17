@@ -13,7 +13,6 @@ import { defineConfig } from '@openelement/router';
 import { SITE_BUDGET } from './site-budget.ts';
 import { SITE_DEFAULT_LOCALE, SITE_LOCALES } from './site-config.ts';
 import { SITE_FONT_SOURCES } from './site-fonts.ts';
-import { headerNav, navSections } from './app/data/_generated-nav-data.ts';
 
 export default defineConfig({
   // The framework's documented defaults, stated explicitly: the Site pins its
@@ -39,18 +38,14 @@ export default defineConfig({
     // Prism runtime).
     scripts: [{ src: '/theme-init.js' }],
   },
-  // The layout's tag name (`open-layout`) is derived from the import's basename.
-  layout: {
-    import: './app/islands/open-layout.tsx',
-    props: {
-      footerText: 'Built with OpenElement — Web Components-native application framework',
-      // Router 1.0 keeps the layout nav contract in the consumer: the Site
-      // projects its route-meta nav tree into the layout (Nav items are
-      // static; the router injects currentPath/locale per route).
-      navItems: navSections,
-      headerNav,
-    },
-  },
+  // The site shell is the layout.tsx convention (app/layout.tsx): the
+  // compiled `app-layout` component carries the header/nav/sidebar/footer
+  // chrome and projects every page render through its default slot — the
+  // same wrap channel at SSG and request time. The convention path is the
+  // whole registration; the former `layout:` block (and its open-layout
+  // app-shell island) retired with it. The nav data that block handed over
+  // as props is imported by the layout module directly (the convention
+  // passes no props of its own).
   // Listing the UI package admits its island modules AND derives the SSR
   // externalization list: a package whose islands the build renders must be
   // bundled, not imported at run time. There is no separate `ssr` key.
@@ -75,7 +70,10 @@ export default defineConfig({
   // same-origin stylesheet carries theme + fonts, so no font request can leave
   // the origin and no CDN outage can stall first paint.
   tailwind: {
-    theme: [...SITE_FONT_SOURCES],
+    // site-chrome.css is the shell's linked authored-CSS layer: the host
+    // boxes, pseudo-elements and keyframes the retired component sheets
+    // owned, compiled into the same linked document stylesheet as the fonts.
+    theme: [...SITE_FONT_SOURCES, './site-chrome.css'],
   },
   speculation: true,
   // One shared official-Site SLO (www/site-budget.ts): the build manifest
