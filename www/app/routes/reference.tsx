@@ -118,12 +118,12 @@ const authoredCopy: Record<string, AuthoredPackageCopy> = {
       en: [
         'Zero dependencies, contracts only: no logic grows here by charter.',
         'You normally consume these through the packages that re-export them.',
-        'Repository baseline — awaiting its first publish on the alpha.11 train.',
+        'Repository baseline — published on the alpha train.',
       ],
       zh: [
         '零依赖、仅装契约：章程禁止逻辑在此生长。',
         '通常通过转售这些契约的包间接消费。',
-        '仓库基线——等待 alpha.11 列车的首次发布。',
+        '仓库基线——已随 alpha 列车发布。',
       ],
     },
     kind: 'core',
@@ -156,12 +156,12 @@ const authoredCopy: Record<string, AuthoredPackageCopy> = {
       en: [
         'Build tooling only — never part of a browser/runtime graph.',
         'You normally drive it through the `@openelement/router` build; the standalone plugin is `@openelement/compiler/vite`.',
-        'Repository baseline — awaiting its first publish on the alpha.11 train.',
+        'Repository baseline — published on the alpha train.',
       ],
       zh: [
         '仅构建期工具——绝不进入浏览器/运行期依赖图。',
         '通常通过 `@openelement/router` 构建驱动；独立插件在 `@openelement/compiler/vite`。',
-        '仓库基线——等待 alpha.11 列车的首次发布。',
+        '仓库基线——已随 alpha 列车发布。',
       ],
     },
     kind: 'build',

@@ -446,7 +446,10 @@ export async function ssgRender(
 
   if (options.viewTransition !== false) {
     injectViewTransitionOptIn(outputDir);
-    log.info('View Transitions meta tag injected');
+    // Not a meta tag: the injection is the `@view-transition` at-rule in a
+    // plain <style> block, which is the only form that can carry the
+    // reduced-motion opt-out (see injectViewTransitionOptIn's own doc).
+    log.info('View Transitions opt-in style block injected');
   }
 
   if (options.speculation) {

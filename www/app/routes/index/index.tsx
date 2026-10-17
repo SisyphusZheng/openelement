@@ -58,7 +58,7 @@ const content = {
     facts: 'Facts behind the feeling',
     continueComposition: 'Continue the composition.',
     referenceCopy:
-      'Every number and claim on this page is sourced from the repository\u2019s release and benchmark truth.',
+      'Every number and claim on this page is sourced from the repository\u2019s release and measured-output truth.',
   },
   zh: {
     headTitle: 'openElement — 组合而生的 Web。',
@@ -88,7 +88,7 @@ const content = {
     beginNote: `${alphaLineNote('zh')}`,
     facts: '感觉背后的事实',
     continueComposition: '继续这场组合。',
-    referenceCopy: '本页每个数字与声称都取自仓库的发布与基准真值。',
+    referenceCopy: '本页每个数字与声称都取自仓库的发布与实测输出真值。',
   },
 } as const;
 
