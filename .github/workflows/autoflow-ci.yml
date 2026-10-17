@@ -296,7 +296,15 @@ jobs:
     needs: [sha-guard]
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.full_qualification == true)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 45, not 30: this job has already been killed once by its own cap — run
+    # 38341586388 on alpha15-consolidation ran 30m17s and concluded `cancelled`,
+    # which the run reported as `failure`. Nine observations now put the
+    # completions at 22m09s, 22m51s, 23m55s, 24m38s, 26m55s, 27m33s, 28m39s and
+    # 28m42s, i.e. 74–96% of the old budget, and the worst two successes left
+    # only 1m18s and 47s of headroom. The cap was the binding constraint, not a
+    # generous ceiling, so it is raised to roughly 1.5x the worst observed
+    # success rather than left to fail a green run.
+    timeout-minutes: 45
     permissions:
       contents: read
     steps:
