@@ -599,12 +599,24 @@ test.skipIf(!vpAvailable)(
       // Pointing the run INTO the copy would make vp load the copy's
       // vite.config.ts, which imports packages a scratch dir has no
       // node_modules to resolve.
-      const fmt = spawnSync(repoVpBin, ['fmt', tmpRoot, '--check'], { encoding: 'utf8' });
+      // `vp`'s built-in `fmt`/`lint` can block forever when spawned with
+      // spawnSync's default PIPED stdin: the child waits on a stream nobody
+      // ever closes, so spawnSync never returns and the whole vitest project
+      // wedges locally (verified: the identical command exits in 9 ms from a
+      // different worktree). An explicit /dev/null stdin plus a hard timeout
+      // turn any such wait into a fast, clear result; the assertion itself —
+      // a fresh scaffold is format-clean and lint-clean — is unchanged.
+      const spawnOpts = {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'] as const,
+        timeout: 120_000,
+      };
+      const fmt = spawnSync(repoVpBin, ['fmt', tmpRoot, '--check'], spawnOpts);
       expect(
         fmt.status,
         `vp fmt --check flagged unformatted template payload:\n${fmt.stdout}${fmt.stderr}`,
       ).toEqual(0);
-      const lint = spawnSync(repoVpBin, ['lint', tmpRoot], { encoding: 'utf8' });
+      const lint = spawnSync(repoVpBin, ['lint', tmpRoot], spawnOpts);
       expect(
         lint.status,
         `vp lint flagged the template payload:\n${lint.stdout}${lint.stderr}`,
