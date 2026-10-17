@@ -3,7 +3,6 @@
 import { computed, element, OpenElement, property } from '@openelement/element';
 import { readingChromeStrings } from './chrome-strings.ts';
 import { installRailScrollspy, uninstallRailScrollspy } from './open-page-rail-controller.ts';
-import openPageRailStyles from './open-page-rail.css';
 
 interface RailItem {
   id: string;
@@ -14,7 +13,7 @@ interface RailItem {
 
 @element('open-page-rail')
 export default class OpenPageRail extends OpenElement {
-  static override styles = [openPageRailStyles];
+  // Rules moved to the linked document stylesheet (www/site-chrome.css).
 
   @property({ reflect: false })
   items: RailItem[] = [];

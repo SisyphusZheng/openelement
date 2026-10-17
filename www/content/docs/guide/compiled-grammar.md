@@ -345,6 +345,9 @@ export class MyStatus extends OpenElement {
   @property({ reflect: false })
   label = 'Status';
 
+  // The handler lives on the surrounding element, outside the branch Block.
+  pick(): void {}
+
   render() {
     return (
       <div onClick={this.pick}>

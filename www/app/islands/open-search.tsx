@@ -11,13 +11,13 @@ import {
   type SearchHit,
   uninstallSearch,
 } from '../site-ui/open-search-controller.ts';
-import openSearchStyles from './open-search.css';
 
 export const openElement = defineIslandConfig({ hydrate: 'load', ssr: true });
 
 @element('open-search')
 export default class OpenSearch extends OpenElement {
-  static override styles = [openSearchStyles];
+  // Rules moved to the linked document stylesheet (www/site-chrome.css): the
+  // SSR payload and the upgraded island read the one document sheet.
 
   // Chrome copy is finalized at SSR in the page locale: the shell passes the
   // strings as attributes (see open-layout.tsx); the English field defaults

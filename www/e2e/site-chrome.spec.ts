@@ -149,7 +149,7 @@ test.describe('Site chrome: the header always offers one navigation affordance',
       await page.waitForLoadState('networkidle');
 
       const pill = page.getByRole('navigation', { name: 'Primary navigation' });
-      const summary = page.locator('open-layout header summary').first();
+      const summary = page.locator('app-layout header summary').first();
       const mobileNav = page.getByRole('navigation', { name: 'Mobile navigation' });
 
       if (tier.affordance === 'mobile') {
@@ -240,7 +240,7 @@ test.describe('Site chrome: footer', () => {
 
 test.describe('Site chrome: skip link and language switcher', () => {
   // Integration review: the skip link and the header language switcher land
-  // with the parallel open-layout header work; selectors here pin the
+  // with the parallel app-layout header work; selectors here pin the
   // contract (href targets), not the final visible copy.
   for (const route of ['/', '/guide/getting-started', '/zh/guide/getting-started']) {
     test(`skip link on ${route} targets #main-content`, async ({ page }) => {

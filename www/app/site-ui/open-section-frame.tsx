@@ -2,11 +2,12 @@
 /** Private WWW section frame for headings and evidence. */
 
 import { element, OpenElement } from '@openelement/element';
-import openSectionFrameStyles from './open-section-frame.css';
 
 @element('open-section-frame')
 export default class OpenSectionFrame extends OpenElement {
-  static override styles = [openSectionFrameStyles];
+  // Rules moved to the linked document stylesheet (www/site-chrome.css): a
+  // function page's render owns no document-style sink, so the linked sheet
+  // is the one delivery. See the site-chrome.css header.
   render() {
     return (
       <section class='w-[calc(100%-2rem)] mx-auto mt-[clamp(4rem,10vh,8rem)] min-[761px]:w-[min(1180px,calc(100%-3rem))]'>

@@ -6,7 +6,6 @@ import {
   installDragonLiveGaze,
   uninstallDragonLiveGaze,
 } from '../site-ui/open-dragon-live-gaze-controller.ts';
-import openDragonLiveGazeStyles from './open-dragon-live-gaze.css';
 
 export const openElement = defineIslandConfig({ hydrate: 'idle', ssr: true });
 
@@ -24,7 +23,7 @@ export const openElement = defineIslandConfig({ hydrate: 'idle', ssr: true });
  */
 @element('open-dragon-live-gaze')
 export default class DragonLiveGaze extends OpenElement {
-  static override styles = [openDragonLiveGazeStyles];
+  // Rules moved to the linked document stylesheet (www/site-chrome.css).
 
   override connectedCallback(): void {
     super.connectedCallback();

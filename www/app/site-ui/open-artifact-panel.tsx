@@ -2,11 +2,10 @@
 /** A private WWW frame for inspectable product evidence, never a UI export. */
 
 import { element, OpenElement } from '@openelement/element';
-import openArtifactPanelStyles from './open-artifact-panel.css';
 
 @element('open-artifact-panel')
 export default class OpenArtifactPanel extends OpenElement {
-  static override styles = [openArtifactPanelStyles];
+  // Rules moved to the linked document stylesheet (www/site-chrome.css).
   render() {
     return (
       <section class='panel relative min-h-[var(--artifact-min-height,220px)] overflow-hidden rounded-lg border border-[color-mix(in_srgb,var(--color-border)_74%,var(--color-primary))] bg-[linear-gradient(145deg,color-mix(in_srgb,var(--color-popover)_94%,var(--color-secondary)),var(--color-muted))] p-5 shadow-[inset_0_1px_0_var(--edge-highlight)]'>

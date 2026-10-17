@@ -4,19 +4,17 @@
 import { computed, element, OpenElement, property } from '@openelement/element';
 import { formatFreshnessDate, readingChromeStrings } from './chrome-strings.ts';
 import type { ReadingMetadata, ReadingNavigation } from './page-contract.ts';
-import articleProseStyles from './article-prose.css';
-import openReadingShellStyles from './open-reading-shell.css';
 
 type ReadingTag = { key: string; label: string };
 type CompiledComputed<T> = ReturnType<typeof computed<T>> & T;
 
 @element('open-reading-shell')
 export default class OpenReadingShell extends OpenElement {
-  // The generated-content treatment rides the shell (article-prose.css):
-  // every reading page renders its build-time prose HTML inside this host,
-  // so one sheet scope covers all of them (one emitted fence surface, not
-  // one per page component). See the sheet header.
-  static override styles = [openReadingShellStyles, articleProseStyles];
+  // The shell's authored rules and the shared generated-content treatment
+  // (article prose) live in the linked document stylesheet
+  // (www/site-chrome.css): a function page's render owns no document-style
+  // sink, so the document sheet is the one delivery both the static payload
+  // and the client read. See the site-chrome.css header.
 
   @property({ reflect: true })
   rail = false;

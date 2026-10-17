@@ -342,6 +342,9 @@ export class MyStatus extends OpenElement {
   @property({ reflect: false })
   label = 'Status';
 
+  // 处理器挂在分支块之外的外围元素上。
+  pick(): void {}
+
   render() {
     return (
       <div onClick={this.pick}>

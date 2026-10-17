@@ -95,14 +95,11 @@ const ROLE_DEFINITION = /^\s*--color-([a-z0-9-]+):/gm;
  * cannot move to a role token yet. Empty entries are deleted, not tolerated.
  */
 export const BARE_PALETTE_ALLOWLIST: Readonly<Record<string, string>> = {
-  // Dialog scrim: must stay dark in both themes. The dark-in-light roles
-  // (--color-foreground, --color-popover-foreground, …) flip light under
-  // data-theme="dark", so a role swap regresses. Leaves the allowlist when a
-  // --surface-scrim alias exists in site-css.ts (cf. --surface-code).
-  // (#1553: the sheet moved into the open-search island module; #1558 moved
-  // it again into the island's open-search.css — the gate followed it.)
-  'open-search.css:--color-zinc-950':
-    'theme-invariant dark dialog scrim; no role token is theme-invariant dark',
+  // Empty by design. The retired `open-search.css:--color-zinc-950` entry
+  // (theme-invariant dark dialog scrim) left with the sheet: the scrim rule
+  // moved into the linked www/site-chrome.css layer, which the scan
+  // (CSS-in-TS under /site-ui/ and /islands/) does not read — the value's
+  // visible record is the comment on the rule itself.
 };
 
 /** Role color names from packages/ui/src/theme.css — the single role source. */

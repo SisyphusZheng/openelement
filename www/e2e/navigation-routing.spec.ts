@@ -93,7 +93,7 @@ test.describe('Link Navigation', () => {
 
     await page.waitForURL(/\/guide\/getting-started\/?$/);
     // The route page element is slotted into the compiled light-root shell.
-    await expect(page.locator('open-layout')).toHaveAttribute('data-oe-light', '');
+    await expect(page.locator('app-layout')).toHaveAttribute('data-oe-light', '');
     await expect(page.locator('guide-getting-started')).toHaveCount(1);
     await expect(page.locator('guide-getting-started open-article-view')).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -109,7 +109,7 @@ test.describe('Link Navigation', () => {
 
     // The layout landmarks survive the navigation (nested mains: shell +
     // page body — the first is the shell's).
-    await expect(page.locator('open-layout')).toHaveCount(1);
+    await expect(page.locator('app-layout')).toHaveCount(1);
     await expect(page.getByRole('main').first()).toBeVisible();
     await expect(page.locator('guide-islands-and-ssr')).toHaveCount(1);
   });

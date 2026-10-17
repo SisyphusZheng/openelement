@@ -52,12 +52,15 @@ test('role tokens pass; unknown names and per-line dupes do not double-report', 
   ).toHaveLength(1);
 });
 
-test('allowlist suppresses only the named sheet', () => {
+test('the allowlist is empty: every scanned sheet is role-token clean', () => {
+  // The retired open-search scrim entry left with its sheet: the scrim rule
+  // moved into the linked www/site-chrome.css layer, which the scan does not
+  // read. An empty allowlist means every bare-palette flag the scan raises is
+  // a real regression.
+  expect(Object.keys(BARE_PALETTE_ALLOWLIST)).toEqual([]);
   expect(
-    flagTexts(['background: var(--color-zinc-950);'], '/x/islands/open-search.css'),
-  ).toHaveLength(0);
-  // The same ref in any other sheet stays red: the key is sheet-scoped.
-  expect(flagTexts(['background: var(--color-zinc-950);'])[0]).toContain('BARE_PALETTE_ALLOWLIST');
+    flagTexts(['background: var(--color-zinc-950);'], '/x/islands/any-sheet.tsx')[0],
+  ).toContain('BARE_PALETTE_ALLOWLIST');
 });
 
 test('role names come from theme.css, not a checker copy', async () => {
