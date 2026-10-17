@@ -172,7 +172,7 @@ export function createConfigureServerHook(state: OpenPluginState): Pick<Plugin, 
         // No restart hook (older Vite): surface the need instead of serving
         // stale options.
         log.warn(
-          'Restart the dev server (`pnpm dev` / `npm run dev`) to apply the new openelement.config.ts options.',
+          'Restart the dev server (`oe dev`, or the equivalent dev script of your package manager) to apply the new openelement.config.ts options.',
         );
       };
       if (state.resolvedConfigFile !== null) server.watcher.add(state.resolvedConfigFile);

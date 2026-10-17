@@ -7,7 +7,7 @@
  * with the build manifest and Rollup module metadata.
  *
  * Library module: exports buildClient(), invoked from closeBundle() in the
- * open:build plugin (the `pnpm build` task of a generated project runs the
+ * open:build plugin (the `oe build` task of a generated project runs the
  * unified multi-phase build). ctx parameter is required (no globalThis
  * fallback).
  */
