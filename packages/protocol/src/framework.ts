@@ -126,14 +126,6 @@ export interface RouteEntry {
    */
   definePage?: boolean;
   /**
-   * True when the route module default-exports defineHtmlPage(...) (#1568):
-   * a template page whose render is a plain function returning HTML. The
-   * route carries no element class — the generated entry registers nothing
-   * for it and renders it by calling the descriptor's render function, so it
-   * never produces island, claim, or client-chunk output.
-   */
-  htmlPage?: boolean;
-  /**
    * The server function page fact (alpha15 server lane): the exported server
    * function component the route's `export default definePage(Component)` was
    * called over. Present only when the argument is a plain identifier

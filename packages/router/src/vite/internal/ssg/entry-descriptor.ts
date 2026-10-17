@@ -438,13 +438,9 @@ export function buildEntryDescriptor(
         importPath: `/${routesDir}/${r.filePath}`,
         isDynamic,
         paramNames,
-        // #1568: template pages carry no element class — the generated entry
-        // registers nothing for them and renders them through the
-        // descriptor's render function.
-        ...(r.htmlPage === true ? { htmlPage: true } : {}),
         // alpha15 server lane: a server function page carries no element
-        // class either — the compiled component function is the render, and
-        // the entry registers nothing for the route.
+        // class — the compiled component function is the render, and the
+        // entry registers nothing for the route.
         ...(r.functionPage === undefined ? {} : { functionPage: r.functionPage }),
         ...(r.streamManifest ? { streamManifest: r.streamManifest } : {}),
       };

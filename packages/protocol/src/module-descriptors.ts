@@ -36,5 +36,5 @@ export interface ModuleVocabularyDescriptor {
   /** Exported name of the factory binding. */
   readonly exportName: string;
   /** What a canonical call of the binding contributes to the scan. */
-  readonly kind: 'page-definition' | 'template-page-definition' | 'element-registration';
+  readonly kind: 'page-definition' | 'element-registration';
 }

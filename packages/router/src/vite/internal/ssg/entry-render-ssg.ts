@@ -120,32 +120,28 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   // filtering there would orphan the head of its og block.
   lines.push(...routeHeadExtrasStatements('headExtrasValue', '    '));
   lines.push('    if (locale) props.locale = locale;');
-  // #1568: the template-page fork. A template route owns no element class —
-  // its render IS the descriptor's plain function, and the output flows
-  // through the same renderer wraps, layout wrap, and document wrap the
-  // compiled path feeds, so the HTTP/DSD contract is byte-for-byte the same
-  // shape. alpha15 server lane: a server function page takes the same
-  // treatment through the typed renderFunctionPage seam (the compiled
-  // constructor function is the render; the seam fails closed on the
-  // compiler-owned `children` props channel). The function-page arm is
-  // emitted only when such a route exists — the seam import is gated the
-  // same way, and an app with neither page kind keeps the exact
-  // pre-#1568 render expression.
+  // alpha15 server lane: a server function page owns no element class — its
+  // render IS the compiled constructor function, and the output flows through
+  // the same renderer wraps, layout wrap, and document wrap the compiled path
+  // feeds, so the HTTP/DSD contract is byte-for-byte the same shape. The
+  // function-page arm is emitted only when such a route exists — the seam
+  // import is gated the same way, and an app with no function pages keeps the
+  // exact compiled-only render expression.
   const hasFunctionPages = desc.pageRoutes.some((route) => route.functionPage !== undefined);
   lines.push('    let content;');
   if (hasFunctionPages) {
     lines.push('    if (page.kind === "function-page") {');
     lines.push('      content = __renderFunctionPage(page, props);');
-    lines.push('    } else if (page.kind === "html-page") {');
+    lines.push('    } else {');
+    lines.push(
+      '      content = __ssr(info.tagName, props, { route: routePath, documentStyles: __documentStyles });',
+    );
+    lines.push('    }');
   } else {
-    lines.push('    if (page.kind === "html-page") {');
+    lines.push(
+      '    content = __ssr(info.tagName, props, { route: routePath, documentStyles: __documentStyles });',
+    );
   }
-  lines.push('      content = page.render(props);');
-  lines.push('    } else {');
-  lines.push(
-    '      content = __ssr(info.tagName, props, { route: routePath, documentStyles: __documentStyles });',
-  );
-  lines.push('    }');
   lines.push('    for (const renderer of __matchingRenderers(routePath)) {');
   lines.push('      content = await renderer.wrap(content, __rendererContext(routePath, params));');
   lines.push('    }');
@@ -235,28 +231,22 @@ export function renderSsgSection(desc: EntryDescriptor): string {
   // object, same order as the success path.
   lines.push(...documentResolutionSetupLines('page', '__errorPageContext', '        '));
   lines.push(...routeHeadExtrasStatements('headExtrasValue', '        '));
-  // Same #1568 fork on the boundary re-render, with the alpha15 server
-  // function page taking the typed seam: the error channel re-renders
-  // through the compiled component function with the error-projected props.
-  // Armed exactly when the success path is (hasFunctionPages above), so the
-  // seam import cannot be referenced unbound.
+  // Same fork on the boundary re-render: the alpha15 server function page
+  // takes the typed seam — the error channel re-renders through the compiled
+  // component function with the error-projected props. Armed exactly when the
+  // success path is (hasFunctionPages above), so the seam import cannot be
+  // referenced unbound.
   if (hasFunctionPages) {
     lines.push('        const __errorPageHtml = page.kind === "function-page"');
     lines.push(
       '          ? __renderFunctionPage(page, __pageErrorProps(info.module, error, __errorPageContext))',
     );
-    lines.push('          : page.kind === "html-page"');
-    lines.push(
-      '            ? page.render(__pageErrorProps(info.module, error, __errorPageContext))',
-    );
-    lines.push(
-      '            : __ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles });',
-    );
-  } else {
-    lines.push('        const __errorPageHtml = page.kind === "html-page"');
-    lines.push('          ? page.render(__pageErrorProps(info.module, error, __errorPageContext))');
     lines.push(
       '          : __ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles });',
+    );
+  } else {
+    lines.push(
+      '        const __errorPageHtml = __ssr(info.tagName, __pageErrorProps(info.module, error, __errorPageContext), { route: routePath, documentStyles: __documentStyles });',
     );
   }
   lines.push(

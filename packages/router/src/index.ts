@@ -1,6 +1,5 @@
 export {
   classifyActionResult,
-  defineHtmlPage,
   defineIslandConfig,
   definePage,
   fail,
@@ -17,13 +16,10 @@ export {
 export type {
   ActionOutcome,
   FunctionPageComponent,
-  HtmlPageModule,
-  HtmlPageRender,
   IslandConfig,
   IslandDeliveryStrategy,
   JsonValue,
   OpenElementFunctionPageDescriptor,
-  OpenElementHtmlPageDescriptor,
   OpenElementPageDescriptor,
   PageComponentConstructor,
   PageErrorProjector,

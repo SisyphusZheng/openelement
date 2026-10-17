@@ -262,17 +262,12 @@ export async function scanRoutes(
         let tagName: string | undefined;
         let source: string | undefined;
         let isDefinePage = false;
-        // #1568: a template page — the module default-exports
-        // defineHtmlPage(...). It is a page (the page facts apply) but owns
-        // no element class, so the registration-coupled notes and gates
-        // below stay off it and the descriptor marks the route htmlPage.
-        let isHtmlPage = false;
         // alpha15 server lane: a server function page — the module
         // default-exports definePage(Component) over an exported function
         // whose body is a single JSX return (the module facts' mirrored
         // admission rule). The compiler lowers the function into HTML
-        // constructors; no element class exists to register, so the same
-        // registration-coupled notes and gates stay off it. The fact is
+        // constructors; no element class exists to register, so the
+        // registration-coupled notes and gates below stay off it. The fact is
         // recorded only for a plain identifier resolving to a component THIS
         // module declares — an inline arrow or an unexported local never
         // admits (a shape whose JSX would escape to runtime).
@@ -289,7 +284,6 @@ export async function scanRoutes(
             });
             tagName = semantics.exportedTagName;
             isDefinePage = semantics.definePage;
-            isHtmlPage = semantics.templatePage === true;
             functionPageName = semantics.pageComponentName;
             streamManifest = await scanStreamManifest(
               routePath,
@@ -320,7 +314,6 @@ export async function scanRoutes(
             // orphaned export gets a one-time note.
             if (
               isDefinePage &&
-              !isHtmlPage &&
               functionPageName === undefined &&
               tagName !== undefined &&
               !semantics.usesExportedTagName
@@ -341,13 +334,11 @@ export async function scanRoutes(
             // render is bypassed — request/actionData context never reaches
             // the page. This shape has never worked correctly; fail the build
             // with the rename guidance instead of letting it ship silently.
-            // A template page (#1568) and a server function page (alpha15)
-            // register no page class at all, so there is nothing to shadow —
-            // the check stays scoped to routes that put a class under the
-            // fallback tag.
+            // A server function page (alpha15) registers no page class at
+            // all, so there is nothing to shadow — the check stays scoped to
+            // routes that put a class under the fallback tag.
             if (
               isDefinePage &&
-              !isHtmlPage &&
               functionPageName === undefined &&
               tagName !== undefined &&
               tagName === fileToTagName(relativePath) &&
@@ -371,7 +362,6 @@ export async function scanRoutes(
           varName: pathToVarName(routePath),
           tagName,
           ...(isDefinePage ? { definePage: true } : {}),
-          ...(isHtmlPage ? { htmlPage: true } : {}),
           ...(functionPageName === undefined ? {} : { functionPage: functionPageName }),
           ...(streamManifest ? { streamManifest } : {}),
           // #569: page sources carrying data-open-enhance require the client

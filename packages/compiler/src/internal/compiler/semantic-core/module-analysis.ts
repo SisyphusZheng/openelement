@@ -38,27 +38,17 @@ export interface ModuleSemanticFacts {
    */
   definePage: boolean;
   /**
-   * Present (true) only when the default-exported page-definition factory is
-   * a TEMPLATE page definition (`template-page-definition` vocabulary kind,
-   * #1568): a page whose render is a plain function returning HTML, not a
-   * compiled element class. Implies {@link definePage}. Spread-conditional
-   * like the other rare facts, so every non-template module's facts stay
-   * byte-identical. The host build reads this to keep template routes off
-   * the element-registration surfaces.
-   */
-  templatePage?: boolean;
-  /**
    * The server function page fact (alpha15 server lane): the first argument
    * of a default-exported `definePage(…)` call when that argument is an
    * identifier resolving to a server function component THIS module
    * declares. A function component never carries a Part Program, so the
    * route cannot be a compiled class page; the host build renders it through
-   * the component function. Spread-conditional: absent for class pages,
-   * template pages and non-page modules. The scan is order-independent (the
-   * module's server function components are collected before the page call
-   * is judged), so a default export written above its component declaration
-   * admits identically. An inline arrow or an unexported local — the shapes
-   * whose JSX would otherwise escape to runtime — never records the fact.
+   * the component function. Spread-conditional: absent for class pages and
+   * non-page modules. The scan is order-independent (the module's server
+   * function components are collected before the page call is judged), so a
+   * default export written above its component declaration admits
+   * identically. An inline arrow or an unexported local — the shapes whose
+   * JSX would otherwise escape to runtime — never records the fact.
    */
   pageComponentName?: string;
   /**
@@ -572,8 +562,7 @@ export function analyzeModuleSemantics(
   const imports = createModuleIntrinsicBindings(sourceFile);
   const vocabulary = [...CORE_VOCABULARY, ...(options.vocabulary ?? [])];
   const pageDefinitionBindings = vocabulary.filter(
-    (descriptor) =>
-      descriptor.kind === 'page-definition' || descriptor.kind === 'template-page-definition',
+    (descriptor) => descriptor.kind === 'page-definition',
   );
   const registrationBindings = vocabulary.filter(
     (descriptor) => descriptor.kind === 'element-registration',
@@ -596,9 +585,6 @@ export function analyzeModuleSemantics(
   let compiledElementDecorator = false;
   let unsupportedElementDecorator: string | undefined;
   let definePage = fileName.endsWith('.mdx');
-  // .mdx routes are function-component pages the mdx plugin compiles to a
-  // class — they are pages, but not template-page definitions.
-  let templatePage = false;
   let pageComponentName: string | undefined;
   let usesExportedTagName = false;
   let enhancedForm = false;
@@ -643,9 +629,7 @@ export function analyzeModuleSemantics(
       // A default-exported page-definition factory call marks the module as a
       // page — but only for a binding the host's injected vocabulary admits.
       // (The lit renderer's factory lives on a subpath; the router injects
-      // both specifiers, the core stays package-blind, #1339.) A
-      // template-page-definition binding (#1568) marks the module as a
-      // template page on top of the page fact.
+      // both specifiers, the core stays package-blind, #1339.)
       const pageFactory = statement.expression.expression.text;
       const matchedPageBinding = pageDefinitionBindings.find((descriptor) =>
         imports.isRuntimeNamedImport(
@@ -656,14 +640,13 @@ export function analyzeModuleSemantics(
       );
       if (matchedPageBinding) {
         definePage = true;
-        if (matchedPageBinding.kind === 'template-page-definition') templatePage = true;
         // The server function page (alpha15): only the native definePage
-        // binding (not defineHtmlPage's template kind, not the lit factory
-        // whose first argument is a tag string) can admit a component
-        // function. The first argument must be a plain identifier that
-        // resolves to a server function component THIS module declares — an
-        // inline arrow or an unexported local would ship runtime JSX, and the
-        // server lane has no interpreter (the R1 admission rule mirrored).
+        // binding (not the lit factory whose first argument is a tag string)
+        // can admit a component function. The first argument must be a plain
+        // identifier that resolves to a server function component THIS module
+        // declares — an inline arrow or an unexported local would ship runtime
+        // JSX, and the server lane has no interpreter (the R1 admission rule
+        // mirrored).
         if (
           matchedPageBinding.kind === 'page-definition' &&
           matchedPageBinding.exportName === 'definePage'
@@ -819,7 +802,6 @@ export function analyzeModuleSemantics(
     ...(unsupportedElementDecorator === undefined ? {} : { unsupportedElementDecorator }),
     ...(exportedTagName === undefined ? {} : { exportedTagName }),
     definePage,
-    ...(templatePage ? { templatePage: true } : {}),
     ...(pageComponentName === undefined ? {} : { pageComponentName }),
     serverFunctionComponents: [...serverComponents].sort(),
     usesExportedTagName,

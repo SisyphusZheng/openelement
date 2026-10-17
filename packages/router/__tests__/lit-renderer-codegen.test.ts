@@ -12,6 +12,7 @@ import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
 import { buildEntryDescriptor, renderEntry } from '../src/vite/internal/ssg/index.ts';
 import { generateClientEntry } from '../src/vite/internal/ssg/entry-client-codegen.ts';
+import { defineLitPage } from '../src/lit.ts';
 import { analyzeModuleSemantics } from '@openelement/compiler';
 import { ROUTER_MODULE_VOCABULARY } from '@openelement/protocol/module-vocabulary';
 import type { RouteEntry } from '@openelement/protocol/framework';
@@ -139,4 +140,38 @@ test('lit renderer: route scanner semantics accept defineLitPage from @openeleme
       vocabulary: ROUTER_MODULE_VOCABULARY,
     }).definePage,
   ).toEqual(false);
+});
+
+/**
+ * The R2 discriminant's LitElement arm, pinned at the REAL runtime call: a
+ * LitElement page class carries no `__partProgram`, so the plain
+ * "function without __partProgram" rule would misroute it to the server
+ * function page branch — the ES-class shape check must keep it on the class
+ * branch, and its descriptor must be the class descriptor (`kind: 'page'`)
+ * with the tag recorded as `openElementPageTag`.
+ */
+test('lit renderer: defineLitPage routes a LitElement class through the class branch', () => {
+  // A bare class stands in for the LitElement subclass (the node test env has
+  // no DOM): the discriminant reads class syntax, not the base class.
+  class NotesPage {}
+  const page = defineLitPage('notes-list-page', NotesPage as unknown as CustomElementConstructor, {
+    head: { title: 'Notes' },
+    props: ({ data }) => ({ notes: (data as { notes?: unknown[] })?.notes ?? [] }),
+  }) as unknown as {
+    openElementPage: { kind: string; render?: unknown };
+    openElementPageTag?: string;
+    __partProgram?: unknown;
+  };
+  // The class branch, NOT the function-page branch: no render field, and the
+  // descriptor kind is the class page's.
+  expect(page.openElementPage.kind).toEqual('page');
+  expect(page.openElementPage.render).toEqual(undefined);
+  expect(page.__partProgram).toEqual(undefined);
+  // The lit host tag rides the openElementPageTag static the lit entry reads.
+  expect(page.openElementPageTag).toEqual('notes-list-page');
+  // The descriptor's metadata is the ordinary definePage one.
+  expect(page.openElementPage.head).toEqual({ title: 'Notes' });
+  expect(typeof (page.openElementPage as { props?: unknown }).props).toEqual('function');
+  // And the extension itself is untouched — definePage returns the class.
+  expect(page).toEqual(NotesPage);
 });

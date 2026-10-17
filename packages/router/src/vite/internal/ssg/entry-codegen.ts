@@ -169,10 +169,8 @@ function renderRouteHandlerPreamble(lines: string[], ctx: RouteHandlerEmitContex
  * (alpha15) renders through the typed renderFunctionPage seam — the compiled
  * constructor function IS the render, and the seam fails closed on a
  * malformed descriptor and on props carrying the compiler-owned `children`
- * channel; a template page (#1568) renders through the descriptor's render
- * function — the projected props in, the authored HTML out; a compiled page
- * renders its registered host element through __ssr. All three feed the same
- * renderer/layout/document wraps.
+ * channel; a compiled page renders its registered host element through
+ * __ssr. Both feed the same renderer/layout/document wraps.
  */
 function routeRenderStatement(
   ctx: RouteHandlerEmitContext,
@@ -184,11 +182,6 @@ function routeRenderStatement(
     // function descriptor carries the compiled component function as its
     // render (alpha15 server lane).
     return `${indent}let __content = __renderFunctionPage(__page, ${propsExpr})`;
-  }
-  if (ctx.route.htmlPage) {
-    // The handler preamble binds __page to the page descriptor; a template
-    // descriptor carries the render function (#1568).
-    return `${indent}let __content = __page.render(${propsExpr})`;
   }
   return `${indent}let __content = __ssr(__tag, ${propsExpr}, { route: ${ctx.pathLiteral}, documentStyles: __documentStyles })`;
 }
@@ -366,14 +359,6 @@ function renderRouteResponseAndCatch(lines: string[], ctx: RouteHandlerEmitConte
       // body. No host element exists to __ssr.
       lines.push(
         `        let __errorHtml = __renderFunctionPage(__page, __pageErrorProps(${ctx.route.varName}, err, __pageContext))`,
-      );
-    } else if (ctx.route.htmlPage) {
-      // #1568: the template error channel re-renders through the same render
-      // function with the error-projected props — the descriptor's error
-      // projector maps the failure onto props, the authored template decides
-      // what the 500 body looks like. No host element exists to __ssr.
-      lines.push(
-        `        let __errorHtml = __page.render(__pageErrorProps(${ctx.route.varName}, err, __pageContext))`,
       );
     } else {
       lines.push(

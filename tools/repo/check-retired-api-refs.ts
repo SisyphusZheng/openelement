@@ -63,7 +63,18 @@ for (const entry of await readdir('packages', { recursive: true, withFileTypes: 
 
 // ─── Derived retired symbols (release snapshot diff) ────────────────────
 
-const ADDITIONAL_RETIRED_SYMBOLS = ['toRootCss'];
+// Symbols that never reached a release tag, so the snapshot-diff derivation
+// below cannot see them. defineHtmlPage and the template-page descriptor
+// types (added and removed inside the alpha15 server-architecture rewrite)
+// are the canonical entries: the rewrite retired the string-template page
+// surface in the same development window that introduced it.
+const ADDITIONAL_RETIRED_SYMBOLS = [
+  'toRootCss',
+  'defineHtmlPage',
+  'HtmlPageRender',
+  'HtmlPageModule',
+  'OpenElementHtmlPageDescriptor',
+];
 
 interface SnapshotLike {
   packages: Array<{ declarations?: Record<string, { publicSymbols?: string[] }> }>;

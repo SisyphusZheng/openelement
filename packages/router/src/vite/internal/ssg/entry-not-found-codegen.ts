@@ -75,10 +75,6 @@ export function renderNotFoundRoute(
     lines.push(
       `    let __content = __renderFunctionPage(__page, __pageProps(${route.varName}, __pageContext))`,
     );
-  } else if (route.htmlPage) {
-    // #1568: a template /404 page renders through its descriptor's render
-    // function — no host element exists to __ssr.
-    lines.push(`    let __content = __page.render(__pageProps(${route.varName}, __pageContext))`);
   } else {
     lines.push(
       `    let __content = __ssr(__tag, __pageProps(${route.varName}, __pageContext), { route: ${quoteGeneratedJavaScriptValue(

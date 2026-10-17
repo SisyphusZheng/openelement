@@ -142,6 +142,29 @@ test('function pages validate the descriptor projectors like class pages', () =>
   );
 });
 
+test('function pages reject renderIntent.stream — no compiled program to front-gate', () => {
+  // Streaming is a compiled-Part-Program channel (the deferred-field front
+  // gate rides the compiled program), and a server function page has none.
+  // The rejection is authoring-time so the failure names the real reason
+  // instead of surfacing later as an unrelated scan/compile diagnostic.
+  const render = (props: Record<string, unknown>) => String(props.title ?? '');
+  assertThrowsIncludes(
+    () =>
+      definePage(render as unknown as never, {
+        renderIntent: { mode: 'dynamic', stream: { defer: ['first'] } },
+      }),
+    Error,
+    'renderIntent.stream is not supported on a server function page',
+  );
+  // The same descriptor shape stays legal on the class branch (streaming is
+  // a class-page feature): a compiled class with dynamic+stream admits.
+  const Page = makeCompiledPageClass('stream-page');
+  const page = definePage(Page, {
+    renderIntent: { mode: 'dynamic', stream: { defer: ['first'] } },
+  });
+  expect(page).toEqual(Page);
+});
+
 // ─── 2. module-analysis: the pageComponentName fact ─────────────────────────
 
 const FACTS_FILE = '/proj/app/routes/about.tsx';
@@ -187,16 +210,8 @@ test('pageComponentName is spread-conditional: absent for class pages and plain 
   );
 });
 
-test('pageComponentName never records a defineHtmlPage or defineLitPage first argument', () => {
-  const template = [
-    "import { defineHtmlPage } from '@openelement/router';",
-    'const render = (props) => `<p>${props.title}</p>`;',
-    'export default defineHtmlPage(render);',
-  ].join('\n');
-  expect(
-    analyzeModuleSemantics(template, FACTS_FILE, { vocabulary: ROUTER_MODULE_VOCABULARY })
-      .pageComponentName,
-  ).toEqual(undefined);
+test('pageComponentName never records a defineLitPage first argument', () => {
+  // The lit factory's first argument is a tag string, not a component.
   const lit = [
     "import { defineLitPage } from '@openelement/router/lit';",
     'export default defineLitPage(pageTag, NotesPage, {});',
@@ -233,7 +248,6 @@ test('the scanner admits export default definePage(ExportedComponent) as a funct
   const route = await scanOneRoute('about.tsx', FUNCTION_ROUTE_SOURCE);
   expect(route.functionPage).toEqual('AboutPage');
   expect(route.definePage).toEqual(true);
-  expect(route.htmlPage).toEqual(undefined);
 });
 
 test('an inline-arrow definePage argument is never admitted (no runtime JSX escape)', async () => {
@@ -540,6 +554,26 @@ test('request time: the error-boundary channel re-renders through the same funct
   expect(html).toContain('<h1>recovered</h1>');
 });
 
+test('request time: redirect out of the function-page loader short-circuits with the authored status', async () => {
+  // Parity with the template-page redirect row: the redirect channel is the
+  // same catch block. A function page's body is a single JSX return (it
+  // cannot throw inline), so the throw comes from the route loader — the
+  // realistic spelling — and answers the authored 3xx untouched.
+  const routeModule = await writeCompiledRoute(
+    [
+      "import { definePage } from '@openelement/router';",
+      "export const loader = async () => { throw Object.assign(new Error('redirect'), { name: 'OpenElementRedirect', __openRedirect: true, location: '/login', status: 302 }); };",
+      'export function AboutPage(props: { title: string }) {',
+      '  return <main><h1>{props.title}</h1></main>;',
+      '}',
+      'export default definePage(AboutPage);',
+    ].join('\n'),
+  );
+  const run = await loadRequestTimeHandler([functionRoute], routeModule);
+  const response = await run('/about');
+  expect(response.status).toEqual(302);
+});
+
 test('SSG renderRoute: the function-page branch renders through the same wraps', async () => {
   const routeModule = await writeCompiledRoute(FUNCTION_ROUTE_SOURCE);
   const renderRoute = await loadSsgRenderRoute([functionRoute], routeModule);
@@ -558,6 +592,33 @@ test('SSG renderRoute: the hostile payload is escaped on the SSG channel too', a
   expect(result.errors).toEqual([]);
   expect(result.html).toContain('&lt;script&gt;');
   expect(result.html).not.toContain('<script');
+});
+
+test('SSG renderRoute: the function-page error projector re-renders with status 500', async () => {
+  const routeModule = await writeCompiledRoute(
+    [
+      "import { definePage } from '@openelement/router';",
+      "export const loader = async () => { throw new Error('loader exploded'); };",
+      'export function AboutPage(props: { title: string }) {',
+      '  return <main><h1>{props.title}</h1></main>;',
+      '}',
+      'export default definePage(AboutPage, { error: () => ({ title: "recovered" }) });',
+    ].join('\n'),
+  );
+  const renderRoute = await loadSsgRenderRoute([functionRoute], routeModule);
+  const result = await renderRoute('/about');
+  expect(result.status).toEqual(500);
+  expect(result.html).toContain('<h1>recovered</h1>');
+  expect(result.errors).toHaveLength(1);
+  expect(result.errors[0].message).toEqual('loader exploded');
+});
+
+test('a function-page-only project admits no islands and no static components', () => {
+  const desc = buildEntryDescriptor([functionRoute], { ssg: true });
+  expect(desc.islands).toEqual([]);
+  expect(desc.staticComponents).toEqual([]);
+  // No islands and no enhanced forms → no client entry exists to ship.
+  expect(desc.islands.length > 0 || desc.hasEnhancedForms === true).toEqual(false);
 });
 
 // ─── 6. The render seam: coded fail-closed behavior ─────────────────────────

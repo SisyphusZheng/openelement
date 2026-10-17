@@ -23,14 +23,12 @@ import { OpenElementError } from '@openelement/element/authoring';
 
 /**
  * Stable codes for the page-authoring surfaces
- * (`definePage`/`defineHtmlPage`, plus the server function page's render
- * seam).
+ * (`definePage` — class and server function forms — plus the server function
+ * page's render seam).
  */
 export const PageErrorCode = {
   /** First argument is not the compiled page element class (or component function). */
   NOT_COMPILED_CLASS: 'OE_PAGE_NOT_COMPILED_CLASS',
-  /** defineHtmlPage() first argument is not a render function (#1568). */
-  TEMPLATE_RENDER: 'OE_PAGE_TEMPLATE_RENDER',
   /**
    * The server function page render seam received a page whose render is
    * not a function (a malformed descriptor, or a route module whose default

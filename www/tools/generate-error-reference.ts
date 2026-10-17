@@ -275,7 +275,6 @@ function constantCodes(map: Record<string, string>): string[] {
 const CONSTANT_MESSAGES: Readonly<Record<string, string>> = {
   OE_PAGE_NOT_COMPILED_CLASS:
     'definePage() requires the compiled page element class as its first argument',
-  OE_PAGE_TEMPLATE_RENDER: 'defineHtmlPage() requires a render function as its first argument',
   OE_PAGE_DESCRIPTOR_SHAPE: 'definePage() requires an object descriptor',
   OE_PAGE_ROUTE_INTENT: 'definePage route.layout must be a layout name string or false',
   OE_PAGE_PROJECTOR: 'definePage() props must be a projector function',

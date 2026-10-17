@@ -181,14 +181,6 @@ export interface PageRouteDecl {
   paramNames?: string[];
   streamManifest?: StreamRouteManifest;
   /**
-   * True for a template page (#1568): the route module default-exports
-   * defineHtmlPage(...), so there is no element class to register and both
-   * render channels produce the document by calling the descriptor's render
-   * function (render(props) → renderer wraps → layout wrap → wrapInDocument)
-   * instead of the compiled serializer.
-   */
-  htmlPage?: boolean;
-  /**
    * The server function page fact (alpha15 server lane): the exported server
    * function component the route's `export default definePage(Component)`
    * named — compiled into the module by the server component lane. No element

@@ -21,17 +21,6 @@ export const ROUTER_MODULE_VOCABULARY: readonly ModuleVocabularyDescriptor[] = [
     kind: 'page-definition',
   },
   {
-    moduleSpecifier: '@openelement/router',
-    exportName: 'defineHtmlPage',
-    // #1568: the template-page surface — a page whose render is a plain
-    // function returning HTML. Admitted through the same vocabulary
-    // mechanism as definePage (host-injected binding identity, no
-    // compiled-grammar change), with its own kind so the scan marks the
-    // module `templatePage` and the router build keeps the route off the
-    // SSR-registration and island/client surfaces.
-    kind: 'template-page-definition',
-  },
-  {
     moduleSpecifier: '@openelement/router/lit',
     exportName: 'defineLitPage',
     kind: 'page-definition',
