@@ -28,7 +28,6 @@ import {
   DATA_OE_LIGHT,
   partAnchorEndMarker,
   partAnchorMarker,
-  STATIC_STYLES_MARKER,
   type ProgramEachPart,
   type ProgramTreeNode,
 } from '@openelement/protocol/part-program';
@@ -45,6 +44,7 @@ import {
   fixedPartsAtPath,
   isComment,
   isElement,
+  isStaticStyleNode,
   isText,
   type MountContext,
   removeNodes,
@@ -75,15 +75,6 @@ function structureFailure(path: string, message: string): never {
     'csr',
     ClaimErrorCode.STRUCTURE_MISMATCH,
     `[compiled-hydration] ${path}: ${message}`,
-  );
-}
-
-function staticStyleNode(node: Node | undefined): boolean {
-  return (
-    !!node &&
-    isElement(node) &&
-    node.tagName.toLowerCase() === 'style' &&
-    node.hasAttribute(STATIC_STYLES_MARKER)
   );
 }
 
@@ -317,13 +308,19 @@ function attachEventsForEntry(ctx: MountContext, part: ProgramEachPart, entry: E
  * Reconnect the DOM an activated instance owns: verify first (nothing is
  * mutated on a mismatch), then re-arm every retained binding on a fresh root
  * scope.
+ *
+ * The leading marked static-style nodes the serializer emitted are skipped by
+ * the SAME predicate the claim uses (`isStaticStyleNode`): the inline fallback
+ * of the pre-externalisation shape and the declarative `<link>` the alpha15 S
+ * lane serves are both delivery, never program drift. A style-only assumption
+ * here failed every reconnect of a served link root closed.
  */
 export function reviveOwnedDom(
   ctx: MountContext,
   root: Node,
   ranges: OwnedRangeOptions = {},
 ): void {
-  const styleOffset = staticStyleNode(root.childNodes[0]) ? 1 : 0;
+  const styleOffset = isStaticStyleNode(root.childNodes[0]) ? 1 : 0;
   verifyNodes(ctx, root, styleOffset, ctx.program.template, 'template', [], false, ranges);
   const scope = new LifetimeScope();
   ctx.rootScope = scope;

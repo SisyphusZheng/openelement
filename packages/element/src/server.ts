@@ -204,8 +204,10 @@ export function __h(
  * produces the bytes. Fails closed for unregistered tags (islands and foreign
  * hosts are emitted as plain tags by the compiler instead of routed here).
  *
- * `composition` carries the compiled children channel (see
- * {@linkcode SsrComposition}). The dispatch follows the host's own root mode —
+ * `composition` carries the compiled children channel: an authored-order list
+ * of `[slotName, html]` pairs, where `slotName` is the child's static `slot`
+ * attribute coerced by the serializer's own attribute rule (`''` is the default
+ * slot). The dispatch follows the host's own root mode —
  * read from the registered class's Part Program, the same fact the class
  * path's nested expansion branches on — so a shadow host receives the
  * children as light DOM after its template and a light host consumes the

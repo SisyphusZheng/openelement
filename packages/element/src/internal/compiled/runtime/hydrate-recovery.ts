@@ -23,6 +23,7 @@ import {
   fail,
   fixedPartsAtNode,
   fixedPartsAtPath,
+  isStaticStyleNode,
   itemAttrValue,
   itemValue,
   NO_ITEM,
@@ -38,7 +39,6 @@ import {
   type CompiledHydrationOptions,
   type DeferredBranchInstall,
   type DeferredSubscription,
-  isStaticStyleNode,
   PartProgramHydrationError,
   type StreamHydrationRange,
 } from './hydrate.ts';

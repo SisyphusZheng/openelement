@@ -224,3 +224,43 @@ test('a resume never repairs structural damage inside a block range', () => {
   expect(toHtml(div), 'a failed resume leaves the range untouched').toEqual(before);
   kernel.dispose();
 });
+
+/**
+ * The alpha15 S lane serves a component's external sheet as a marked
+ * `<link rel="stylesheet">` before the program's content (the serializer's
+ * root shape). The resume must skip it exactly as it skipped the old inline
+ * `<style>` fallback, because it is the delivery — not program drift. The
+ * predicate is shared with the claim (`isStaticStyleNode`), so this pins the
+ * single-owner rule rather than a revive-local copy: a style-only assumption
+ * here failed every reconnect of a served link root closed with
+ * `expected <div>, found <link>`.
+ */
+test('a resumed root skips the leading declarative stylesheet link it was served with', () => {
+  const document = new TestDocument();
+  const message = signal('one');
+  const { element, kernel } = mount(document, 'oe-resume-element', ELEMENT_PROGRAM, { message });
+
+  kernel.connect();
+  const div = element.childNodes[0] as TestElement;
+  const before = childrenHtml(element);
+  kernel.disconnect();
+
+  const link = document.createElement('link');
+  link.setAttribute('rel', 'stylesheet');
+  link.setAttribute('href', '/client/assets/abc123.css');
+  link.setAttribute('data-oe-static-styles', '');
+  element.insertBefore(link, element.childNodes[0] ?? null);
+
+  expect(() => kernel.connect(), 'the served delivery link is not program drift').not.toThrow();
+  expect(element.childNodes[0], 'the link stays as the delivery').toBe(link);
+  expect(element.childNodes[1], 'the program node keeps its identity').toBe(div);
+  expect(childrenHtml(element), 'the program resumes behind the leading link').toEqual(
+    `<link rel="stylesheet" href="/client/assets/abc123.css" data-oe-static-styles="">${before}`,
+  );
+
+  message.value = 'two';
+  expect(childrenHtml(element), 'the resumed root still drives its program nodes').toEqual(
+    `<link rel="stylesheet" href="/client/assets/abc123.css" data-oe-static-styles=""><div><!--oe:p0-->two</div>`,
+  );
+  kernel.dispose();
+});

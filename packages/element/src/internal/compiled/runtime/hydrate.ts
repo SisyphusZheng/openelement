@@ -14,7 +14,6 @@ import {
   type ProgramElementNode,
   type ProgramTreeNode,
   type ProgramWhenPart,
-  STATIC_STYLES_MARKER,
 } from '@openelement/protocol/part-program';
 import { ClaimErrorCode, OpenElementError, RuntimeErrorCode } from '@openelement/protocol/errors';
 // The broadcast attribute's single writer names it; hydration only classifies it.
@@ -39,6 +38,8 @@ import {
   isComment,
   isElement,
   isFixedPart,
+  isStaticStyleFallbackNode,
+  isStaticStyleNode,
   isText,
   itemAttrValue,
   itemTemplateFields,
@@ -655,14 +656,18 @@ export type HydrationRecoveryMode = 'throw' | 'owning';
 export interface CompiledHydrationOptions {
   /**
    * True when the hydrating class carries static styles. The server serializer
-   * emits those styles as one marked `<style data-oe-static-styles>` element —
-   * the first template child — so hydration skips exactly that node. A marked
-   * style node on a style-less class is drift and fails closed.
+   * emits those styles as LEADING marked nodes of the template — the inline
+   * `<style data-oe-static-styles>` text fallback for URL-less sheets, and
+   * `<link rel="stylesheet" data-oe-static-styles>` for every externalised
+   * sheet (alpha15 S lane) — so hydration skips exactly those nodes (see
+   * `isStaticStyleNode`). A marked style node on a style-less class is drift
+   * and fails closed.
    *
-   * Hydration-then-delete: the skipped node is removed only after
-   * the staged plan attaches (Parts bound, rootOffset=1 honored throughout) —
+   * Hydration-then-delete: the skipped inline fallback is removed only after
+   * the staged plan attaches (Parts bound, rootOffset honored throughout) —
    * a hydration failure keeps it, so recovery and never-upgrade pages keep
-   * first-paint styling by construction.
+   * first-paint styling by construction. A skipped LINK is never removed: it
+   * is the external reference, not a duplicate of an adopted sheet.
    */
   expectStaticStyle?: boolean;
   /**
@@ -692,28 +697,6 @@ export interface CompiledHydrationOptions {
   /** Stream-only Parts have a closing marker even for text; pending ranges are empty. */
   streamParts?: readonly number[];
   pendingParts?: readonly number[];
-}
-
-export function isStaticStyleNode(node: Node | undefined): boolean {
-  if (!node || !isElement(node)) return false;
-  const tag = node.tagName.toLowerCase();
-  // The inline fallback (authored component CSS) and the declarative external
-  // reference (framework-generated component CSS, alpha15 S lane) are the two
-  // marked node shapes the serializer emits. The tag check comes FIRST: only
-  // these two shapes are ever asked for the marker, so every other node is
-  // rejected without touching attributes it may not carry.
-  if (tag !== 'style' && tag !== 'link') return false;
-  if (!node.hasAttribute(STATIC_STYLES_MARKER)) return false;
-  // Only `rel="stylesheet"` links qualify: a marked link with any other
-  // relation is drift.
-  return tag === 'style' || node.getAttribute('rel') === 'stylesheet';
-}
-
-/** True for the marked inline fallback node (the one hydration may retire). */
-function isStaticStyleFallbackNode(node: Node | undefined): boolean {
-  return (
-    !!node && isStaticStyleNode(node) && isElement(node) && node.tagName.toLowerCase() === 'style'
-  );
 }
 
 /** The document base an observed or expected resource URL resolves against. */

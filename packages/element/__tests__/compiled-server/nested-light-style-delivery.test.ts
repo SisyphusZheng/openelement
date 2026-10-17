@@ -11,7 +11,9 @@
  *
  * The two halves are pinned together here, because either alone is passable:
  *   - server: the nested light component's marked `<link>` lands INSIDE the
- *     parent's `<template shadowrootmode>` and NOT in the document sink;
+ *     parent's `<template shadowrootmode>` and NOT in the document sink, as the
+ *     child's LEADING node — the claim skips only leading marked style nodes,
+ *     so a trailing link would fail the child's activation closed;
  *   - client: `adoptionTargetOf` resolves the enclosing tree
  *     (`light-style-adoption.test.ts` proves the adoption side).
  * The runtime shape is the SAME marked link every other component sheet uses,
@@ -92,7 +94,11 @@ test('a light root inside a DSD template declares its sheets IN that template', 
     {
       tag: parentTag,
       rootMode: 'shadow-open',
-      template: [{ k: 'el', tag: childTag, attrs: [], children: [] }],
+      // The nested host carries a passthrough attribute whose value contains
+      // every character that could derail a "first `>`" scan (`>`, `"`, `&`):
+      // emission must escape them, and the splice must still land immediately
+      // after the real opening tag (asserted below).
+      template: [{ k: 'el', tag: childTag, attrs: [['data-note', 'a>b"c&d']], children: [] }],
       parts: [],
     },
     { styles: [parentSheet] },
@@ -115,6 +121,28 @@ test('a light root inside a DSD template declares its sheets IN that template', 
   expect(templateBody, "the child's sheet link is inside the template").toContain(
     `<link rel="stylesheet" href="${CHILD_SHEET_URL}" ${DSD_STYLE_MARKER} />`,
   );
+  // The link is the child's LEADING node, and the program content follows it:
+  // the light root's own claim skips only leading marked style nodes and fails
+  // closed on a trailing one, so the position is part of the delivery contract,
+  // not cosmetics. Escaping keeps the hostile host attribute from producing a
+  // raw `>` inside the opening tag (`a>b"c&d` may only appear escaped), which is
+  // what makes "insert after the first `>`" correct.
+  expect(templateBody, 'the hostile host attribute is escaped, never raw').toContain(
+    'data-note="a&gt;b&quot;c&amp;d"',
+  );
+  expect(templateBody, 'no raw hostile attribute value in the markup').not.toContain('a>b"c&d');
+  const open = new RegExp(`<${childTag}[^>]*>`).exec(templateBody);
+  expect(open, 'the nested light host has exactly one opening tag').not.toBeNull();
+  const childMarkup = templateBody.slice(open!.index + open![0].length);
+  const nestedLink = `<link rel="stylesheet" href="${CHILD_SHEET_URL}" ${DSD_STYLE_MARKER} />`;
+  expect(
+    childMarkup.startsWith(nestedLink),
+    "the child's sheet link is its FIRST node (the claim skips leading style nodes)",
+  ).toBe(true);
+  expect(
+    childMarkup.slice(nestedLink.length),
+    'the program content follows the leading style link',
+  ).toMatch(/^<span>/);
   // The document head cannot reach a shadow tree, so it must not carry it.
   expect(documentStyles.links, 'the document sink must not receive it').not.toContain(
     CHILD_SHEET_URL,

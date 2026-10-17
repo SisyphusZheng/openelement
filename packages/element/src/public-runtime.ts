@@ -892,8 +892,17 @@ function renderToStringAtDepth(
                 if (mode === 'light') return rendered;
                 const nestedLinks = serializeStyleLinks(sheetResourceUrls(nestedClass.styles));
                 if (nestedLinks === '') return rendered;
-                const nestedClosing = `</${nested.tag}>`;
-                return rendered.slice(0, -nestedClosing.length) + nestedLinks + nestedClosing;
+                // LEADING style nodes, not trailing ones: the light root's own
+                // claim tolerates only leading marked style nodes
+                // (`leadingStaticStyleNodeCount`) and fails closed on a trailing
+                // one — the island's activation would die behind its own
+                // delivery node. The serializer's light-root shape already
+                // emits its style nodes before the content, so match it. The
+                // `>` searched for here is the opening tag's terminator: host
+                // attribute values are escaped at emission
+                // (`serializeAttribute`), so no raw `>` can occur before it.
+                const openEnd = rendered.indexOf('>') + 1;
+                return rendered.slice(0, openEnd) + nestedLinks + rendered.slice(openEnd);
               }
               const closing = `</${nested.tag}>`;
               return nested.children === ''

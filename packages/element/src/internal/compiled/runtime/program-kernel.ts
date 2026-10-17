@@ -8,10 +8,11 @@
  */
 
 import type { SignalLike, Unsubscribe } from '@openelement/protocol/signal';
-import type {
-  PartProgramV2,
-  ProgramEachPart,
-  ProgramTreeNode,
+import {
+  STATIC_STYLES_MARKER,
+  type PartProgramV2,
+  type ProgramEachPart,
+  type ProgramTreeNode,
 } from '@openelement/protocol/part-program';
 // The single error dialect (#1386 item 3): every failure raised by this module
 // is an OpenElementError carrying a code from the catalogue, so a consumer
@@ -346,6 +347,37 @@ export function isText(node: Node): node is Text {
 
 export function isElement(node: Node): node is Element {
   return node.nodeType === 1;
+}
+
+/**
+ * Is this node one of the marked static-style nodes the SSR serializer emits as
+ * a root's LEADING children (alpha15 S lane)? Two shapes: the inline fallback
+ * carrying authored CSS text, and the declarative external reference
+ * (`<link rel="stylesheet" data-oe-static-styles>`). The tag check comes FIRST:
+ * only these two shapes are ever asked for the marker, so every other node is
+ * rejected without touching attributes it may not carry.
+ *
+ * ONE owner, two consumers: the claim (`leadingStaticStyleNodeCount`) and the
+ * resume (`reviveOwnedDom`) must skip exactly the same nodes — a resume that
+ * skipped only the old inline fallback would treat a served delivery link as
+ * program drift and fail the reconnect closed. Keep this predicate here, in the
+ * runtime core both executors already import; do not reintroduce a private copy.
+ */
+export function isStaticStyleNode(node: Node | undefined): boolean {
+  if (!node || !isElement(node)) return false;
+  const tag = node.tagName.toLowerCase();
+  if (tag !== 'style' && tag !== 'link') return false;
+  if (!node.hasAttribute(STATIC_STYLES_MARKER)) return false;
+  // Only `rel="stylesheet"` links qualify: a marked link with any other
+  // relation is drift.
+  return tag === 'style' || node.getAttribute('rel') === 'stylesheet';
+}
+
+/** True for the marked inline fallback node (the one hydration may retire). */
+export function isStaticStyleFallbackNode(node: Node | undefined): boolean {
+  return (
+    !!node && isStaticStyleNode(node) && isElement(node) && node.tagName.toLowerCase() === 'style'
+  );
 }
 
 export function displayValue(value: unknown): string {
