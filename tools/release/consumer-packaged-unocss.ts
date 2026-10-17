@@ -58,7 +58,7 @@ import { tmpdir } from 'node:os';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { runProcess } from './consumer-packaged-shared.ts';
+import { assertPackedTarballsFresh, runProcess } from './consumer-packaged-shared.ts';
 import { RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { consumerPnpmOverridesYaml } from './consumer-packaged-shared.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
@@ -969,6 +969,7 @@ async function main(): Promise<void> {
         );
       }
     }
+    await assertPackedTarballsFresh(tarballs);
 
     const app = join(scratch, 'app');
     await mkdir(join(app, 'app', 'components'), { recursive: true });

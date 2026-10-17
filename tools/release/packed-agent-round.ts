@@ -30,6 +30,17 @@
  *      built output. A "fix" that builds green while dropping the stylesheet
  *      is not a fix.
  *
+ * Failure attribution for the docs lookup (the round's only network input):
+ *   - **docs origin unreachable (external)** — DNS/TLS/timeout/connection
+ *     failure before any page is read. This says nothing about the candidate;
+ *     it fails as DocsUnreachableError so the gate log can attribute the red to
+ *     an external outage instead of a candidate defect.
+ *   - **the docs page exists but does not carry the code (candidate defect)** —
+ *     the origin answered, but the page is missing or lacks the code's entry.
+ *     This is a candidate/public-artifact defect and always fails; it is never
+ *     converted into a skip. An explicit offline run may skip only the first
+ *     class (`docsWhenUnreachable: 'skip'`).
+ *
  * Nothing in steps 1-4 reads the repository: every input is the installed app
  * tree, the build's own output, or the public docs origin. The caller
  * (`consumer-packaged-starter.ts`) re-asserts the closed world — no consumer
@@ -76,6 +87,12 @@ export const DOCS_ERROR_REFERENCE_PATH = '/errors';
 /** The public docs origin; overridable for hermetic or mirrored runs. */
 export const DEFAULT_DOCS_ORIGIN = 'https://openelement.org';
 
+/**
+ * Upper bound on the docs lookup. An external outage must fail the round in
+ * bounded time with the external attribution, not hang the packed gate.
+ */
+const DOCS_FETCH_TIMEOUT_MS = 30_000;
+
 /** One command's outcome, the shape `runProcess` in the shared module returns. */
 export interface AgentRoundCommandResult {
   success: boolean;
@@ -94,9 +111,12 @@ export interface AgentRoundOptions {
   /** Public docs origin; defaults to {@linkcode DEFAULT_DOCS_ORIGIN}. */
   docsOrigin?: string;
   /**
-   * What an UNREACHABLE docs origin means. `'fail'` (default) fails the round;
-   * `'skip'` records a loud skip instead — for an explicitly offline run only.
-   * A docs page that RESOLVES but does not carry the code always fails.
+   * What an UNREACHABLE docs origin means. `'fail'` (default) fails the round
+   * with DocsUnreachableError, labelled "docs origin unreachable (external)" —
+   * an availability failure, not a candidate defect. `'skip'` records a loud
+   * skip for an explicitly offline run only. A docs page that RESOLVES but is
+   * missing or does not carry the code is a candidate defect and always fails;
+   * it is never skippable.
    */
   docsWhenUnreachable?: 'fail' | 'skip';
 }
@@ -132,7 +152,12 @@ export class AgentRoundError extends Error {
   }
 }
 
-/** The public docs origin could not be reached at all (offline, DNS, TLS). */
+/**
+ * The public docs origin could not be reached at all (offline, DNS, TLS,
+ * timeout) — EXTERNAL, i.e. not evidence about the candidate. The round fails
+ * with this class by default so the gate log can distinguish an outage from a
+ * candidate docs defect; only an explicit offline run may skip it.
+ */
 export class DocsUnreachableError extends AgentRoundError {
   constructor(message: string) {
     super(message);
@@ -332,9 +357,17 @@ export interface DocsResolution {
 }
 
 /**
- * Resolve the docs page the failing code is documented on. A page that answers
- * a non-200 status, or that resolves without the code's entry, FAILS — a link
- * that 404s cannot be the fix's documentation.
+ * Resolve the docs page the failing code is documented on.
+ *
+ * Two failure classes, deliberately kept distinct:
+ *   - the origin cannot be reached at all (fetch rejects, DNS/TLS/connection,
+ *     or the bounded timeout elapses) -> DocsUnreachableError, labelled
+ *     "docs origin unreachable (external)": an availability failure that says
+ *     nothing about the candidate;
+ *   - the origin answers but the page is missing (non-200) or resolves without
+ *     the code's entry -> AgentRoundError, labelled "candidate defect": the
+ *     public documentation surface is reachable but does not carry the fix, so
+ *     the positive assertion fails exactly as before and can never be skipped.
  */
 export async function resolveFailureDocsPage(options: {
   code: string;
@@ -347,23 +380,28 @@ export async function resolveFailureDocsPage(options: {
     response = await options.fetchImpl(pageUrl, {
       redirect: 'follow',
       headers: { accept: 'text/html' },
+      signal: AbortSignal.timeout(DOCS_FETCH_TIMEOUT_MS),
     });
   } catch (cause) {
     throw new DocsUnreachableError(
-      `the public docs origin is unreachable (${pageUrl}): ${(cause as Error).message}`,
+      `docs origin unreachable (external): ${pageUrl} could not be read within ` +
+        `${DOCS_FETCH_TIMEOUT_MS}ms — this is a docs-site availability failure, not evidence ` +
+        `about the candidate. ${(cause as Error).message}`,
     );
   }
   if (response.status !== 200) {
     throw new AgentRoundError(
-      `the docs page for ${options.code} answered HTTP ${response.status} (${pageUrl}) — the fix's ` +
-        'documentation does not resolve',
+      `candidate defect: the docs page for ${options.code} does not resolve — answered HTTP ` +
+        `${response.status} (${pageUrl}); the fix's documentation is not readable. The docs ` +
+        'origin answered, so this is not an external outage',
     );
   }
   const html = await response.text();
   if (!new RegExp(`id="${options.code}"`).test(html)) {
     throw new AgentRoundError(
-      `the docs page ${pageUrl} does not document ${options.code} — the failure's fix cannot be ` +
-        'resolved from the public docs',
+      `the docs page exists but does not carry the code (candidate defect): ${pageUrl} does not ` +
+        `document ${options.code}; the failure's fix cannot be resolved from the public docs. ` +
+        'The docs origin answered, so this is not an external outage',
     );
   }
   return { pageUrl, anchorUrl: `${pageUrl}#${options.code}`, status: response.status };

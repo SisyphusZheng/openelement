@@ -7,10 +7,29 @@ import { join, resolve } from 'node:path';
 import { chromium, firefox, webkit } from '@playwright/test';
 import ts from 'typescript';
 import { PACKAGE_VERSION } from '../repo/project-constants.ts';
-import { walkPackedDeclarations } from './consumer-packaged-shared.ts';
+import { assertPackedTarballsFresh, walkPackedDeclarations } from './consumer-packaged-shared.ts';
 import { VITE_DEV_PIN } from '../repo/deps-vite-check.ts';
 
 const root = resolve(import.meta.dirname!, '../..');
+const elementTarball = join(
+  root,
+  'packages',
+  'element',
+  `openelement-element-${PACKAGE_VERSION}.tgz`,
+);
+const compilerTarball = join(
+  root,
+  'packages',
+  'compiler',
+  `openelement-compiler-${PACKAGE_VERSION}.tgz`,
+);
+const protocolTarball = join(
+  root,
+  'packages',
+  'protocol',
+  `openelement-protocol-${PACKAGE_VERSION}.tgz`,
+);
+await assertPackedTarballsFresh([elementTarball, compilerTarball, protocolTarball]);
 const author = await mkdtemp(join(tmpdir(), 'oe-element-author-'));
 const consumer = await mkdtemp(join(tmpdir(), 'oe-element-html-'));
 async function run(args: string[]): Promise<void> {
@@ -35,13 +54,13 @@ try {
       private: true,
       type: 'module',
       dependencies: {
-        '@openelement/element': `file:${root}/packages/element/openelement-element-${PACKAGE_VERSION}.tgz`,
+        '@openelement/element': `file:${elementTarball}`,
         // The compiler split (#1557): the standalone vite plugin entry lives in
         // the compiler package, so the authoring proof installs both tarballs.
-        '@openelement/compiler': `file:${root}/packages/compiler/openelement-compiler-${PACKAGE_VERSION}.tgz`,
+        '@openelement/compiler': `file:${compilerTarball}`,
         // element's own transitive workspace pin — declared directly so npm
         // dedupe resolves it from the local tarball pre-publish.
-        '@openelement/protocol': `file:${root}/packages/protocol/openelement-protocol-${PACKAGE_VERSION}.tgz`,
+        '@openelement/protocol': `file:${protocolTarball}`,
       },
       devDependencies: {
         vite: VITE_DEV_PIN,

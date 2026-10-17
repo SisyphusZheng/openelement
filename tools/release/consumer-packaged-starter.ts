@@ -55,7 +55,7 @@ import { pathToFileURL } from 'node:url';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { runProcess } from './consumer-packaged-shared.ts';
+import { assertPackedTarballsFresh, runProcess } from './consumer-packaged-shared.ts';
 import { runAgentWorkflowRound } from './packed-agent-round.ts';
 import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { readPackages } from '../lib/package-graph.ts';
@@ -468,6 +468,7 @@ async function main(): Promise<void> {
         );
       }
     }
+    await assertPackedTarballsFresh(tarballs);
 
     const install = await run(
       'npm',
@@ -981,7 +982,11 @@ async function main(): Promise<void> {
     //
     // The closed-world assertion is re-stated immediately before the round:
     // everything the round reads is the installed app, the build's own output,
-    // or the public docs origin — never this checkout.
+    // or the public docs origin — never this checkout. The docs lookup is the
+    // round's only network input: an unreachable origin fails labelled
+    // "docs origin unreachable (external)" (an availability failure, not a
+    // candidate defect), while a reachable page missing the code fails as a
+    // candidate defect and is never skipped.
     await assertConsumerDoesNotResolveIntoRepository(join(starter, 'node_modules'));
     const agentRound = await runAgentWorkflowRound({
       appDir: starter,

@@ -53,7 +53,7 @@ import { pathToFileURL } from 'node:url';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { runProcess } from './consumer-packaged-shared.ts';
+import { assertPackedTarballsFresh, runProcess } from './consumer-packaged-shared.ts';
 import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { readPackages } from '../lib/package-graph.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
@@ -1279,6 +1279,7 @@ async function main(): Promise<void> {
         );
       }
     }
+    await assertPackedTarballsFresh(tarballs);
     const uiTarball = tarballFor('@openelement/ui');
     const routerTarball = tarballFor('@openelement/router');
     const elementTarball = tarballFor('@openelement/element');

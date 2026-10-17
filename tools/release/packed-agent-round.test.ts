@@ -307,6 +307,49 @@ test('the fix hint may ride the envelope hint field instead of the message', () 
   expect(qualifyBrokenBuildFailure(report).fixHint).toContain('static styles');
 });
 
+test('docs failures name external unavailability separately from a candidate defect', async () => {
+  const unreachable = await resolveFailureDocsPage({
+    code: AGENT_ROUND_CODE,
+    origin: 'https://openelement.org',
+    fetchImpl: docsFetch('unreachable'),
+  }).catch((cause: unknown) => cause);
+  expect(unreachable).toBeInstanceOf(DocsUnreachableError);
+  expect((unreachable as Error).message).toContain('docs origin unreachable (external)');
+  expect((unreachable as Error).message).toContain('not evidence about the candidate');
+
+  const missingCode = await resolveFailureDocsPage({
+    code: AGENT_ROUND_CODE,
+    origin: 'https://openelement.org',
+    fetchImpl: docsFetch({ status: 200, body: '<html><body>no codes here</body></html>' }),
+  }).catch((cause: unknown) => cause);
+  expect(missingCode).toBeInstanceOf(AgentRoundError);
+  expect(missingCode).not.toBeInstanceOf(DocsUnreachableError);
+  expect((missingCode as Error).message).toContain('candidate defect');
+  expect((missingCode as Error).message).toContain('docs page exists but does not carry');
+
+  const notFound = await resolveFailureDocsPage({
+    code: AGENT_ROUND_CODE,
+    origin: 'https://openelement.org',
+    fetchImpl: docsFetch({ status: 404, body: '<html>not found</html>' }),
+  }).catch((cause: unknown) => cause);
+  expect(notFound).toBeInstanceOf(AgentRoundError);
+  expect(notFound).not.toBeInstanceOf(DocsUnreachableError);
+  expect((notFound as Error).message).toContain('candidate defect');
+});
+
+test('docsWhenUnreachable skip never absorbs a candidate docs defect', async () => {
+  const appDir = await tempApp();
+  await expect(
+    runAgentWorkflowRound({
+      appDir,
+      run: fakeBuildCli(appDir),
+      log: () => {},
+      fetchImpl: docsFetch({ status: 200, body: '<html><body>no codes here</body></html>' }),
+      docsWhenUnreachable: 'skip',
+    }),
+  ).rejects.toThrow(/candidate defect/);
+});
+
 test('resolveFailureDocsPage refuses a non-200 answer', async () => {
   await expect(
     resolveFailureDocsPage({
