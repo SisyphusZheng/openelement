@@ -351,7 +351,7 @@ open-search .overlay {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  page-home .hero-main::after {
+  .page-home .hero-main::after {
     animation: none;
   }
 }
@@ -443,7 +443,7 @@ open-search .overlay {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  page-home .marquee span {
+  .page-home .marquee span {
     animation: none;
   }
 }
@@ -482,39 +482,39 @@ open-search .overlay {
 }
 
 @supports (animation-timeline: view()) {
-  page-home .scene-copy,
-  page-home .scene-art,
-  page-home .strategy,
-  page-home .output-row {
+  .page-home .scene-copy,
+  .page-home .scene-art,
+  .page-home .strategy,
+  .page-home .output-row {
     animation: scene-in linear both;
     animation-timeline: view();
     animation-range: entry 8% cover 32%;
   }
-  page-home .scene > h2 {
+  .page-home .scene > h2 {
     animation: scene-in linear both;
     animation-timeline: view();
     animation-range: entry 6% cover 30%;
   }
-  page-home .flood::before {
+  .page-home .flood::before {
     animation: flood-light linear both;
     animation-timeline: view();
     animation-range: entry 0% exit 100%;
   }
-  page-home .flood::after {
+  .page-home .flood::after {
     animation: flood-shade linear both;
     animation-timeline: view();
     animation-range: entry 0% exit 100%;
   }
-  page-home .flood-panel {
+  .page-home .flood-panel {
     animation: scene-in linear both;
     animation-timeline: view();
     animation-range: entry 10% cover 36%;
   }
-  page-home .flood-panel.solid {
+  .page-home .flood-panel.solid {
     animation-range: entry 20% cover 46%;
   }
   @media (min-width: 901px) {
-  page-home .flood-arrow {
+  .page-home .flood-arrow {
       animation: arrow-in linear both;
       animation-timeline: view();
       animation-range: entry 16% cover 40%;

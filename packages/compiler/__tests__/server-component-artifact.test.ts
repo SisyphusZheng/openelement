@@ -74,6 +74,27 @@ describe('artifact: the generative constructor shape', () => {
     expect(result!.code).toContain('__t(item.label)');
   });
 
+  test('per-item attribute slots ([name, itemField]) reach the constructor', () => {
+    // The class lane's serializers resolve `iattrs` from the current item
+    // (`itemAttributeEmission`); a server function page carries the same
+    // slots through the constructor, or a list row silently loses every
+    // attribute the item supplies (the 404 hub's link hrefs regressed this
+    // way before the emitter read `node.iattrs`).
+    const result = compile(`
+      export function List(props: { rows: Array<{ href: string; label: string }> }) {
+        return (
+          <nav>
+            {props.rows.map((row) => (
+              <a key={row.href} href={row.href}>{row.label}</a>
+            ))}
+          </nav>
+        );
+      }
+    `);
+    expect(result!.code).toContain('"href": item.href');
+    expect(result!.code).toContain('__t(item.label)');
+  });
+
   test('when Blocks compile to conditional constructor expressions', () => {
     const result = compile(`
       export function Badge(props: { loading: boolean }) {

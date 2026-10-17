@@ -1,9 +1,0 @@
-/* page-errors — the irreducible authored rule (alpha15 utility-first
- * migration): the light root's own box. The host tag is not authored markup,
- * so no utility can carry it. Everything else — the code table's grid tracks,
- * its hairlines, the identifier/gloss/variant inks and the footnote — is
- * authored as Tailwind utilities in page-errors.tsx.
- * One owner per property: nothing here is also authored as a utility. */
-:host {
-  display: block;
-}

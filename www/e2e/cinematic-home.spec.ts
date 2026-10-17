@@ -20,8 +20,8 @@ async function parkStripBelowFold(page: Page): Promise<void> {
     .poll(
       () =>
         page.evaluate(() => {
-          const strip = document.querySelector('index-index .spec-strip');
-          const hero = document.querySelector('index-index .hero-main');
+          const strip = document.querySelector('.page-home .spec-strip');
+          const hero = document.querySelector('.page-home .hero-main');
           if (!strip || !hero) return -1;
           if (strip.getBoundingClientRect().top > innerHeight) {
             window.scrollTo(0, Math.max(0, strip.getBoundingClientRect().top - innerHeight * 0.3));
@@ -45,9 +45,9 @@ async function parkStripBelowFold(page: Page): Promise<void> {
  *  - `inks`: the strip's text elements and the color they paint with.
  */
 const stripGuardSample = (selector: string) => {
-  const strip = document.querySelector('index-index .spec-strip') as HTMLElement | null;
-  const marquee = document.querySelector('index-index .marquee') as HTMLElement | null;
-  if (!strip) return { spill: ['index-index .spec-strip missing'], inks: [] as string[] };
+  const strip = document.querySelector('.page-home .spec-strip') as HTMLElement | null;
+  const marquee = document.querySelector('.page-home .marquee') as HTMLElement | null;
+  if (!strip) return { spill: ['.page-home .spec-strip missing'], inks: [] as string[] };
   const rect = strip.getBoundingClientRect();
   const bottom = (marquee ?? strip).getBoundingClientRect().bottom;
   const hits = new Set<string>();
@@ -143,7 +143,7 @@ test.describe('Cinematic homepage', () => {
   test('the spec strip states its facts and the version block stays one line', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.goto('/');
-    const home = page.locator('index-index');
+    const home = page.locator('.page-home');
     // Four fact cells: the one-line version block plus three sentence facts
     // (E2 §2). The count is pinned so a silent re-add of a label grid fails.
     await expect(home.locator('.spec-strip .spec-cell')).toHaveCount(4);
@@ -193,14 +193,14 @@ test.describe('Cinematic homepage', () => {
       // own line box screenshots as pure background.
       await page.evaluate(() => {
         for (const el of document.querySelectorAll(
-          'index-index .spec-strip .version-line, index-index .spec-strip .spec-fact, index-index .spec-strip small',
+          '.page-home .spec-strip .version-line, .page-home .spec-strip .spec-fact, .page-home .spec-strip small',
         )) {
           (el as HTMLElement).style.visibility = 'hidden';
         }
       });
       const boxes = await page
         .locator(
-          'index-index .spec-strip .version-line, index-index .spec-strip .spec-fact, index-index .spec-strip .spec-cell small',
+          '.page-home .spec-strip .version-line, .page-home .spec-strip .spec-fact, .page-home .spec-strip .spec-cell small',
         )
         .evaluateAll((els) =>
           els.map((el) => {
@@ -237,9 +237,9 @@ test.describe('Cinematic homepage', () => {
     for (const width of [1024, 768, 480, 390]) {
       await page.setViewportSize({ width, height: 900 });
       await page.goto('/');
-      await expect(page.locator('index-index .scene-split')).toBeVisible();
+      await expect(page.locator('.page-home .scene-split')).toBeVisible();
       const state = await page.evaluate(() => {
-        const root = document.querySelector('index-index');
+        const root = document.querySelector('.page-home');
         const pre = root?.querySelector('.scene-art pre');
         const split = root?.querySelector('.scene-split');
         return {
@@ -292,7 +292,7 @@ test.describe('Cinematic homepage', () => {
 
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.goto('/');
-    const block = page.locator('index-index .scene-art pre');
+    const block = page.locator('.page-home .scene-art pre');
     await expect(block).toBeVisible();
     const blockSurface = await surface(block);
     // Not the UA default: the pre's own padding/scroll come from the site rule.
@@ -314,7 +314,7 @@ test.describe('Cinematic homepage', () => {
     page,
   }) => {
     await page.goto('/');
-    const marquee = page.locator('index-index .marquee');
+    const marquee = page.locator('.page-home .marquee');
     const strip = marquee.locator('span');
     await expect(marquee).toHaveAttribute('aria-hidden', 'true');
     // The span holds the slogan TWICE by construction: the translateX(-50%)
@@ -376,7 +376,7 @@ test.describe('Cinematic homepage', () => {
 
   test('view-source hero and scroll scenes work without hijacking scroll', async ({ page }) => {
     await page.goto('/');
-    const home = page.locator('index-index');
+    const home = page.locator('.page-home');
     const dragon = home.locator('open-dragon-live-gaze');
     await expect(dragon).toHaveCount(1);
     await expect(dragon.locator('video')).toHaveCount(1);

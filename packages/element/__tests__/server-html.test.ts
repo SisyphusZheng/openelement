@@ -218,6 +218,54 @@ describe('__ssr — the component path literal', () => {
       expect(without).toContain('<oe-plain-host');
     });
   });
+
+  test('an undeclared prop rides the host tag, including on a zero-property host', () => {
+    // A server function page passes `class='truth'` to an @element frame
+    // (www's open-artifact-panel / open-section-frame declare NO properties):
+    // the class is not a compiled property, so the seed would drop it — the
+    // host tag must carry it, exactly like the class path's nested expansion
+    // forwards non-property attributes. The zero-property case is the one the
+    // www roadmap hit: gating the passthrough on a declared-property table
+    // silently dropped the attribute.
+    const noProps = testProgram({
+      tag: 'oe-bare-host',
+      rootMode: 'light',
+      template: [{ k: 'el', tag: 'section', attrs: [['class', 'panel']], children: [] }],
+      parts: [],
+    });
+    const withProp = testProgram({
+      tag: 'oe-typed-host',
+      rootMode: 'light',
+      template: [{ k: 'el', tag: 'section', attrs: [], children: [] }],
+      parts: [],
+      properties: [
+        {
+          name: 'variant',
+          attribute: 'variant',
+          type: 'string',
+          converter: 'string',
+          reflect: true,
+          default: '',
+        },
+      ],
+    });
+    withRegistry(
+      new Map([
+        ['oe-bare-host', compiledClass(noProps)],
+        ['oe-typed-host', compiledClass(withProp)],
+      ]),
+      () => {
+        expect(__ssr('oe-bare-host', { class: 'truth' })).toContain(
+          '<oe-bare-host class="truth" data-oe-light>',
+        );
+        // A declared property still rides the property seed (not duplicated
+        // as a passthrough attribute) and the class passthrough still works.
+        expect(__ssr('oe-typed-host', { class: 'truth', variant: 'x' })).toContain(
+          '<oe-typed-host class="truth" variant="x" data-oe-light>',
+        );
+      },
+    );
+  });
 });
 
 describe('the server entry stays out of the client graph', () => {

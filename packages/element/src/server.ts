@@ -196,14 +196,50 @@ export function __ssr(
   sourceInfo?: SsrSourceInfo,
   composition?: SsrComposition,
 ): string {
+  // Undeclared props (a `class` on a component host, the same attribute the
+  // class path's nested expansion forwards as hostAttrs) ride the host tag,
+  // never the compiled property seed: the seed only reads declared property
+  // records, so an undeclared key would silently vanish. Declared-ness is
+  // read from the same registry class the serializer resolves, with the
+  // identical name/attribute matching the nested expansion uses — and like
+  // that expansion, a host with NO declared properties passes every attribute
+  // through (the site-ui frames carry `class='truth'` on a zero-property
+  // host; gating the passthrough on a non-empty property table dropped it).
+  let hostAttrs: Array<readonly [string, unknown]> | undefined;
+  const propEntries = props === undefined ? [] : Object.entries(props);
+  if (propEntries.length > 0) {
+    const resolved =
+      typeof customElements === 'undefined'
+        ? undefined
+        : (customElements.get(tag) as
+            | {
+                __compiledProperties?: readonly { name: string; attribute: string | null }[];
+                __partProgram?: {
+                  metadata: { properties: readonly { name: string; attribute: string | null }[] };
+                };
+              }
+            | undefined);
+    const records = Array.isArray(resolved?.__compiledProperties)
+      ? resolved.__compiledProperties
+      : (resolved?.__partProgram?.metadata.properties ?? []);
+    const declared = new Set<string>();
+    for (const record of records) {
+      declared.add(record.name);
+      if (record.attribute !== null) declared.add(record.attribute);
+    }
+    const passthrough = propEntries.filter(([name]) => !declared.has(name));
+    if (passthrough.length > 0) hostAttrs = passthrough;
+  }
   const options: {
     props?: Record<string, unknown>;
     sourceInfo?: SsrSourceInfo;
+    hostAttrs?: readonly (readonly [string, unknown])[];
     hostChildren?: TrustedHtml;
     projectedChildren?: ReadonlyMap<string, TrustedHtml>;
   } = {
     ...(props === undefined ? {} : { props }),
     ...(sourceInfo === undefined ? {} : { sourceInfo }),
+    ...(hostAttrs === undefined ? {} : { hostAttrs }),
   };
   if (composition !== undefined && composition.groups.length > 0) {
     const rootKind =

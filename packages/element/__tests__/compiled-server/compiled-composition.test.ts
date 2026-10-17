@@ -248,3 +248,125 @@ test('renderToString threads the compiled delegatesFocus static into the DSD tem
     '<template shadowrootmode="open">',
   );
 });
+
+test('a bare boolean prop reads TRUE from its empty-string presence encoding', () => {
+  // A server function page composes an admitted host with bare JSX attributes
+  // (`<open-reading-shell rail>`), which the constructor lowers to the
+  // canonical presence encoding `{ "rail": "" }`. Attribute presence means
+  // TRUE — exactly how `convertFromAttribute` reads it on the client and how
+  // the nested-class expansion guards it — so the seed must not run the empty
+  // string through `Boolean('')` and silently drop the flag.
+  const shell = testProgram({
+    tag: 'oe-flag-shell',
+    rootMode: 'light',
+    template: [
+      {
+        k: 'el',
+        tag: 'aside',
+        attrs: [],
+        children: [{ k: 'part', index: 0 }],
+      },
+    ],
+    parts: [
+      {
+        k: 'when',
+        index: 0,
+        signal: 'rail',
+        test: { signal: 'rail', op: 'truthy', value: true },
+        on: [
+          {
+            k: 'el',
+            tag: 'span',
+            attrs: [],
+            children: [{ k: 'text', value: 'RAIL-ON' }],
+          },
+        ],
+        off: [
+          {
+            k: 'el',
+            tag: 'span',
+            attrs: [],
+            children: [{ k: 'text', value: 'RAIL-OFF' }],
+          },
+        ],
+      },
+    ],
+    properties: [
+      {
+        name: 'rail',
+        attribute: 'rail',
+        type: 'boolean',
+        converter: 'boolean',
+        reflect: true,
+        default: false,
+      },
+    ],
+  });
+
+  expect(renderToString('oe-flag-shell', { componentClass: compiledClass(shell) })).toContain(
+    'RAIL-OFF',
+  );
+  expect(
+    renderToString('oe-flag-shell', {
+      componentClass: compiledClass(shell),
+      props: { rail: '' },
+    }),
+  ).toContain('RAIL-ON');
+  expect(
+    renderToString('oe-flag-shell', {
+      componentClass: compiledClass(shell),
+      props: { rail: false },
+    }),
+  ).toContain('RAIL-OFF');
+});
+
+test('an undeclared prop rides the __ssr host tag as a host attribute', async () => {
+  // A server function page passes `class` to an admitted host
+  // (`<open-button class='no-underline'>`); the compiled property seed only
+  // reads declared records, so an undeclared key would silently vanish — the
+  // exact regression the changelog page's footer buttons showed. The nested
+  // class expansion forwards such keys as `hostAttrs`; the `__ssr` call site
+  // must agree, or the two composition channels emit different host tags.
+  const { __ssr } = await import('../../src/server.ts');
+  const btn = testProgram({
+    tag: 'oe-btn',
+    rootMode: 'shadow-open',
+    template: [
+      {
+        k: 'el',
+        tag: 'a',
+        attrs: [['part', 'control']],
+        children: [{ k: 'el', tag: 'slot', attrs: [], children: [] }],
+      },
+    ],
+    parts: [],
+    properties: [
+      {
+        name: 'variant',
+        attribute: 'variant',
+        type: 'string',
+        converter: 'string',
+        reflect: true,
+        default: '',
+      },
+    ],
+  });
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'customElements');
+  Object.defineProperty(globalThis, 'customElements', {
+    configurable: true,
+    value: { get: (tag: string) => (tag === 'oe-btn' ? compiledClass(btn) : undefined) },
+  });
+  try {
+    const html = __ssr('oe-btn', { class: 'no-underline', variant: 'ghost' }, undefined, {
+      groups: [['', 'X']],
+    });
+    expect(html).toContain('class="no-underline"');
+    expect(html).toContain('variant="ghost"');
+    // The declared prop is consumed as the compiled property, not repeated as
+    // an anonymous passthrough attribute.
+    expect(html.match(/variant=/g)?.length).toBe(1);
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'customElements', original);
+    else delete (globalThis as Record<string, unknown>).customElements;
+  }
+});

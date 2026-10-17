@@ -146,9 +146,11 @@ test.describe('Blog Pages', () => {
     await page.goto('/blog');
     await page.waitForLoadState('networkidle');
 
-    // Blog index should have links to individual posts.
+    // Blog index should have links to individual posts. The retired
+    // <blog-index> host became the page hook class (page-blog-index) with the
+    // server function page migration (alpha15).
     const blogLinks = await page
-      .locator('blog-index')
+      .locator('.page-blog-index')
       .getByRole('link')
       .evaluateAll((links) =>
         links
@@ -166,7 +168,7 @@ test.describe('Blog Pages', () => {
     // Follow the first post link the index actually renders — never assume a
     // slug pattern.
     const firstPostLink = await page
-      .locator('blog-index')
+      .locator('.page-blog-index')
       .getByRole('link')
       .evaluateAll(
         (links) =>

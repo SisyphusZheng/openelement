@@ -709,6 +709,15 @@ class ConstructorEmitter {
         `${JSON.stringify((part as { name: string }).name)}: ${this.parameter}.${part.signal}`,
       );
     }
+    // Per-item attribute slots ([name, itemField]) resolve from the enclosing
+    // each template's own `item` parameter — the same binding the `ival` text
+    // slots read. They ride as props (this is the __ssr/host channel) and
+    // `__h` re-applies the value semantics the class serializer's
+    // itemAttributeEmission owns: `true` emits a bare attribute,
+    // false/null/undefined omit, anything else serializes with String().
+    for (const [name, field] of node.iattrs ?? []) {
+      attrEntries.push(`${JSON.stringify(name)}: item.${field}`);
+    }
     const attrsText = `{ ${attrEntries.join(', ')}${attrEntries.length > 0 ? ' ' : ''}}`;
     if (isSsr) {
       // A __ssr host keeps its children: the compiled children channel hands

@@ -307,7 +307,13 @@ function coerceServerProp(
   if (value === null || value === undefined) return record.default;
   switch (record.converter) {
     case 'boolean':
-      return Boolean(value);
+      // The empty string is the canonical bare-attribute encoding a `__ssr`
+      // call carries (`<open-reading-shell rail>` lowers to `"rail": ""`):
+      // attribute presence means TRUE, exactly as `convertFromAttribute`
+      // reads it on the client and as the nested-class expansion at
+      // `renderToStringAtDepth` guards it. `Boolean('')` would read false and
+      // silently drop the flag on a nested host.
+      return value === '' ? true : Boolean(value);
     case 'number': {
       if (typeof value === 'number') return value;
       const parsed = Number(value);
