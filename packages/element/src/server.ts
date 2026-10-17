@@ -32,7 +32,7 @@
 
 import { escapeText } from './internal/compiled/escape-text.ts';
 import { displayValue } from './internal/compiled/runtime/program-kernel.ts';
-import { classValueOf, styleValueOf } from './internal/compiled/server/shared.ts';
+import { attributeValueOf, classValueOf, styleValueOf } from './internal/compiled/server/shared.ts';
 import { escapeAttr } from './internal/core/html-escape.ts';
 import {
   isSafeAttributeName,
@@ -46,8 +46,15 @@ import { forbiddenSinkReason } from '@openelement/protocol/forbidden-sinks';
 import { unsafeStreamFrameAttribute } from '@openelement/protocol/stream-frame-policy';
 import { VOID_TAGS } from '@openelement/protocol/void-tags';
 
-/** Source metadata the nested render attributes to the host route (the `{ route }` seam). */
-export interface SsrSourceInfo {
+/**
+ * Source metadata the nested render attributes to the host route (the
+ * `{ route }` seam). A type-only companion of `__ssr`: the compiler emits the
+ * call structurally (a plain object literal), never this name, so it stays
+ * unexported — the same treatment as {@linkcode SsrComposition}. Non-exported
+ * declarations still ride the module's declaration emit, so the signature
+ * remains readable and checkable for callers.
+ */
+interface SsrSourceInfo {
   route?: string;
   source?: string;
 }
@@ -71,9 +78,25 @@ export interface SsrSourceInfo {
  * The runtime reads the host's own root mode (the registered class's Part
  * Program — the same fact the serializer branches on) and delivers the
  * matching form, exactly like the class path does for a nested host.
+ *
+ * Internal compiler-to-runtime transport type, deliberately NOT exported: the
+ * emitted `__ssr` call carries the record as a structural literal and never
+ * this name, so exporting it would publish a contract the application side
+ * cannot use for anything (the entry is internal by convention — README
+ * `@openelement/element/server`). TypeScript needs no export for the
+ * signature: a non-exported declaration is emitted into the `.d.ts` beside
+ * the exported `__ssr`.
  */
-export interface SsrComposition {
-  groups: ReadonlyArray<readonly [string, string]>;
+interface SsrComposition {
+  /**
+   * The name element is the child's own runtime value: the compiler hands a
+   * static `slot` attribute over as its text, and a dynamic `slot={props.x}`
+   * binding over as that prop's value (any type, hence `unknown`). It is
+   * coerced at the fold below with the serializer's own attribute-value rule
+   * (`attributeValueOf`), so a dynamic name lands in exactly the slot the
+   * class lane's `slotNameOf` would name.
+   */
+  groups: ReadonlyArray<readonly [unknown, string]>;
 }
 
 /**
@@ -249,9 +272,15 @@ export function __ssr(
             ?.__partProgram?.root?.kind;
     if (rootKind === 'light') {
       // Light root: fold the authored-order groups into per-slot projections
-      // (the serializer substitutes each group into its own <slot>).
+      // (the serializer substitutes each group into its own <slot>). The name
+      // crosses with the serializer's own attribute-value coercion — the rule
+      // the class lane's `slotNameOf` runs over the same authored value
+      // (attributeValueOf: null/undefined collapse to the default slot, every
+      // other value is its attribute text, so 0 names <slot name="0">) — one
+      // rule, both lanes, no second normalization to drift.
       const projected = new Map<string, string>();
-      for (const [name, html] of composition.groups) {
+      for (const [rawName, html] of composition.groups) {
+        const name = attributeValueOf(rawName) ?? '';
         projected.set(name, (projected.get(name) ?? '') + html);
       }
       options.projectedChildren = new Map(

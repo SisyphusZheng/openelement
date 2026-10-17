@@ -30,6 +30,7 @@
     "src/build-utils.ts",
     "src/css-modules.d.ts",
     "src/no-blocks.ts",
-    "src/base.ts"
+    "src/base.ts",
+    "src/server.ts"
   ]
 }

@@ -1072,12 +1072,10 @@
           ]
         },
         "./server": {
-          "publicShapeSha256": "f0c09813a942c52a0fbd828ac8f54c826e9d4d63764ed49b85b2fb5f7c7ec6bb",
+          "publicShapeSha256": "0f90d82eec380e9f1a9d26cb70bde752156675107a59e77673796f643ea7d65e",
           "publicSymbols": [
-            "SsrComposition=type:{groups:array(tuple(string,string))}",
-            "SsrSourceInfo=type:{route?:union(string|undefined);source?:union(string|undefined)}",
             "__h=value:{call:(tag:string,attrs:union(Record<string, unknown>|undefined),children:union(array(unknown)|undefined))=>string}",
-            "__ssr=value:{call:(tag:string,props:union(Record<string, unknown>|undefined),sourceInfo:union(undefined|{route?:union(string|undefined);source?:union(string|undefined)}),composition:union(undefined|{groups:array(tuple(string,string))}))=>string}",
+            "__ssr=value:{call:(tag:string,props:union(Record<string, unknown>|undefined),sourceInfo:union(undefined|{route?:union(string|undefined);source?:union(string|undefined)}),composition:union(undefined|{groups:array(tuple(unknown,string))}))=>string}",
             "__t=value:{call:(value:unknown)=>string}"
           ]
         }

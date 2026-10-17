@@ -185,6 +185,18 @@ function serializeHostAttributes(
       );
     }
     seen.add(key);
+    // class/style carry the SAME semantics as every other sink: values
+    // normalize through the shared `classValueOf`/`styleValueOf` (array and
+    // record values space/semicolon-join, records sort, falsy entries drop)
+    // and an empty result omits the attribute — exactly like the class/style
+    // Part emissions and `__h`. Plain `String(value)` here would put "a,b" or
+    // "[object Object]" on the host tag for a value the element path renders
+    // as "a b" / "color:red".
+    if (key === 'class' || key === 'style') {
+      const serialized = key === 'class' ? classValueOf(value) : styleValueOf(value);
+      if (serialized !== '') result += serializeAttribute(name, serialized);
+      continue;
+    }
     if (value === false || value === null || value === undefined) continue;
     if (value === true) {
       result += ` ${name}`;
