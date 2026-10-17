@@ -85,6 +85,15 @@ export const ROUTER_CLIENT_RUNTIME_ENTRIES = [
   'src/vite/internal/ssg/morph-focus-restore.ts',
   'src/vite/internal/ssg/morph-scroll-restore.ts',
   'src/vite/internal/ssg/morph-webkit-fix.ts',
+  // B2: the generated client entry reaches the element runtime through a
+  // DYNAMIC import whose specifier is emitted as a STRING by
+  // entry-client-codegen.ts, so the pack module graph has no import edge to
+  // these modules — exactly the island-scheduler case above. Without them the
+  // router tarball ships a client entry importing a module the package does
+  // not contain, which is what made `pack:dry-run` fail at HEAD.
+  'src/vite/internal/ssg/element-services-full.ts',
+  'src/vite/internal/ssg/element-services-client-only.ts',
+  'src/vite/internal/ssg/element-services-base.ts',
 ] as const;
 
 /** Strip ANSI color escapes for stable log scans. */
