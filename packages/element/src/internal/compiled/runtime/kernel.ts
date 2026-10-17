@@ -27,6 +27,34 @@ function fail(code: string, message: string): never {
 }
 
 /**
+ * The message for a streamed host whose typed seed was not admitted. Seed
+ * ADMISSION stays owned by `stream-state.ts`; this only attributes an
+ * already-failed admission (alpha15 R5). The server stamps the Part Program
+ * format version it rendered under into `data-oe-stream-program`
+ * (`<version>:<sha256>`, `router/.../stream-runtime.ts`), so a stamp the client
+ * does not implement is a mixed-build deployment — worth an expected-vs-actual
+ * diagnostic instead of a generic missing-seed report. Every other admission
+ * failure keeps the existing message.
+ */
+function streamedSeedFailureMessage(element: HTMLElement, program: PartProgram): string {
+  const declared = element.getAttribute('data-oe-stream-program');
+  const separator = declared?.indexOf(':') ?? -1;
+  if (declared !== null && separator > 0) {
+    const declaredVersion = declared.slice(0, separator);
+    if (declaredVersion !== String(program.version)) {
+      return (
+        `[compiled-hydration] streamed host <${program.tag}> was server-rendered by Part Program ` +
+        `v${declaredVersion} (data-oe-stream-program=${JSON.stringify(declared)}) but this client ` +
+        `compiled <${program.tag}>@v${program.version}: the server artifact and the client bundle ` +
+        'are from different builds. Hydration is refused and the server-rendered DOM is kept; ' +
+        'regenerate the artifacts and deploy one build.'
+      );
+    }
+  }
+  return '[compiled-hydration] streamed host has no matching typed seed for its Part Program.';
+}
+
+/**
  * The character data of a text-like node.
  *
  * `data` is the canonical accessor for `CharacterData` (`Text`, `Comment`,
@@ -405,7 +433,7 @@ export class CompiledElementKernel {
     if (this.#element.hasAttribute('data-oe-stream-request') && !stream) {
       fail(
         ClaimErrorCode.STRUCTURE_MISMATCH,
-        '[compiled-hydration] streamed host has no matching typed seed for its Part Program.',
+        streamedSeedFailureMessage(this.#element, this.#program),
       );
     }
     return executor(
