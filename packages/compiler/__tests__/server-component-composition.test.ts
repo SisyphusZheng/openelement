@@ -85,7 +85,17 @@ beforeAll(async () => {
   // The generated module imports '@openelement/element/server' — a bare
   // specifier that only resolves inside the workspace, so the scratch dir
   // lives under the repo's own node_modules (same channel the XSS matrix uses).
-  scratch = join(process.cwd(), 'node_modules', '.oe-server-component-composition');
+  // The anchor is this file's location, never `process.cwd()`: the canonical
+  // task runs vitest from `packages/compiler`, where a cwd-anchored scratch dir
+  // has no `@openelement/element` link to walk up to.
+  scratch = join(
+    import.meta.dirname,
+    '..',
+    '..',
+    '..',
+    'node_modules',
+    '.oe-server-component-composition',
+  );
   await rm(scratch, { recursive: true, force: true });
   await mkdir(scratch, { recursive: true });
 });
@@ -617,8 +627,12 @@ describe('A1 — the compiled children channel', () => {
     );
     expect(result).not.toBeNull();
     const paths = {
-      '@openelement/element': [join(process.cwd(), 'packages/element/src/index.ts')],
-      '@openelement/element/server': [join(process.cwd(), 'packages/element/src/server.ts')],
+      '@openelement/element': [
+        join(import.meta.dirname, '..', '..', '..', 'packages/element/src/index.ts'),
+      ],
+      '@openelement/element/server': [
+        join(import.meta.dirname, '..', '..', '..', 'packages/element/src/server.ts'),
+      ],
     };
     expect(typeCheckEmittedModule(result!.code, FILE, { paths })).toEqual([]);
   });

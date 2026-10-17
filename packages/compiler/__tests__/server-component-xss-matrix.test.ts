@@ -80,8 +80,12 @@ beforeAll(async () => {
   // specifier that only resolves inside the workspace. Node resolves bare
   // specifiers by walking up `node_modules` directories from the importing
   // file, so the scratch dir lives UNDER the repo's own node_modules (the
-  // directory git never lints and the package manager never globs).
-  const root = process.cwd();
+  // directory git never lints and the package manager never globs). The anchor
+  // is this file's location, never `process.cwd()`: the canonical task runs
+  // vitest from `packages/compiler`, where a cwd-anchored scratch dir both
+  // breaks the `../../packages/...` brand import below and puts the walk-up
+  // out of reach of the repo's own links.
+  const root = join(import.meta.dirname, '..', '..', '..');
   scratch = join(root, 'node_modules', '.oe-server-component-matrix');
   await rm(scratch, { recursive: true, force: true });
   await execFileAsync('mkdir', ['-p', scratch]);
