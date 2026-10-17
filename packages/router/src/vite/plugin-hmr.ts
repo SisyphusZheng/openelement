@@ -74,8 +74,9 @@ export function createCompilerHooks(
         // declined, a route module carrying an exported JSX-returning
         // function compiles into `__h`/`__t`/`__ssr` constructors. Nested
         // composition resolves through the host resolver (the compiler never
-        // reads the filesystem); the admitted static component tags route
-        // nested compiled hosts through `__ssr`.
+        // reads the filesystem); the tags the render can expand — renderable
+        // islands plus static compiled components — route nested hosts
+        // through `__ssr`.
         const serverComponentResolver = createServerComponentSourceResolver({
           root: state.viteRoot ?? process.cwd(),
           workspaceRoot: state.workspaceRoot,
@@ -85,7 +86,10 @@ export function createCompilerHooks(
             ? compileServerComponentIfAdmitted(code, moduleId, {
                 resolveModule: (specifier) =>
                   serverComponentResolver(specifier, moduleId) ?? undefined,
-                compiledTags: serverComponentAdmissionTags(state.ctx.phase1.staticComponents),
+                compiledTags: serverComponentAdmissionTags(
+                  state.ctx.phase1.staticComponents,
+                  state.ctx.phase1.ssrAdmissionPlan?.renderableTags,
+                ),
               })
             : null;
         // A shipped compiled artifact (a package's emitted module) has no

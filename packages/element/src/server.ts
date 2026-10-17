@@ -34,7 +34,12 @@ import { escapeText } from './internal/compiled/escape-text.ts';
 import { displayValue } from './internal/compiled/runtime/program-kernel.ts';
 import { classValueOf, styleValueOf } from './internal/compiled/server/shared.ts';
 import { escapeAttr } from './internal/core/html-escape.ts';
-import { isSafeAttributeName, trustedHtmlValue } from './internal/core/security.ts';
+import {
+  isSafeAttributeName,
+  type TrustedHtml,
+  trustedHtml,
+  trustedHtmlValue,
+} from './internal/core/security.ts';
 import { renderToString } from './public-runtime.ts';
 import { AuthoringErrorCode, frameworkError } from './internal/core/errors.ts';
 import { forbiddenSinkReason } from '@openelement/protocol/forbidden-sinks';
@@ -45,6 +50,30 @@ import { VOID_TAGS } from '@openelement/protocol/void-tags';
 export interface SsrSourceInfo {
   route?: string;
   source?: string;
+}
+
+/**
+ * The composition a nested host receives (the compiled children channel):
+ * authored-order `[slotName, html]` pairs, one per child, where `slotName` is
+ * the child's static `slot` attribute (`''` is the default slot). Every html
+ * value is COMPILER-PRODUCED final HTML — the same trust level as an `__ssr`
+ * result — never loader/props data, and the record carries the two forms the
+ * class path's own nested expansion derives from the same walk
+ * (serialize-program.ts):
+ *
+ * - a shadow-root host receives the concatenated groups after its DSD
+ *   template as light DOM — native slot distribution routes each child by its
+ *   own `slot` attribute, and within-slot order is the authored order;
+ * - a light-root host receives the groups folded into projected children,
+ *   each slot substituting into its own `<slot>` elements through the
+ *   compiled serializer's projected-children channel.
+ *
+ * The runtime reads the host's own root mode (the registered class's Part
+ * Program — the same fact the serializer branches on) and delivers the
+ * matching form, exactly like the class path does for a nested host.
+ */
+export interface SsrComposition {
+  groups: ReadonlyArray<readonly [string, string]>;
 }
 
 /**
@@ -151,14 +180,53 @@ export function __h(
  * registry the generated server entry maintains, and the compiled serializer
  * produces the bytes. Fails closed for unregistered tags (islands and foreign
  * hosts are emitted as plain tags by the compiler instead of routed here).
+ *
+ * `composition` carries the compiled children channel (see
+ * {@linkcode SsrComposition}). The dispatch follows the host's own root mode —
+ * read from the registered class's Part Program, the same fact the class
+ * path's nested expansion branches on — so a shadow host receives the
+ * children as light DOM after its template and a light host consumes the
+ * slots through the serializer's projected-children channel. Without
+ * composition the call is byte-identical to the three-argument form the
+ * pre-composition lane emitted.
  */
 export function __ssr(
   tag: string,
   props?: Record<string, unknown>,
   sourceInfo?: SsrSourceInfo,
+  composition?: SsrComposition,
 ): string {
-  return renderToString(tag, {
+  const options: {
+    props?: Record<string, unknown>;
+    sourceInfo?: SsrSourceInfo;
+    hostChildren?: TrustedHtml;
+    projectedChildren?: ReadonlyMap<string, TrustedHtml>;
+  } = {
     ...(props === undefined ? {} : { props }),
     ...(sourceInfo === undefined ? {} : { sourceInfo }),
-  });
+  };
+  if (composition !== undefined && composition.groups.length > 0) {
+    const rootKind =
+      typeof customElements === 'undefined'
+        ? undefined
+        : (customElements.get(tag) as { __partProgram?: { root?: { kind?: string } } } | undefined)
+            ?.__partProgram?.root?.kind;
+    if (rootKind === 'light') {
+      // Light root: fold the authored-order groups into per-slot projections
+      // (the serializer substitutes each group into its own <slot>).
+      const projected = new Map<string, string>();
+      for (const [name, html] of composition.groups) {
+        projected.set(name, (projected.get(name) ?? '') + html);
+      }
+      options.projectedChildren = new Map(
+        [...projected].map(([name, html]) => [name, trustedHtml(html)]),
+      );
+    } else {
+      // Shadow root: the children ride after the DSD template as light DOM in
+      // authored order (the platform distributes them by their slot
+      // attributes), exactly like the class path's nested expansion.
+      options.hostChildren = trustedHtml(composition.groups.map(([, html]) => html).join(''));
+    }
+  }
+  return renderToString(tag, options);
 }

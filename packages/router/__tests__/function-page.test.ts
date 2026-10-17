@@ -644,6 +644,26 @@ test('createServerComponentSourceResolver probes relative spellings and fails op
   }
 });
 
+test('a non-source import (JSON data module) resolves to null — its bytes never reach the parser', async () => {
+  // A route module importing a `.json` data module is ordinary authored
+  // source shape (www's 404 imports its redirect table). The resolver feeds
+  // the compiler, which parses every answer as TSX; handing it the JSON bytes
+  // crashed the parse with an unrelated TypeScript emit failure instead of
+  // composing nothing. A non-source spelling answers null, so the import is
+  // simply not a composition candidate.
+  const dir = await mkdtemp(join(tmpdir(), 'oe-function-page-resolve-json-'));
+  try {
+    await writeFile(join(dir, 'table.json'), `{"redirects":[]}`);
+    await writeFile(join(dir, 'page.css'), `.a{}`);
+    const resolve = createServerComponentSourceResolver({ root: dir });
+    const importer = join(dir, 'about.tsx');
+    expect(await resolve('./table.json', importer)).toEqual(null);
+    expect(await resolve('./page.css', importer)).toEqual(null);
+  } finally {
+    await rm(dir, { recursive: true }).catch(() => {});
+  }
+});
+
 test('renderFunctionPage refuses a page whose render is not a function', () => {
   expect(() => renderFunctionPage({ kind: 'function-page' }, {})).toThrowError(
     /function page render is not a function/,

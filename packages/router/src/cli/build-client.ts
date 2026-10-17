@@ -966,10 +966,13 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         // derived set and the manifest-less owners directly); the walk-based
         // report is the manual-mode boundary.
         ctx.phase1.packageAdmissionMode ?? 'auto',
-        // The admitted static component tags (alpha15 server lane): the
-        // walk's server function component compile routes nested compiled
-        // hosts through `__ssr` for exactly this set.
-        serverComponentAdmissionTags(ctx.phase1.staticComponents),
+        // The tags the server function component lane routes nested hosts
+        // through `__ssr` with: the admission plan's renderable islands plus
+        // the static compiled components — the union the SSR registry carries.
+        serverComponentAdmissionTags(
+          ctx.phase1.staticComponents,
+          ctx.phase1.ssrAdmissionPlan?.renderableTags,
+        ),
       ),
       // The engine's sheet half: it sits AFTER the discovery pass, so its
       // `buildStart` compile reads the candidates that pass registered — never
@@ -1003,7 +1006,13 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
           root,
           workspaceRoot: findBuildWorkspaceRoot(root) ?? undefined,
         }),
-        compiledTags: serverComponentAdmissionTags(ctx.phase1.staticComponents),
+        // The union the entry's SSR registry carries (renderable islands plus
+        // static compiled components): a function page's nested host rides
+        // `__ssr` under exactly the tags the render can expand.
+        compiledTags: serverComponentAdmissionTags(
+          ctx.phase1.staticComponents,
+          ctx.phase1.ssrAdmissionPlan?.renderableTags,
+        ),
       }),
       // intercepts the compiled modules' authored `.css` imports before
       // vite's CSS plugin, emits the real `.css` assets, and hands the sheet

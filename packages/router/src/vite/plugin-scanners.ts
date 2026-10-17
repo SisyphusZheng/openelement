@@ -383,7 +383,10 @@ export function createBuildStartHook(state: OpenPluginState): Pick<Plugin, 'buil
                 resolve: true,
               })),
             ],
-            serverComponentTags: serverComponentAdmissionTags(state.ctx.phase1.staticComponents),
+            serverComponentTags: serverComponentAdmissionTags(
+              state.ctx.phase1.staticComponents,
+              state.ctx.phase1.ssrAdmissionPlan?.renderableTags,
+            ),
           });
         }
 

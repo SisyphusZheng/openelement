@@ -28,6 +28,33 @@ import { __h, __t, __ssr } from '@openelement/element/server';
 import { trustedHtml, OpenElementError } from '@openelement/element';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { testProgram } from './compiled-runtime/test-program.ts';
+
+/** One compiled class carrying the given test program (the composition-test pattern). */
+function compiledClass(program: ReturnType<typeof testProgram>): CustomElementConstructor {
+  return Object.assign(class {}, {
+    __partProgram: program,
+    __compiledProperties: program.metadata.properties,
+  }) as unknown as CustomElementConstructor;
+}
+
+/** Run `body` with a stubbed SSR registry (the node test env has no DOM). */
+function withRegistry(
+  entries: ReadonlyMap<string, CustomElementConstructor>,
+  body: () => void,
+): void {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'customElements');
+  Object.defineProperty(globalThis, 'customElements', {
+    configurable: true,
+    value: { get: (tag: string) => entries.get(tag) },
+  });
+  try {
+    body();
+  } finally {
+    if (original) Object.defineProperty(globalThis, 'customElements', original);
+    else delete (globalThis as Record<string, unknown>).customElements;
+  }
+}
 
 describe('__t — the dynamic text boundary', () => {
   test('escapes markup-significant characters via the serializer escapeText', () => {
@@ -124,6 +151,72 @@ describe('__h — the element constructor', () => {
 describe('__ssr — the component path literal', () => {
   test('fails closed for an unregistered tag (the registry owns admission)', () => {
     expect(() => __ssr('oe-nothing-here', {})).toThrow(OpenElementError);
+  });
+
+  test('composition delivers authored children to a shadow host after its DSD template', () => {
+    // The host's own root mode decides the delivery form (the same branch the
+    // class path's nested expansion takes): a shadow-root host appends the
+    // children after its template as light DOM, in authored order.
+    const host = testProgram({
+      tag: 'oe-shadow-host',
+      rootMode: 'shadow-open',
+      template: [{ k: 'el', tag: 'slot', attrs: [], children: [] }],
+      parts: [],
+    });
+    withRegistry(new Map([['oe-shadow-host', compiledClass(host)]]), () => {
+      const html = __ssr('oe-shadow-host', {}, undefined, {
+        groups: [
+          ['', '<b>default child</b>'],
+          ['meta', '<span>named child</span>'],
+        ],
+      });
+      expect(html).toContain(
+        '</template><b>default child</b><span>named child</span></oe-shadow-host>',
+      );
+    });
+  });
+
+  test('composition projects grouped children into a light host slot', () => {
+    // A light-root host consumes its children through the serializer's
+    // projected-children channel: each group substitutes into the host's own
+    // <slot> element, exactly like the class path (the slot nodes stay; their
+    // fallback content is replaced by the projection).
+    const host = testProgram({
+      tag: 'oe-light-host',
+      rootMode: 'light',
+      template: [
+        { k: 'el', tag: 'slot', attrs: [['name', 'meta']], children: [] },
+        { k: 'el', tag: 'slot', attrs: [], children: [] },
+      ],
+      parts: [],
+    });
+    withRegistry(new Map([['oe-light-host', compiledClass(host)]]), () => {
+      const html = __ssr('oe-light-host', {}, undefined, {
+        groups: [
+          ['', '<p>body</p>'],
+          ['meta', '<h1>title</h1>'],
+        ],
+      });
+      expect(html).toContain('<slot name="meta"><h1>title</h1></slot>');
+      expect(html).toContain('<slot><p>body</p></slot>');
+    });
+  });
+
+  test('composition carrying an undeclared slot fails closed (the serializer owns the rule)', () => {
+    const host = testProgram({
+      tag: 'oe-plain-host',
+      rootMode: 'light',
+      template: [{ k: 'el', tag: 'slot', attrs: [], children: [] }],
+      parts: [],
+    });
+    withRegistry(new Map([['oe-plain-host', compiledClass(host)]]), () => {
+      expect(() =>
+        __ssr('oe-plain-host', {}, undefined, { groups: [['absent', '<i>x</i>']] }),
+      ).toThrow(OpenElementError);
+      // Without composition the call stays green (the three-argument form).
+      const without = __ssr('oe-plain-host', {});
+      expect(without).toContain('<oe-plain-host');
+    });
   });
 });
 

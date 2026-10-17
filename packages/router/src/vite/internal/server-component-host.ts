@@ -34,6 +34,18 @@ export interface ServerComponentHostOptions {
 /** Resolve one specifier+importer pair to that module's source, or null. */
 export type ServerComponentModuleResolver = (specifier: string, importer: string) => string | null;
 
+/**
+ * True when a path spelling can carry authored source text. A spelling whose
+ * final segment ends in a non-source extension (a `.json` data module, a
+ * `.css` sheet) is not a module this lane composes: its bytes cannot carry
+ * server function components, and handing them to the parser would fail the
+ * compile with an unrelated diagnostic. Extensionless spellings stay probed —
+ * bundler-style resolution may answer them with a source file.
+ */
+function isSourceSpelling(path: string): boolean {
+  return SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension)) || !/\.[^/]+$/.test(path);
+}
+
 /** Probe a path without extension assumptions into an existing source file. */
 function probeSourceFile(base: string): string | null {
   const withoutExtension = /\.(?:[cm]?[tj]sx?)$/.test(base)
@@ -42,7 +54,7 @@ function probeSourceFile(base: string): string | null {
   const stems = withoutExtension === base ? [base] : [base, withoutExtension];
   for (const stem of stems) {
     for (const candidate of [
-      stem,
+      ...(isSourceSpelling(stem) ? [stem] : []),
       ...SOURCE_EXTENSIONS.map((extension) => `${stem}${extension}`),
       ...SOURCE_EXTENSIONS.map((extension) => `${stem}/index${extension}`),
     ]) {
@@ -87,15 +99,23 @@ export function createServerComponentSourceResolver(
 }
 
 /**
- * The admission tag set for the lane's `__ssr` routing: the build-admitted
- * static component tags. Only those are registered in the generated entry's
- * SSR registry, so only those can render through `__ssr`; islands and foreign
- * hosts emit their tag as-is and upgrade through the island pipeline (a tag
- * in this set but absent from the registry would fail closed at render, which
- * is exactly why the set must stay the registered subset).
+ * The tag set the server function component lane routes nested hosts through
+ * `__ssr` with: the tags the SSR serializer itself admits for nested
+ * expansion — the admission plan's renderable islands UNION the project's
+ * static compiled components (the same union entry-orchestrator binds as the
+ * render's `ssrRenderableTags`), so a function page's nested host renders
+ * through byte-identical machinery to a class page's. A tag outside the set
+ * (client-only island, foreign tag) emits as-is and upgrades through the
+ * island pipeline, exactly as before.
  */
 export function serverComponentAdmissionTags(
   staticComponents: readonly { tagName: string }[] | undefined,
+  renderableIslandTags: readonly string[] | undefined = [],
 ): string[] {
-  return [...new Set((staticComponents ?? []).map((component) => component.tagName))].sort();
+  return [
+    ...new Set([
+      ...(staticComponents ?? []).map((component) => component.tagName),
+      ...renderableIslandTags,
+    ]),
+  ].sort();
 }

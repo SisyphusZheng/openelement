@@ -468,7 +468,7 @@ async function buildSSG(
         // intercepted — the SSR half of the protocol. The server function
         // component lane (alpha15) rides the same transform: nested
         // composition resolves through the host source resolver and admitted
-        // static component tags route nested hosts through `__ssr`.
+        // component tags route nested hosts through `__ssr`.
         compiledElementPlugin({
           // Linked workspace packages sit outside the project root; without the
           // workspace anchor their absolute ids would land in the source maps.
@@ -480,7 +480,15 @@ async function buildSSG(
             root,
             workspaceRoot: findBuildWorkspaceRoot(root) ?? undefined,
           }),
-          compiledTags: serverComponentAdmissionTags(staticComponents),
+          // The union the entry's SSR registry carries — renderable islands
+          // plus static compiled components (the same union
+          // entry-orchestrator binds as the render's ssrRenderableTags), so a
+          // function page's nested host rides the expansion a class page's
+          // does.
+          compiledTags: serverComponentAdmissionTags(
+            staticComponents,
+            ssgDescriptor.ssrAdmissionPlan.renderableTags,
+          ),
         }),
         // serves the server half of the style edge protocol — the
         // sheet adapter embeds the authored .css file's bytes, the same bytes

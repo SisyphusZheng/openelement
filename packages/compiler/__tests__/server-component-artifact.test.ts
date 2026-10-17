@@ -151,6 +151,43 @@ describe('artifact: the generative constructor shape', () => {
     expect(result!.code).toContain('"name": props.name');
   });
 
+  test('an admitted __ssr host keeps its children as the authored-order composition record', () => {
+    // The compiled children channel: a child-bearing admitted host emits
+    // [slotName, html] pairs — the static `slot` attribute when present, ''
+    // for the default slot — so the runtime delivers the form the host's own
+    // root mode takes (light: slot projections; shadow: light DOM after the
+    // DSD template), never dropping the children.
+    const result = compile(
+      `
+      export function Page(props: { name: string }) {
+        return (
+          <oe-panel name={props.name}>
+            <h2 slot="title">Title</h2>
+            <p>body</p>
+          </oe-panel>
+        );
+      }
+    `,
+      { compiledTags: ['oe-panel'] },
+    );
+    expect(result!.code).toContain('__ssr("oe-panel", { "name": props.name }, undefined, {');
+    expect(result!.code).toContain('["title", __h("h2", { "slot": "title" }');
+    expect(result!.code).toContain('[\'\', __h("p"');
+  });
+
+  test('a childless admitted __ssr host keeps the two-argument call (byte-identical)', () => {
+    const result = compile(
+      `
+      export function Page(props: { name: string }) {
+        return <oe-panel name={props.name}></oe-panel>;
+      }
+    `,
+      { compiledTags: ['oe-panel'] },
+    );
+    expect(result!.code).not.toContain('groups');
+    expect(result!.code).toContain('__ssr("oe-panel", { "name": props.name })');
+  });
+
   test('an island (unadmitted custom host) emits its tag as-is through __h', () => {
     const result = compile(`
       export function Page(props: { query: string }) {

@@ -578,6 +578,25 @@ class ConstructorEmitter {
     return this.lowering.parts.filter((part) => part.location?.node === elementId);
   }
 
+  /**
+   * The slot-name expression for one child of a `__ssr` host: the child's
+   * static `slot` attribute as a literal, else its dynamic attr sink named
+   * `slot` (the same props read the emitted attribute takes), else `''` — the
+   * default slot. Text and Part children are always default-slot: the class
+   * path's own `slotNameOf` reads exactly these sources.
+   */
+  private slotNameExpressionOf(child: ProgramTreeNode): string {
+    if (child.k !== 'el') return "''";
+    const staticSlot = child.attrs.find(([name]) => name === 'slot')?.[1];
+    if (staticSlot !== undefined) return JSON.stringify(staticSlot);
+    for (const sink of this.sinksOf(child.id)) {
+      if (sink.k === 'attr' && (sink as { name?: string }).name === 'slot') {
+        return `${this.parameter}.${(sink as { signal: string }).signal}`;
+      }
+    }
+    return "''";
+  }
+
   private conditionText(test: ProgramCondition): string {
     const ref = `${this.parameter}.${test.signal}`;
     switch (test.op) {
@@ -692,7 +711,21 @@ class ConstructorEmitter {
     }
     const attrsText = `{ ${attrEntries.join(', ')}${attrEntries.length > 0 ? ' ' : ''}}`;
     if (isSsr) {
-      return `__ssr(${JSON.stringify(node.tag)}, ${attrsText})`;
+      // A __ssr host keeps its children: the compiled children channel hands
+      // them over as the composition record — authored-order [slotName, html]
+      // pairs (the child's static `slot` attribute; '' is the default slot).
+      // The runtime delivers the form the host's own root mode takes (light:
+      // slot projections; shadow: light DOM after the DSD template), exactly
+      // like the class path's nested expansion. A childless host keeps the
+      // two-argument call — byte-identical to the pre-composition lane.
+      const childNodes = node.children;
+      if (childNodes.length === 0) {
+        return `__ssr(${JSON.stringify(node.tag)}, ${attrsText})`;
+      }
+      const groupEntries = childNodes.map(
+        (child) => `[${this.slotNameExpressionOf(child)}, ${this.node(child)}]`,
+      );
+      return `__ssr(${JSON.stringify(node.tag)}, ${attrsText}, undefined, { groups: [${groupEntries.join(', ')}] })`;
     }
     const children = node.children.map((child) => this.node(child));
     return `__h(${JSON.stringify(node.tag)}, ${attrsText}, [${children.join(', ')}])`;

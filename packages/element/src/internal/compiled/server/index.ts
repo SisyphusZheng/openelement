@@ -125,6 +125,15 @@ export interface CompiledServerOptions {
   renderNestedElement?: (element: CompiledNestedElement) => string | undefined;
   /** Light-root projection supplied by an owning compiled parent. */
   projectedChildren?: ReadonlyMap<string, string>;
+  /**
+   * Trusted light children emitted AFTER the host's DSD template (a
+   * shadow-root host's slotted content). The shadow-side sibling of
+   * {@link CompiledServerOptions.projectedChildren}: a light root substitutes
+   * projections into its own `<slot>` elements, a shadow root distributes
+   * appended light DOM natively. A value on a LIGHT root fails closed — a
+   * light root's children are projections, not appendages.
+   */
+  hostChildren?: string;
 }
 
 function serializeAttribute(name: string, value: string): string {
@@ -452,11 +461,24 @@ function serializeCompiledSnapshot(
   // closed instead of reaching markup.
   const styleLinks = serializeStyleLinks(options.styleLinks);
   const styleNodes = `${styleLinks}${styleElement}`;
+  // The compiled children channel's shadow-side half: a shadow-root host
+  // receives its light children after the DSD template (native slot
+  // distribution does the rest). A LIGHT root has no shadow boundary to
+  // distribute across, so the same value there is a caller defect — its
+  // children are projections into its own <slot> elements, never appendages.
+  const hostChildren = options.hostChildren ?? '';
   if (mode === 'light') {
+    if (hostChildren !== '') {
+      throw new CompiledProgramValidationError(
+        'hostChildren',
+        'hostChildren is for shadow-root hosts: a light root consumes its children ' +
+          'through projectedChildren',
+      );
+    }
     return `<${program.tag}${hostAttrs}>${styleNodes}${content}</${program.tag}>`;
   }
   const dsdAttrs = serializeDsdAttributes(options.dsd);
-  return `<${program.tag}${hostAttrs}><template shadowrootmode="${mode}"${dsdAttrs}>${styleNodes}${content}</template></${program.tag}>`;
+  return `<${program.tag}${hostAttrs}><template shadowrootmode="${mode}"${dsdAttrs}>${styleNodes}${content}</template>${hostChildren}</${program.tag}>`;
 }
 
 /**

@@ -245,6 +245,16 @@ export interface RenderToStringOptions {
   /** Trusted parent-owned light children keyed by slot name. */
   projectedChildren?: ReadonlyMap<string, TrustedHtml>;
   /**
+   * Trusted parent-owned light children emitted AFTER the host's DSD template
+   * (a shadow-root host's slotted content). This is the shadow-side sibling of
+   * `projectedChildren`: a light root substitutes projections into its own
+   * `<slot>` elements, a shadow root distributes appended light DOM natively.
+   * Both are the compiled children channel — compiler-produced final HTML
+   * carrying the trustedHtml brand, never loader data — and a value on a LIGHT
+   * root fails closed (its children are projections, not appendages).
+   */
+  hostChildren?: TrustedHtml;
+  /**
    * The render's document stylesheet collection (alpha15 S lane, S-C1.2).
    * Every light-root component serialized in this render reports its external
    * sheet URLs here, and the document wrapper declares them in the head. The
@@ -255,9 +265,14 @@ export interface RenderToStringOptions {
 }
 
 /** Element-private normalized options used while recursively composing components. */
-interface InternalRenderToStringOptions extends Omit<RenderToStringOptions, 'projectedChildren'> {
+interface InternalRenderToStringOptions extends Omit<
+  RenderToStringOptions,
+  'projectedChildren' | 'hostChildren'
+> {
   hostAttrs?: readonly (readonly [string, unknown])[];
   projectedChildren?: ReadonlyMap<string, string>;
+  /** The brand-checked, reserved form of {@linkcode RenderToStringOptions.hostChildren}. */
+  hostChildren?: string;
   /**
    * Whether the markup being rendered lands inside a SHADOW TREE — the DSD
    * template of an ancestor component. A light-root component's sheets are
@@ -798,6 +813,11 @@ function renderToStringAtDepth(
       styleCss: staticStyleCss,
       styleLinks: declaredStyleLinks(resolvedClass, mode),
       projectedChildren: options.projectedChildren,
+      // The compiled children channel's shadow-side half: light children a
+      // compiled parent (or a server function page's __ssr call) hands a
+      // shadow-root host ride after the DSD template. The serializer fails
+      // closed if the root is light — projections, not appendages.
+      ...(options.hostChildren === undefined ? {} : { hostChildren: options.hostChildren }),
       renderNestedElement:
         admitted.size === 0
           ? undefined
@@ -912,7 +932,7 @@ export function renderToString(
   input: string | CustomElementConstructor,
   options: RenderToStringOptions = {},
 ): string {
-  const { projectedChildren, ...publicOptions } = options;
+  const { projectedChildren, hostChildren, ...publicOptions } = options;
   const normalizedProjectedChildren = projectedChildren
     ? new Map(
         [...projectedChildren].map(([slot, value]) => [slot, trustedHtmlValue(value)] as const),
@@ -921,5 +941,8 @@ export function renderToString(
   return renderToStringAtDepth(input, {
     ...publicOptions,
     projectedChildren: normalizedProjectedChildren,
+    // The shadow-side sibling goes through the same ONE brand check: only
+    // compiler-produced trusted HTML may append light children to a host.
+    ...(hostChildren === undefined ? {} : { hostChildren: trustedHtmlValue(hostChildren) }),
   });
 }
