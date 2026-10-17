@@ -301,18 +301,81 @@ test('build output: the element runtime ships as the one shared chunk islands ne
     `Island chunks must not embed the element runtime: ${islandsEmbeddingRuntime.join(', ')}`,
   ).toEqual([]);
 
-  // The generated client entry statically imports the shared chunk (the
-  // import edge is recorded in the vite build manifest).
+  // B2/#1544: the generated client entry no longer statically imports the
+  // shared chunk itself — the runtime is reached through the entry's DYNAMIC
+  // import of the element-services surface module, whose one static import is
+  // the shared chunk. Both halves are asserted: the direct edge is gone, and
+  // the lazy edge still lands on the emitted chunk, so island hydration keeps
+  // its runtime.
   const manifest = JSON.parse(
     readFileSync(join(DIST, 'client', '.vite', 'manifest.json'), 'utf8'),
-  ) as Record<string, { imports?: string[] }>;
+  ) as Record<string, { imports?: string[]; dynamicImports?: string[] }>;
   const entry = manifest['virtual:open-client-entry'];
   if (!entry) throw new Error('client entry missing from the vite build manifest');
   const runtimeKey = `_${runtimeChunks[0]}`;
   expect(
     entry.imports ?? [],
-    `The client entry must statically import the shared element-runtime chunk (${runtimeKey})`,
+    `B2: the shared element-runtime chunk (${runtimeKey}) must not be a direct static import of the client entry`,
+  ).not.toContain(runtimeKey);
+  const servicesKey = (entry.dynamicImports ?? []).find((key) => /element-services/.test(key));
+  expect(
+    servicesKey,
+    `The entry must lazily import the element-services surface; dynamicImports: ${(
+      entry.dynamicImports ?? []
+    ).join(', ')}`,
+  ).toBeTruthy();
+  expect(
+    manifest[servicesKey!]?.imports ?? [],
+    `The lazily imported element-services module must statically import the shared runtime chunk (${runtimeKey})`,
   ).toContain(runtimeKey);
+
+  // B2 gap (a): the DIRECT edge being gone is not enough, and this is the
+  // assertion that says so. Vite homes its injected preload helper in
+  // whichever chunk first needs it; www's `open-search` island carries a
+  // nested dynamic import, so the helper landed in that ISLAND chunk, the
+  // entry statically imported the island chunk to reach the helper, and the
+  // runtime came back transitively — with the direct-edge assertion above
+  // still green. The real property is about the entry's whole STATIC closure,
+  // so walk it: over the vite manifest's `imports` keys only (`dynamicImports`
+  // is a different field and is deliberately not followed — the entry reaches
+  // the runtime through exactly those edges).
+  const staticClosure: string[] = [];
+  const queue = [...(entry.imports ?? [])];
+  while (queue.length > 0) {
+    const key = queue.shift()!;
+    if (staticClosure.includes(key)) continue;
+    staticClosure.push(key);
+    for (const next of manifest[key]?.imports ?? []) queue.push(next);
+  }
+  expect(
+    staticClosure,
+    `B2 gap (a): the client entry's static closure must not reach the shared element-runtime chunk ` +
+      `(${runtimeKey}); closure: ${staticClosure.join(', ') || '(empty)'}`,
+  ).not.toContain(runtimeKey);
+  // Nor an island chunk: an island in the entry's static closure is the exact
+  // shape that smuggles the runtime back in, and it is what the island chunk's
+  // own runtime import means the moment one appears.
+  const islandKeysInClosure = staticClosure.filter((key) => /^_island-/.test(key));
+  expect(
+    islandKeysInClosure,
+    `B2 gap (a): no island chunk may sit in the client entry's static closure; found: ${islandKeysInClosure.join(', ')}`,
+  ).toEqual([]);
+  // Guard against a vacuous pass: the closure walk must actually have found
+  // the one chunk the entry does import eagerly (the dedicated helper chunk).
+  // An empty closure would mean the walk read nothing, not that the graph is
+  // clean.
+  const helperKeys = staticClosure.filter((key) => /^_vite-helper-/.test(key));
+  expect(
+    helperKeys,
+    `The entry's static closure must carry the dedicated vite-helper chunk (the helper Vite injects for the ` +
+      `entry's own dynamic island imports); closure: ${staticClosure.join(', ') || '(empty)'}`,
+  ).toHaveLength(1);
+  // And the helper chunk itself must not carry the runtime either — it is the
+  // one eager import, so an edge from it would defeat the whole property.
+  expect(
+    manifest[helperKeys[0]]?.imports ?? [],
+    `The dedicated vite-helper chunk must be a leaf: ${helperKeys[0]} imports something`,
+  ).toEqual([]);
 });
 
 test('build output: zh pages keep in-content links inside the zh tree (#1031)', () => {

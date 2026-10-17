@@ -50,9 +50,12 @@ export type {
 export { ssgRender } from './ssg-render.ts';
 
 export {
+  buildElementRuntimePreloadLink,
   buildSpeculationRulesJson,
+  ELEMENT_RUNTIME_PRELOAD_ATTRIBUTE,
   extractLinkHrefs,
   injectCspMeta,
+  injectElementRuntimePreload,
   injectIslandPrefetchRules,
   injectSpeculationRules,
   injectViewTransitionOptIn,
@@ -102,6 +105,7 @@ export {
   extractCustomElementTags,
   generateIslandManifests,
   pageChunkMap,
+  pageHasClientIslands,
   routeFromRelativePath,
   writeIslandManifests,
 } from './island-manifest.ts';
@@ -113,7 +117,11 @@ export type {
   PageIslandManifest,
 } from './island-manifest.ts';
 
-export { clientEntryNeedsElementRuntime, generateClientEntry } from './entry-client-codegen.ts';
+export {
+  clientEntryNeedsElementRuntime,
+  elementServicesSpecifier,
+  generateClientEntry,
+} from './entry-client-codegen.ts';
 export {
   islandsMightUseBlocks,
   elementRuntimeBlocksAlias,

@@ -114,7 +114,16 @@ test('lit renderer: client entry installs hydrate-support first and stays elemen
     [{ tagName: 'note-counter', modulePath: '/app/islands/note-counter.ts', strategy: 'load' }],
     { enhancedForms: true },
   );
-  expect(nativeClient).toContain("from '@openelement/element'");
+  // Native (B2/#1544): the entry carries NO static import from the element
+  // package at all — not even the logger leaf, which lives under the same
+  // package root as the shared runtime chunk and would therefore put the
+  // whole `element-runtime-<hash>.js` back into a zero-island page's static
+  // graph. The runtime is reached only by the lazy surface module's dynamic
+  // import.
+  const nativeImportLines = nativeClient.split('\n').filter((line) => line.startsWith('import '));
+  expect(nativeImportLines.some((line) => line.includes('@openelement/element'))).toEqual(false);
+  expect(nativeClient).toContain("import('");
+  expect(nativeClient).toContain('element-services');
   expect(nativeClient.includes('lit-element-hydrate-support')).toEqual(false);
 });
 

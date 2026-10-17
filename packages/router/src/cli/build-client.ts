@@ -53,8 +53,10 @@ import {
   type ElementRuntimeIdentity,
   elementRuntimeChunkName,
   requireElementRuntimeChunk,
+  requireEntryStaticGraphFreeOfRuntime,
   resolveElementRuntimeIdentity,
 } from '../vite/internal/element-runtime-chunk.ts';
+import { requireViteHelperChunk, viteHelperChunkName } from '../vite/internal/vite-helper-chunk.ts';
 import {
   analyzeModuleSemantics,
   clearStyleRequests,
@@ -835,6 +837,24 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
                       priority: 20,
                     },
                     {
+                      // B2 gap (a): the same dedicated eager home the native
+                      // branch gives Vite's injected preload helper, for the
+                      // same reason — the entry imports the helper, and a lit
+                      // graph has island chunks of its own the helper would
+                      // otherwise ride. Two properties are load-bearing and
+                      // measured on the repro rather than assumed: the claim
+                      // must live in a group of its OWN (folding it into the
+                      // general decision group leaves the helper in the island
+                      // chunk), and that group must outrank every other group
+                      // in the build — lit declares 20/15/10 below, so this is
+                      // strictly highest. With a higher-priority group present
+                      // the helper follows that group's chunk again.
+                      name(id: string) {
+                        return viteHelperChunkName(id) ?? null;
+                      },
+                      priority: 30,
+                    },
+                    {
                       name: 'preact',
                       test: /node_modules\/preact|\/preact\//,
                       priority: 10,
@@ -874,32 +894,88 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
                 format: 'esm',
                 entryFileNames: 'islands/[name].js',
                 chunkFileNames: 'islands/[name]-[hash].js',
-                manualChunks(id: string) {
-                  // #1544: the element runtime rides one shared chunk every
-                  // island imports, instead of homing inside whichever island
-                  // chunk its import reached first. The match is exact
-                  // package-root containment from the identity pass — a
-                  // native build that groups zero runtime modules fails the
-                  // post-build guard below rather than shipping per-island
-                  // copies.
-                  const runtimeChunk = elementRuntimeChunkName(id, elementRuntimeIdentity);
-                  if (runtimeChunk) return runtimeChunk;
-                  // Force preact + preact/hooks into a single chunk so the shared
-                  // options object is not duplicated across chunks (which breaks hooks).
-                  if (id.includes('node_modules/preact') || id.includes('/preact/')) {
-                    return 'preact';
-                  }
-                  if (id.includes(`/${islandsDir}/`)) {
-                    // Extension list contract: mirrors resolve.extensions below
-                    // and scanIslands (ts/tsx/js/jsx), so every island module id
-                    // matches and gets the `island-` prefix.
-                    const match = id.match(/\/([^/]+)\.(ts|tsx|js|jsx)$/);
-                    if (match) return `island-${match[1]}`;
-                  }
-                  // #1471: package islands group by the actual module id the
-                  // asset manifest joins on — zero matches and ambiguous
-                  // matches fail the build, never a substring first-hit.
-                  return packageIslandChunkName(id, packageDeclIdentities());
+                // B2 gap (a) is why this branch is `codeSplitting`, not
+                // `manualChunks`.
+                //
+                // Every rule below used to be a `manualChunks` function — the
+                // Rollup-compat shim — and that worked for as long as every
+                // module it had an opinion about was an ordinary resolved
+                // module. Vite's injected preload helper is not: it is created
+                // by Vite's NATIVE import-analysis plugin
+                // (`native:import-analysis-build`), and the compat shim does
+                // not re-home it. Measured, not inferred: `manualChunks` is
+                // called with `\0vite/preload-helper.js` and returns the helper
+                // chunk name, and the helper still lands in the island chunk —
+                // reproduced on the real www build and on a minimal
+                // one-entry/two-island repro. `codeSplitting` and
+                // `manualChunks` are mutually exclusive (specifying both
+                // silently discards `manualChunks`), so this is a migration of
+                // the one decision into the surface that can express all of
+                // it, never an addition beside the old one. The lit branch
+                // below already groups this way, for the same documented
+                // reason: the compat shim could not express what that branch
+                // needed either.
+                //
+                // Two groups, not one, and the split is load-bearing. A
+                // dedicated group whose `name` answers ONLY for the injected
+                // helper ids re-homes the helper; folding the same answer into
+                // the general decision group does not (measured on the repro:
+                // the helper stays in the island chunk). The dedicated group
+                // must also outrank every other group in the build — with a
+                // group of higher priority present, the helper follows THAT
+                // group's chunk again. Hence one helper-only group at a
+                // priority above every rule the build declares, and the
+                // pre-existing decision kept verbatim as its own group.
+                codeSplitting: {
+                  groups: [
+                    {
+                      name(id: string) {
+                        return viteHelperChunkName(id) ?? null;
+                      },
+                      // Declared above every other group this build declares
+                      // (and above the lit branch's 20/15/10). The priority is
+                      // load-bearing, not decoration: measured on the repro, a
+                      // competing group of HIGHER priority present in the same
+                      // build re-claims the helper and the island edge returns.
+                      // Keeping this group strictly highest is what makes the
+                      // claim unconditional; the emitted-chunk guard below is
+                      // what makes a future violation fatal instead of silent.
+                      priority: 100,
+                    },
+                    {
+                      name(id: string) {
+                        // #1544: the element runtime rides one shared chunk
+                        // every island imports, instead of homing inside
+                        // whichever island chunk its import reached first. The
+                        // match is exact package-root containment from the
+                        // identity pass — a native build that groups zero
+                        // runtime modules fails the post-build guard below
+                        // rather than shipping per-island copies.
+                        const runtimeChunk = elementRuntimeChunkName(id, elementRuntimeIdentity);
+                        if (runtimeChunk) return runtimeChunk;
+                        // Force preact + preact/hooks into a single chunk so the
+                        // shared options object is not duplicated across chunks
+                        // (which breaks hooks).
+                        if (id.includes('node_modules/preact') || id.includes('/preact/')) {
+                          return 'preact';
+                        }
+                        if (id.includes(`/${islandsDir}/`)) {
+                          // Extension list contract: mirrors
+                          // resolve.extensions below and scanIslands
+                          // (ts/tsx/js/jsx), so every island module id matches
+                          // and gets the `island-` prefix.
+                          const match = id.match(/\/([^/]+)\.(ts|tsx|js|jsx)$/);
+                          if (match) return `island-${match[1]}`;
+                        }
+                        // #1471: package islands group by the actual module id
+                        // the asset manifest joins on — zero matches and
+                        // ambiguous matches fail the build, never a substring
+                        // first-hit. A group's "no opinion" answer is null.
+                        return packageIslandChunkName(id, packageDeclIdentities()) ?? null;
+                      },
+                      priority: 0,
+                    },
+                  ],
                 },
               },
       },
@@ -1120,6 +1196,32 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
     // property of the emission shape.
     if (ctx.options.renderer !== 'lit' && entryNeedsElementRuntime) {
       requireElementRuntimeChunk(collectClientBuildChunks(outputs), elementRuntimeIdentity);
+    }
+
+    // B2 gap (a), fail closed, both halves:
+    //
+    //  1. Vite's injected preload helper modules, when the graph carries any,
+    //     must be homed in the one dedicated `vite-helper` chunk. Anywhere
+    //     else — in practice a lazily-loaded island chunk — is the layout that
+    //     gives the entry a static edge to that island.
+    //  2. The property itself: the emitted entry must not STATICALLY reach the
+    //     shared element-runtime chunk. This is the one that survives Vite
+    //     renaming its helper id: guard 1 would then match nothing and pass
+    //     vacuously, while guard 2 still fails the build the moment the
+    //     runtime reappears in the entry's static closure.
+    //
+    // Guard 2 runs under the native renderer only, matching
+    // requireElementRuntimeChunk's posture and for the same reason: lit's
+    // entry is element-free by design (#1339) but element modules reach a lit
+    // graph transitively through the router client runtime, so a lit entry may
+    // legitimately reach the shared chunk — the B2 promise is the native
+    // entry's, and www is the acceptance case.
+    if (ctx.options.renderer !== 'lit') {
+      const emittedChunks = collectClientBuildChunks(outputs);
+      requireViteHelperChunk(emittedChunks);
+      if (entryNeedsElementRuntime) {
+        requireEntryStaticGraphFreeOfRuntime(emittedChunks, elementRuntimeIdentity);
+      }
     }
 
     // #1471: the client asset manifest — compile-time island identity joined

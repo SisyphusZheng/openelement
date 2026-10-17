@@ -96,10 +96,17 @@ const routes: RouteEntry[] = [
 // and nothing else; the native/lit delta stays 103 — the cross-mode invariant
 // holds. Client bytes are untouched. Native server: 16637→16773, lit server:
 // 16740→16876.
+//
+// #1544/B2 re-baseline: the NATIVE client entry changed deliberately — the
+// element runtime left its static graph, so the entry carries the lazy
+// loader, the document-service calls it makes and the inlined logger that
+// replaced the `@openelement/element/logger` import: 2004→2931 bytes. The lit
+// entry is byte-IDENTICAL (3167, same hash): the renderer fork was already
+// element-free and the codegen refactor is transparent to it.
 const expected = {
   native: {
     server: [16773, '04e5526b2999d71d4a70251bf63283d4c2191fe91850257fbd99adb628df702c'],
-    client: [2004, 'dbd5414e1f2a392a26e98cdce1a2b7c2dc69d4305228c6b7d199b4af6ce00d6f'],
+    client: [2931, '0500bdd6354d221b379400dc0bf819bf078895b3c90353d52ccc3171450880f2'],
   },
   lit: {
     server: [16876, '320a139438dc9b1d6d421c329631899eb5cff657769672ea8e45e0f30a67c724'],

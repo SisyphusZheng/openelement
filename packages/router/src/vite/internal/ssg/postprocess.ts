@@ -8,18 +8,29 @@
  * 1. injectViewTransitionOptIn() - enable cross-page View Transitions
  * 2. injectSpeculationRules() - prefetch/prerender for navigation performance
  * 3. injectCspMeta() - Content-Security-Policy meta tag
+ * 4. injectElementRuntimePreload() - the shared element-runtime chunk's
+ *    modulepreload, only on pages whose island manifest is non-empty (B2)
  *
  * The island client script is NOT post-processed here: since #1471 the
  * document renderer embeds the final script tags at render time from the
  * client asset manifest (#1471 — identity-driven injection, no
- * chunk-name surgery, no HTML rewriting for scripts).
+ * chunk-name surgery, no HTML rewriting for scripts). The #1544 modulepreload
+ * is a chunk-layout artifact the manifest pass owns, so this module writes it
+ * from the same per-page manifests the build just recorded.
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { createLogger } from '@openelement/element';
+import { escapeAttr } from '@openelement/element/html';
 import { buildError, SsgRenderErrorCode } from '../../../internal/error-codes.ts';
 import { visitHtmlFiles, walkHtmlFileEntries } from '../html-files.ts';
-import { readTagName, routeFromRelativePath, skipThroughClosingTag } from './island-manifest.ts';
+import {
+  type PageIslandManifest,
+  pageHasClientIslands,
+  readTagName,
+  routeFromRelativePath,
+  skipThroughClosingTag,
+} from './island-manifest.ts';
 import { buildIslandPrefetchLinks } from './speculation-rules.ts';
 export { buildSpeculationRulesJson } from './speculation-rules.ts';
 
@@ -324,5 +335,66 @@ export function injectIslandPrefetchRules(
     const links = buildIslandPrefetchLinks([...chunks].sort());
     if (!links) continue;
     writeFileSync(entry.absolutePath, insertAfterHead(content, links), 'utf8');
+  }
+}
+
+// ─── Element-runtime modulepreload projection (#1544, B2) ─────────────
+
+/** Marker attribute carried by the one runtime-preload link per page. */
+export const ELEMENT_RUNTIME_PRELOAD_ATTRIBUTE = 'data-open-element-runtime-preload';
+
+/**
+ * The one modulepreload tag for the shared element-runtime chunk (#1544).
+ * `modulepreload` is the resource hint that fetches + parses a module graph
+ * entry before it is requested, so an island-bearing page keeps the runtime's
+ * warm start now that the client entry no longer statically imports it (B2).
+ */
+export function buildElementRuntimePreloadLink(runtimeUrl: string): string {
+  return `<link rel="modulepreload" href="${escapeAttr(
+    runtimeUrl,
+  )}" ${ELEMENT_RUNTIME_PRELOAD_ATTRIBUTE}>`;
+}
+
+/**
+ * Inject the shared element-runtime chunk's `<link rel="modulepreload">` into
+ * exactly the pages whose island manifest records a client-activatable
+ * island (B2, #1544).
+ *
+ * This is a PROJECTION of the per-page island manifests — the build's one
+ * source of page→island facts (`generateIslandManifests`/`postProcessClientIslandBuild`),
+ * never a re-derived scan and never a registry:
+ *
+ *  - a page with a client-activatable island gets the one preload, so the
+ *    runtime its hydration will need is already in flight when the entry
+ *    executes;
+ *  - a page whose manifest is empty (or names only `hydrate: 'none'` islands,
+ *    which never enter the client bundle) gets nothing, and because island
+ *    activation is host-gated (island-scheduler.ts) no island chunk or
+ *    runtime fetch can start there — the runtime stays out of the page's
+ *    JS graph;
+ *  - the marker attribute makes re-runs idempotent, like the #1561 lane's
+ *    `data-open-island-prefetch`.
+ *
+ * `runtimeUrl` is the emitted chunk's own address (from the client asset
+ * manifest). The caller fails closed when an island-bearing native build
+ * cannot name it; this writer never guesses one.
+ */
+export function injectElementRuntimePreload(
+  dir: string,
+  pageManifests: readonly PageIslandManifest[],
+  runtimeUrl: string,
+): void {
+  const bearing = new Set(
+    pageManifests
+      .filter((manifest) => pageHasClientIslands(manifest))
+      .map((manifest) => manifest.route),
+  );
+  if (bearing.size === 0) return;
+  const link = buildElementRuntimePreloadLink(runtimeUrl);
+  for (const entry of walkHtmlFileEntries(dir)) {
+    if (!bearing.has(routeFromRelativePath(entry.relativePath))) continue;
+    const content = readFileSync(entry.absolutePath, 'utf8');
+    if (content.includes(ELEMENT_RUNTIME_PRELOAD_ATTRIBUTE)) continue;
+    writeFileSync(entry.absolutePath, insertAfterHead(content, link), 'utf8');
   }
 }

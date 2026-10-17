@@ -1,7 +1,9 @@
 /** Client island entry emission; browser runtime wiring only. */
 import process from 'node:process';
 import { ACTION_FETCH_HEADER, IDLE_FALLBACK_TIMEOUT_MS } from '@openelement/element';
+import { normalizeSeparators } from '@openelement/element/build-utils';
 import { stableModuleId } from '@openelement/compiler';
+import { runtimeModulePath } from '../runtime-module-path.ts';
 import { findBuildWorkspaceRoot } from '../../workspace-alias.ts';
 import { quoteGeneratedJavaScriptValue } from './codegen-literals.ts';
 import { selectRendererAdapter } from './renderer-adapter.ts';
@@ -17,6 +19,22 @@ import type { ClientIslandDeliveryEntry, ClientIslandDeliveryInput } from './del
 // anchor keeps absolute build paths out of the shipped client bundle.
 const WORKSPACE_ROOT = findBuildWorkspaceRoot(process.cwd()) ?? undefined;
 
+/**
+ * One island's activation factory.
+ *
+ * Native renderer (B2): the island chunk import and the element runtime's
+ * dynamic import start TOGETHER, and the element definition waits for both.
+ * The island chunk statically imports the same runtime chunk, so the two
+ * signals resolve from the same module; waiting here is what installs the
+ * runtime's document services (pre-upgrade capture, deep fragment
+ * navigation) BEFORE `customElements.define` upgrades an existing host,
+ * while the island chunk itself still downloads in parallel. The runtime is
+ * only ever requested through `__loadElementRuntime`, so a page that
+ * activates no island never fetches it.
+ *
+ * Lit renderer (#1339): the entry is element-free by design, so the factory
+ * keeps the plain dynamic import.
+ */
 function islandImportFactory(
   modulePath: AdmittedIslandModuleSpecifier,
   tagName: string,
@@ -39,9 +57,17 @@ function islandImportFactory(
   // SSR defer-hydration marker. Lifting it here runs lit-element-hydrate-
   // support's deferred connectedCallback and the island adopts its DSD root.
   const lift = renderer === 'lit' ? ` __liftDeferHydration(document, ${tagLiteral});` : '';
-  return `() => import(${quoteGeneratedJavaScriptValue(
-    modulePath,
-  )}).then(function(mod) { var _name = ${nameLiteral}; var Ctor = _name ? mod[_name] : mod.default; if (typeof Ctor !== 'function') throw new Error(${errorLiteral}); if (!customElements.get(${tagLiteral})) customElements.define(${tagLiteral}, Ctor);${lift} return mod; })`;
+  const define = `var _name = ${nameLiteral}; var Ctor = _name ? mod[_name] : mod.default; if (typeof Ctor !== 'function') throw new Error(${errorLiteral}); if (!customElements.get(${tagLiteral})) customElements.define(${tagLiteral}, Ctor);${lift} return mod;`;
+  if (renderer === 'lit') {
+    return `() => import(${quoteGeneratedJavaScriptValue(modulePath)}).then(function(mod) { ${define} })`;
+  }
+  return `function () {
+    var __island = import(${quoteGeneratedJavaScriptValue(modulePath)});
+    return Promise.all([__island, __loadElementRuntime()]).then(function (__loaded) {
+      var mod = __loaded[0];
+      ${define}
+    });
+  }`;
 }
 
 interface NormalizedClientIsland extends AdmittedClientIslandEntry {
@@ -117,13 +143,19 @@ function sharedActivationFactory(
 ): string {
   const promise = `__activation${index}Promise`;
   const factory = `__activation${index}`;
+  const importExpression =
+    renderer === 'lit'
+      ? `import(${quoteGeneratedJavaScriptValue(group.modulePath)})`
+      : `Promise.all([import(${quoteGeneratedJavaScriptValue(
+          group.modulePath,
+        )}), __loadElementRuntime()])`;
   const lines = [
     `var ${promise};`,
     `var ${factory} = function() {`,
-    `  if (!${promise}) ${promise} = import(${quoteGeneratedJavaScriptValue(
-      group.modulePath,
-    )}).then(function(mod) {`,
+    `  if (!${promise}) ${promise} = ${importExpression}.then(function(__loaded) {`,
   ];
+  if (renderer !== 'lit') lines.push('    var mod = __loaded[0];');
+  else lines.push('    var mod = __loaded;');
   group.entries.forEach((entry, entryIndex) => {
     const ctor = `__Ctor${index}_${entryIndex}`;
     const value = entry.exportName
@@ -180,28 +212,66 @@ function pageCanHydrateServerDom(islands: readonly NormalizedClientIsland[]): bo
 }
 
 /**
- * The element entry a generated client bundle imports, on two predicates
- * (the #1416 claim split plus the #1548 blocks split):
+ * The narrow runtime-surface module the generated entry loads through its
+ * dynamic `import()` (B2), on the same two predicates as before — the #1416
+ * claim split plus the #1548 blocks split:
  *
  * - claim axis (#1416): `canHydrateServerDom` — `false` proves every island is
- *   client-only and the entry drops the compiled hydration executor
+ *   client-only and the runtime graph drops the compiled hydration executor
  *   (`./client-only`);
- * - blocks axis (#1548): `includeBlocksRuntime` — `false` records the
- *   island blocks scan's proof that no admitted island module lowers a
- *   conditional or list Block, and the entry drops the compiled when/each
+ * - blocks axis (#1548): `includeBlocksRuntime` — `false` records the island
+ *   blocks scan's proof that no admitted island module lowers a conditional
+ *   or list Block, and the runtime graph drops the compiled when/each
  *   builders (`./no-blocks`, or `./base` when both axes drop).
  *
  * Both defaults keep the full runtime: the claim default is "any island can
  * hydrate", the blocks default is "the scan did not run or proved nothing".
+ *
+ * WHY A WRAPPER MODULE, NOT THE ALREADY-SELECTED ENTRY SPECIFIER: the entry
+ * must reach the runtime through a dynamic `import()`, and a dynamic import
+ * RESOLVES TO A NAMESPACE OBJECT — opaque to the bundler's tree-shaking. So
+ * `import('@openelement/element')` (or any of `./client-only`, `./base`,
+ * `./no-blocks`) keeps that entry's WHOLE public surface in the client graph,
+ * server-only renderers included. Measured on the canonical starter probe:
+ * the shared `element-runtime-<hash>.js` chunk grows 86 KB raw / 27 KB gzip →
+ * 124 KB raw / 39 KB gzip, i.e. +38 KB raw / +12 KB gzip on every page that
+ * ever loads the runtime, for exports this entry never calls. Re-exporting
+ * exactly the three bindings the entry calls, from a real module, restores
+ * the tree-shaking the old static import got — while the edge into that
+ * module stays dynamic, so island-free pages still fetch nothing.
+ *
+ * Three wrappers, not one: the element entry's install side effects are
+ * exactly what the two-axis selector chooses, so the specifier inside the
+ * wrapper must be fixed per row. `element-services-full.ts` re-exports from
+ * `@openelement/element`, and the client build's #1548 blocks alias rewrites
+ * that bare specifier to `no-blocks` for the whole graph when the scan proved
+ * no Block Parts — one wrapper therefore covers both blocks-present and
+ * blocks-absent rows of the hydrate axis. The all-client-only axis needs its
+ * own specifiers (`./client-only`, `./base`), which that alias never rewrites
+ * (it is anchored to the bare specifier), so those rows get their own
+ * wrappers. A fourth wrapper would only restate what the alias already does.
+ *
+ * The wrapper path resolves through {@linkcode runtimeModulePath}, the same
+ * source-else-staged-JS rule the scheduler/enhance virtual specifiers use, so
+ * a packed install gets the staged `.js` sibling. Windows gets the `/@fs/`
+ * specifier form Vite resolves (a bare drive-letter path does not).
  */
-function elementEntrySpecifier(
+export function elementServicesSpecifier(
   canHydrateServerDom: boolean,
   includeBlocksRuntime: boolean,
 ): string {
-  if (!includeBlocksRuntime) {
-    return canHydrateServerDom ? '@openelement/element/no-blocks' : '@openelement/element/base';
-  }
-  return canHydrateServerDom ? '@openelement/element' : '@openelement/element/client-only';
+  const wrapper = !canHydrateServerDom
+    ? includeBlocksRuntime
+      ? './element-services-client-only.ts'
+      : './element-services-base.ts'
+    : './element-services-full.ts';
+  return moduleSpecifierFor(runtimeModulePath(`./ssg/${wrapper.slice(2)}`));
+}
+
+/** An absolute fs path as a module specifier Vite resolves (Windows `/@fs/`). */
+function moduleSpecifierFor(absolutePath: string): string {
+  const path = normalizeSeparators(absolutePath);
+  return /^[A-Za-z]:\//.test(path) ? `/@fs/${path}` : path;
 }
 
 interface GenerateClientEntryOptions {
@@ -244,10 +314,11 @@ interface GenerateClientEntryOptions {
   /**
    * The component stylesheet's adapter module (alpha15 S lane): when present,
    * the entry imports the fetch adapter and registers the sheet globally
-   * (`OpenElement.registerGlobalStyles`), so every compiled shadow root adopts
-   * it through the style scope. Components whose DSD already references the
-   * emitted asset keep that declarative link instead — the runtime skips the
-   * adopted copy for a link-delivered root, so one resource has one delivery.
+   * (`OpenElement.registerGlobalStyles`) once the element runtime has loaded,
+   * so every compiled shadow root adopts it through the style scope.
+   * Components whose DSD already references the emitted asset keep that
+   * declarative link instead — the runtime skips the adopted copy for a
+   * link-delivered root, so one resource has one delivery.
    * Native renderer only: the lit entry is element-free by design (#1339).
    */
   utilitySheet?: string;
@@ -264,6 +335,11 @@ interface GenerateClientEntryOptions {
  * guard consumes it instead of inferring a runtime requirement from the
  * emission shape (defect D). A `hydrate: 'none'` island is SSR-only and never
  * enters the client bundle, so it does not require the runtime either.
+ *
+ * "Needs" is a graph fact, not an evaluation-order fact: since B2 the native
+ * entry reaches the runtime through a dynamic import only, so the runtime
+ * chunk still exists in the emitted graph (and the guard still validates its
+ * layout) while an island-free entry never requests it at runtime.
  *
  * The lit renderer's entry is element-free by design (#1339); that is a
  * separate, renderer-level fact the build already owns.
@@ -392,6 +468,9 @@ export function generateClientEntry(
 // visible islands import when their host enters the viewport.
 // media islands import when their declared media query matches.
 // only islands are client-only and import immediately (no DSD/SSR).
+// A tag activates only when THIS page carries a host for it — the runtime
+// form of the per-page island manifest (an island the page never reaches is
+// never fetched, B2).
 // Zero DOM interaction - safe with DSD rendering.
 //
 // #606: island-scheduler.ts is the single owner of strategy scheduling
@@ -399,21 +478,69 @@ export function generateClientEntry(
 // real modules bundled via the virtual:open-client-runtime specifiers — the
 // entry only wires them, there is no inline string copy.`;
 
-  const importsBlock = lit
-    ? `import '@lit-labs/ssr-client/lit-element-hydrate-support.js';
-import { createIslandScheduler as __schedule } from '${VIRTUAL_RUNTIME_SPECIFIERS.scheduler}';
-${
-  options.enhancedForms === true
-    ? `import { createEnhanceClient } from '${VIRTUAL_RUNTIME_SPECIFIERS.enhance}';
-`
-    : ''
-}
-var log = {
+  // The entry's logger is INLINE, not `createLogger` from
+  // `@openelement/element/logger` (B2/#1544). The logger leaf carries no
+  // runtime kernel, but it is a module under the element package root — the
+  // exact root the #1544 grouping rule homes in `element-runtime-<hash>.js` —
+  // so a static import of it put the ENTIRE shared runtime chunk back into
+  // every page's static graph, zero-island pages included (measured: the
+  // zero-island entry statically imported element-runtime-<hash>.js and
+  // downloaded its 86 KB raw / 27 KB gzip). Nothing in the entry may
+  // statically import from the element package. The lit entry inlined the
+  // same logger for the same element-free reason (#1339).
+  const loggerBlock = `var log = {
   info: function () { if (typeof console !== 'undefined') console.info.apply(console, ['[openElement]'].concat([].slice.call(arguments))); },
   warn: function () { if (typeof console !== 'undefined') console.warn.apply(console, ['[openElement]'].concat([].slice.call(arguments))); },
   error: function () { if (typeof console !== 'undefined') console.error.apply(console, ['[openElement]'].concat([].slice.call(arguments))); },
   debug: function () {},
-};
+};`;
+
+  // #1544/B2: the element runtime is NOT in the native entry's static import
+  // graph. A page whose island manifest is empty must not download the
+  // runtime it never uses; the runtime — and the document-level services it
+  // owns (pre-upgrade click capture, deep fragment navigation, the framework
+  // component stylesheet's registration) — arrives through the dynamic import
+  // below when the first island actually starts hydrating. Island activation
+  // chains on this promise (see the island factories), so the capture is
+  // installed BEFORE any island module defines its element and upgrades an
+  // existing host, while island chunks still download in parallel.
+  // Island-bearing pages keep their warm start through the build's per-page
+  // `<link rel="modulepreload">` projection of the island manifest.
+  const runtimeLoader = `var __elementRuntimePromise = null;
+var __loadElementRuntime = function () {
+  if (!__elementRuntimePromise) {
+    __elementRuntimePromise = import('${elementServicesSpecifier(
+      canHydrateServerDom,
+      includeBlocksRuntime,
+    )}').then(function (__runtime) {
+      __runtime.ensureDeepFragmentNavigation();
+      __runtime.ensurePreHydrationClickCapture(document, __tags);${
+        nativeUtilitySheet === ''
+          ? ''
+          : `
+      // The framework component stylesheet (alpha15 S lane): one shared sheet
+      // for every compiled shadow root whose classes were statically admitted.
+      // The style scope adopts it on connect; a root whose DSD already carries
+      // the declarative link for this asset keeps that link instead — one
+      // resource, one delivery.
+      __runtime.OpenElement.registerGlobalStyles([__oeUtilitySheet]);`
+      }
+      return __runtime;
+    });
+  }
+  return __elementRuntimePromise;
+};`;
+
+  const schedulerImport = `import { createIslandScheduler as __schedule } from '${VIRTUAL_RUNTIME_SPECIFIERS.scheduler}';`;
+  const enhanceImport =
+    options.enhancedForms === true
+      ? `import { createEnhanceClient } from '${VIRTUAL_RUNTIME_SPECIFIERS.enhance}';\n`
+      : '';
+  const importsBlock = lit
+    ? `import '@lit-labs/ssr-client/lit-element-hydrate-support.js';
+${schedulerImport}
+${enhanceImport}
+${loggerBlock}
 
 // #1339: lit islands are hydration ROOTS. lit-ssr marks custom elements
 // nested in a parent template with defer-hydration, which lit-html's
@@ -434,19 +561,11 @@ var __liftDeferHydration = function (root, tag) {
   };
   visit(root);
 };`
-    : `import { createLogger, ensureDeepFragmentNavigation, ensurePreHydrationClickCapture${
-        nativeUtilitySheet === '' ? '' : ', OpenElement'
-      } } from '${elementEntrySpecifier(canHydrateServerDom, includeBlocksRuntime)}';
-import { createIslandScheduler as __schedule } from '${VIRTUAL_RUNTIME_SPECIFIERS.scheduler}';
-${
-  options.enhancedForms === true
-    ? `import { createEnhanceClient } from '${VIRTUAL_RUNTIME_SPECIFIERS.enhance}';
-`
-    : ''
-}
-var log = createLogger('openElement');
+    : `${schedulerImport}
+${enhanceImport}
+${loggerBlock}
 
-ensureDeepFragmentNavigation();`;
+${runtimeLoader}`;
 
   return `${headerComment}
 
@@ -454,12 +573,6 @@ ${styleImport}${
     nativeUtilitySheet === ''
       ? ''
       : `import __oeUtilitySheet from ${quoteGeneratedJavaScriptValue(nativeUtilitySheet)};
-// The framework component stylesheet (alpha15 S lane): one shared sheet for
-// every compiled shadow root whose classes were statically admitted. The style
-// scope adopts it on connect; a root whose DSD already carries the declarative
-// link for this asset keeps that link instead — one resource, one delivery.
-OpenElement.registerGlobalStyles([__oeUtilitySheet]);
-
 `
   }${importsBlock}
 
@@ -468,12 +581,14 @@ ${islandMap}
 };
 var __tags = [${tags}];
 ${
-  lit
-    ? ''
-    : `// #942: capture AFTER __tags (declared-island filter) and BEFORE
-// any island import below can evaluate.
-ensurePreHydrationClickCapture(document, __tags);
+  options.enhancedForms === true
+    ? `// B2: the form-enhancement layer is a document-level enhancement that uses
+// the element runtime's services (pre-upgrade capture, deep fragment
+// navigation), so its presence is a genuine trigger for the lazy runtime
+// import — a page with enhanced forms but no islands still gets the runtime.
+__loadElementRuntime();
 `
+    : ''
 }
 ${activationLines.length > 0 ? `\n${activationLines.join('\n\n')}\n` : ''}
 

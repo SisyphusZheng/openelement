@@ -173,7 +173,7 @@ test('postProcessClientIslandBuild writes per-page manifests with manifest-keyed
       islands: {
         'open-counter': { file: '/client/islands/island-counter-Ab12.js', strategy: 'idle' },
       },
-      shared: [],
+      shared: ['/client/islands/element-runtime-Bh4sh.js'],
       styles: [],
     };
     await postProcessClientIslandBuild(ctxView(manifest, tmp));
@@ -195,15 +195,24 @@ test('postProcessClientIslandBuild writes per-page manifests with manifest-keyed
     ) as { islands: unknown[] };
     expect(guideManifest.islands).toEqual([]);
 
-    // No script surgery: the rendered HTML is left byte-identical — script
-    // tags were already embedded at document render time (#1471).
-    expect(readFileSync(join(dist, 'index.html'), 'utf8')).toEqual(
-      '<html><head></head><body><open-counter></open-counter></body></html>',
+    // No script surgery: script tags were already embedded at document
+    // render time (#1471). The ONE HTML write this pass owns is the #1544/B2
+    // runtime modulepreload — and only on the pages whose manifest carries a
+    // client-activatable island.
+    const homeHtml = readFileSync(join(dist, 'index.html'), 'utf8');
+    expect(homeHtml).toContain(
+      '<link rel="modulepreload" href="/client/islands/element-runtime-Bh4sh.js" data-open-element-runtime-preload>',
     );
+    // The rendered markup itself is untouched: the link is the only write.
+    expect(homeHtml).toContain('<body><open-counter></open-counter></body>');
     expect(
-      !readFileSync(join(dist, 'index.html'), 'utf8').includes('<script'),
+      !homeHtml.includes('<script'),
       'post-processing must not inject scripts into rendered HTML',
     ).toBeTruthy();
+    // The zero-island page is untouched, byte for byte.
+    expect(readFileSync(join(dist, 'guide', 'page.html'), 'utf8')).toEqual(
+      '<html><head></head><body><p>no islands here</p></body></html>',
+    );
   } finally {
     cleanup(tmp);
   }
@@ -314,7 +323,7 @@ test('postProcessClientIslandBuild validates only the local metadata Phase 2 sel
       islands: {
         'open-counter': { file: '/client/islands/island-counter-Ab12.js', strategy: 'idle' },
       },
-      shared: [],
+      shared: ['/client/islands/element-runtime-Bh4sh.js'],
       styles: [],
     };
     await postProcessClientIslandBuild({
@@ -354,8 +363,116 @@ test('postProcessClientIslandBuild validates only the local metadata Phase 2 sel
   }
 });
 
-// ─── injectCspMeta ──────────────────────────────────────────
+// ─── #1544/B2 element-runtime modulepreload projection ──────────────
+//
+// The projection is read off the per-page island manifests the same pass just
+// wrote, and the chunk's address off the emitted client asset manifest. These
+// pin the three decisions the pass owns: which pages get the link, what
+// happens when the chunk cannot be named, and that a re-run is a no-op.
 
+/** An island-bearing page and a zero-island page in one dist. */
+function writeProjectionPages(dist: string): void {
+  mkdirSync(join(dist, 'guide'), { recursive: true });
+  writeFileSync(
+    join(dist, 'index.html'),
+    '<html><head></head><body><open-counter></open-counter></body></html>',
+  );
+  writeFileSync(
+    join(dist, 'guide', 'page.html'),
+    '<html><head></head><body><p>no islands here</p></body></html>',
+  );
+}
+
+const PROJECTION_MANIFEST: ClientAssetManifest = {
+  entry: '/client/islands/client.js',
+  islands: {
+    'open-counter': { file: '/client/islands/island-counter-Ab12.js', strategy: 'idle' },
+  },
+  shared: ['/client/islands/element-runtime-Bh4sh.js'],
+  styles: [],
+};
+
+test('#1544/B2: the runtime modulepreload lands on the island-bearing page only, and a re-run does not duplicate it', async () => {
+  const tmp = makeTempDir();
+  try {
+    const dist = join(tmp, 'dist');
+    writeProjectionPages(dist);
+    await postProcessClientIslandBuild(ctxView(PROJECTION_MANIFEST, tmp));
+    await postProcessClientIslandBuild(ctxView(PROJECTION_MANIFEST, tmp));
+    const homeHtml = readFileSync(join(dist, 'index.html'), 'utf8');
+    expect(homeHtml.match(/rel="modulepreload"/g)?.length).toEqual(1);
+    expect(homeHtml).toContain(
+      '<link rel="modulepreload" href="/client/islands/element-runtime-Bh4sh.js" data-open-element-runtime-preload>',
+    );
+    expect(
+      readFileSync(join(dist, 'guide', 'page.html'), 'utf8').includes('modulepreload'),
+    ).toEqual(false);
+  } finally {
+    cleanup(tmp);
+  }
+});
+
+test('#1544/B2: a zero-island build needs no runtime chunk and therefore injects nothing', async () => {
+  // The `shared` set is empty because no island ships: the pass must not fail
+  // closed for a runtime chunk nothing would preload.
+  const tmp = makeTempDir();
+  try {
+    const dist = join(tmp, 'dist');
+    mkdirSync(join(dist, 'guide'), { recursive: true });
+    writeFileSync(
+      join(dist, 'guide', 'page.html'),
+      '<html><head></head><body><p>no islands here</p></body></html>',
+    );
+    await postProcessClientIslandBuild({
+      ...ctxView({ ...PROJECTION_MANIFEST, shared: [] }, tmp),
+      phase1: {
+        islandTagNames: [],
+        islandFiles: [],
+        packageIslandDecls: [],
+        compilerBehaviorDecls: [],
+        islandMeta: {},
+      },
+    });
+    expect(
+      readFileSync(join(dist, 'guide', 'page.html'), 'utf8').includes('modulepreload'),
+    ).toEqual(false);
+  } finally {
+    cleanup(tmp);
+  }
+});
+
+test('#1544/B2: an island-bearing native build whose runtime chunk cannot be named fails closed', async () => {
+  const tmp = makeTempDir();
+  try {
+    const dist = join(tmp, 'dist');
+    writeProjectionPages(dist);
+    await assertRejectsIncludes(
+      () => postProcessClientIslandBuild(ctxView({ ...PROJECTION_MANIFEST, shared: [] }, tmp)),
+      OpenElementError,
+      'need the shared element-runtime chunk preloaded',
+    );
+  } finally {
+    cleanup(tmp);
+  }
+});
+
+test('#1544/B2: a lit island-bearing build is skipped — its entry is element-free (#1339)', async () => {
+  const tmp = makeTempDir();
+  try {
+    const dist = join(tmp, 'dist');
+    writeProjectionPages(dist);
+    // Lit carries no runtime chunk legally: no throw, and no link either.
+    await postProcessClientIslandBuild({
+      ...ctxView({ ...PROJECTION_MANIFEST, shared: [] }, tmp),
+      options: { renderer: 'lit' },
+    });
+    expect(readFileSync(join(dist, 'index.html'), 'utf8').includes('modulepreload')).toEqual(false);
+  } finally {
+    cleanup(tmp);
+  }
+});
+
+// ─── injectCspMeta ──────────────────────────────────────────
 test('injectCspMeta adds CSP meta tag to HTML files', () => {
   const tmp = makeTempDir();
   try {

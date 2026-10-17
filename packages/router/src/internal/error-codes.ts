@@ -178,6 +178,27 @@ export const ClientBuildErrorCode = {
    */
   ELEMENT_RUNTIME_CHUNK_MISSING: 'OE_CLIENT_BUILD_ELEMENT_RUNTIME_CHUNK_MISSING',
   /**
+   * The emitted client entry statically reaches the shared element-runtime
+   * chunk (B2 gap (a)). The entry is the ONE chunk every page loads — island
+   * manifest empty or not — so a static edge from it to the runtime makes the
+   * runtime floor unavoidable on pages that declared no island, which is
+   * exactly the download B2 exists to remove. The usual cause is the bundler
+   * homing Vite's injected preload helper inside a lazily-loaded island chunk
+   * that the entry then has to import; `vite-helper-chunk.ts` is the group
+   * that prevents it, and this guard is what makes that group's absence fatal
+   * instead of a silent regression to the pre-B2 graph.
+   */
+  ENTRY_STATIC_GRAPH_REACHES_RUNTIME: 'OE_CLIENT_BUILD_ENTRY_STATIC_GRAPH_REACHES_RUNTIME',
+  /**
+   * The emitted client graph carries Vite's injected preload helper modules,
+   * but they are not homed in the single `vite-helper` chunk
+   * (`vite-helper-chunk.ts`). Anywhere else — typically inside a lazily-loaded
+   * island chunk — is the chunk layout that gives the entry a static edge to
+   * that island (and through it to the runtime), so it fails rather than
+   * shipping.
+   */
+  VITE_HELPER_CHUNK_MISSING: 'OE_CLIENT_BUILD_VITE_HELPER_CHUNK_MISSING',
+  /**
    * A `.css` style edge resolved in the client or SSR build with no entry in
    * the compiler's style-edge registry, or whose sheet file cannot be read.
    * Either the intercepting plugin answered before the compiled-element
