@@ -170,8 +170,41 @@ jobs:
       - uses: ./.github/actions/setup-node-workspace
       - name: Fast checks (fmt, lint, typecheck, markdown)
         run: vp run check
+      - name: Formatting left the tree unchanged
+        # WHY this exists (do not delete it as "redundant with fmt:check"):
+        # oxfmt's ignore list covers every md/json/yml/css file (plus
+        # www/content and the fixtures), and formatter output that merely
+        # *differs in style* still satisfies `oxfmt --check`. An unrelated
+        # `npx prettier --write .` therefore rewrote hundreds of files while
+        # `fmt:check` stayed green — it happened, and the damage was only
+        # found later from an mtime window and reverted by hand. `oxfmt
+        # --check` cannot see that class of change; only "the tree did not
+        # change" can. Assert the checkout is still pristine after the
+        # format/check step, so any writer that touches a tracked or
+        # untracked file in this job fails here instead of shipping a silent
+        # repo-wide reformat.
+        run: |
+          if ! git diff --exit-code; then
+            echo "::error::This job rewrote tracked files (see the diff above). oxfmt's ignore list covers md/json/yml/css, so formatter output that only differs in style still passes 'oxfmt --check' — that is exactly how a repo-wide reformat ships with a green fmt:check. Revert the reformat; do not relax this assertion."
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::This job left files in the checkout that are not part of the commit; 'git status --porcelain' must be empty. A formatter or generator writing here is a silent reformat that 'oxfmt --check' cannot see (oxfmt ignores md/json/yml/css). Left behind:"
+            git status --porcelain
+            exit 1
+          fi
       - name: Generate all artifacts
         run: vp run generate:all
+      - name: Tools typecheck (gate:source)
+        # `gate:source` runs `@openelement/tools-repo#typecheck` (which compiles
+        # tools/tsconfig.json: tools/repo, tools/lib, tools/release), and no CI
+        # step did. The root `typecheck` filters protocol/element/compiler/
+        # router/create/ui, no package tsconfig references tools/, and the only
+        # other caller is `tools/release#typecheck` — so it was the one
+        # gate:source step left with no automated path at all. The selector
+        # resolves by exact package name and `--fail-if-no-match` turns a
+        # renamed task into a red step instead of a silent no-op.
+        run: vp run --no-cache --fail-if-no-match --filter @openelement/tools-repo typecheck
       - name: Dependency age gate (gate:source)
         # `grep -rn "gate:source" .github/` used to return nothing, so this
         # gate:source step never ran in CI. It verifies every version resolved

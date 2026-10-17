@@ -95,12 +95,12 @@ without giving up any release-time proof.
   request-time and base-path fixture gates, and the Element browser gate
   (Chromium). No
   workflow invokes this task; `pnpm run verify` and `pnpm run verify:core`
-  are its entry points. Nine of its twelve steps also run in AutoFlow CI
-  through the `lint`, `test`, `e2e`, and `pack` jobs; the request-time and
-  base-path fixture gates run only in the `e2e-full` full-qualification layer
-  (main pushes and `full_qualification` dispatches), and
-  `@openelement/tools-repo#typecheck` (the `tools/` project) runs in no CI
-  job at all — so a PR can be green while they are unexercised. The separate
+  are its entry points. Ten of its twelve steps also run in AutoFlow CI
+  through the `lint`, `test`, `e2e`, and `pack` jobs, including
+  `@openelement/tools-repo#typecheck` (the `tools/` project), which the `lint`
+  job runs; the request-time and base-path fixture gates run only in the
+  `e2e-full` full-qualification layer (main pushes and `full_qualification`
+  dispatches) — so a PR can be green while they are unexercised. The separate
   packed producer owns
   `@openelement/tools-release#gate:packed`; the independent fresh-clone lane
   runs source and packed once each with cold pnpm/npm caches. A green
