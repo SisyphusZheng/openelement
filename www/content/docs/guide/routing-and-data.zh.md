@@ -34,23 +34,26 @@ Routes 应当能从仓库目录树中被发现。`definePage` 路由默认导出
 
 `renderIntent.mode` 决定页面在哪里渲染:`'static'`(默认)在构建时预渲染;`'dynamic'` 跳过预渲染,通过生成的 `dist/server` 入口按请求渲染,每次请求都会运行路由 loader。导出 action 的页面可以保持 `'static'`——即混合页:其 GET 被预渲染并由静态产物伺服,而其 action POST 在请求时分派给生成的服务器入口。当 GET 本身必须按请求执行时(按请求的 loader、响应头、不可重复的内容)才选择 `'dynamic'`。该行为已冻结。
 
-## 模板页
+## 服务端函数页
 
-当页面只是一次性的静态文本——法律条款、落地段落——编译类的机制就显得多余。`defineHtmlPage(render, descriptor?)` 定义一个**模板页**:render 就是一个普通函数,接收投影后的 props 记录并返回页面 HTML。输出是 SSG 直出的——仅构建期、零客户端 JS;模板页不产生 Part Program、不产生 `@property` 状态机,也永远不会进入 island、静态组件或客户端 chunk 表面。路由模块不注册任何东西:没有元素类。
+当页面只是一次性的静态文本——法律条款、落地段落——编译类的机制就显得多余。**服务端函数页**就是路由模块自己导出的 TSX 组件函数,包在 `definePage(Component, descriptor?)` 里:编译器把该函数降阶为一个生成式 HTML 构造器(与所有编译组件共用同一套语义检查与转义——文本走一条转义通道、属性走另一条),渲染输出在设计上就是纯服务端的。服务端函数页不产生 Part Program、不产生 `@property` 状态机,也永远不会进入 island、静态组件或客户端 chunk 表面;只要没有组合任何 island,页面就零客户端 JS 出货。
 
-```ts
-// app/routes/about.ts
-import { defineHtmlPage } from '@openelement/router';
+```tsx
+// app/routes/about.tsx
+import { definePage } from '@openelement/router';
 
 export const loader = async () => ({ title: '关于' });
 
-export default defineHtmlPage(
-  (props) => `<main><h1>${props.title}</h1></main>`,
-  { head: { title: '关于' } },
-);
+export function AboutPage(props: { title: string }) {
+  return <main><h1>{props.title}</h1></main>;
+}
+
+export default definePage(AboutPage, { head: { title: '关于' } });
 ```
 
-页面之外的一切都与组件路径完全相同:loader 照常运行,`props` 投影器(或默认投影)构建 props 记录;render 输出流经同一套 renderer 包装、布局包装和文档包装——因此 HTTP/DSD 契约、head 解析、redirect/not-found 通道,以及错误投影器的 500 重渲染(把错误投影后的 props 交给同一个 render 函数)都与编译页面的行为一致。`renderIntent.stream` 是编译 Part Program 的通道,在模板页上会被拒绝;页面需要流式渲染时请使用 `definePage` 路由。
+组件函数必须是**本模块导出的声明**并以标识符形式传入——内联箭头或未导出的本地函数在编译器文法之外(运行时 JSX 没有解释器)。动态文本经 JSX 插值(`{props.title}`)由编译器转义;`props.children` 是编译器持有的组合通道(调用方的 JSX children 以终态 HTML 到达),而 loader 载荷若携带 `children` 键会在渲染运行前被拒绝,而不是被注入。
+
+页面之外的一切都与编译类路径完全相同:loader 照常运行,`props` 投影器(或默认投影)构建 props 记录;render 输出流经同一套 renderer 包装、布局包装和文档包装——因此 HTTP/DSD 契约、head 解析、redirect/not-found 通道,以及错误投影器的 500 重渲染(把错误投影后的 props 交给同一个 render 函数)都与编译页面一致。`renderIntent.stream` 是编译 Part Program 的通道,在服务端函数页上会被拒绝;页面需要流式渲染时请使用编译式 `definePage` 类路由。
 
 ## 表单 action
 
