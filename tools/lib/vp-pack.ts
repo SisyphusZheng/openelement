@@ -47,6 +47,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { formatJson } from '@openelement/element/build-utils';
+import { spawnCommand, type CommandResult } from '../repo/node-command.ts';
 import { runWithOutput } from './process.ts';
 import type { PackageInfo } from './package-graph.ts';
 
@@ -701,11 +702,63 @@ export async function installVpStagingWorkspace(
  * Run `vp pack` in the staged package directory and return the combined
  * output for classification. The CLI comes from the staged node_modules —
  * the host needs no global vp installation.
+ *
+ * This is the repository's ONE surviving vp BUILT-IN call (the `vp fmt` /
+ * `vp lint` / `vp check` built-ins are not the repo's tools: they discover
+ * their own config, report a different verdict on this tree, and are never
+ * invoked here). It is therefore also the one call that needs its own shield:
+ * `vp pack` reads no input, so the spawn closes stdin (an inherited terminal
+ * can turn an unexpected prompt into a release that hangs with no output) and
+ * carries a hard budget (a wedged toolchain must fail the release with a
+ * diagnosis, never block it). The abort kills the spawned CLI; a grandchild it
+ * left behind in another process group is not ours to reap — the budget bounds
+ * the wait, not the toolchain's internal process handling.
+ *
+ * Retirement condition (P5): this call, `vpStagingCliPath` and
+ * `installVpStagingWorkspace` are the whole of the vp-pack coupling. It is
+ * deletable the day a repository-owned Node packer (rolldown/tsdown configured
+ * in-tree) emits the same unbundled per-module dist + declaration shape; the
+ * verification is the existing tarball/manifest consumer checks, not a new
+ * harness. If a second vp built-in appears anywhere in this repository, the
+ * retirement did not happen — it spread.
  */
-export async function runVpPack(staged: VpStagedWorkspace): Promise<string> {
+export const VP_PACK_TIMEOUT_MS = 10 * 60_000;
+
+export async function runVpPack(
+  staged: VpStagedWorkspace,
+  timeoutMs: number = VP_PACK_TIMEOUT_MS,
+): Promise<string> {
   const vp = vpStagingCliPath(staged.stagingRoot);
-  const result = await runWithOutput(vp, ['pack'], { cwd: staged.packDir });
-  const output = `${result.stdout}\n${result.stderr}`;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  let result: CommandResult;
+  try {
+    result = await spawnCommand(vp, {
+      args: ['pack'],
+      cwd: staged.packDir,
+      // Never the terminal: a build tool that waits on a stream must fail the
+      // release instead of hanging it.
+      stdin: 'null',
+      stdout: 'piped',
+      stderr: 'piped',
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+  const decoder = new TextDecoder();
+  const output = `${decoder.decode(result.stdout)}\n${decoder.decode(result.stderr)}`;
+  if (timedOut) {
+    throw new Error(
+      `[vp-pack] vp pack exceeded its ${timeoutMs} ms budget and was killed ` +
+        `(cwd=${staged.packDir}). The staged toolchain stopped producing output; ` +
+        `diagnose it before raising the budget:\n${stripPackAnsi(output)}`,
+    );
+  }
   if (!result.success) {
     throw new Error(`[vp-pack] vp pack exited ${result.code}:\n${stripPackAnsi(output)}`);
   }

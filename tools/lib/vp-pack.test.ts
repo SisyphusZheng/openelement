@@ -1,8 +1,8 @@
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { expect, test } from 'vitest';
-import { assertThrowsIncludes } from '../../tests/lib/vitest-asserts.ts';
+import { assertRejectsIncludes, assertThrowsIncludes } from '../../tests/lib/vitest-asserts.ts';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
@@ -20,8 +20,11 @@ import {
   vpPackConfigFile,
   vpPackEntries,
   VP_STAGING_INSTALL_ARGS,
+  VP_PACK_TIMEOUT_MS,
   assertVpStagingCli,
+  runVpPack,
   vpStagingCliPath,
+  type VpStagedWorkspace,
 } from './vp-pack.ts';
 import type { PackageInfo } from './package-graph.ts';
 
@@ -775,4 +778,60 @@ test('a staging root without the toolchain CLI fails fast with an actionable err
   } finally {
     await rm(stagingRoot, { recursive: true, force: true });
   }
+});
+
+// ─── The vp pack shield: closed stdin and a hard budget ─────────────────────
+
+/** A staged workspace whose `vp` is a fake script, rooted in a temp dir. */
+async function fakeStagedWorkspace(script: string): Promise<VpStagedWorkspace> {
+  const stagingRoot = await mkdtemp(join(tmpdir(), 'vp-pack-shield-'));
+  const binDir = join(stagingRoot, 'node_modules', '.bin');
+  mkdirSync(binDir, { recursive: true });
+  const vp = join(binDir, 'vp');
+  writeFileSync(vp, `#!/bin/sh\n${script}\n`, 'utf8');
+  chmodSync(vp, 0o755);
+  return {
+    stagingRoot,
+    packDir: stagingRoot,
+    distDir: join(stagingRoot, 'dist'),
+    cleanup: async () => {},
+  };
+}
+
+// The fakes are POSIX shell scripts; the tools project runs on the ubuntu lane.
+const posixOnly = test.skipIf(process.platform === 'win32');
+
+posixOnly('runVpPack closes stdin: the pack tool cannot block on a stream', async () => {
+  // `read` returns EOF immediately on the null device and blocks on an
+  // inherited pipe; the shield's budget turns that block into the failure
+  // below instead of a hung test.
+  const staged = await fakeStagedWorkspace(
+    'if read -r line; then echo "stdin had data"; exit 3; fi\necho "stdin closed"',
+  );
+  try {
+    const output = await runVpPack(staged, 5_000);
+    expect(output).toContain('stdin closed');
+    expect(output).not.toContain('stdin had data');
+  } finally {
+    await rm(staged.stagingRoot, { recursive: true, force: true });
+  }
+});
+
+posixOnly('runVpPack enforces its budget instead of waiting forever', async () => {
+  const staged = await fakeStagedWorkspace('exec sleep 30');
+  const startedAt = Date.now();
+  try {
+    const error = await assertRejectsIncludes(() => runVpPack(staged, 400), Error);
+    const elapsed = Date.now() - startedAt;
+    expect(elapsed, `took ${elapsed}ms`).toBeLessThan(5_000);
+    expect(error.message).toContain('exceeded its 400 ms budget');
+    expect(error.message).toContain(staged.packDir);
+  } finally {
+    await rm(staged.stagingRoot, { recursive: true, force: true });
+  }
+});
+
+test('runVpPack has a finite default budget', () => {
+  expect(Number.isFinite(VP_PACK_TIMEOUT_MS)).toBeTruthy();
+  expect(VP_PACK_TIMEOUT_MS).toBeGreaterThan(0);
 });

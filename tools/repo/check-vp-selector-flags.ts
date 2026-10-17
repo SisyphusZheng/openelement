@@ -13,36 +13,43 @@
  *   vp run --no-cache --fail-if-no-match --filter @openelement/does-not-exist test
  *                                                            → exit 1, "No packages matched the filter"
  *
- * The middle line is the reason this check enforces TWO rules instead of one.
- * `--fail-if-no-match` is documented as a property of `--filter`, and for the
- * `pkg#task` specifier form it is inert; the flag is the repo's selection
- * marker, and the resolver rule below is what actually closes the silent
- * no-match. Both are required of every package-qualified invocation, so the
- * pair (`--filter` + flag, or `pkg#task` + flag + a NAME that exists) is what
- * this scan verifies — never the flag alone, which would be a green run over
- * an unproven mechanism.
+ * The middle line is the reason this check requires the EFFECTIVE form, not
+ * the flag's presence. `--fail-if-no-match` is documented as a property of
+ * `--filter`; on the `pkg#task` specifier form it is inert, so a flagged
+ * specifier is exactly as silent as an unflagged one — and a check that called
+ * it "protected" would wave the regression through. The fail-closed selection
+ * is the `--filter` form plus the flag; the pair is what this scan verifies.
  *
  * Rules, applied to the gate surfaces a hand-written `vp run` can live in —
  * `.github/**` (workflow `run:` steps via the YAML AST with exact line
- * positions, plus every other file scanned linewise), `.githooks/**`, and every
- * workspace's package.json `scripts`:
+ * positions, plus every other file scanned linewise), `.githooks/**`, and the
+ * package.json `scripts` of every workspace member and of the root manifest:
  *
- *   1. no-flag       a package-qualified invocation (a `pkg#task` specifier,
- *                    or a `--filter`/`-F` selection) must carry
- *                    `--fail-if-no-match`. Bare root tasks (`vp run fmt`) are
- *                    not package-qualified: they dispatch against the root
+ *   1. specifier-form a package-qualified invocation must select with
+ *                    `--filter`/`-F`. The `pkg#task` specifier form is always a
+ *                    violation — the flag cannot work on it, so a rename or a
+ *                    typo stays a silent exit 0. The fix is the filter form;
+ *                    "add the flag" is not a fix and is never advised for this
+ *                    form. The violation text says whether the specifier
+ *                    resolves today, why a path-shaped one could never
+ *                    dispatch, and which half is unknown.
+ *   2. no-flag       a `--filter`/`-F` selection must carry
+ *                    `--fail-if-no-match`, or the filter's "matched nothing"
+ *                    is silent too. Bare root tasks (`vp run fmt`) are not
+ *                    package-qualified: they dispatch against the root
  *                    workspace package, always match, and are exempt.
- *   2. unknown-pkg   a `pkg#task` specifier must name a real workspace package.
- *   3. unknown-task  ... and that package must declare the task.
- *   4. path-selector `dir#task` is the selector form that silently no-ops
- *                    (tools/repo/gate.ts rejects it for the same reason) — it
- *                    is never dispatchable, so it is always a violation.
+ *
+ * The executable is recognised by basename, so a path-prefixed invocation
+ * (`node_modules/.bin/vp run …` in a git hook, which inherits no
+ * node_modules/.bin PATH) is scanned exactly like a bare `vp run …`; the
+ * matcher used to look for the literal token `vp` and reported a clean scan
+ * over that whole form.
  *
  * An invocation that genuinely must not fail on no-match opt-out is exempted
  * by a written reason on the same line, or on any line of the same YAML step /
  * JSON script value:
  *
- *   vp run @openelement/optional#task  # vp-selector-flags-allow: <reason>
+ *   vp run --filter @openelement/optional task  # vp-selector-flags-allow: <reason>
  *
  * The reason is mandatory: a bare marker does not exempt. Exemptions are
  * counted and printed, never silently dropped. This is deliberately a
@@ -66,7 +73,7 @@
  * violation (printed with file:line and the offending invocation).
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { isMap, isScalar, isSeq, LineCounter, parseDocument, type Document } from 'yaml';
@@ -76,9 +83,11 @@ export const ALLOW_MARKER = 'vp-selector-flags-allow:';
 const FAIL_FLAG = '--fail-if-no-match';
 /** Filter selection flags: the value is the following token. */
 const FILTER_FLAGS = new Set(['--filter', '-F']);
-const FLAG_EXEMPT_WHERE = 'package-qualified vp run must carry --fail-if-no-match';
+const FLAG_EXEMPT_WHERE = 'a --filter selection must carry --fail-if-no-match';
+/** The canonical, fail-closed shape the advice and the tooling both emit. */
+const EFFECTIVE_FORM = `vp run --no-cache ${FAIL_FLAG} --filter <pkg> <task>`;
 
-export type ViolationKind = 'no-flag' | 'unknown-pkg' | 'unknown-task' | 'path-selector';
+export type ViolationKind = 'specifier-form' | 'no-flag';
 
 export interface Violation {
   kind: ViolationKind;
@@ -163,11 +172,35 @@ export function splitInvocations(line: string): string[][] {
   return invocations;
 }
 
+/**
+ * True when a token names the vp CLI: `vp`, a path-prefixed `…/vp` (a git hook
+ * must spell the binary with its path — it inherits no node_modules/.bin
+ * PATH), or a Windows shim (`vp.cmd`, `vp.exe`, `vp.ps1`). Anything else that
+ * merely contains those letters is not the CLI.
+ */
+export function isVpExecutable(token: string): boolean {
+  const base = token.slice(token.lastIndexOf('/') + 1);
+  return base === 'vp' || /^vp\.(cmd|exe|ps1)$/i.test(base);
+}
+
 /** The `vp run …` argv of one invocation, or null when it is not one. */
 export function vpRunArgv(tokens: readonly string[]): string[] | null {
-  const start = tokens.indexOf('vp');
-  if (start === -1 || tokens[start + 1] !== 'run') return null;
-  return tokens.slice(start + 2);
+  for (const [index, token] of tokens.entries()) {
+    if (!isVpExecutable(token)) continue;
+    if (tokens[index + 1] !== 'run') return null;
+    return tokens.slice(index + 2);
+  }
+  return null;
+}
+
+/**
+ * Cheap pre-filter before tokenizing: can this text carry a `vp run`? Kept
+ * deliberately permissive (the exact judgement is `vpRunArgv`'s) but narrower
+ * than "contains vp": a line that merely mentions the CLI in prose is not
+ * tokenized.
+ */
+export function mentionsVpRun(text: string): boolean {
+  return /(?:^|[\s;&|("'=])(?:[^\s;&|("'=]*\/)?vp(?:\.[a-z]+)?\s+run(?:\s|$)/.test(text);
 }
 
 // ---------------------------------------------------------------------------
@@ -188,6 +221,32 @@ export interface RunVerdict {
   /** The invocation addresses a package (a `pkg#task` specifier or a filter). */
   qualified: boolean;
   violations: Violation[];
+}
+
+/**
+ * Why a `pkg#task` specifier is not a fixable selector: the text names what
+ * would have run (so a rename/typo is legible) and reminds that the form
+ * itself is the defect. Resolution is diagnosis only — the form is a violation
+ * whether or not it resolves today.
+ */
+function specifierDetail(selector: string, facts: SelectorFacts): string {
+  const hash = selector.indexOf('#');
+  const pkg = selector.slice(0, hash);
+  const task = selector.slice(hash + 1);
+  const inert =
+    `'${selector}' cannot report a no-match: ${FAIL_FLAG} is a property of ` +
+    `--filter and is inert on this form; use '${EFFECTIVE_FORM}'`;
+  if (pkg.includes('/') && !pkg.startsWith('@')) {
+    return `${inert} ('${pkg}' is also a path selector; vp dispatches by exact package NAME, so it would exit 0)`;
+  }
+  const tasks = facts.packages.get(pkg);
+  if (tasks === undefined) {
+    return `${inert} (and '${pkg}' names no workspace package, so it exits 0 without running anything)`;
+  }
+  if (!tasks.has(task)) {
+    return `${inert} (and ${pkg} declares no task '${task}')`;
+  }
+  return `${inert} (this one resolves today; the next rename or typo would not)`;
 }
 
 /** Analyze one `vp run …` argv against the workspace facts. */
@@ -220,47 +279,29 @@ export function analyzeVpRun(argv: readonly string[], facts: SelectorFacts): Run
   const qualified = filterSelected || (selector !== undefined && selector.includes('#'));
   if (!qualified) return { qualified: false, violations: [] };
 
-  // Every rule that applies is reported, not just the first: a missing flag
-  // must not mask the reason the invocation was never dispatchable.
-  const violations: Violation[] = [];
   const blank = { file: '', line: 0, invocation: '' };
+  // The effective-form rule comes first and stands alone: on a `pkg#task`
+  // specifier the missing-flag advice would be wrong (the flag does nothing
+  // there), so a specifier reports the form defect and nothing else.
+  if (selector !== undefined && selector.includes('#')) {
+    return {
+      qualified,
+      violations: [{ ...blank, kind: 'specifier-form', detail: specifierDetail(selector, facts) }],
+    };
+  }
   if (!hasFlag) {
-    violations.push({
-      ...blank,
-      kind: 'no-flag',
-      detail: `${FLAG_EXEMPT_WHERE} (got ${[...argv].join(' ')})`,
-    });
+    return {
+      qualified,
+      violations: [
+        {
+          ...blank,
+          kind: 'no-flag',
+          detail: `${FLAG_EXEMPT_WHERE} (got ${[...argv].join(' ')})`,
+        },
+      ],
+    };
   }
-  if (selector === undefined || !selector.includes('#')) return { qualified, violations };
-
-  const hash = selector.indexOf('#');
-  const pkg = selector.slice(0, hash);
-  const task = selector.slice(hash + 1);
-  if (pkg.includes('/') && !pkg.startsWith('@')) {
-    violations.push({
-      ...blank,
-      kind: 'path-selector',
-      detail: `'${selector}' is a path selector; vp dispatches by exact package NAME and would exit 0`,
-    });
-    return { qualified, violations };
-  }
-  const tasks = facts.packages.get(pkg);
-  if (tasks === undefined) {
-    violations.push({
-      ...blank,
-      kind: 'unknown-pkg',
-      detail: `'${selector}' names no workspace package; vp would exit 0 without running anything`,
-    });
-    return { qualified, violations };
-  }
-  if (!tasks.has(task)) {
-    violations.push({
-      ...blank,
-      kind: 'unknown-task',
-      detail: `'${selector}': ${pkg} declares no task '${task}'`,
-    });
-  }
-  return { qualified, violations };
+  return { qualified, violations: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -321,7 +362,7 @@ function collectFromLines(
   const lines = text.split('\n');
   const offset = context.lineOffset ?? 0;
   for (const [index, raw] of lines.entries()) {
-    if (!/\bvp\s+run\b/.test(raw)) continue;
+    if (!mentionsVpRun(raw)) continue;
     const allow = raw.includes(ALLOW_MARKER);
     for (const tokens of splitInvocations(raw)) {
       const argv = vpRunArgv(tokens);
@@ -462,10 +503,26 @@ export async function scanRepository(repoRoot: string): Promise<ScanReport> {
     const shown = relative(repoRoot, join(workspace.dir, 'package.json'));
     report.filesScanned += 1;
     for (const command of Object.values(workspace.tasks)) {
-      if (!/\bvp\s+run\b/.test(command)) continue;
+      if (!mentionsVpRun(command)) continue;
       // The exemption marker may live anywhere in the script value, which is
       // the JSON analogue of "the same YAML step".
       collectFromLines(command, { file: shown, markerScope: command }, facts, report);
+    }
+  }
+  // The ROOT manifest is a hand-written `vp run` surface too (its `prepare`
+  // and `pages:build` scripts), and it is not a workspace member, so the loop
+  // above cannot see it. A guard that reports clean over an unexamined site is
+  // worse than no guard. Skipped when the root is itself a member: the loop
+  // above already read that manifest.
+  const rootManifest = join(repoRoot, 'package.json');
+  if (!workspaces.some((workspace) => resolve(workspace.dir) === resolve(repoRoot))) {
+    const parsed = JSON.parse(readFileSync(rootManifest, 'utf8')) as {
+      scripts?: Record<string, string>;
+    };
+    report.filesScanned += 1;
+    for (const command of Object.values(parsed.scripts ?? {})) {
+      if (!mentionsVpRun(command)) continue;
+      collectFromLines(command, { file: 'package.json', markerScope: command }, facts, report);
     }
   }
   for (const file of gateSurfaceFiles(repoRoot)) {
@@ -506,7 +563,7 @@ async function main(): Promise<void> {
     );
     for (const violation of report.violations) console.error(formatViolation(violation));
     console.error(
-      `vp-selector-flags: add ${FAIL_FLAG}, or exempt with '# ${ALLOW_MARKER} <reason>'.`,
+      `vp-selector-flags: use '${EFFECTIVE_FORM}', or exempt with '# ${ALLOW_MARKER} <reason>'.`,
     );
     process.exit(1);
   }
@@ -519,7 +576,7 @@ async function main(): Promise<void> {
   }
   console.log(
     `vp-selector-flags: ${report.protectedCount}/${report.qualifiedCount} package-qualified ` +
-      `invocation(s) fail closed on a no-match, ${report.exemptions.length} exemption(s), ` +
+      `invocation(s) use the fail-closed --filter form, ${report.exemptions.length} exemption(s), ` +
       `${report.filesScanned} file(s) scanned.`,
   );
 }
