@@ -20,6 +20,7 @@
     "test:coverage:check": "node ../../tools/repo/run-in.ts --root ../.. -- node tools/repo/check-coverage.ts --threshold 81 --branch-threshold 74 --function-threshold 81",
     "gate:ts7:shadow": "node ../../tools/repo/run-in.ts --root ../.. -- node tools/repo/ts7-shadow-gate.ts",
     "validation:boundary-check": "node ../../tools/repo/run-in.ts --root ../.. -- node tools/repo/check-validation-boundary.ts",
+    "vp:selector-flags:check": "node ../../tools/repo/run-in.ts --root ../.. -- node tools/repo/check-vp-selector-flags.ts",
     "workers:boundary-check": "node ../../tools/repo/run-in.ts --root ../.. -- node tools/repo/check-workers-boundary.ts apps/saas/.output-workers",
     "lint:markdown": "node ../../tools/repo/run-in.ts --root ../.. -- markdownlint-cli2 \"**/*.md\"",
     "url-pattern-list:provenance": "node ../../tools/repo/run-in.ts --root ../.. -- npm ci --prefix tests/fixtures/url-pattern-list-audit --ignore-scripts --no-audit --no-fund && node ../../tools/repo/run-in.ts --root ../.. -- npm audit signatures --prefix tests/fixtures/url-pattern-list-audit --ignore-scripts",

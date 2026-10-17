@@ -193,6 +193,16 @@ jobs:
           vp run --fail-if-no-match @openelement/tools-repo#release:state-machine:check
           vp run --fail-if-no-match @openelement/tools-repo#workspace:links:check
           vp run --fail-if-no-match @openelement/tools-repo#deps:vite-check
+      - name: vp selector flags (fail-closed task dispatch)
+        # `vp run <pkg>#<task>` resolves the package part by exact package NAME
+        # and exits 0 without running anything when nothing matches, so a
+        # mistyped or renamed selector is a green gate that never ran. This
+        # check scans the workflow run steps, the git hooks and every
+        # package.json script for a package-qualified invocation that cannot
+        # report a no-match (flag missing, or a selector that resolves to no
+        # workspace package/task). Tooling-spawned dispatch already injects the
+        # flag unconditionally in tools/repo/vp-dispatch.ts vpTaskArgv.
+        run: vp run --fail-if-no-match @openelement/tools-repo#vp:selector-flags:check
       - name: Dependency review (PR only)
         if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294

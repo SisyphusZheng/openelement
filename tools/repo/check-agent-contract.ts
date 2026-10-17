@@ -18,7 +18,11 @@
  *     named workspace, `node <path>` against the file system, and the
  *     `openelement build` diagnostics flags against the CLI source that
  *     implements them. A renamed or deleted task therefore turns the contract
- *     red — the drift guard the issue pins.
+ *     red — the drift guard the issue pins. A package-qualified `vp run` must
+ *     also carry `--fail-if-no-match`, because the contract is the form agents
+ *     copy: a missing flag here propagates the silently-unmatched selector
+ *     into every new call site (the repo-wide tripwire for call sites that are
+ *     not documentation is tools/repo/check-vp-selector-flags.ts).
  *   - The diagnostics-consumption section is anchored both ways: the doc must
  *     carry the envelope facts (format tag, CLI flags, parse entry points)
  *     and the owning sources must still declare them.
@@ -149,9 +153,11 @@ function resolveVpRun(text: string, facts: ContractFacts): string | null {
     .split(/\s+/)
     .filter((token) => token.length > 0);
   const positional: string[] = [];
+  let hasNoMatchFlag = false;
   for (const token of argv) {
     if (token.startsWith('--')) {
       if (!VP_FLAGS.has(token)) return `vp run: undocumented flag '${token}'`;
+      if (token === '--fail-if-no-match') hasNoMatchFlag = true;
       continue;
     }
     positional.push(token);
@@ -169,6 +175,12 @@ function resolveVpRun(text: string, facts: ContractFacts): string | null {
       return `vp run: no root script named '${specifier}'`;
     }
     return null;
+  }
+  // A package-qualified command the contract documents must carry the flag:
+  // the contract is the form agents copy, so a missing flag there propagates
+  // the silent-no-op selector into every new call site.
+  if (!hasNoMatchFlag) {
+    return `vp run: '${specifier}' is package-qualified and must document --fail-if-no-match`;
   }
   const pkg = specifier.slice(0, hash);
   const task = specifier.slice(hash + 1);

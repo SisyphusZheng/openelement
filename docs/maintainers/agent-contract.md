@@ -18,7 +18,7 @@ All tasks enter through the vp CLI (owner ruling, 2026-10-03): package.json
 scripts stay the single source of truth, pnpm stays the package manager, and
 `vp run` is the one dispatch surface (`tools/repo/vp-dispatch.ts`).
 
-- `vp run <pkg>#<task>` resolves by the package's exact NAME — the `name`
+- `vp run --fail-if-no-match <pkg>#<task>` resolves by the package's exact NAME — the `name`
   field in the package's `package.json`, never its directory path. The
   path-shaped form (`dir#task`) silently no-ops under vp 1.0.0 (exit 0, no
   output), so package-qualified calls carry `--fail-if-no-match`, which
@@ -85,9 +85,9 @@ task by design: the repo vitest `tools` project (`vitest.config.ts`) owns
 | Build the docs site into `www/dist` | `vp run site:build` |
 | Site verification (links, tokens, content) | `vp run site:verify` |
 | Release precheck (read-only registry queries) | `vp run release:check` |
-| Content dates (read-only validation) | `vp run @openelement/www#check:content-dates` |
-| Interface snapshot (check / write) | `vp run @openelement/tools-repo#interface:snapshot` / `vp run @openelement/tools-repo#interface:snapshot:write` |
-| Doc figures (measured-output gate) | `vp run @openelement/www#check:doc-figures` |
+| Content dates (read-only validation) | `vp run --fail-if-no-match @openelement/www#check:content-dates` |
+| Interface snapshot (check / write) | `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot` / `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot:write` |
+| Doc figures (measured-output gate) | `vp run --fail-if-no-match @openelement/www#check:doc-figures` |
 | Version bump (one knob, ten stamp sites) | `pnpm --dir tools/repo run version-bump <version> [--write]` |
 | Workflow lint (after any `.github` touch) | `zizmor --offline .` |
 | This contract's own conformance check | `node tools/repo/check-agent-contract.ts` |
@@ -98,7 +98,7 @@ task by design: the repo vitest `tools` project (`vitest.config.ts`) owns
 | --- | --- | --- |
 | `www/app/data/_generated-*.ts` (blog data, nav, article routes, API reference, error reference, error codes, install command) | the `www` `generate:*` tasks, auto-enrolled in `vp run generate:all` | the paired `--check` tasks (byte-identical compare), wired into `gate:release` |
 | `www/app/data/_generated-release-line.ts` | the release train's registry read-back (see `docs/maintainers/releasing.md`) | `@openelement/tools-release#registry-drift:check` (in `gate:release`) |
-| `docs/release/public-interface-snapshot.json` | `vp run @openelement/tools-repo#interface:snapshot:write` | `vp run @openelement/tools-repo#interface:snapshot` (in `gate:source` and CI) |
+| `docs/release/public-interface-snapshot.json` | `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot:write` | `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot` (in `gate:source` and CI) |
 | `packages/ui/src/generated-manifest.json` | `vp run --fail-if-no-match @openelement/ui#generate:ui-manifest` | `@openelement/ui#ui-manifest:check` (in `gate:release`) |
 | `www/dist/**` | `vp run site:build` (redirects/sitemap/RSS emitters write into it) | the site build and consumer gates that read `dist` |
 
@@ -196,9 +196,9 @@ coded failure surface.
 
 | Ritual | Command | Rule |
 | --- | --- | --- |
-| Interface snapshot | `vp run @openelement/tools-repo#interface:snapshot:write` | Run whenever public exports change; the check rides every PR. |
-| Content dates | `vp run @openelement/www#check:content-dates` | The manifest `www/lib/content-dates.json` is hand-edited inside the content commit itself; the check is read-only validation. |
-| Doc figures | `vp run @openelement/www#check:doc-figures` | The measured-output numbers in the comparison docs must match a fresh `www/dist` measurement; re-baseline on >1% growth. |
+| Interface snapshot | `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot:write` | Run whenever public exports change; the check rides every PR. |
+| Content dates | `vp run --fail-if-no-match @openelement/www#check:content-dates` | The manifest `www/lib/content-dates.json` is hand-edited inside the content commit itself; the check is read-only validation. |
+| Doc figures | `vp run --fail-if-no-match @openelement/www#check:doc-figures` | The measured-output numbers in the comparison docs must match a fresh `www/dist` measurement; re-baseline on >1% growth. |
 | e2e outline pins | (www e2e specs) | Adding H2 sections to outline-pinned docs requires updating the pins; prefer not adding H2 sections. |
 | Version bump | `pnpm --dir tools/repo run version-bump <version> [--write]` | One knob, ten stamp sites; see `docs/maintainers/version-bump.md`. |
 | Workflow lint | `zizmor --offline .` | Required after touching anything under `.github` — workflows AND composite actions. |
