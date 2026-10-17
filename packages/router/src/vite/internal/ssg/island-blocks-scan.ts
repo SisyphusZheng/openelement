@@ -131,8 +131,13 @@ function probeSourceFile(base: string): string | null {
   for (const stem of stems) {
     for (const candidate of [
       stem,
-      ...SCAN_EXTENSIONS.slice(1).map((extension) => `${stem}${extension}`),
-      ...SCAN_EXTENSIONS.slice(1).map((extension) => `${stem}/index${extension}`),
+      // The whole extension list, `.ts` included: an extensionless specifier
+      // resolved against a `.ts` neighbour is ordinary bundler resolution, and
+      // dropping it here silently loses the module's import closure — exactly
+      // the guess this scan is not allowed to make (`SCAN_EXTENSIONS[0]` is
+      // `.ts`, so slicing the raw-stem entry off the list is not a no-op).
+      ...SCAN_EXTENSIONS.map((extension) => `${stem}${extension}`),
+      ...SCAN_EXTENSIONS.map((extension) => `${stem}/index${extension}`),
     ]) {
       try {
         readFileSync(candidate, 'utf8');

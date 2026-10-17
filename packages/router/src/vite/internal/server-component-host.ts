@@ -46,16 +46,30 @@ function isSourceSpelling(path: string): boolean {
   return SOURCE_EXTENSIONS.some((extension) => path.endsWith(extension)) || !/\.[^/]+$/.test(path);
 }
 
-/** Probe a path without extension assumptions into an existing source file. */
+/**
+ * Probe a path without extension assumptions into an existing source file.
+ *
+ * Source extensions are only ever APPENDED to a spelling that can carry
+ * source. An explicit non-source spelling (`./table.json`) names a module this
+ * lane does not compose, and the files beside it are different module
+ * identities: `table.json.ts` is not what the author imported, and answering
+ * the JSON specifier with it makes the compiler parse a module the page never
+ * named — which for a `.json` specifier crashes the parse seam outright (the
+ * `.json`-suffixed synthetic name is read as JSON by the transpile step).
+ * The one probing form such a spelling keeps is the directory index
+ * (`table.json/index.ts`), the bundler's own answer for a directory of that
+ * name.
+ */
 function probeSourceFile(base: string): string | null {
   const withoutExtension = /\.(?:[cm]?[tj]sx?)$/.test(base)
     ? base.replace(/\.(?:[cm]?[tj]sx?)$/, '')
     : base;
   const stems = withoutExtension === base ? [base] : [base, withoutExtension];
   for (const stem of stems) {
+    const sourceSpelling = isSourceSpelling(stem);
     for (const candidate of [
-      ...(isSourceSpelling(stem) ? [stem] : []),
-      ...SOURCE_EXTENSIONS.map((extension) => `${stem}${extension}`),
+      ...(sourceSpelling ? [stem] : []),
+      ...(sourceSpelling ? SOURCE_EXTENSIONS.map((extension) => `${stem}${extension}`) : []),
       ...SOURCE_EXTENSIONS.map((extension) => `${stem}/index${extension}`),
     ]) {
       try {

@@ -164,6 +164,17 @@ test('#1548: a plain .ts island with no compiled module scans blocks-free', () =
   ).toBe(false);
 });
 
+test('#1548: the walk follows an extensionless relative import to a .ts helper', () => {
+  // The bundler resolves `./helper` against `helper.ts`; the walk must too, or
+  // the module's own import closure (and the Block behind it) is invisible and
+  // the scan answers blocks-free for a graph that executes a Block Part.
+  const root = makeApp();
+  writeIsland(root, 'scan-island.tsx', `import './helper';\n${PLAIN_ISLAND}`);
+  writeIsland(root, 'helper.ts', `import './blocks-el.tsx';\nexport const helper = 1;\n`);
+  writeIsland(root, 'blocks-el.tsx', REGIONS_ISLAND);
+  expect(scan(root)).toBe(true);
+});
+
 test('alpha15: a pre-compiled package island with an embedded Block scans blocks-carrying', () => {
   // A packed install ships COMPILED modules: the program rides as embedded
   // JSON the compiler pass cannot re-derive (compileElementModule sees no

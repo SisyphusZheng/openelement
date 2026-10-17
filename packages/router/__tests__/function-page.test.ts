@@ -664,6 +664,115 @@ test('a non-source import (JSON data module) resolves to null — its bytes neve
   }
 });
 
+test('an explicit non-source import is never satisfied by a source sibling', async () => {
+  // `./table.json` names the JSON data module — never the `table.json.ts`
+  // that happens to sit beside it. Suffix probing may only append to a
+  // spelling that can carry source: an explicit non-source extension is a
+  // different module identity, and inventing a source file for it would hand
+  // the parser a module the page never imported. The answer must not depend
+  // on which unrelated files exist in the directory.
+  const dir = await mkdtemp(join(tmpdir(), 'oe-function-page-resolve-nonsource-'));
+  try {
+    await writeFile(join(dir, 'table.json'), `{"redirects":[]}`);
+    await writeFile(
+      join(dir, 'table.json.ts'),
+      `export function Ghost(props: { label: string }) { return <b>{props.label}</b>; }`,
+    );
+    await writeFile(join(dir, 'page.css'), `.a{}`);
+    await writeFile(join(dir, 'page.css.ts'), `export const sheet = 1;`);
+    await mkdir(join(dir, 'parts.v2'), { recursive: true });
+    await writeFile(join(dir, 'parts.v2', 'index.ts'), `export const v2 = 1;`);
+    const resolve = createServerComponentSourceResolver({ root: dir });
+    const importer = join(dir, 'about.tsx');
+    expect(await resolve('./table.json', importer)).toEqual(null);
+    expect(await resolve('./page.css', importer)).toEqual(null);
+    // The sibling source files are real and reachable through their OWN
+    // spellings — the rejection is the identity rule, not a blanket ban.
+    expect(await resolve('./table.json.ts', importer)).toContain('export function Ghost');
+    // A dotted DIRECTORY keeps its bundler resolution: index probing names
+    // another module identity, not a source suffix appended to this spelling.
+    expect(await resolve('./parts.v2', importer)).toContain('export const v2');
+  } finally {
+    await rm(dir, { recursive: true }).catch(() => {});
+  }
+});
+
+test('extension resolution still resolves every real source candidate', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'oe-function-page-resolve-positive-'));
+  try {
+    await writeFile(join(dir, 'plain.ts'), `export const kind = 'ts';`);
+    await writeFile(join(dir, 'view.tsx'), `export const kind = 'tsx';`);
+    await writeFile(join(dir, 'mod.mts'), `export const kind = 'mts';`);
+    await writeFile(join(dir, 'legacy.js'), `export const kind = 'js';`);
+    await mkdir(join(dir, 'parts'), { recursive: true });
+    await writeFile(join(dir, 'parts', 'index.tsx'), `export const kind = 'index-tsx';`);
+    const resolve = createServerComponentSourceResolver({ root: dir });
+    const importer = join(dir, 'about.tsx');
+    // Explicit source spellings read that file.
+    expect(await resolve('./plain.ts', importer)).toContain("'ts'");
+    expect(await resolve('./view.tsx', importer)).toContain("'tsx'");
+    expect(await resolve('./mod.mts', importer)).toContain("'mts'");
+    // Extensionless spellings keep probing the whole candidate list.
+    expect(await resolve('./mod', importer)).toContain("'mts'");
+    expect(await resolve('./legacy', importer)).toContain("'js'");
+    // A `.js` spelling whose file is authored `.ts` (the TS ESM import
+    // rewrite) still resolves through the stripped stem.
+    expect(await resolve('./plain.js', importer)).toContain("'ts'");
+    // Directory spellings resolve their index.
+    expect(await resolve('./parts', importer)).toContain("'index-tsx'");
+  } finally {
+    await rm(dir, { recursive: true }).catch(() => {});
+  }
+});
+
+test('a page importing ./table.json composes nothing from a neighbouring table.json.ts', async () => {
+  // Consumer form: the compile-time composition channel must never adopt a
+  // module the page did not import. The real source sibling composes by call;
+  // the JSON import is answered with nothing, so its JSX child fails closed
+  // with the compiler's own coded rejection instead of the unrelated
+  // "Debug Failure. Output generation failed" the sibling's bytes produced.
+  const dir = await mkdtemp(join(tmpdir(), 'oe-function-page-compose-json-'));
+  try {
+    await writeFile(join(dir, 'table.json'), `{"redirects":[]}`);
+    await writeFile(
+      join(dir, 'table.json.ts'),
+      `export function Ghost(props: { label: string }) { return <b>{props.label}</b>; }`,
+    );
+    await writeFile(
+      join(dir, 'shell.tsx'),
+      `export function Shell(props: { label: string }) { return <div>{props.label}</div>; }`,
+    );
+    const importer = join(dir, 'about.tsx');
+    const resolve = createServerComponentSourceResolver({ root: dir });
+    const compile = (source: string): ReturnType<typeof compileServerComponentModule> =>
+      compileServerComponentModule(source, importer, {
+        resolveModule: (specifier) => resolve(specifier, importer) ?? undefined,
+      });
+    const composed = compile(
+      [
+        "import { Shell } from './shell.tsx';",
+        'export function AboutPage(props: { label: string }) {',
+        '  return <main><Shell label={props.label}></Shell></main>;',
+        '}',
+      ].join('\n'),
+    );
+    expect(composed).not.toEqual(null);
+    expect(composed!.code).toContain('Shell(');
+    expect(() =>
+      compile(
+        [
+          "import { Ghost } from './table.json';",
+          'export function OtherPage(props: { label: string }) {',
+          '  return <main><Ghost label={props.label}></Ghost></main>;',
+          '}',
+        ].join('\n'),
+      ),
+    ).toThrowError(/OEC9032/);
+  } finally {
+    await rm(dir, { recursive: true }).catch(() => {});
+  }
+});
+
 test('renderFunctionPage refuses a page whose render is not a function', () => {
   expect(() => renderFunctionPage({ kind: 'function-page' }, {})).toThrowError(
     /function page render is not a function/,
