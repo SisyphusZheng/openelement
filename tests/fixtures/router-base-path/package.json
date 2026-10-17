@@ -9,5 +9,13 @@
     "e2e:browsers": "playwright test --config e2e/playwright.config.ts",
     "gate": "node ../../../tools/repo/gate.ts @openelement/fixture-router-base-path#typecheck @openelement/fixture-router-base-path#build @openelement/fixture-router-base-path#e2e:browsers",
     "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@openelement/element": "workspace:*",
+    "@openelement/router": "workspace:*"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.59.1",
+    "vite": "8.0.16"
   }
 }
