@@ -19,7 +19,7 @@
    What stays in CSS is this token sheet, the document base below, and each
    component's `:host` box rule — nothing else.
 
-   `pnpm dev` and the build both compile this file through the official
+   `npm run dev` and the build both compile this file through the official
    @tailwindcss/vite pipeline driven by the router: dev serves the compile at
    /.openElement/tailwind.css and links it in the document head, the build
    emits the same compile as the content-hashed document stylesheet.

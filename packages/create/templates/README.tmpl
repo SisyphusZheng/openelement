@@ -14,13 +14,18 @@ Docs and guides: https://openelement.org
 
 One directory is generated rather than source: `.openElement/` at the project
 root holds the build's internal state (head-convention bookkeeping and build
-plans). `pnpm dev` and `pnpm build` write it as needed; the `.gitignore`
+plans). The dev server and the build write it as needed; the `.gitignore`
 excludes it and deleting it is safe — the next run recreates it.
 
 The `@openelement/element` and `@openelement/router` dependencies carry caret
-ranges over the `1.0.0` prerelease this starter was generated from, so
-`pnpm update` picks up later `1.0.0` prereleases (and the final `1.0.0`)
+ranges over the `1.0.0` prerelease this starter was generated from, so a
+dependency update picks up later `1.0.0` prereleases (and the final `1.0.0`)
 without editing this file.
+
+Nothing here is tied to one package manager: the manifest declares no
+`packageManager`, every script is a plain command, and the scaffold ships no
+`pnpm-workspace.yaml`. Install with npm, pnpm, yarn, or bun — whichever one
+runs first writes its lockfile, and every command below works the same.
 
 ## The JS cost map
 
@@ -91,29 +96,52 @@ accepted-key list. `vite.config.ts` stays Vite-only: `plugins: [...openElement()
 
 ## Scripts
 
-The starter runs on the Vite+ toolchain (`vite-plus`, the `vp` command):
+Every script is a plain command, so every one of them runs under any package
+manager (`npm run dev`, `pnpm run dev`, `yarn run dev`, `bun run dev` — this
+file spells them as `npm run …`):
 
-- `pnpm dev` — start the dev server (`vp dev`).
-- `pnpm fmt` — format the sources (`vp fmt`).
-- `pnpm lint` — lint the sources (`vp lint`).
-- `pnpm typecheck` — type-check every route/component file (`tsc --noEmit`).
+- `npm run dev` — start the Vite dev server (`oe dev`).
+- `npm run fmt` — format the sources (`oxfmt`).
+- `npm run lint` — lint the sources (`oxlint`).
+- `npm run typecheck` — type-check every route/component file (`tsc --noEmit`).
   The check covers the whole `app/` directory (`tsconfig.json`), so new files
   are picked up automatically.
-- `pnpm test` — run Node's built-in test runner (the starter ships none).
-- `pnpm build` — production build into `dist/`: prerendered HTML for every
+- `npm test` — run Node's built-in test runner (the starter ships none).
+- `npm run build` — production build into `dist/`: prerendered HTML for every
   static route, plus the request-time server when the app has one.
-- `pnpm start` — serve the production build.
+- `npm start` — serve the production build.
 
-`build` and `start` run the router CLI's short `oe` bin from the
-`@openelement/router` dependency (`oe build` / `oe start`; the same entry is
-installed as `openelement`, so both spellings work). The CLI also carries a
-static-only `oe start --mode=preview`, which refuses a build that has a
-request-time server.
+`dev`, `build`, and `start` run the router CLI's short `oe` bin from the
+`@openelement/router` dependency (`oe dev` / `oe build` / `oe start`; the same
+entry is installed as `openelement`, so both spellings work). `oe dev` boots the
+framework's own dev server — the SSR dev middleware, HMR, and the Tailwind
+pipeline — with no extra wrapper, and `oe start --mode=preview` is the
+static-only serve mode that refuses a build carrying a request-time server.
 
-The Vite tree itself is catalog-managed: `pnpm-workspace.yaml` points `vite`
-at the Vite+ core (`@voidzero-dev/vite-plus-core`) through a catalog entry
-and a `vite@*` override, so every peer that asks for vite resolves the same
-Vite+ build — there is no direct `vite` devDependency to pin.
+`oxfmt` and `oxlint` run with their defaults: both skip markdown, JSON, YAML,
+and CSS, so `npx oxfmt --check` and `npx oxlint` pass on a fresh scaffold.
+
+The Vite tree is one direct devDependency pin (`"vite": "8.0.16"` — the same
+version `@openelement/router` resolves against), so every peer that asks for
+Vite gets that copy. There is no workspace catalog and no `vite@*` override:
+a pin plus the router's own aligned dependency is what keeps the tree single.
+
+### Package manager
+
+Install with whichever manager you prefer; the first install decides the
+lockfile and everything afterwards follows it. The manifest deliberately
+carries no `packageManager` field.
+
+If you add one, note who reads it: the Vite+ CLI's `vp install` picks its
+manager from `packageManager` first, then from the lockfile already present,
+and falls back to pnpm when neither answers — measured, including the two
+surprises. With `"packageManager": "pnpm@12.8.1"` and only npm installed,
+`vp install` still runs pnpm 12.8.1 (vp fetches that version itself), and with
+neither a field nor a lockfile it runs pnpm even when npm is installed. So the
+field is a pin, not a preference: leave it out, and make your FIRST install the
+manager you intend to keep. (`vp install` still needs the manager it picked for
+the lockfile-detected case — a `package-lock.json` with npm off the PATH fails
+with `error: Cannot find binary path for command 'npm'`.)
 
 ## Styling ownership
 
@@ -146,24 +174,16 @@ unused.
 ## Dependency notes
 
 `@openelement/element` and `@openelement/router` are the runtime dependencies
-your app imports. Everything else rides devDependencies: `vite-plus` (the
-`vp` toolchain the scripts run through; the Vite tree itself resolves through
-the `pnpm-workspace.yaml` catalog), the Tailwind-ON build-time pins, the
-dev-server pair — `@hono/vite-dev-server` (loaded lazily by the dev server)
-and its `hono` peer — and the `typescript` pin. None of them resolve under a
-production install: `npm install --omit=dev` in a production image installs
-only the runtime pair. The generated server entry itself imports no
+your app imports. Everything else rides devDependencies: `vite` (the tree the
+router's `oe dev` / `oe build` drive), `oxfmt` and `oxlint` (the `fmt` / `lint`
+scripts), the Tailwind-ON build-time pins, the dev-server pair —
+`@hono/vite-dev-server` (loaded lazily by the dev server) and its `hono` peer —
+and the `typescript` pin. None of them resolve under a production install:
+`npm install --omit=dev` in a production image installs only the runtime pair.
+The generated server entry itself imports no
 HTTP framework — it composes on the internal WinterCG layer (#1560); `hono`
 is an optional peer of `@openelement/router`, and `@openelement/router/hono`
 (`createHonoAdapter`) is the one opt-in if you ever want to mount the built
 handler inside your own Hono app. For Nitro deployments, the built handler
 bridges through the `@openelement/router/nitro-mount` subpath of the one
 `@openelement/router` dependency. Do not remove them.
-
-`pnpm-workspace.yaml` ships with the scaffold and is pnpm's own bookkeeping:
-it carries the Vite+ catalog and override pair, and `minimumReleaseAge` — the
-supply-chain window that withholds freshly published versions — with the
-exemptions this project starts with (the `@openelement` packages at the
-version it was generated from, plus `vite-plus`). pnpm rewrites the file when
-you approve more packages inside that window; keep it and review the
-exemptions it lists.

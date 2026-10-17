@@ -81,18 +81,22 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   ['gitignore.tmpl', '.gitignore'],
   ['README.tmpl', 'README.md'],
   ['public/openelement-mark.svg', 'public/openelement-mark.svg'],
-  // B5 (ADR-0161): the starter is a plain Node/pnpm project. Framework
+  // B5 (ADR-0161): the starter is a plain Node project. Framework
   // consumption resolves through package.json dependencies (npm is the only
   // public registry; packed first-party modules carry no bare @std/*
   // specifiers, so no @jsr registry bridge is generated), the lifecycle is
-  // pnpm scripts, and tsconfig.json owns the `check` type-check surface.
+  // package.json scripts, and tsconfig.json owns the `check` type-check
+  // surface. Manager-neutral since alpha.15: the scripts are plain commands
+  // (`oe dev` / `oe build` / `oe start` / `oxfmt` / `oxlint` / `tsc` /
+  // `node --test`), the manifest declares no `packageManager`, and the
+  // scaffold ships NO pnpm-workspace.yaml — the file existed only to host the
+  // Vite+ catalog and its `vite@*` override, and `catalog:` is a pnpm-only
+  // protocol that made npm/yarn/bun installs fail outright
+  // (EUNSUPPORTEDPROTOCOL). With explicit version pins in this manifest there
+  // is nothing left for a workspace file to declare.
   ['package.json.tmpl', 'package.json'],
   ['tsconfig.json.tmpl', 'tsconfig.json'],
   ['vite.config.ts.tmpl', 'vite.config.ts'],
-  // The Vite+ workspace form: the catalog/override pair that points the vite
-  // tree at the Vite+ core, plus the release-day supply-chain exemptions.
-  // pnpm treats the file as its own bookkeeping and rewrites it as needed.
-  ['pnpm-workspace.yaml.tmpl', 'pnpm-workspace.yaml'],
   // #1411: framework options live in openelement.config.ts; the starter ships
   // it near-empty, so every option comes from a file convention until the user
   // overrides one.

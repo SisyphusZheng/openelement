@@ -5,22 +5,26 @@
  * cli.ts executes the CLI at import time (top-level main), so anything the
  * tests need to call must live beside it, not inside it.
  *
- * One manager, and the answer is pnpm. The scaffold pins its toolchain through
- * a pnpm catalog — `pnpm-workspace.yaml` declares `vite: npm:…vite-plus-core`
- * and `overrides: vite@*: "catalog:"`, and `package.json` asks for
- * `vite-plus: "catalog:"`. `catalog:` is a pnpm-only protocol: npm rejects it
- * with `EUNSUPPORTEDPROTOCOL: Unsupported URL Type "catalog:"` and installs
- * nothing, so probing for npm as a fallback did not make the scaffold more
- * portable — it moved the failure from an explicit check to a confusing error
- * after the project had already been written. There is no npm-compatible
- * dependency set to fall back to: the catalog IS how `vite` resolves to the
- * Vite+ core build for every peer in the tree.
+ * Manager-neutral since alpha.15. The scaffold used to pin pnpm through a
+ * `catalog:` specifier in its own pnpm-workspace.yaml, and `catalog:` is a
+ * pnpm-only protocol — npm rejects the manifest with EUNSUPPORTEDPROTOCOL —
+ * so the probe had exactly one answer and a missing pnpm failed the run with
+ * a requirement. The template now ships explicit version pins, no
+ * `packageManager` field, and no workspace file, so any of the four common
+ * managers installs it unchanged. Detection is therefore a preference order,
+ * not a requirement: pnpm, then npm, then yarn, then bun — and only a PATH
+ * with none of them fails.
  */
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
 
+/** The managers the install step can drive, in detection order. */
+export const PACKAGE_MANAGERS = ['pnpm', 'npm', 'yarn', 'bun'] as const;
+
+export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
+
 /** Probe `<pm> --version`; an off-PATH binary gives ENOENT. */
-function packageManagerAvailable(pm: string): boolean {
+export function packageManagerAvailable(pm: PackageManager): boolean {
   const probe = spawnSync(pm, ['--version'], {
     stdio: 'ignore',
     shell: process.platform === 'win32',
@@ -28,7 +32,16 @@ function packageManagerAvailable(pm: string): boolean {
   return probe.error === undefined && probe.status === 0;
 }
 
-/** Is pnpm on PATH? The caller decides how to report a miss. */
-export function pnpmAvailable(): boolean {
-  return packageManagerAvailable('pnpm');
+/**
+ * The first available manager in {@link PACKAGE_MANAGERS} order, or `null`
+ * when none of the four is on PATH. The probe is injectable so the order (and
+ * the total miss) can be pinned without rewriting PATH.
+ */
+export function detectPackageManager(
+  probe: (pm: PackageManager) => boolean = packageManagerAvailable,
+): PackageManager | null {
+  for (const pm of PACKAGE_MANAGERS) {
+    if (probe(pm)) return pm;
+  }
+  return null;
 }
