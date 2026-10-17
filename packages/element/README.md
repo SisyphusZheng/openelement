@@ -75,6 +75,7 @@ facade for one job; none of them names an `internal/` module.
 | `@openelement/element/no-blocks`      | The hydrating runtime WITHOUT the when/each Block builders (#1548) — selected by the Router when the island blocks scan proves no admitted island module lowers a conditional or list Block. Same public surface; a Block Part reaching it fails closed (`OE_RUNTIME_BLOCK_BUILDERS_MISSING`). |
 | `@openelement/element/base`            | Neither optional install: no hydration executor, no Block builders (#1548) — the `base` row of the per-feature floor table, for pages whose every island is client-only AND uses no Blocks. The Router's two-predicate selection lands here only on proof of both. |
 | `@openelement/element/css-modules`     | Ambient `*.css` module type (#1558): the default export of an imported `.css` sheet is the cross-realm `StyleSheetLike`. Types-only — load it through tsconfig `types` (the vite/client pattern); it resolves no runtime module. |
+| `@openelement/element/server`          | The server HTML constructor helpers (`__h`/`__t`/`__ssr`) a compiled server function page's generated body calls — internal by convention (the `__` prefix), application code calls the compiled components. Server-graph only: it imports the compiled serializer directly and never the client barrel, so no hydration machinery enters the graph. |
 
 Reconnect is a core capability, not an entry option: reconnecting an
 activated element re-binds the DOM that instance produced, from the ownership
