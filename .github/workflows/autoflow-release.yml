@@ -13,7 +13,9 @@ name: Release
 #   publish — the ONLY path that may enter the real new-version publish. It
 #             verifies, in order: the dispatch is main's exact SHA
 #             (ci-evidence), the official AutoFlow CI run for that same SHA
-#             concluded success with all nine job conclusions success
+#             concluded success with every required job-instance conclusion
+#             success — nine job IDs, twelve instances, because e2e-full,
+#             node-serve-smoke and packed-consumer-matrix each expand to two
 #             (ci-evidence, discovered over the API — never supplied), the
 #             same-SHA release train gate:release (release-gate), and then
 #             re-verifies operation/SHA/version/package set immediately
@@ -31,8 +33,9 @@ name: Release
 # Release state machine — the states and where each transition is enforced:
 #   DEVELOPMENT           ordinary commits; nothing in this file runs.
 #   CI_VERIFIED           the AutoFlow CI push run on main concluded success
-#                         with all nine job conclusions success (enforced in
-#                         autoflow-ci.yml; re-discovered and re-checked for
+#                         with every required job-instance conclusion success
+#                         (nine job IDs / twelve instances; enforced in
+#                         autoflow-ci.yml, re-discovered and re-checked for
 #                         the dispatched SHA in `ci-evidence`).
 #   RELEASE_CANDIDATE     the CI-verified main commit carrying the version
 #                         bump; candidate = main's HEAD at dispatch time.
@@ -134,11 +137,13 @@ jobs:
   # ── Job 1: Same-SHA CI evidence (publish only) ─────────────────────────
   # The official AutoFlow CI run for exactly the dispatched SHA is discovered
   # here over the API — the dispatcher never supplies a run id as proof — and
-  # its nine required job conclusions are checked one by one. The run-level
-  # conclusion alone is not evidence: a run can be green with the heavy jobs
-  # skipped on a non-qualifying lane, and skipped, cancelled, failure, or a
-  # missing job are all refusals (the qualification contract of
-  # autoflow-ci.yml, read from the API instead of trusted from a report).
+  # its nine required job IDs (twelve instances: e2e-full, node-serve-smoke
+  # and packed-consumer-matrix each expand to two) are checked one by one.
+  # The run-level conclusion alone is not evidence: a run can be green with
+  # the heavy jobs skipped on a non-qualifying lane, and skipped, cancelled,
+  # failure, a missing job ID or any non-success instance is a refusal (the
+  # qualification contract of autoflow-ci.yml, read from the API instead of
+  # trusted from a report).
   ci-evidence:
     needs: [dispatch-guard]
     if: github.event_name == 'workflow_dispatch' && inputs.operation == 'publish'
@@ -213,10 +218,10 @@ jobs:
                 end ] | .[]' /tmp/ci-jobs.json)
           if [ -n "${FAILURES}" ]; then
             while IFS= read -r failure; do echo "::error::${failure}"; done <<< "${FAILURES}"
-            echo "::error::CI evidence for ${CANDIDATE_SHA} is not a passing nine-job qualification; publish refused"
+            echo "::error::CI evidence for ${CANDIDATE_SHA} is not a passing full qualification (nine job IDs / twelve instances); publish refused"
             exit 1
           fi
-          echo "CI evidence verified: run ${RUN_ID} (push, ${CANDIDATE_SHA}) success; all nine required job conclusions: success."
+          echo "CI evidence verified: run ${RUN_ID} (push, ${CANDIDATE_SHA}) success; all twelve required job-instance conclusions (nine job IDs) success."
           {
             echo "run_id=${RUN_ID}"
             echo "sha=${CANDIDATE_SHA}"
