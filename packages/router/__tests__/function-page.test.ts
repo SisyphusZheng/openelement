@@ -18,7 +18,7 @@
  * seam and the REAL props projector, so the assertions see the wire bytes and
  * the boundary codes a browser/deploy would.
  */
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -349,13 +349,32 @@ let scratch: string;
 let serial = 0;
 
 beforeAll(async () => {
-  // The transpiled fixture module imports '@openelement/router' and
-  // '@openelement/element/server' — bare specifiers that resolve by walking
-  // up node_modules from the importing file, so the scratch dir lives under
-  // the repo's own node_modules (the R1 harness pattern).
-  scratch = join(process.cwd(), 'node_modules', '.oe-function-page');
+  // The generated harness imports the same BARE specifiers a compiled route
+  // module does ('@openelement/router', '@openelement/router/server-runtime',
+  // '@openelement/element/server'), which resolve by walking node_modules
+  // from the importing file. No ancestor link can be relied on: the repo
+  // root links only its own devDependencies (compiler/element/ui — see the
+  // lockfile's root importer) and packages/router carries no self-link, so a
+  // scratch dir under either one cannot resolve '@openelement/router' in a
+  // clean install. This machine happened to carry a hand-made absolute
+  // `node_modules/@openelement/router` link, which is why a repo-root
+  // invocation passed locally while the canonical one
+  // (`vp run @openelement/router#test` → vitest from packages/router) failed
+  // on CI with `Cannot find package '@openelement/router'` for all eight
+  // harness-driven tests.
+  //
+  // The scratch dir therefore carries its OWN node_modules with links to the
+  // workspace packages, so resolution is identical under any cwd and any
+  // install layout. The anchor is this file's location, never
+  // `process.cwd()`.
+  const repoRoot = join(import.meta.dirname, '..', '..', '..');
+  scratch = join(repoRoot, 'node_modules', '.oe-function-page');
   await rm(scratch, { recursive: true, force: true });
-  await mkdir(scratch, { recursive: true });
+  const scope = join(scratch, 'node_modules', '@openelement');
+  await mkdir(scope, { recursive: true });
+  for (const name of ['router', 'element'] as const) {
+    await symlink(join(repoRoot, 'packages', name), join(scope, name), 'dir');
+  }
 });
 
 afterAll(async () => {
