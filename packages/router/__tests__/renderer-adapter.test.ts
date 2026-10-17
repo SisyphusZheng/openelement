@@ -1,7 +1,10 @@
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
 import type { RouteEntry } from '@openelement/protocol/framework';
-import { generateClientEntry } from '../src/vite/internal/ssg/entry-client-codegen.ts';
+import {
+  generateClientEntry,
+  ELEMENT_SERVICES_RUNTIME_SPECIFIERS,
+} from '../src/vite/internal/ssg/entry-client-codegen.ts';
 import { buildEntryDescriptor } from '../src/vite/internal/ssg/entry-descriptor.ts';
 import { renderEntry } from '../src/vite/internal/ssg/entry-orchestrator.ts';
 import { selectRendererAdapter } from '../src/vite/internal/ssg/renderer-adapter.ts';
@@ -103,10 +106,22 @@ const routes: RouteEntry[] = [
 // replaced the `@openelement/element/logger` import: 2004→2931 bytes. The lit
 // entry is byte-IDENTICAL (3167, same hash): the renderer fork was already
 // element-free and the codegen refactor is transparent to it.
+//
+// B2 CI re-baseline (alpha15 red A): the 2931 pin was NOT machine-independent
+// — the native entry's lazy surface specifier was the wrapper's ABSOLUTE
+// filesystem path, so the pin measured a 58-char checkout root while CI's
+// 41-char root produced 2914 (a 17-byte delta, exactly the root-length
+// difference). The specifier is now the stable virtual id
+// `virtual:open-client-runtime/element-services-full.ts`, resolved to the
+// wrapper by the two client-entry hosts (cli/build-client.ts,
+// vite/dev-island-client.ts), so the entry text is identical in every
+// checkout: 2931 (58-char root) → 2862, and the CI checkout produces this
+// same 2862/hash instead of 2914. The lit entry is byte-IDENTICAL (3167,
+// same hash): it carries no element-services import at all.
 const expected = {
   native: {
     server: [16773, '04e5526b2999d71d4a70251bf63283d4c2191fe91850257fbd99adb628df702c'],
-    client: [2931, '0500bdd6354d221b379400dc0bf819bf078895b3c90353d52ccc3171450880f2'],
+    client: [2862, 'e9629cded31adcb2237afa612acd50c1bd9cd8a17dbd889ab1ae46066616e5ed'],
   },
   lit: {
     server: [16876, '320a139438dc9b1d6d421c329631899eb5cff657769672ea8e45e0f30a67c724'],
@@ -144,6 +159,13 @@ test('internal Native/Lit selection preserves the generated server/client bytes'
         .join('');
       expect(bytes.length).toEqual(expected[mode][kind][0]);
       expect(hash).toEqual(expected[mode][kind][1]);
+    }
+    if (mode === 'native') {
+      // Red A witness: the lazy surface specifier is the stable virtual id and
+      // no checkout root can appear in the entry text, which is what makes the
+      // native client pin machine-independent (see the re-baseline note above).
+      expect(client).toContain(`import('${ELEMENT_SERVICES_RUNTIME_SPECIFIERS.full}')`);
+      expect(client).not.toContain(process.cwd());
     }
     expect(descriptor.imports.some((entry) => entry.from === '@openelement/element')).toEqual(
       mode === 'native',

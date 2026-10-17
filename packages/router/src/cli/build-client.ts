@@ -27,6 +27,7 @@ import {
 import { runtimeModulePath } from '../vite/internal/runtime-module-path.ts';
 import { findBuildWorkspaceRoot } from '../vite/workspace-alias.ts';
 import { buildClientIslandEntries } from '../vite/internal/ssg/client-island-entries.ts';
+import { resolveElementServicesRuntimeModule } from '../vite/internal/ssg/entry-client-codegen.ts';
 import {
   type ClientIslandDeliveryEntry,
   type IslandDeliveryMeta,
@@ -1121,6 +1122,12 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
           if (id === VIRTUAL_RUNTIME_SPECIFIERS.enhance) {
             return runtimeModulePath('./ssg/enhance-client.ts');
           }
+          // B2: the generated entry reaches the element-services surface
+          // through a stable virtual id (so the emitted entry text is
+          // machine-independent); the selector and its one resolution rule
+          // live together in entry-client-codegen.ts.
+          const elementServices = resolveElementServicesRuntimeModule(id);
+          if (elementServices !== null) return elementServices;
           return null;
         },
         load(id) {

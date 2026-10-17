@@ -1,7 +1,6 @@
 /** Client island entry emission; browser runtime wiring only. */
 import process from 'node:process';
 import { ACTION_FETCH_HEADER, IDLE_FALLBACK_TIMEOUT_MS } from '@openelement/element';
-import { normalizeSeparators } from '@openelement/element/build-utils';
 import { stableModuleId } from '@openelement/compiler';
 import { runtimeModulePath } from '../runtime-module-path.ts';
 import { findBuildWorkspaceRoot } from '../../workspace-alias.ts';
@@ -251,27 +250,79 @@ function pageCanHydrateServerDom(islands: readonly NormalizedClientIsland[]): bo
  * (it is anchored to the bare specifier), so those rows get their own
  * wrappers. A fourth wrapper would only restate what the alias already does.
  *
- * The wrapper path resolves through {@linkcode runtimeModulePath}, the same
+ * The wrapper MODULE resolves through {@linkcode runtimeModulePath}, the same
  * source-else-staged-JS rule the scheduler/enhance virtual specifiers use, so
- * a packed install gets the staged `.js` sibling. Windows gets the `/@fs/`
- * specifier form Vite resolves (a bare drive-letter path does not).
+ * a packed install gets the staged `.js` sibling — but the SPECIFIER the entry
+ * carries is a stable virtual id (see
+ * {@linkcode ELEMENT_SERVICES_RUNTIME_SPECIFIERS}), never a filesystem path:
+ * the entry is itself a virtual module, so an absolute path would bake the
+ * build machine's checkout layout into the emitted bytes (the same app built
+ * in two checkouts produced different client entries, leaked the local
+ * filesystem layout into build output and made content-hash caching
+ * path-dependent), and a relative path would resolve against the Vite ROOT,
+ * not against the router package.
  */
 export function elementServicesSpecifier(
   canHydrateServerDom: boolean,
   includeBlocksRuntime: boolean,
 ): string {
-  const wrapper = !canHydrateServerDom
-    ? includeBlocksRuntime
-      ? './element-services-client-only.ts'
-      : './element-services-base.ts'
-    : './element-services-full.ts';
-  return moduleSpecifierFor(runtimeModulePath(`./ssg/${wrapper.slice(2)}`));
+  if (!canHydrateServerDom) {
+    return includeBlocksRuntime
+      ? ELEMENT_SERVICES_RUNTIME_SPECIFIERS.clientOnly
+      : ELEMENT_SERVICES_RUNTIME_SPECIFIERS.base;
+  }
+  return ELEMENT_SERVICES_RUNTIME_SPECIFIERS.full;
 }
 
-/** An absolute fs path as a module specifier Vite resolves (Windows `/@fs/`). */
-function moduleSpecifierFor(absolutePath: string): string {
-  const path = normalizeSeparators(absolutePath);
-  return /^[A-Za-z]:\//.test(path) ? `/@fs/${path}` : path;
+/**
+ * The machine-independent virtual specifiers the generated client entry uses
+ * to reach the `element-services-*` wrappers above.
+ *
+ * The generated entry is a virtual module (`\0virtual:open-client-entry` in
+ * both hosts), so it has no directory a relative specifier could resolve
+ * against, and an absolute path made the emitted bytes depend on the build
+ * machine's checkout root. A stable id keeps the entry text identical on every
+ * machine; the two client-entry hosts map it back to the real module through
+ * {@linkcode resolveElementServicesRuntimeModule}, exactly as they already do
+ * for the scheduler/enhance runtime specifiers.
+ *
+ * The ids share the `virtual:open-client-runtime/` namespace and keep the
+ * wrapper's file name (`.ts` tail included), so a reader of the emitted entry
+ * still sees which surface it loads and the wrapper keeps one name across the
+ * virtual id, the source file and the staged `.js` sibling.
+ */
+export const ELEMENT_SERVICES_RUNTIME_SPECIFIERS = {
+  full: 'virtual:open-client-runtime/element-services-full.ts',
+  clientOnly: 'virtual:open-client-runtime/element-services-client-only.ts',
+  base: 'virtual:open-client-runtime/element-services-base.ts',
+} as const;
+
+/**
+ * Resolve one {@linkcode ELEMENT_SERVICES_RUNTIME_SPECIFIERS} id to the real
+ * wrapper module, or null when the id is not one of ours. Both client-entry
+ * hosts call this from their `resolveId` hook — `cli/build-client.ts` for the
+ * built entry, `vite/dev-island-client.ts` for the dev entry — so the
+ * specifier the generated entry carries has exactly one resolution rule.
+ *
+ * The literals stay LITERAL: the vp-pack guard extracts the consumer-side
+ * path-consumed module set from literal `runtimeModulePath` arguments
+ * (tools/lib/vp-pack.test.ts), and these wrappers are reached only through the
+ * generated entry's import STRING — no pack module edge exists, so a computed
+ * argument would drop them from the router tarball and the package would ship
+ * a client entry importing modules it does not contain (the B2 pack
+ * regression).
+ */
+export function resolveElementServicesRuntimeModule(id: string): string | null {
+  switch (id) {
+    case ELEMENT_SERVICES_RUNTIME_SPECIFIERS.full:
+      return runtimeModulePath('./ssg/element-services-full.ts');
+    case ELEMENT_SERVICES_RUNTIME_SPECIFIERS.clientOnly:
+      return runtimeModulePath('./ssg/element-services-client-only.ts');
+    case ELEMENT_SERVICES_RUNTIME_SPECIFIERS.base:
+      return runtimeModulePath('./ssg/element-services-base.ts');
+    default:
+      return null;
+  }
 }
 
 interface GenerateClientEntryOptions {

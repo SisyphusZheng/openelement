@@ -24,6 +24,7 @@ import type { FrameworkOptions } from './framework.ts';
 import type { OpenElementBuildContext } from './build-context.ts';
 
 import { generateClientEntry, islandsMightUseBlocks } from './internal/ssg/index.ts';
+import { resolveElementServicesRuntimeModule } from './internal/ssg/entry-client-codegen.ts';
 import { buildClientIslandEntries } from './internal/ssg/client-island-entries.ts';
 import { VIRTUAL_RUNTIME_SPECIFIERS } from './internal/ssg/entry-generators.ts';
 import { DEFAULT_ISLANDS_DIR } from './internal/paths.ts';
@@ -77,6 +78,11 @@ export function devIslandClientPlugin(
       if (id === VIRTUAL_RUNTIME_SPECIFIERS.enhance) {
         return runtimeModulePath('./ssg/enhance-client.ts');
       }
+      // B2: the same element-services virtual id the built entry carries, so
+      // dev serves the surface the production build would (one resolution
+      // rule, owned by the selector's own module).
+      const elementServices = resolveElementServicesRuntimeModule(id);
+      if (elementServices !== null) return elementServices;
       return null;
     },
 

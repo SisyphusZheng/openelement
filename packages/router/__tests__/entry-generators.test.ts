@@ -228,10 +228,13 @@ function importLines(code: string): string[] {
 
 /**
  * The element-runtime surface module the entry loads LAZILY (B2/#1544): the
- * absolute path of the selected `element-services-*` wrapper, read out of the
- * emitted dynamic import. The two-axis choice lives here now — the entry
+ * stable virtual id of the selected `element-services-*` wrapper, read out of
+ * the emitted dynamic import. The two-axis choice lives here now — the entry
  * carries no static element import at all, so `importLines` can no longer
- * witness it.
+ * witness it. The id keeps the wrapper's file name (the `.ts` tail included)
+ * and is resolved to the real module by the two client-entry hosts, so the
+ * assertions below read like the pre-virtual path form while the emitted bytes
+ * stay machine-independent (red A).
  */
 function elementServicesImport(code: string): string {
   const match = code.match(/import\('([^']*element-services-[^']*)'\)/);
