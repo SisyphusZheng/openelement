@@ -13,10 +13,12 @@
  * exactly as an adopter would on the B5 Node/pnpm surface (ADR-0161):
  *
  *   install  the starter's package.json resolves through a real pnpm install
- *            (the `vite-plus: "catalog:"` devDependency resolves through the
- *            scaffold's own pnpm-workspace.yaml catalog, and the `vite@*`
- *            override points the whole vite tree at the Vite+ core build)
- *   dev      the Vite+ dev server (`vp dev`) boots and SSR-renders / over HTTP
+ *            (the scaffold is package-manager neutral: it pins `vite` itself
+ *            at the router's own version and ships no workspace file — the
+ *            harness writes its OWN overrides carrier into this scratch tree,
+ *            see the pinning block before the install)
+ *   dev      the router bin's dev server (`oe dev`) boots and SSR-renders /
+ *            over HTTP
  *   typecheck the starter's own `typecheck` script (tsc --noEmit)
  *   test     the starter's own `test` script
  *   build    real SSG build; must emit dist/server/index.js (request-time),
@@ -55,18 +57,23 @@ import { pathToFileURL } from 'node:url';
 import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { assertPackedTarballsFresh, runProcess } from './consumer-packaged-shared.ts';
+import {
+  assertPackedTarballsFresh,
+  consumerPnpmOverridesYaml,
+  runProcess,
+} from './consumer-packaged-shared.ts';
 import { runAgentWorkflowRound } from './packed-agent-round.ts';
 import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
+import { VITE_DEV_PIN } from '../repo/deps-vite-check.ts';
 import { readPackages } from '../lib/package-graph.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
 import { CREATE_BIN } from './npm-manifest.ts';
 import { extractStaticModuleSpecifiers } from '../lib/typescript-ast.ts';
 // The scaffold's devDependency pins (#1530 showcase form) — the create CLI's
 // embedded copies are anchored by the create tests; this consumer reads the
-// same source module so a pin drift fails here, on the packed surface. (The
-// vite pin itself retired with the Vite+ form: the manifest carries
-// `vite-plus: "catalog:"` and the workspace file's catalog owns the version.)
+// same source module so a pin drift fails here, on the packed surface. The
+// vite pin is the router's own (VITE_DEV_PIN, above): the neutral scaffold
+// declares it directly instead of resolving it through a Vite+ catalog.
 import {
   CREATE_VERSION,
   DEV_SERVER_STARTER_PIN,
@@ -554,20 +561,21 @@ async function main(): Promise<void> {
     // The CLI runs non-interactively here, so the scaffold must be the ONE
     // default form: Tailwind-ON (owner ruling 2026-10-08 — one default, no
     // variant, no flag) carrying the #1530 showcase pages. The toolchain is
-    // the Vite+ form: no `vite` devDependency anymore — the manifest asks for
-    // `vite-plus: "catalog:"` and the scaffold's own pnpm-workspace.yaml
-    // catalog (asserted below, before the overrides fold) owns the version,
-    // so a surviving vite pin is the retired form.
-    if (manifest.devDependencies.vite !== undefined) {
+    // package-manager neutral (alpha15): the manifest PINS `vite` directly at
+    // the version the router itself resolves, and carries no pnpm-only
+    // `vite-plus`/`catalog:` entry — the shipped scaffold has no workspace
+    // file to resolve one through.
+    if (manifest.devDependencies.vite !== VITE_DEV_PIN) {
       throw new Error(
-        `Packed starter is not the Vite+ form: devDependency vite=` +
-          `${manifest.devDependencies.vite} must be gone (the vite tree is catalog-managed)`,
+        `Packed starter is not the package-manager-neutral form: devDependency vite=` +
+          `${manifest.devDependencies.vite ?? '<missing>'}, expected the router's own ` +
+          `pin ${VITE_DEV_PIN}`,
       );
     }
-    if (manifest.devDependencies['vite-plus'] !== 'catalog:') {
+    if (manifest.devDependencies['vite-plus'] !== undefined) {
       throw new Error(
-        `Packed starter is not the Vite+ form: devDependency vite-plus=` +
-          `${manifest.devDependencies['vite-plus'] ?? '<missing>'}, expected catalog:`,
+        `Packed starter still declares the retired Vite+ dependency: vite-plus=` +
+          `${manifest.devDependencies['vite-plus']}`,
       );
     }
     for (const [name, expected] of Object.entries({
@@ -606,13 +614,14 @@ async function main(): Promise<void> {
         );
       }
     }
-    // The lifecycle is the starter's own pnpm scripts (ADR-0161); the legs
-    // below run them exactly as an adopter would. `preview` is deliberately
-    // absent (owner ruling 2026-10-09): the default starter ships /api/ping, so
-    // a preview script could only ever refuse, and the documented spelling is
-    // the router bin's `start --mode=preview` (exercised below). The Vite+
-    // lifecycle renames `check` to `typecheck` (`tsc --noEmit`) and adds the
-    // `fmt`/`lint` toolchain entries this gate does not drive.
+    // The lifecycle is the starter's own scripts; the legs below run them
+    // exactly as an adopter would (the scaffold is package-manager neutral,
+    // so the scripts are plain `oe …` commands any manager can run).
+    // `preview` is deliberately absent (owner ruling 2026-10-09): the default
+    // starter ships /api/ping, so a preview script could only ever refuse, and
+    // the documented spelling is the router bin's `start --mode=preview`
+    // (exercised below). `typecheck` is `tsc --noEmit`; the `fmt`/`lint`
+    // toolchain entries exist too but this gate does not drive them.
     for (const script of ['dev', 'typecheck', 'test', 'build', 'start']) {
       if (typeof manifest.scripts[script] !== 'string') {
         throw new Error(`Packed starter is missing the '${script}' script.`);
@@ -624,11 +633,13 @@ async function main(): Promise<void> {
           'dev/typecheck/test/build/start and preview mode lives on the router bin.',
       );
     }
-    // The Vite+ dev entry: the vite-plus bin (`vp dev`), the one documented
-    // spelling — the dev leg below rides it with vite's pass-through flags.
-    if (manifest.scripts.dev !== 'vp dev') {
+    // The dev entry: the router bin's `oe dev` subcommand — manager-neutral,
+    // the one documented spelling — the dev leg below rides it with the
+    // flags `oe dev` parses (--port/--host/--strictPort).
+    if (manifest.scripts.dev !== 'oe dev') {
       throw new Error(
-        `Packed starter script 'dev' is not the Vite+ form (vp dev): ${manifest.scripts.dev}`,
+        `Packed starter script 'dev' is not the package-manager-neutral form (oe dev): ` +
+          `${manifest.scripts.dev}`,
       );
     }
     // The bin seam, read off the realized artifact: `build`/`start` must call
@@ -666,70 +677,45 @@ async function main(): Promise<void> {
     // surface above is asserted before this point.
     manifest.devDependencies['@playwright/test'] = PW_PROBE_PIN;
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    // The scaffold's own pnpm-workspace.yaml is load-bearing for the Vite+
-    // form: its catalog resolves `vite-plus: "catalog:"` in the manifest and
-    // the `vite@*: "catalog:"` override points every peer's vite at the Vite+
-    // core build. Assert the packed scaffold carries it (same fragments the
-    // starter-smoke setup anchors) BEFORE this gate touches the file. The
-    // read is itself the existence check (read-and-expect-ENOENT, no
-    // existsSync shape probe): a missing file fails the gate right here
-    // without opening a check-then-write race window on the path below.
+    // OWNER DECISION (alpha15 option B): the shipped scaffold is
+    // package-manager neutral and carries NO pnpm-workspace.yaml, so the
+    // packed tarball pinning lives HERE — in the harness's own scratch tree —
+    // and never in the shipped payload. First prove the scaffold stayed
+    // neutral: the read is itself the existence check, and only ENOENT is the
+    // expected outcome (any other IO error fails the step). The shipped
+    // scaffold is the packed CLI's own output in this fresh temp directory,
+    // so no second writer can race a check-then-write window.
     const workspacePath = join(starter, 'pnpm-workspace.yaml');
-    let workspaceYaml: string;
+    let shippedWorkspace: string | null = null;
     try {
-      workspaceYaml = await readFile(workspacePath, 'utf8');
+      shippedWorkspace = await readFile(workspacePath, 'utf8');
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        throw new Error(
-          'Packed starter is missing pnpm-workspace.yaml (the Vite+ catalog/override form ships it)',
-        );
-      }
-      throw error;
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
     }
-    for (const fragment of [
-      'npm:@voidzero-dev/vite-plus-core@1.1.0',
-      'vite-plus: 1.1.0',
-      'vite@*: "catalog:"',
-    ]) {
-      if (!workspaceYaml.includes(fragment)) {
-        throw new Error(
-          `Packed starter pnpm-workspace.yaml is not the Vite+ form: missing ${fragment}`,
-        );
-      }
+    if (shippedWorkspace !== null) {
+      throw new Error(
+        `Packed starter ships a pnpm-specific workspace file (${workspacePath}); the ` +
+          `package-manager-neutral scaffold must not:\n${shippedWorkspace.slice(0, 200)}`,
+      );
     }
     // Since #1557 the packed element/router tarballs carry transitive workspace
     // pins (protocol, compiler at the exact current version) the registry does
     // not have before release day — pnpm 12 reads overrides from the workspace
     // file, so the qualification pins every framework package to this
-    // checkout's tarballs. The file:// pins fold INTO the scaffold's own
-    // `overrides:` block so every shipped entry stays verbatim: rebuilding the
-    // file would drop the catalog and leave `vite-plus: "catalog:"`
-    // unresolvable at install (same fold the starter-smoke setup performs).
+    // checkout's tarballs. This carrier is the HARNESS's own file: it never
+    // ships, and the scaffold's bytes are untouched.
     const frameworkTarballs: Array<[string, string]> = [
       ['@openelement/protocol', tarballFor('@openelement/protocol')],
       ['@openelement/element', elementTarball],
       ['@openelement/compiler', tarballFor('@openelement/compiler')],
       ['@openelement/router', routerTarball],
     ];
-    const overridesKey = /^overrides:\n/m;
-    // One deterministic pass over the in-memory read: transform first, then
-    // validate the transformation against the same string it was computed
-    // from (a no-op replace is exactly the missing-overrides case), then
-    // write once — no shape check precedes the write, so the check-then-write
-    // TOCTOU window CodeQL flags (js/file-system-race) cannot open here.
-    const foldedYaml = workspaceYaml.replace(
-      overridesKey,
-      `overrides:\n${frameworkTarballs
-        .map(([name, path]) => `  "${name}": ${pathToFileURL(path).href}`)
-        .join('\n')}\n`,
+    await writeFile(
+      workspacePath,
+      `# Written by tools/release/consumer-packaged-starter.ts — harness-side pinning.\n` +
+        `# NOT part of the scaffold: the packed starter ships no workspace file.\n` +
+        consumerPnpmOverridesYaml(frameworkTarballs.map(([name, path]) => ({ name, path }))),
     );
-    if (foldedYaml === workspaceYaml) {
-      throw new Error(
-        'Packed starter pnpm-workspace.yaml has no overrides block to extend; ' +
-          'the Vite+ scaffold form changed under this gate',
-      );
-    }
-    await writeFile(workspacePath, foldedYaml);
     const installStarter = await run(
       'pnpm',
       ['install', '--no-frozen-lockfile'],
@@ -747,8 +733,9 @@ async function main(): Promise<void> {
     await assertConsumerDoesNotResolveIntoRepository(join(starter, 'node_modules'));
 
     // Lifecycle leg 1 — dev: the packed starter must boot the real vite dev
-    // server (the Vite+ core, through the starter's `vp dev` script) and
-    // SSR-render the index route over HTTP, not just exit green.
+    // server (through the starter's `oe dev` script, the router bin's own dev
+    // subcommand) and SSR-render the index route over HTTP, not just exit
+    // green. The flags are the ones `oe dev` parses and forwards to Vite.
     // The host is pinned: vite's default 'localhost' binding is IPv6-first on
     // some platforms while the HTTP probes target 127.0.0.1.
     await exerciseServer(
@@ -760,8 +747,8 @@ async function main(): Promise<void> {
       [['/', 'Rendered before JavaScript arrives']],
     );
 
-    // Lifecycle leg 2 — typecheck (the check→typecheck rename of the Vite+
-    // lifecycle): `tsc --noEmit` through the starter's own script.
+    // Lifecycle leg 2 — typecheck: `tsc --noEmit` through the starter's own
+    // script.
     const typecheck = await run('pnpm', ['run', 'typecheck'], starter);
     if (!typecheck.success) {
       throw new Error(`Packed starter typecheck failed:\n${typecheck.output}`);
@@ -965,7 +952,7 @@ async function main(): Promise<void> {
     if (
       preview.success ||
       !preview.output.includes('request-time routes') ||
-      !preview.output.includes('pnpm start')
+      !preview.output.includes('Use: oe start')
     ) {
       throw new Error(
         `Packed router bin preview must fail closed with start guidance for a dynamic app:\n${preview.output}`,

@@ -7,8 +7,9 @@
  *                      fetch(Request): Response dispatch. When
  *                      dist/server/index.js exists, dynamic routes and
  *                      mutations dispatch to it.
- *                      (`pnpm start` in a generated project — its script
- *                      runs `openelement start`.)
+ *                      (`oe start` in a generated project — its script runs
+ *                      this subcommand through the router's short bin; the
+ *                      long alias `openelement start` is the same dispatcher.)
  *   preview          - static-only serving through the SAME dispatch: the
  *                      mode refuses dist/server/index.js up front (a build
  *                      with request-time routes is a `start` deployment),
@@ -127,7 +128,7 @@ async function main(argv: string[]): Promise<void> {
   const { distDir } = resolveServePaths();
   if (!existsSync(distDir)) {
     console.error(
-      `[openElement ${parsed.mode}] ${DEFAULT_OUT_DIR}/ not found. Run \`pnpm build\` first.`,
+      `[openElement ${parsed.mode}] ${DEFAULT_OUT_DIR}/ not found. Run \`oe build\` first.`,
     );
     process.exit(1);
   }
@@ -286,7 +287,7 @@ async function runPreview(rest: string[]): Promise<void> {
     console.error(
       `[openElement preview] This project has request-time routes (${DEFAULT_OUT_DIR}/server).\n` +
         '  A static-only preview cannot serve dynamic loader/action routes.\n' +
-        '  Use: pnpm start\n' +
+        '  Use: oe start\n' +
         '  (or: openelement start)',
     );
     process.exit(1);

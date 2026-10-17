@@ -51,19 +51,47 @@ test('vite gate rejects split lockfile instances and second bundlers', () => {
   ).toEqual(1);
 });
 
-test('vite gate keeps a direct vite entry out of the starter template', () => {
+test('vite gate accepts the starter template pinned at the router version', () => {
   const tmpl = 'packages/create/templates/package.json.tmpl';
-  // The generated project's vite tree comes from the Vite+ catalog and the
-  // `vite@*` override in its workspace file, so ANY direct entry in the
-  // template is a second source — including one matching the canonical dev
-  // pin, and including the retired `${v.vite}` scaffold token.
-  expect(
-    checkManifests([{ path: tmpl, imports: { vite: `npm:vite@${VITE_DEV_PIN}` } }]).length,
-  ).toEqual(1);
-  expect(checkManifests([{ path: tmpl, imports: { vite: 'npm:vite@${v.vite}' } }]).length).toEqual(
-    1,
+  // The package-manager-neutral scaffold pins vite itself, at exactly the
+  // version packages/router/package.json declares in dependencies.vite.
+  expect(checkManifests([{ path: tmpl, imports: { vite: `npm:vite@${VITE_DEV_PIN}` } }])).toEqual(
+    [],
   );
-  expect(checkManifests([{ path: tmpl, imports: { vite: 'npm:vite@^8.0.0' } }]).length).toEqual(1);
-  // The template as shipped (no vite key at all) passes.
-  expect(checkManifests([{ path: tmpl, imports: { 'vite-plus': 'catalog:' } }])).toEqual([]);
+  // The pin follows the router manifest the caller passes in, not a literal.
+  expect(
+    checkManifests([{ path: tmpl, imports: { vite: 'npm:vite@8.0.17' } }], {
+      routerVitePin: '8.0.17',
+    }),
+  ).toEqual([]);
+});
+
+test('vite gate rejects a starter template that drifts from the router pin', () => {
+  const tmpl = 'packages/create/templates/package.json.tmpl';
+  // A different exact version and a range both disagree with the router's own
+  // resolved vite.
+  const drifted = checkManifests([
+    { path: tmpl, imports: { vite: 'npm:vite@8.0.17' } },
+    { path: tmpl, imports: { vite: 'npm:vite@^8.0.0' } },
+  ]);
+  expect(drifted.length).toEqual(2);
+  for (const violation of drifted) {
+    expect(violation.message).toContain(`must pin the router's own vite exactly`);
+  }
+  // The retired `${v.vite}` scaffold token is not a version at all.
+  expect(
+    checkManifests([{ path: tmpl, imports: { vite: 'npm:vite@${v.vite}' } }]).map(
+      (violation) => violation.message,
+    ),
+  ).toEqual([`unparseable vite specifier 'npm:vite@\${v.vite}'`]);
+  // A template that drops the pin entirely has no catalog to fall back on.
+  expect(checkManifests([{ path: tmpl, imports: { 'vite-plus': 'catalog:' } }])).toEqual([
+    {
+      where: `${tmpl} imports.vite`,
+      message:
+        `the starter template must declare vite directly at the router's own version ` +
+        `('${VITE_DEV_PIN}'); the Vite+ catalog is retired and the generated project ` +
+        `has no other source for its vite tree`,
+    },
+  ]);
 });

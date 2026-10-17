@@ -12,9 +12,12 @@
  * - no second first-party bundler orchestration (`npm:esbuild`, `npm:rollup`,
  *   `rolldown-vite` imports in first-party build sources; the WTR browser
  *   test host is exempt — it serves tests, it does not build products)
- * - no direct `vite` entry in the starter template: the generated project's
- *   vite tree comes from the Vite+ catalog (`vite: npm:@voidzero-dev/
- *   vite-plus-core` plus the `vite@*` override in pnpm-workspace.yaml)
+ * - the starter template PINS `vite` directly, at exactly the version
+ *   `packages/router/package.json` declares in its own `dependencies.vite`:
+ *   the scaffold is package-manager neutral (no pnpm `catalog:`, no
+ *   pnpm-workspace.yaml, no `vite-plus`), so the generated project's vite is
+ *   its own devDependency — and it must be the version the router's Vite
+ *   plugin resolves, or the consumer tree carries a second vite instance
  *
  * Usage: node tools/repo/deps-vite-check.ts (pnpm --dir tools/repo run deps:vite-check)
  */
@@ -22,6 +25,8 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import process from 'node:process';
 
+/** The ONE vite version the router and every generated project resolve; main()
+ * verifies the router manifest against it before checking the template. */
 export const VITE_DEV_PIN = '8.0.16';
 export const VITE_PEER_RANGE = 'npm:vite@^8.0.0';
 
@@ -32,9 +37,9 @@ const MANIFEST_GLOB_ROOTS = [
   'apps/saas/package.json',
   'tests/fixtures/*/package.json',
   'tests/e2e/starter-smoke/package.json',
-  // The starter template ships to every new user; it must declare no vite
-  // entry at all (the Vite+ catalog + the `vite@*` override own the generated
-  // project's vite tree, ADR-0161).
+  // The starter template ships to every new user. It PINS vite directly (the
+  // scaffold is package-manager neutral: no catalog, no workspace file), and
+  // the pin must be the router's own version — see ViteCheckOptions.
   'packages/create/templates/package.json.tmpl',
 ];
 
@@ -47,6 +52,19 @@ export interface ManifestRecord {
 export interface ViteViolation {
   where: string;
   message: string;
+}
+
+/** Options for {@link checkManifests}. */
+export interface ViteCheckOptions {
+  /**
+   * The exact vite version `packages/router/package.json` declares in
+   * `dependencies.vite` — the version the router itself resolves. The starter
+   * template must pin exactly this version: the generated project builds
+   * through the same router Vite plugin, so a divergent pin is a second vite
+   * resolution in the consumer's tree. Defaults to {@link VITE_DEV_PIN}, the
+   * value `main()` verifies the router manifest against.
+   */
+  routerVitePin?: string;
 }
 
 const NPM_VERSION_RE = /^npm:([^@]+)@(\^|~)?(\d+)\.(\d+)\.(\d+)(-[\w.]+)?$/;
@@ -64,6 +82,7 @@ function viteSpecifierViolations(
   slot: string,
   key: string,
   value: string,
+  routerVitePin: string,
 ): ViteViolation[] {
   const out: ViteViolation[] = [];
   if (key === 'rolldown-vite' || value.includes('rolldown-vite')) {
@@ -88,19 +107,24 @@ function viteSpecifierViolations(
     return out;
   }
   if (key !== 'vite') return out;
-  if (path.endsWith('.tmpl')) {
-    // The starter's Vite comes from the Vite+ catalog and the `vite@*`
-    // override in its workspace file; a direct entry here would be a second
-    // source the generated project resolves against.
-    out.push({
-      where: `${path} ${slot}.${key}`,
-      message: 'the starter template must not declare vite directly; the Vite+ catalog owns it',
-    });
-    return out;
-  }
   const parsed = parseNpmSpecifier(value);
   if (!parsed) {
     out.push({ where: `${path} ${slot}.${key}`, message: `unparseable vite specifier '${value}'` });
+    return out;
+  }
+  if (path.endsWith('.tmpl')) {
+    // The generated project's vite is its own devDependency (no catalog owns
+    // it anymore), and it must be the version the router itself resolves: the
+    // scaffold builds through the same router Vite plugin, so a divergent pin
+    // resolves a second vite instance into the consumer tree.
+    if (value !== `npm:vite@${routerVitePin}`) {
+      out.push({
+        where: `${path} ${slot}.${key}`,
+        message:
+          `the starter template must pin the router's own vite exactly ` +
+          `('npm:vite@${routerVitePin}'), found '${value}'`,
+      });
+    }
     return out;
   }
   if (parsed.major !== 8) {
@@ -119,18 +143,38 @@ function viteSpecifierViolations(
   return out;
 }
 
-export function checkManifests(records: ManifestRecord[]): ViteViolation[] {
+export function checkManifests(
+  records: ManifestRecord[],
+  options: ViteCheckOptions = {},
+): ViteViolation[] {
+  const routerVitePin = options.routerVitePin ?? VITE_DEV_PIN;
   const violations: ViteViolation[] = [];
   for (const record of records) {
     for (const [key, value] of Object.entries(record.imports ?? {})) {
       if (typeof value === 'string') {
-        violations.push(...viteSpecifierViolations(record.path, 'imports', key, value));
+        violations.push(
+          ...viteSpecifierViolations(record.path, 'imports', key, value, routerVitePin),
+        );
       }
     }
     for (const [key, value] of Object.entries(record.peerDependencies ?? {})) {
       if (typeof value === 'string') {
-        violations.push(...viteSpecifierViolations(record.path, 'peerDependencies', key, value));
+        violations.push(
+          ...viteSpecifierViolations(record.path, 'peerDependencies', key, value, routerVitePin),
+        );
       }
+    }
+    // The template must carry the pin, not merely avoid a forbidden one: with
+    // no catalog to fall back on, a generated project without its own vite
+    // devDependency cannot resolve the router's optional vite peer at all.
+    if (record.path.endsWith('.tmpl') && record.imports?.['vite'] === undefined) {
+      violations.push({
+        where: `${record.path} imports.vite`,
+        message:
+          `the starter template must declare vite directly at the router's own version ` +
+          `('${routerVitePin}'); the Vite+ catalog is retired and the generated project ` +
+          `has no other source for its vite tree`,
+      });
     }
   }
   return violations;
@@ -298,7 +342,29 @@ if (import.meta.main) {
     }
     failures.push({ where: path, message: 'unrecognized manifest path' });
   }
-  failures.push(...checkManifests(records));
+  // The router manifest is the authority for the template's pin: the scaffold
+  // builds through the router's Vite plugin, so both must resolve one vite.
+  // A router bump that leaves VITE_DEV_PIN (and therefore the template)
+  // behind fails here instead of surfacing as a duplicate vite in a consumer.
+  const routerManifest = await readJsonFile<Record<string, unknown>>(
+    'packages/router/package.json',
+  );
+  const routerVite = (routerManifest?.dependencies as Record<string, string> | undefined)?.['vite'];
+  if (routerVite !== VITE_DEV_PIN) {
+    failures.push({
+      where: 'packages/router/package.json dependencies.vite',
+      message:
+        `the router's own vite pin must be the exact version '${VITE_DEV_PIN}' ` +
+        `(the version the starter template and VITE_DEV_PIN carry), found ` +
+        `'${routerVite ?? '<missing>'}'`,
+    });
+  }
+  // An inexact router pin cannot be the template's contract; fall back to the
+  // constant so the template is still checked against the canonical version
+  // (the failure above already reports the router side).
+  const routerViteExactPin =
+    typeof routerVite === 'string' && /^\d+\.\d+\.\d+/.test(routerVite) ? routerVite : VITE_DEV_PIN;
+  failures.push(...checkManifests(records, { routerVitePin: routerViteExactPin }));
   // The single pnpm lock is the resolution truth; synthesize the specifier
   // record from its resolved package keys (every `vite@<version>` entry).
   const lockText = await readFile('pnpm-lock.yaml', 'utf8').catch(() => null);
@@ -319,5 +385,7 @@ if (import.meta.main) {
     console.error(`${failures.length} vite-unification violation(s)`);
     process.exit(1);
   }
-  console.log(`vite-unification ok (dev ${VITE_DEV_PIN}, peer ${VITE_PEER_RANGE})`);
+  console.log(
+    `vite-unification ok (router + starter template pinned ${VITE_DEV_PIN}, peer ${VITE_PEER_RANGE})`,
+  );
 }

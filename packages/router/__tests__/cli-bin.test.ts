@@ -323,7 +323,7 @@ test('router bins: start and preview dispatch identically to the cli/start entry
       expect(binPreview.output, `${binName} preview output`).toEqual(entryPreview.output);
       expect(binPreview.code, `${binName} preview code`).toEqual(1);
       expect(binPreview.output).toContain('request-time routes');
-      expect(binPreview.output).toContain('pnpm start');
+      expect(binPreview.output).toContain('oe start');
       expect(binPreview.output).toContain('(or: openelement start)');
     }
   } finally {

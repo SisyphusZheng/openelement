@@ -19,11 +19,12 @@
  * open-dialog + open-code-block — and then runs the adopter lifecycle (ADR-0161):
  *
  *   install  the appliance's package.json resolves through a real pnpm install
- *            (the `vite-plus: "catalog:"` devDependency resolves through the
- *            scaffold's own pnpm-workspace.yaml catalog, and the `vite@*`
- *            override points the whole vite tree at the Vite+ core build)
- *   dev      the Vite+ dev server (`vp dev`) boots; /ui-lab SSR-renders the
- *            three UI hosts with their package sheets as DSD
+ *            (the scaffold is package-manager neutral: it pins `vite` itself
+ *            at the router's own version and ships no workspace file — the
+ *            harness writes its OWN overrides carrier into this scratch tree,
+ *            see the pinning block before the install)
+ *   dev      the router bin's dev server (`oe dev`) boots; /ui-lab SSR-renders
+ *            the three UI hosts with their package sheets as DSD
  *            `<style data-oe-static-styles>` text
  *            (no `Unknown file extension ".css"` — the KR-10(a) detector)
  *   typecheck the starter's own `typecheck` script (tsc --noEmit) against the
@@ -53,7 +54,11 @@ import { pathToFileURL } from 'node:url';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { assertPackedTarballsFresh, runProcess } from './consumer-packaged-shared.ts';
+import {
+  assertPackedTarballsFresh,
+  consumerPnpmOverridesYaml,
+  runProcess,
+} from './consumer-packaged-shared.ts';
 import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { readPackages } from '../lib/package-graph.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
@@ -1328,8 +1333,9 @@ async function main(): Promise<void> {
       devDependencies: Record<string, string>;
       scripts: Record<string, string>;
     };
-    // The Vite+ lifecycle renames `check` to `typecheck` (`tsc --noEmit`);
-    // `fmt`/`lint` exist too but this appliance does not drive them.
+    // The appliance drives the starter's own lifecycle scripts (`typecheck` is
+    // `tsc --noEmit`); `fmt`/`lint` exist too but this appliance does not
+    // drive them.
     for (const script of ['dev', 'typecheck', 'build', 'start']) {
       if (typeof manifest.scripts[script] !== 'string') {
         throw new Error(`Packed starter is missing the '${script}' script.`);
@@ -1346,45 +1352,31 @@ async function main(): Promise<void> {
     manifest.dependencies['@acme/utility-widget'] = pathToFileURL(widgetTarball).href;
     await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-    // The scaffold's own pnpm-workspace.yaml is load-bearing for the Vite+
-    // form: its catalog resolves `vite-plus: "catalog:"` in the manifest and
-    // the `vite@*: "catalog:"` override points every peer's vite at the Vite+
-    // core build. Assert the packed scaffold carries it (same fragments the
-    // starter leg and the starter-smoke setup anchor) BEFORE this gate
-    // touches the file. The read is itself the existence check
-    // (read-and-expect-ENOENT, no existsSync shape probe): a missing file
-    // fails the gate right here without opening a check-then-write race
-    // window on the path below.
+    // OWNER DECISION (alpha15 option B): the shipped scaffold is
+    // package-manager neutral and carries NO pnpm-workspace.yaml, so the
+    // packed tarball pinning lives HERE — in the harness's own scratch tree —
+    // and never in the shipped payload. First prove the scaffold stayed
+    // neutral: the read is itself the existence check, and only ENOENT is the
+    // expected outcome (any other IO error fails the step). The scaffold is
+    // the packed CLI's own output in this fresh temp directory, so no second
+    // writer can race a check-then-write window.
     const workspacePath = join(starter, 'pnpm-workspace.yaml');
-    let workspaceYaml: string;
+    let shippedWorkspace: string | null = null;
     try {
-      workspaceYaml = await readFile(workspacePath, 'utf8');
+      shippedWorkspace = await readFile(workspacePath, 'utf8');
     } catch (error) {
-      if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
-        throw new Error(
-          'Packed starter is missing pnpm-workspace.yaml (the Vite+ catalog/override form ships it)',
-        );
-      }
-      throw error;
+      if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
     }
-    for (const fragment of [
-      'npm:@voidzero-dev/vite-plus-core@1.1.0',
-      'vite-plus: 1.1.0',
-      'vite@*: "catalog:"',
-    ]) {
-      if (!workspaceYaml.includes(fragment)) {
-        throw new Error(
-          `Packed starter pnpm-workspace.yaml is not the Vite+ form: missing ${fragment}`,
-        );
-      }
+    if (shippedWorkspace !== null) {
+      throw new Error(
+        `Packed starter ships a pnpm-specific workspace file (${workspacePath}); the ` +
+          `package-manager-neutral scaffold must not:\n${shippedWorkspace.slice(0, 200)}`,
+      );
     }
     // Every framework package resolves to this checkout's tarballs (the #1557
     // transitive workspace pins), so the legs qualify the packed artifacts
-    // end-to-end (same overrides contract as the starter leg). The file://
-    // pins fold INTO the scaffold's own `overrides:` block so every shipped
-    // entry stays verbatim: rebuilding the file would drop the catalog and
-    // leave `vite-plus: "catalog:"` unresolvable at install (same fold the
-    // starter leg performs).
+    // end-to-end. This carrier is the HARNESS's own file: it never ships, and
+    // the scaffold's bytes are untouched.
     const frameworkTarballs: Array<[string, string]> = [
       ['@openelement/protocol', tarballFor('@openelement/protocol')],
       ['@openelement/element', elementTarball],
@@ -1392,26 +1384,12 @@ async function main(): Promise<void> {
       ['@openelement/router', routerTarball],
       ['@openelement/ui', uiTarball],
     ];
-    const overridesKey = /^overrides:\n/m;
-    // One deterministic pass over the in-memory read (same fold shape as the
-    // starter leg): transform first, then validate the transformation against
-    // the same string it was computed from (a no-op replace is exactly the
-    // missing-overrides case), then write once — no shape check precedes the
-    // write, so the check-then-write TOCTOU window CodeQL flags
-    // (js/file-system-race) cannot open here.
-    const foldedYaml = workspaceYaml.replace(
-      overridesKey,
-      `overrides:\n${frameworkTarballs
-        .map(([name, path]) => `  "${name}": ${pathToFileURL(path).href}`)
-        .join('\n')}\n`,
+    await writeFile(
+      workspacePath,
+      `# Written by tools/release/consumer-packaged-ui-app.ts — harness-side pinning.\n` +
+        `# NOT part of the scaffold: the packed starter ships no workspace file.\n` +
+        consumerPnpmOverridesYaml(frameworkTarballs.map(([name, path]) => ({ name, path }))),
     );
-    if (foldedYaml === workspaceYaml) {
-      throw new Error(
-        'Packed starter pnpm-workspace.yaml has no overrides block to extend; ' +
-          'the Vite+ scaffold form changed under this gate',
-      );
-    }
-    await writeFile(workspacePath, foldedYaml);
 
     const configPath = join(starter, 'openelement.config.ts');
     const config = await readFile(configPath, 'utf8');
@@ -1514,8 +1492,8 @@ async function main(): Promise<void> {
     }
 
     // Lifecycle leg 1 — dev: the packed adapter must boot the real vite dev
-    // server (the Vite+ core, through the starter's `vp dev` script) and
-    // SSR-render the appliance page over HTTP. Without the
+    // server (through the starter's `oe dev` script, the router bin's own dev
+    // subcommand) and SSR-render the appliance page over HTTP. Without the
     // packageIslands → ssr.noExternal wiring (KR-10(a)) this leg dies with
     // `Unknown file extension ".css"` from Node's ESM loader; without the dev
     // style-edge intake it dies at the `.css` module's default export. The DSD
@@ -1537,9 +1515,8 @@ async function main(): Promise<void> {
       ],
     );
 
-    // Lifecycle leg 2 — typecheck (the check→typecheck rename of the Vite+
-    // lifecycle): the appliance's own `tsc --noEmit` against the packed UI
-    // declarations.
+    // Lifecycle leg 2 — typecheck: the appliance's own `tsc --noEmit` against
+    // the packed UI declarations.
     const typecheck = await run('pnpm', ['run', 'typecheck'], starter);
     if (!typecheck.success) {
       throw new Error(`Packed UI appliance typecheck failed:\n${typecheck.output}`);
