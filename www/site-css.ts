@@ -101,6 +101,17 @@ html[data-theme="light"],
   --hero-gold: #e3cf9f;
   --hero-gold-muted: #b9ad93;
   --hero-gold-line: #d8c49a;
+  /* Theme-invariant inks the linked authored layer (www/site-chrome.css)
+     consumes by name. That sheet is scanned by the site theme-token gate, so
+     its bare palette citations live HERE, in the site alias layer, never at
+     the call site: --scrim-ink is the open-search dialog scrim's ink (no role
+     is theme-invariant dark — --color-foreground flips to zinc-50 in dark),
+     and --grid-ink is the fixed violet of the page-hook grid hairline (the
+     violet roles --color-ring/--color-primary flip shade per theme, which
+     would change the drawn line). Both are defined once, in this block, so
+     neither flips with the theme. */
+  --scrim-ink: var(--color-zinc-950);
+  --grid-ink: var(--color-violet-600);
   /* Site override: real sans for prose. The shared token sheet maps
      --font-sans to JetBrains Mono (brand choice for the component layer);
      long-form reading on this site needs a true sans. Mono stays on

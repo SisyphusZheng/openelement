@@ -21,10 +21,13 @@
  * it was in open-layout.css: Tailwind utilities live in `@layer utilities`,
  * and an unlayered universal selector would beat every layered declaration.
  *
- * The theme-token gate (www/tools/check-site-theme-tokens.ts) scans
- * CSS-in-TS under www/app/site-ui and www/app/islands; plain .css files stay
- * outside it, so a rule moved here must keep its token discipline by the
- * same review that governed the sheet it came from.
+ * The theme-token gate (www/tools/check-site-theme-tokens.ts) scans this
+ * linked sheet under the SAME rules it applies to the CSS-in-TS sheets under
+ * www/app/site-ui and www/app/islands — hex/font/breakpoint rules plus the
+ * bare-palette rule. The two theme-invariant inks this sheet needs by name
+ * (the dialog scrim's dark, the page-hook grid's fixed violet) are site
+ * aliases in www/site-css.ts (--scrim-ink, --grid-ink), the site's sanctioned
+ * token-definition layer: the bare palette citation lives there, never here.
  */
 
 /* ─── Site shell (the retired open-layout island) ──────────────────────── */
@@ -63,15 +66,16 @@ open-search {
   }
 }
 
-/* The dialog scrim's ink: --color-zinc-950 is a theme-invariant dark palette
- * value (no role token is theme-invariant dark) — the reason the retired
- * open-search.css carried a BARE_PALETTE_ALLOWLIST entry, which retires with
- * the sheet (plain .css files are outside the gate's scanned set; this
- * comment is the value's visible record). Its box (position, inset, z-index,
- * viewport size, padding, backdrop filter) is a utility on the element, so
- * this is the only declaration the scrim owns. */
+/* The dialog scrim's ink: --scrim-ink is the site alias (www/site-css.ts) of
+ * a theme-invariant dark palette value — no role token is theme-invariant
+ * dark, which is why the retired open-search.css carried a
+ * BARE_PALETTE_ALLOWLIST entry. The sheet is scanned by the theme-token gate
+ * now, and the alias layer is where the palette citation lives, so no
+ * allowlist entry is needed. Its box (position, inset, z-index, viewport
+ * size, padding, backdrop filter) is a utility on the element, so this is the
+ * only declaration the scrim owns. */
 open-search .overlay {
-  background: color-mix(in srgb, var(--color-zinc-950) 44%, transparent);
+  background: color-mix(in srgb, var(--scrim-ink) 44%, transparent);
 }
 
 /* ─── Template pages (#1569) ───────────────────────────────────────────── */
@@ -100,12 +104,12 @@ open-search .overlay {
   z-index: -1;
   background-image:
     linear-gradient(
-      color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px,
+      color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px,
       transparent 1px
     ),
     linear-gradient(
       90deg,
-      color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px,
+      color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px,
       transparent 1px
     );
   background-size: 72px 72px;
@@ -146,12 +150,12 @@ open-search .overlay {
   z-index: -1;
   background-image:
     linear-gradient(
-      color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px,
+      color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px,
       transparent 1px
     ),
     linear-gradient(
       90deg,
-      color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px,
+      color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px,
       transparent 1px
     );
   background-size: 72px 72px;
@@ -183,8 +187,8 @@ open-search .overlay {
   inset: 0;
   z-index: -1;
   background-image:
-    linear-gradient(color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: linear-gradient(180deg, black, transparent);
 }
@@ -271,8 +275,8 @@ open-search .overlay {
   inset: 0;
   z-index: -1;
   background-image:
-    linear-gradient(color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--color-violet-600) 7%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--grid-ink) 7%, transparent) 1px, transparent 1px);
   background-size: 72px 72px;
   mask-image: linear-gradient(180deg, black, transparent);
 }
