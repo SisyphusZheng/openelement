@@ -419,8 +419,8 @@ jobs:
       - name: Pack and verify
         if: steps.check.outputs.already_published != 'true'
         run: |
-          vp run --fail-if-no-match @openelement/tools-release#pack:dry-run
-          vp run --fail-if-no-match @openelement/tools-release#pack-surface:check
+          vp run --no-cache --fail-if-no-match --filter @openelement/tools-release pack:dry-run
+          vp run --no-cache --fail-if-no-match --filter @openelement/tools-release pack-surface:check
 
       # Last gate before the irreversible step: operation, SHA, version and
       # the exact publish set are re-checked immediately before npm receives
@@ -469,7 +469,7 @@ jobs:
           SHIPPED: ${{ steps.check.outputs.packages }}
         run: |
           CSV=$(echo "${SHIPPED}" | tr ' ' ',')
-          vp run --fail-if-no-match @openelement/tools-release#publish:npm -- --packages "${CSV}"
+          vp run --no-cache --fail-if-no-match --filter @openelement/tools-release publish:npm -- --packages "${CSV}"
 
       # dist-tag writes over OIDC trusted publishing need npm >= 12.2.0 (npm docs);
       # the runner's bundled npm is older, so the CLI is pinned in its own step
@@ -514,7 +514,7 @@ jobs:
       # tracked truth is only worth keeping if a read or write failure is red.
       - name: Re-read the registry after the alias re-point
         if: always() && steps.check.outputs.already_published != 'true'
-        run: vp run --fail-if-no-match @openelement/tools-release#sync:registry
+        run: vp run --no-cache --fail-if-no-match --filter @openelement/tools-release sync:registry
 
       # What the publish train writes: docs/release/release-state.json and the
       # site's display constants, both set to what npm answers, so the tracked

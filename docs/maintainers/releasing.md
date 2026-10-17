@@ -88,19 +88,20 @@ publish; a missing environment fails the job closed instead of publishing:
 The candidate gate is split so a pull request gets fast, honest feedback
 without giving up any release-time proof.
 
-- `@openelement/tools-repo#gate:source` — the local source gate (eleven
+- `@openelement/tools-repo#gate:source` — the local source gate (twelve
   steps): `generate:all`, `typecheck`, the dependency-age quarantine check,
-  the Element and Router unit suites, markdown lint, the content-dates
-  manifest check, the public-interface snapshot, the request-time and
-  base-path fixture gates, and the Element browser gate (Chromium). No
+  the Element and Router unit suites, markdown lint, the vp-selector-flags
+  check, the content-dates manifest check, the public-interface snapshot, the
+  request-time and base-path fixture gates, and the Element browser gate
+  (Chromium). No
   workflow invokes this task; `pnpm run verify` and `pnpm run verify:core`
-  are its entry points. Seven of its eleven steps also run in AutoFlow CI
-  through the `lint`, `test`, `e2e`, and `pack` jobs, but four have no CI
-  path at all today — `check:dep-age`,
-  `@openelement/www#check:content-dates`,
-  `@openelement/fixture-router-request-time#gate`, and
-  `@openelement/fixture-router-base-path#gate` — so a PR can be green while
-  they are unexercised. The separate packed producer owns
+  are its entry points. Nine of its twelve steps also run in AutoFlow CI
+  through the `lint`, `test`, `e2e`, and `pack` jobs; the request-time and
+  base-path fixture gates run only in the `e2e-full` full-qualification layer
+  (main pushes and `full_qualification` dispatches), and
+  `@openelement/tools-repo#typecheck` (the `tools/` project) runs in no CI
+  job at all — so a PR can be green while they are unexercised. The separate
+  packed producer owns
   `@openelement/tools-release#gate:packed`; the independent fresh-clone lane
   runs source and packed once each with cold pnpm/npm caches. A green
   `pnpm run verify:core` runs source plus packed locally.

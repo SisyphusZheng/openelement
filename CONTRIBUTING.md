@@ -69,13 +69,13 @@ package name:
 
 The gates are split in two layers. CI's fast PR layer is the `lint`, `test`,
 `e2e`, and `pack` jobs in `.github/workflows/autoflow-ci.yml`, and it runs on
-every pull request and on pushes to `main`. `tools/repo#gate:source` (11
+every pull request and on pushes to `main`. `tools/repo#gate:source` (12
 steps) is the LOCAL source gate: no workflow invokes it, and `pnpm run verify`
-and `pnpm run verify:core` are its entry points. Seven of its eleven steps also
-run in CI through those jobs; four currently have no CI path at all —
-`check:dep-age`, `@openelement/www#check:content-dates`,
-`@openelement/fixture-router-request-time#gate`, and
-`@openelement/fixture-router-base-path#gate` — so run `pnpm run verify:core`
+and `pnpm run verify:core` are its entry points. Nine of its twelve steps also
+run in CI through those jobs; the request-time and base-path fixture gates run
+only in the `e2e-full` full-qualification layer (main pushes and
+`full_qualification` dispatches), and `@openelement/tools-repo#typecheck` (the
+`tools/` project) runs in no CI job at all — so run `pnpm run verify:core`
 before relying on them. The steps that need a built Site, coverage, deploy
 fixtures, or three-engine browser matrices live in `tools/repo#gate:release`
 and run on the release train via `release:check` before anything is published.
