@@ -548,7 +548,11 @@ test.describe('declared ::part surface', () => {
         const outlineOf = (element: Element | null | undefined) =>
           element ? getComputedStyle(element).outlineColor : 'absent';
         return {
-          shadowScoped: button.getRootNode() instanceof ShadowRoot,
+          // The page is a server function page: its own output is light DOM,
+          // and the components it composes are the shadow hosts whose parts
+          // are being reached. The meaningful scoping fact is therefore the
+          // HOST's own shadow root, not an enclosing page component's.
+          shadowScoped: button.shadowRoot !== null,
           control: outlineOf(button.shadowRoot?.querySelector('[part=control]')),
           toggle: outlineOf(toggle.shadowRoot?.querySelector('[part=toggle]')),
           iconSun: outlineOf(toggle.shadowRoot?.querySelector('[part=icon-sun]')),
