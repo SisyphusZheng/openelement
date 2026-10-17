@@ -21,9 +21,11 @@
  *                               its check (`typeof n != 'function'`)
  *   custom element registration `customElements.get(tag)` after the gate
  *
- * The static half asserts the entry chunk's shape: `export{` sits after the
- * chunk's `await fetch(...)`, and the class the wrapper re-exports as
- * `default` is assigned behind that await — the window the race rides on.
+ * The static half asserts the loader's post-fix shape: no island entry chunk
+ * awaits its style asset at module scope. The generated adapter creates the
+ * sheet synchronously and records fetch/replace readiness ON the sheet
+ * (`STYLE_SHEET_READY`), so registration cannot sit behind the style fetch —
+ * the KR-2 failure mode the alpha15 S lane removed.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -51,7 +53,14 @@ interface Kr2Record {
   cssFetches: Array<{ url: string; at: number }>;
 }
 
-/** The entry chunks' static shape: where the export binds relative to the TLA. */
+/**
+ * The entry chunks' post-fix static shape: registration is decoupled from style
+ * readiness. The generated adapter creates its `CSSStyleSheet` synchronously
+ * and records fetch/replace readiness ON the sheet under
+ * `STYLE_SHEET_READY`; nothing at module scope may `await fetch(...)` the style
+ * asset, because such a module would make the island's definition wait on the
+ * network again — exactly the KR-2 failure mode the alpha15 S lane removed.
+ */
 function chunkOrderingEvidence(): string[] {
   const dir = join(import.meta.dirname!, '..', 'dist', 'client', 'islands');
   const lines: string[] = [];
@@ -62,11 +71,71 @@ function chunkOrderingEvidence(): string[] {
     const awaited = text.indexOf('await fetch(');
     const exported = text.indexOf('export{');
     lines.push(
-      `${name}: await fetch at ${awaited}, export{ at ${exported} — ` +
-        `${exported > awaited ? 'export binds behind the style await' : 'export binds before the await'}`,
+      `${name}: module-scope style fetch await ${
+        awaited === -1 ? 'absent' : `at ${awaited}`
+      }, export{ at ${exported} — ` +
+        (awaited === -1
+          ? 'registration is decoupled from style readiness'
+          : 'module evaluation still waits for a style fetch'),
     );
   }
   return lines;
+}
+
+interface StyleDeliveryState {
+  /** Marked links the DOCUMENT itself declares (document-level sheets only). */
+  documentLinks: number;
+  /** Marked links declared in the shadow tree that owns the light island. */
+  shadowLinks: Array<{ href: string | null; loaded: boolean }>;
+  /** True when the light host's FIRST child is its marked delivery link. */
+  lightLeadingLink: boolean;
+  /** Runtime-written style nodes anywhere in the document. */
+  runtimeNodes: number;
+  /** Inline framework stylesheets (`<style data-oe-static-styles>`). */
+  inlineFallbacks: number;
+  /** The pre-S5-C inline fallback a host's shadow root used to start with. */
+  shadowFallbackStyle: boolean;
+}
+
+/**
+ * Read the page's style-delivery state from the two trees that matter. The
+ * /combobox light island (`zag-combobox-light`) is a LIGHT-root component
+ * nested inside `combobox-page`'s DSD template, so its sheet is declared as a
+ * marked `<link>` INSIDE that template — a document-level sheet cannot reach
+ * shadow-tree content, so the document head carries none of these links
+ * (alpha15 S lane S-C1.2, nested-delivery half). The link is the light host's
+ * LEADING node: the compiled claim tolerates only leading marked style nodes,
+ * so a trailing link would cost the island its activation.
+ */
+function styleDelivery(page: Page): Promise<StyleDeliveryState> {
+  return page.evaluate(() => {
+    const frame = document.querySelector('combobox-page')?.shadowRoot;
+    const light = frame?.querySelector('zag-combobox-light');
+    const links = [...(frame?.querySelectorAll('link[data-oe-static-styles]') ?? [])];
+    const first = light?.firstChild;
+    const shadowHost = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
+    const shadowFirst = shadowHost?.shadowRoot?.firstChild;
+    const markedStyle = (node: ChildNode | null | undefined): node is Element =>
+      !!node &&
+      node.nodeType === 1 &&
+      (node as Element).tagName.toLowerCase() === 'style' &&
+      (node as Element).hasAttribute('data-oe-static-styles');
+    return {
+      documentLinks: document.querySelectorAll('link[data-oe-static-styles]').length,
+      shadowLinks: links.map((link) => ({
+        href: link.getAttribute('href'),
+        loaded: (link as HTMLLinkElement).sheet !== null,
+      })),
+      lightLeadingLink:
+        !!first &&
+        first.nodeType === 1 &&
+        (first as Element).tagName.toLowerCase() === 'link' &&
+        (first as Element).hasAttribute('data-oe-static-styles'),
+      runtimeNodes: document.querySelectorAll('style[data-open-element-compiled-style]').length,
+      inlineFallbacks: document.querySelectorAll('style[data-oe-static-styles]').length,
+      shadowFallbackStyle: markedStyle(shadowFirst),
+    };
+  });
 }
 
 async function installRecorder(page: Page): Promise<void> {
@@ -189,12 +258,13 @@ test('KR-2: repeated navigations all define every load-strategy island tag', asy
   page.on('console', (message) => consoleLines.push(`${message.type()}: ${message.text()}`));
   page.on('pageerror', (error) => consoleLines.push(`pageerror: ${error.message}`));
 
-  // The static precondition the race rides on: the entry chunk's export binds
-  // behind its style await, so a read inside that window sees `undefined`.
+  // The static post-fix precondition: registration is decoupled from style
+  // readiness, so no entry chunk awaits its style asset at module scope. A
+  // chunk that did would reintroduce the network window KR-2 rode on.
   const ordering = chunkOrderingEvidence();
   expect(
-    ordering.every((line) => line.includes('export binds behind the style await')),
-    `entry chunk shape changed; the TLA window the race rides on is gone:\n  ${ordering.join('\n  ')}`,
+    ordering.every((line) => line.includes('registration is decoupled from style readiness')),
+    `entry chunk shape changed; island registration must not await the style asset:\n  ${ordering.join('\n  ')}`,
   ).toBe(true);
 
   await installRecorder(page);
@@ -237,17 +307,17 @@ test('KR-2: repeated navigations all define every load-strategy island tag', asy
 });
 
 /**
- * Controlled trigger for the same failure mode. The chunk's export binding is
- * created behind `await fetch(styleAsset)` and `await sheet.replace(...)`, so
- * holding the style asset open widens exactly the window the loader must not
- * read inside. The delay is test-side and the only perturbation: the product's
+ * Controlled trigger for the same failure mode: every style request of the
+ * page is delayed, so the island chunks' style adapters are still in flight
+ * (and their parser-declared links still loading) while the loader registers
+ * the tags. The delay is test-side and the only perturbation: the product's
  * scheduling, read path and gates are untouched, and the unperturbed procedure
  * above stays the baseline.
  *
  * A correct loader must define every tag regardless of how long the style asset
  * takes — the gate is deliberately above the injected delay. A loader that
- * reads the entry namespace inside the window never defines the tag at all,
- * which is the original failure observed in the field.
+ * reads the entry namespace behind the style fetch never defines the tag at
+ * all, which is the original failure observed in the field.
  */
 test('KR-2 controlled trigger: a held style asset must not cost the island its definition', async ({
   page,
@@ -282,115 +352,141 @@ test('KR-2 controlled trigger: a held style asset must not cost the island its d
 });
 
 /**
- * Post-fix contract for the late-style handoff, on the real module graph. The
- * style asset is held open, so the islands must define *before* the sheet
- * settles and the two ownership paths are observable in the window:
+ * Post-fix contract for the external style delivery, on the real module graph.
+ * The style ADAPTER fetch is held open, so every island must define while it is
+ * still pending — and the delivery itself is the server's marked `<link>`,
+ * parser-visible from the first paint, so it loads independently of the held
+ * adapter and there is no inline fallback to retire:
  *
- *   shadow — the DSD `<style data-oe-static-styles>` fallback is the styling
- *            channel until the replacing sheet is installed, so it must still
- *            be there while the asset is held and gone once it landed;
- *   light  — the component's sheet is the DOCUMENT's resource (S-C1.2): the
- *            server-declared link carries it and the runtime adopts the sheet
- *            object, so a settled sheet shows up as the component's computed
- *            style and NEVER as a node the runtime wrote.
+ *   shadow — the marked link is the shadow root's LEADING node; the claim skips
+ *            leading style nodes and KEEPS the link as the delivery;
+ *   light  — the component's sheet is a resource of the TREE its content lands
+ *            in (S-C1.2): the nested light island sits inside the page's
+ *            shadow root, so the link is declared in that template as the light
+ *            host's leading node — never in the document head;
+ *   both   — the runtime writes no style node at any point.
+ *
+ * Holding the parser-visible stylesheet request instead would stall the
+ * navigation (a stylesheet request delays the deferred island script, and with
+ * it the load event), so this test holds exactly the adapter's own `fetch` —
+ * the asset request the post-fix handoff is about.
  */
-test('KR-2 post-fix: held styles still define every island, keep the SSR fallback, and land late', async ({
-  page,
-}) => {
-  const styleDelayMs = Number(process.env.KR2_STYLE_DELAY_MS ?? 1_500);
-  await installRecorder(page);
-  await page.route('**/*.css', async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, styleDelayMs));
-    await route.continue();
-  });
-
-  await page.goto('/combobox', { waitUntil: 'load' });
-  // The gate must pass while the sheet is still held: registration no longer
-  // waits for the style asset.
-  await page.waitForFunction(
-    (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
-    ISLAND_TAGS,
-    { timeout: GATE_TIMEOUT_MS },
-  );
-
-  // One in-page pass: read the state while the sheet is still held, then wait
-  // (bounded) for the sheet to land and both channels to settle — hydration
-  // retires the shadow fallback, the light island is styled by its sheet.
-  //
-  // The LIGHT island of this fixture sits inside `combobox-page`'s shadow
-  // root, so its computed styles are not observable from a document-level
-  // sheet (the shadow boundary blocks them — true of the retired head node as
-  // well). What IS observable, and what this pass pins, is that the runtime
-  // writes no style node in either phase: the delivery is the server's marked
-  // link plus the adopted sheet object (S-C1.2).
-  const observed = await page.evaluate(async () => {
-    const read = () => {
-      const frame = document.querySelector('combobox-page')?.shadowRoot;
-      const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
-      const first = host?.shadowRoot?.firstChild;
-      return {
-        fallback:
-          !!first &&
-          first.nodeType === 1 &&
-          (first as Element).hasAttribute('data-oe-static-styles'),
-        nodes: document.querySelectorAll('style[data-open-element-compiled-style]').length,
-        links: document.querySelectorAll('link[data-oe-static-styles]').length,
-      };
-    };
-    const held = read();
-    // Bounded wait past the injected asset delay: the served link is in the
-    // markup from the first paint, and the fetch adapter's sheet settles here.
-    const settleUntil = performance.now() + 5_000;
-    while (performance.now() < settleUntil) {
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    return { held, settled: { ...read(), timedOut: false } };
-  });
-
-  expect(
-    observed.held.nodes,
-    'the light island injects no style node while its sheet is held',
-  ).toEqual(0);
-  expect(
-    observed.settled.nodes,
-    'the light island injects no style node once its sheet has landed',
-  ).toEqual(0);
-  expect(observed.settled.links, 'the sheet is delivered by a document link').toBeGreaterThan(0);
-  expect(
-    observed.settled.fallback,
-    'the shadow fallback retires once the sheet is installed (pre-existing expectation)',
-  ).toBe(false);
-});
-
-/**
- * Q1-A: a disconnect before readiness must leave no late style write. The sheet
- * is held open, the light island is removed while its handoff is still pending,
- * and the release must not touch the DOM on behalf of the dropped connection —
- * with S-C1.2 there is no runtime write channel left at all, so the probe is
- * that the document gains no framework style node and no error surfaces.
- */
-test('Q1-A: a disconnect before the sheet is ready leaves no late style write', async ({
+test('KR-2 post-fix: a held style adapter still defines every island; the external link is the delivery', async ({
   page,
 }) => {
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
+  let adapterHeld = false;
   await page.route('**/*.css', async (route) => {
-    await held;
+    if (route.request().resourceType() === 'fetch') {
+      adapterHeld = true;
+      await held;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/combobox', { waitUntil: 'load' });
+  // The gate must pass while the adapter fetch is still held: registration no
+  // longer waits for the style asset.
+  await page.waitForFunction(
+    (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
+    ISLAND_TAGS,
+    { timeout: GATE_TIMEOUT_MS },
+  );
+  expect(adapterHeld, 'the test must actually hold the adapter fetch').toBe(true);
+
+  const during = await styleDelivery(page);
+  expect(
+    during.documentLinks,
+    'a sheet of a shadow-tree light root is not a document-head link',
+  ).toEqual(0);
+  expect(
+    during.shadowLinks.length,
+    'the enclosing shadow tree declares the light sheet as a marked link',
+  ).toBeGreaterThan(0);
+  expect(
+    during.shadowLinks.every((link) => link.loaded),
+    `the parser-visible delivery loads independently of the held adapter (${JSON.stringify(
+      during.shadowLinks,
+    )})`,
+  ).toBe(true);
+  expect(
+    during.lightLeadingLink,
+    'the light host keeps its leading marked link (the claim skips leading style nodes)',
+  ).toBe(true);
+  expect(during.inlineFallbacks, 'externalised sheets carry no inline DSD fallback').toEqual(0);
+  expect(during.shadowFallbackStyle, 'no inline fallback survives in a shadow root').toBe(false);
+  expect(
+    during.runtimeNodes,
+    'no island injects a runtime style node while the adapter is held',
+  ).toEqual(0);
+
+  release();
+  // Bounded settle on the one signal that the held fetch + replace completed:
+  // the adapter's own readiness promise on the sheet object. The delivery must
+  // not change while it settles.
+  await page.evaluate(async () => {
+    const ctor = customElements.get('zag-combobox-light') as unknown as {
+      styles?: Array<{ __openElementStyleReady?: Promise<unknown> }>;
+    };
+    const ready = ctor?.styles?.[0]?.__openElementStyleReady;
+    if (ready) await ready;
+  });
+  const settled = await styleDelivery(page);
+  expect(settled.documentLinks, 'the document never gains the nested light sheet link').toEqual(0);
+  expect(
+    settled.shadowLinks.map((link) => link.href),
+    'the declarative delivery is not rewritten by the runtime',
+  ).toEqual(during.shadowLinks.map((link) => link.href));
+  expect(settled.lightLeadingLink, 'the leading delivery link is not replaced').toBe(true);
+  expect(
+    settled.runtimeNodes,
+    'the light island injects no style node once its adapter has settled',
+  ).toEqual(0);
+  expect(settled.inlineFallbacks, 'no inline fallback is ever written').toEqual(0);
+  expect(settled.shadowFallbackStyle, 'the pre-S5-C shadow fallback is gone').toBe(false);
+});
+
+/**
+ * Q1-A: a disconnect before the style ADAPTER settles must leave no late style
+ * write. The light island is removed while its adapter fetch is still held, and
+ * the release must not touch the DOM on behalf of the dropped connection — with
+ * S-C1.2 there is no runtime write channel at all: the delivery is the
+ * server's declared `<link>` (declarative, removed with its host), so the probe
+ * is that the document gains no framework style node and no error surfaces.
+ *
+ * The held request is the adapter's own `fetch`, not the parser-visible
+ * stylesheet request: holding a `<link>` request blocks the deferred island
+ * script (and with it DOMContentLoaded), which stalls the navigation instead of
+ * exercising the handoff.
+ */
+test('Q1-A: a disconnect before the sheet adapter settles leaves no late style write', async ({
+  page,
+}) => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let adapterHeld = false;
+  await page.route('**/*.css', async (route) => {
+    if (route.request().resourceType() === 'fetch') {
+      adapterHeld = true;
+      await held;
+    }
     await route.continue();
   });
   const pageErrors: string[] = [];
   page.on('pageerror', (error) => pageErrors.push(error.message));
 
-  // domcontentloaded, not load: the held stylesheet would keep the load event
-  // pending for as long as the gate is closed, which is the whole point of it.
   await page.goto('/combobox', { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(
     (tags: string[]) => tags.every((tag) => customElements.get(tag) !== undefined),
     ISLAND_TAGS,
     { timeout: GATE_TIMEOUT_MS },
   );
+  expect(adapterHeld, 'the test must actually hold the adapter fetch').toBe(true);
 
   const removed = await page.evaluate(() => {
     const frame = document.querySelector('combobox-page')?.shadowRoot;
@@ -406,26 +502,33 @@ test('Q1-A: a disconnect before the sheet is ready leaves no late style write', 
 
   release();
   const after = await page.evaluate(async () => {
-    const settle = async () => {
-      const deadline = performance.now() + 5_000;
-      for (;;) {
-        const frame = document.querySelector('combobox-page')?.shadowRoot;
-        const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
-        const first = host?.shadowRoot?.firstChild;
-        const fallback =
-          !!first &&
-          first.nodeType === 1 &&
-          (first as Element).hasAttribute('data-oe-static-styles');
-        if (!fallback || performance.now() > deadline) return;
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
+    // Bounded settle on the adapter's own readiness: releasing the request must
+    // be the only thing that happens — no DOM is written for a dropped root.
+    const ctor = customElements.get('zag-combobox-light') as unknown as {
+      styles?: Array<{ __openElementStyleReady?: Promise<unknown> }>;
     };
-    await settle();
+    const ready = ctor?.styles?.[0]?.__openElementStyleReady;
+    if (ready) {
+      await Promise.race([
+        ready,
+        new Promise((resolve) => {
+          setTimeout(resolve, 5_000);
+        }),
+      ]);
+    }
     return {
       nodes: document.querySelectorAll('style[data-open-element-compiled-style]').length,
+      documentLinks: document.querySelectorAll('link[data-oe-static-styles]').length,
+      stillConnected:
+        document.querySelector('combobox-page')?.shadowRoot?.querySelector('zag-combobox-light') !==
+        null,
     };
   });
 
+  expect(after.stillConnected, 'the light island stays disconnected').toBe(false);
+  expect(after.documentLinks, 'the disconnected island declares nothing at document level').toEqual(
+    0,
+  );
   expect(
     after.nodes,
     'the released sheet wrote nothing on behalf of the disconnected island',
@@ -469,11 +572,15 @@ test('Q1-B: a moved light island resumes styles, bindings and dynamic state', as
   await expect(input).toHaveAttribute('aria-activedescendant', 'combobox:light-fruit:option:apple');
   await input.fill('typed-before-move');
 
-  const before = await page.evaluate(() => ({
-    nodes: document.querySelectorAll('style[data-open-element-compiled-style]').length,
-    links: document.querySelectorAll('link[data-oe-static-styles]').length,
-  }));
-  expect(before.nodes, 'the island carries no runtime style node before the move').toEqual(0);
+  const before = await styleDelivery(page);
+  expect(before.runtimeNodes, 'the island carries no runtime style node before the move').toEqual(
+    0,
+  );
+  expect(before.documentLinks, 'the light sheet is never a document-head link').toEqual(0);
+  expect(
+    before.shadowLinks.length,
+    'the enclosing tree declares the light sheet before the move',
+  ).toBeGreaterThan(0);
 
   const moved = await page.evaluate(() => {
     const frame = document.querySelector('combobox-page')?.shadowRoot;
@@ -493,19 +600,30 @@ test('Q1-B: a moved light island resumes styles, bindings and dynamic state', as
     const liveInput = frame?.querySelector(
       'zag-combobox-light input[data-part="input"]',
     ) as HTMLInputElement | null;
+    const frameLinks = [...(frame?.querySelectorAll('link[data-oe-static-styles]') ?? [])];
+    const first = host?.firstChild;
     return {
       identity: (globalThis as { __q1bIdentity?: unknown }).__q1bIdentity === host,
-      nodes: document.querySelectorAll('style[data-open-element-compiled-style]').length,
-      links: document.querySelectorAll('link[data-oe-static-styles]').length,
+      runtimeNodes: document.querySelectorAll('style[data-open-element-compiled-style]').length,
+      frameLinks: frameLinks.map((link) => link.getAttribute('href')),
+      lightLeadingLink:
+        !!first &&
+        first.nodeType === 1 &&
+        (first as Element).tagName.toLowerCase() === 'link' &&
+        (first as Element).hasAttribute('data-oe-static-styles'),
       value: liveInput?.value ?? 'missing',
     };
   });
   expect(state.identity, 'the reconnected island is the same element instance').toBe(true);
-  expect(state.nodes, 'the resumed island injects no style node').toEqual(0);
+  expect(state.runtimeNodes, 'the resumed island injects no style node').toEqual(0);
   expect(
-    state.links,
-    'the sheet resource is still declared after the move (the delivery is the document sheet)',
-  ).toBeGreaterThan(0);
+    state.frameLinks,
+    "the sheet resource is still declared after the move (the delivery is the enclosing tree's declared link)",
+  ).toEqual(before.shadowLinks.map((link) => link.href));
+  expect(
+    state.lightLeadingLink,
+    "the delivery link stays the light host's leading node across the move",
+  ).toBe(true);
   expect(state.value, 'runtime state survives the move').toEqual('typed-before-move');
 
   // Second round of real runtime change after the resume: the resumed bindings
@@ -549,13 +667,16 @@ test('Q1-C: one light instance disconnecting leaves the other styled', async ({ 
     };
     await new Promise((resolve) => setTimeout(resolve, 200));
     const nodesBefore = document.querySelectorAll('style[data-open-element-compiled-style]').length;
-    const linksBefore = document.querySelectorAll('link[data-oe-static-styles]').length;
+    // The delivery link lives in the enclosing shadow tree (S-C1.2 nested
+    // half), so the shared-state queries must read THAT tree — a document-level
+    // count would be zero on both sides and pin nothing.
+    const linksBefore = frame.querySelectorAll('link[data-oe-static-styles]').length;
     second.remove();
     await new Promise((resolve) => setTimeout(resolve, 200));
     const nodesAfterRemoval = document.querySelectorAll(
       'style[data-open-element-compiled-style]',
     ).length;
-    const linksAfterRemoval = document.querySelectorAll('link[data-oe-static-styles]').length;
+    const linksAfterRemoval = frame.querySelectorAll('link[data-oe-static-styles]').length;
     first.remove();
     await new Promise((resolve) => setTimeout(resolve, 200));
     return {
@@ -570,6 +691,10 @@ test('Q1-C: one light instance disconnecting leaves the other styled', async ({ 
   });
 
   expect(observed, 'the fixture must expose the light island').not.toBeNull();
+  expect(
+    observed!.linksBefore,
+    'the enclosing tree declares the shared delivery link',
+  ).toBeGreaterThan(0);
   expect(
     observed!.nodesAfterRemoval,
     `disconnecting one instance writes and removes no node (nodes before=${observed!.nodesBefore})`,
@@ -698,8 +823,10 @@ test('Q1-D: a resumed island reconciles a value written while disconnected', asy
 /**
  * Q2: a stylesheet that never loads is not success. The islands still define,
  * the failure is reported through the framework's diagnostic (not a silent
- * console-less drop), the SSR fallback survives, the light owner is never told
- * its rules arrived, and no unhandled rejection escapes.
+ * console-less drop), the DECLARATIVE delivery survives (the marked links stay
+ * in the markup; their failure means no rules, never a runtime rewrite), the
+ * light owner's adapter is never read as ready, and no unhandled rejection
+ * escapes.
  */
 for (const mode of ['http-500', 'network-abort'] as const) {
   test(`Q2: a ${mode} stylesheet failure is diagnosed, never read as ready`, async ({ page }) => {
@@ -734,10 +861,19 @@ for (const mode of ['http-500', 'network-abort'] as const) {
       const host = frame?.querySelector('zag-combobox[machine-id="shadow-a"]');
       const first = host?.shadowRoot?.firstChild;
       return {
-        fallback:
+        // The delivered shape is a marked LINK (the manifest reference), not
+        // the retired inline `<style data-oe-static-styles>` fallback. Both
+        // carry the same marker attribute, so tag identity is what separates
+        // them — a plain marker check would call the delivery a fallback.
+        fallbackStyle:
           !!first &&
           first.nodeType === 1 &&
+          (first as Element).tagName.toLowerCase() === 'style' &&
           (first as Element).hasAttribute('data-oe-static-styles'),
+        deliveryLinks: [...(frame?.querySelectorAll('link[data-oe-static-styles]') ?? [])].map(
+          (link) => link.getAttribute('href'),
+        ),
+        documentLinks: document.querySelectorAll('link[data-oe-static-styles]').length,
         headText:
           document.querySelector('style[data-open-element-compiled-style]')?.textContent ?? null,
         unhandled: (globalThis as unknown as { __kr2: { rejects: unknown[]; errors: unknown[] } })
@@ -756,7 +892,15 @@ for (const mode of ['http-500', 'network-abort'] as const) {
       'a style failure must not surface as an unhandled rejection',
     ).toEqual(0);
     expect((state.unhandled.errors as unknown[]).length, 'no uncaught page error').toEqual(0);
-    expect(state.fallback, 'the SSR fallback must survive a failed sheet').toBe(true);
+    expect(
+      state.fallbackStyle,
+      'the delivered shape is the declarative link, not the retired inline fallback',
+    ).toBe(false);
+    expect(
+      state.deliveryLinks.length,
+      'the declarative delivery links survive a failed sheet (markup is never rewritten)',
+    ).toBeGreaterThan(0);
+    expect(state.documentLinks, 'no failed sheet is declared at document level').toEqual(0);
     expect(
       state.headText?.includes('zag-combobox-input') ?? false,
       'a failed sheet must never be read as ready by the light owner',
