@@ -902,3 +902,31 @@ test('stream admission enforces the build-time field/owner budget aligned with t
     budgetFixture(32, 2).routeSource,
   );
 });
+
+// ── entry-shape branches (coverage lane, test-only) ──────────────────────
+//
+// The generated entry omits surfaces a project does not use; the absence is
+// part of the output contract (an api-only app has no page render bindings).
+
+test('an entry with no page routes carries no page-render factory bindings', () => {
+  const routes = [
+    { path: '/api/hello', filePath: 'api/hello.ts', type: 'api' as const, varName: 'apiHello' },
+  ];
+  const code = renderEntry(buildEntryDescriptor(routes));
+  expect(code).toContain('export const openElementHandler');
+  expect(code).not.toContain('ssr: __ssr,');
+  expect(code).not.toContain('pageProps: __pageProps,');
+});
+
+test('an entry with no stream routes and no SSG carries neither stream manifests nor head extras', () => {
+  const routes = [{ path: '/', filePath: 'index.ts', type: 'page' as const, varName: 'pageIndex' }];
+  const code = renderEntry(buildEntryDescriptor(routes));
+  expect(code).not.toContain('__streamManifests');
+  expect(code).not.toContain('const __headExtras');
+});
+
+test('an entry with no fetch middleware omits the dev-fetch export', () => {
+  const routes = [{ path: '/', filePath: 'index.ts', type: 'page' as const, varName: 'pageIndex' }];
+  const code = renderEntry(buildEntryDescriptor(routes));
+  expect(code).not.toContain('export const openElementDevFetch');
+});

@@ -916,3 +916,267 @@ test('#F01 media: a non-matching query stays silent on the rescan; its change li
   expect(imports).toEqual(1);
   expect(readyEvents).toEqual([{ strategy: 'media', islands: ['x-media'] }]);
 });
+
+// ── scheduler environment/edge branches (coverage lane, test-only) ────────
+//
+// The scheduler is the generated entry's runtime; these pin the environment
+// shapes it must survive: a loading document, a deferred rescan whose hook is
+// cleared, non-DOM element doubles, lookalike media-query APIs, and shared
+// idle retries.
+
+test('the ready-time visible scan waits for DOMContentLoaded on a loading document', () => {
+  const observed: FakeElement[] = [];
+  class FakeIO {
+    cb: (entries: { isIntersecting: boolean }[]) => void;
+    constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+      this.cb = cb;
+    }
+    observe(el: FakeElement): void {
+      observed.push(el);
+    }
+    disconnect(): void {
+      this.cb([]);
+    }
+  }
+  const body = treeWithTags('x-vis');
+  const listeners: Array<() => void> = [];
+  const doc = {
+    readyState: 'loading',
+    addEventListener: (type: string, fn: () => void) => {
+      if (type === 'DOMContentLoaded') listeners.push(fn);
+    },
+    dispatchEvent: () => true,
+    querySelectorAll: (selector: string) => body.querySelectorAll(selector),
+  } as unknown as Document;
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin({ IntersectionObserver: FakeIO }),
+    doc,
+    map: mapWith(['x-vis']),
+    strategies: STRATEGIES({ visible: ['x-vis'] }),
+    onIslandLoaded: null,
+  });
+  expect(observed).toEqual([]);
+  expect(listeners.length).toEqual(1);
+  listeners[0]!();
+  expect(observed.length).toEqual(1);
+});
+
+test('#584 the deferred post-load rescan re-checks the hook before calling it', async () => {
+  const calls: string[] = [];
+  const timeouts: Array<() => void> = [];
+  const deps = {
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin({
+      setTimeout: (fn: () => void) => {
+        timeouts.push(fn);
+        return 1;
+      },
+    }),
+    doc: makeDoc(treeWithTags('x-load'), []),
+    map: mapWith(['x-load']),
+    strategies: STRATEGIES({ load: ['x-load'] }),
+    onIslandLoaded: () => calls.push('rescan'),
+  };
+  createIslandScheduler(deps as unknown as Parameters<typeof createIslandScheduler>[0]);
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(timeouts.length).toEqual(1);
+  // The enhance layer can be torn down between scheduling and the macrotask;
+  // the deferred callback must then call nothing.
+  deps.onIslandLoaded = null as unknown as () => void;
+  timeouts[0]!();
+  expect(calls).toEqual([]);
+});
+
+test('#1039 an observed double without isConnected is kept and not re-observed', () => {
+  const observed: FakeElement[] = [];
+  class FakeIO {
+    cb: (entries: { isIntersecting: boolean }[]) => void;
+    constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+      this.cb = cb;
+    }
+    observe(el: FakeElement): void {
+      observed.push(el);
+    }
+    disconnect(): void {
+      this.cb([]);
+    }
+  }
+  const body = treeWithTags('x-vis');
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin({ IntersectionObserver: FakeIO }),
+    doc: makeDoc(body, []),
+    map: mapWith(['x-vis']),
+    strategies: STRATEGIES({ visible: ['x-vis'] }),
+    onIslandLoaded: null,
+  });
+  expect(observed.length).toEqual(1);
+  // A non-DOM double has no isConnected; it must not be released as detached,
+  // and the already-observed element must not get a second observer.
+  scheduler.observeVisible();
+  expect(observed.length).toEqual(1);
+});
+
+test('#606 an intersection batch filters non-intersecting entries and a host removed before the callback starts no load', () => {
+  const readyEvents: ReadyEvent[] = [];
+  let loaded = 0;
+  class FakeIO {
+    static instances: FakeIO[] = [];
+    cb: (entries: { isIntersecting: boolean }[]) => void;
+    constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+      this.cb = cb;
+      FakeIO.instances.push(this);
+    }
+    observe(): void {}
+    disconnect(): void {}
+    fire(entries: { isIntersecting: boolean }[]): void {
+      this.cb(entries);
+    }
+  }
+  const body = treeWithTags('x-vis');
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin({ IntersectionObserver: FakeIO }),
+    doc: makeDoc(body, readyEvents),
+    map: {
+      'x-vis': () => {
+        loaded += 1;
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ visible: ['x-vis'] }),
+    onIslandLoaded: null,
+  });
+  // Non-intersecting entries are ignored; the intersecting one loads once.
+  FakeIO.instances[0].fire([{ isIntersecting: false }]);
+  expect(loaded).toEqual(0);
+  expect(readyEvents).toEqual([]);
+  // The page scope gate re-runs at activation: a host removed between observe
+  // and intersection is no longer a host, so the tag keeps its factory.
+  body.children.length = 0;
+  FakeIO.instances[0].fire([{ isIntersecting: true }]);
+  expect(loaded).toEqual(0);
+  expect(readyEvents).toEqual([]);
+});
+
+test('strategies without a media key are the same as an empty media bucket', () => {
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(),
+    doc: makeDoc(treeWithTags(), []),
+    map: {},
+    strategies: { load: [], only: [], visible: [], idle: [] },
+    onIslandLoaded: null,
+  });
+  expect(typeof scheduler.observeVisible).toEqual('function');
+});
+
+test('a media tag with no matchMedia result is skipped with a warning', () => {
+  const warnings: string[] = [];
+  createIslandScheduler({
+    log: {
+      warn: (...args: unknown[]) => {
+        warnings.push(String(args[0]));
+      },
+    },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(),
+    doc: makeDoc(treeWithTags('x-media'), []),
+    map: mapWith(['x-media']),
+    strategies: STRATEGIES({ media: ['x-media'] }),
+    mediaQueries: {},
+    onIslandLoaded: null,
+  });
+  expect(warnings.some((warning) => warning.includes('x-media'))).toEqual(true);
+});
+
+test('a media query with neither listener API registers nothing and stays silent', () => {
+  let loaded = 0;
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(),
+    doc: makeDoc(treeWithTags('x-media'), []),
+    map: {
+      'x-media': () => {
+        loaded += 1;
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ media: ['x-media'] }),
+    mediaQueries: { 'x-media': { matches: false } } as unknown as Record<string, MediaQueryList>,
+    onIslandLoaded: null,
+  });
+  expect(loaded).toEqual(0);
+});
+
+test('a legacy addListener-only media query activates on a later matching change', () => {
+  let loaded = 0;
+  let listener: ((event: { matches: boolean }) => void) | undefined;
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(),
+    doc: makeDoc(treeWithTags('x-media'), []),
+    map: {
+      'x-media': () => {
+        loaded += 1;
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ media: ['x-media'] }),
+    mediaQueries: {
+      'x-media': {
+        matches: false,
+        addListener: (fn: (event: { matches: boolean }) => void) => {
+          listener = fn;
+        },
+      },
+    } as unknown as Record<string, MediaQueryList>,
+    onIslandLoaded: null,
+  });
+  listener!({ matches: false });
+  expect(loaded).toEqual(0);
+  listener!({ matches: true });
+  expect(loaded).toEqual(1);
+});
+
+test('#F01 post-morph rescans share one pending idle attempt', () => {
+  const idleCallbacks: Array<() => void> = [];
+  let loaded = 0;
+  const body = treeWithTags();
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin({
+      requestIdleCallback: (fn: () => void) => {
+        idleCallbacks.push(fn);
+        return 1;
+      },
+    }),
+    doc: makeDoc(body, []),
+    map: {
+      'x-idle': () => {
+        loaded += 1;
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ idle: ['x-idle'] }),
+    onIslandLoaded: null,
+  });
+  // The construction-time attempt is still pending: repeated morph rescans
+  // must reuse it instead of stacking callbacks.
+  body.children.push(new FakeElement('x-idle'));
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  expect(idleCallbacks.length).toEqual(1);
+  idleCallbacks[0]!();
+  expect(loaded).toEqual(1);
+});

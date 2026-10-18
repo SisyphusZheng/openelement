@@ -229,3 +229,84 @@ test('an unparseable sheet is wrapped verbatim instead of throwing', () => {
   const scoped = scopeLightRootCss('oe-x', css);
   expect(scoped).toEqual(`@scope (oe-x) {\n${css}\n}`);
 });
+
+// ── tokenizer edge cases of the prologue split and selector projection ─────
+//
+// These pin the defensive scanning paths: at-rule blocks containing raw braces,
+// strings and comments; strings and escapes inside selector text; the CSS
+// escape grammar (hex digits, whitespace terminators, EOF); comments and
+// stray brackets in selector position. None of them is a normal authoring
+// shape — the contract is that the scanner copies or projects deliberately
+// and never guesses.
+
+test('a leading block at-rule is skipped by the prologue scan and stays scoped', () => {
+  const css = '@media screen { /* } */ .a::after { content: "}" } }\n.b { color: red; }';
+  const scoped = scopeLightRootCss('oe-x', css);
+  expect(scoped).toContain('content: "}"');
+  expect(scoped).toContain('.b { color: red; }');
+  expect(scoped.indexOf('@media screen')).toBeGreaterThan(scoped.indexOf('@scope (oe-x)'));
+});
+
+test('a comment inside a prologue prelude does not end the at-rule early', () => {
+  const css = `@import /* keep */ url('./x.css');\n.a { color: red; }`;
+  const scoped = scopeLightRootCss('oe-x', css);
+  expect(scoped.startsWith(`@import /* keep */ url('./x.css');`)).toBe(true);
+  expect(scoped).toContain('.a { color: red; }');
+});
+
+test('a malformed leading at-rule name falls back to the authored-bytes wrapper', () => {
+  // `@` followed by no at-rule name is not a prologue at-rule; the sheet is
+  // handed to postcss as authored and a parse failure wraps it verbatim.
+  const css = '@ { .a { color: red } }';
+  const scoped = scopeLightRootCss('oe-x', css);
+  expect(scoped).toEqual(`@scope (oe-x) {\n${css}\n}`);
+});
+
+test('a string escape inside a selector stays authored', () => {
+  const css = String.raw`[data-x="a\"b"]:host { color: red; }`;
+  const scoped = scopeLightRootCss('oe-x', css);
+  expect(scoped).toContain(String.raw`[data-x="a\"b"]:scope {`);
+});
+
+test('a comment between selector tokens is copied and projection continues', () => {
+  const scoped = scopeLightRootCss('oe-x', '.a/* c */:host { color: red; }');
+  expect(scoped).toContain('.a/* c */:scope {');
+});
+
+test('a stray closing bracket in selector text does not corrupt projection', () => {
+  // Malformed selector (a browser drops the rule); the tokenizer must not
+  // underflow its bracket depth or lose the rest of the selector.
+  const scoped = scopeLightRootCss('oe-x', '.a]:host { color: red; }');
+  expect(scoped).toContain('.a]:scope {');
+});
+
+test('escape code points outside the hex range are consumed as one character', () => {
+  // Escape-aware projection must treat every backslash escape as a unit,
+  // whatever code point follows it (ident code points, punctuation, digits).
+  const css = [
+    String.raw`.a\G:host { color: red; }`,
+    String.raw`.a\g:host { color: red; }`,
+    String.raw`.a\Z:host { color: red; }`,
+    String.raw`.a\z:host { color: red; }`,
+    String.raw`.a\/:host { color: red; }`,
+    String.raw`.a\::host { color: red; }`,
+    String.raw`.a\0:host { color: red; }`,
+    String.raw`.a\A:host { color: red; }`,
+  ].join('\n');
+  const scoped = scopeLightRootCss('oe-x', css);
+  expect(scoped.match(/:scope/g)?.length).toEqual(8);
+});
+
+test('hex escapes consume digits of every case and every whitespace terminator', () => {
+  const css = [
+    String.raw`.\68 ost:host { color: red; }`, // digit digits + space terminator
+    String.raw`.\4A:host { color: red; }`, // uppercase hex digit, no terminator
+    `.\\68\tost:host { color: red; }`, // tab terminator
+    `.\\68\fost:host { color: red; }`, // form-feed terminator
+    `.\\68\rost:host { color: red; }`, // carriage-return terminator
+    '.\\68\nost:host { color: red; }', // newline terminator
+    String.raw`.\68x:host { color: red; }`, // non-hex, non-whitespace terminator
+  ].join('\n');
+  const scoped = scopeLightRootCss('oe-x', css);
+  expect(scoped.match(/:scope/g)?.length).toEqual(7);
+});

@@ -367,3 +367,69 @@ test('resolvePageDocument: dangerouslyHeadFragments accepts the meta/link/style 
   );
   expect(document.dangerouslyHeadFragments?.length).toEqual(4);
 });
+
+// ── JSON-model normalization and optional-field branches ──────────────────
+//
+// The structured-data copy is fail-closed for values JSON cannot carry, and
+// the optional head fields must round-trip whether present or absent.
+
+test('structured data copies null and finite numbers, and nested documents keep them', () => {
+  const document = resolvePageDocument(
+    {
+      structuredData: [{ '@type': 'Thing', missing: null, count: 0, ok: true }],
+    },
+    ctx(),
+  );
+  expect(document.structuredData).toEqual([
+    { '@type': 'Thing', missing: null, count: 0, ok: true },
+  ]);
+});
+
+test('structured data rejects non-finite numbers', () => {
+  for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ structuredData: [{ value }] }, ctx()),
+      OpenElementError,
+      'must be a finite number',
+    );
+  }
+});
+
+test('structured data rejects non-document entries with a named shape', () => {
+  for (const [entry, shape] of [
+    [null, 'null'],
+    [[], 'an array'],
+    [42, 'number'],
+  ] as const) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ structuredData: [entry] }, ctx()),
+      OpenElementError,
+      `got ${shape}`,
+    );
+  }
+});
+
+test('alternates reject a non-object entry with the index named', () => {
+  for (const alternate of [null, [], 'https://example.test/x']) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ alternates: [alternate] as never }, ctx()),
+      OpenElementError,
+      'head.alternates[0] must be an object with an href',
+    );
+  }
+});
+
+test('an alternate without hreflang round-trips without the optional field', () => {
+  const document = resolvePageDocument(
+    { alternates: [{ href: 'https://example.test/en' }] },
+    ctx(),
+  );
+  expect(document.alternates).toEqual([{ href: 'https://example.test/en' }]);
+  expect(document.links).toEqual([{ rel: 'alternate', href: 'https://example.test/en' }]);
+});
+
+test('an empty clientScripts list is normalized away', () => {
+  const document = resolvePageDocument({ clientScripts: [] }, ctx());
+  expect(document.clientScripts).toEqual(undefined);
+  expect('clientScripts' in document).toEqual(false);
+});

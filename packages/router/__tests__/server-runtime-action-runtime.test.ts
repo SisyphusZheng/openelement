@@ -689,3 +689,188 @@ test('safeRedirectLocation: one canonical absolute path, whatever the input shap
     '/%5Cevil.example/x?q=%0D%0A',
   );
 });
+
+// ── CSRF/channel/body-limit runtime branches (coverage lane, test-only) ───
+
+test('a success path with no loadContext env still answers PRG 303', async () => {
+  const { context, state } = formPost({ origin: 'https://pages.example.test' });
+  const execution = await runActionProtocol(context, { action: () => 'ok' }, {}, statusPage, state);
+  expect(execution.response?.status).toEqual(303);
+});
+
+test('the http loopback allowance covers IPv6 loopback and rejects non-loopback http origins', async () => {
+  const ipv6 = new Request('http://[::1]:8000/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      origin: 'http://localhost:3000',
+    },
+    body: 'message=hello',
+  });
+  const ipv6Execution = await runActionProtocol(
+    createRequestScope(ipv6),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(ipv6Execution.response?.status).toEqual(303);
+
+  const plain = new Request('http://example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      origin: 'http://other.test',
+    },
+    body: 'message=hello',
+  });
+  const plainExecution = await runActionProtocol(
+    createRequestScope(plain),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(plainExecution.response?.status).toEqual(403);
+});
+
+test('browser-shaped form bodies without Origin/Fetch Metadata: multipart and non-form bodies', async () => {
+  const multipart = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'multipart/form-data; boundary=x',
+      'upgrade-insecure-requests': '1',
+    },
+    body: '--x--',
+  });
+  const multipartExecution = await runActionProtocol(
+    createRequestScope(multipart),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(multipartExecution.response?.status).toEqual(403);
+
+  // A non-form body without navigation evidence is not browser-shaped: the
+  // CSRF floor admits it and the form parser then rejects it as 400.
+  const json = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: '{"message":"hello"}',
+  });
+  const jsonExecution = await runActionProtocol(
+    createRequestScope(json),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(jsonExecution.response?.status).toEqual(400);
+});
+
+test('the action body limit fails closed on an unbound request and honours declared length', async () => {
+  const limit = createActionBodyLimit(16);
+  const next = () => Promise.resolve(new Response('next', { status: 200 }));
+
+  // No body at all: the middleware skips itself.
+  expect(
+    await (
+      await limit(new Request('https://pages.example.test/form', { method: 'POST' }), {}, next)
+    ).text(),
+  ).toEqual('next');
+
+  // Declared length under the limit: next() runs.
+  const small = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: { 'content-length': '4' },
+    body: 'a=b',
+  });
+  expect(await (await limit(small, {}, next)).text()).toEqual('next');
+
+  // Declared length over the limit and no bound scope: the plain native-form
+  // answer, because there is no negotiation channel to consult.
+  const big = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: { 'content-length': '100' },
+    body: 'x'.repeat(100),
+  });
+  const bigResponse = await limit(big, {}, next);
+  expect(bigResponse.status).toEqual(413);
+  expect(await bigResponse.text()).toEqual('Payload Too Large');
+});
+
+test('the action body limit drains an unbound stream body without swapping a scope', async () => {
+  const limit = createActionBodyLimit(1024);
+  let reached = false;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('message=hello'));
+      controller.close();
+    },
+  });
+  const response = await limit(
+    new Request('https://pages.example.test/form', {
+      method: 'POST',
+      headers: { 'transfer-encoding': 'chunked' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit),
+    {},
+    () => {
+      reached = true;
+      return Promise.resolve(new Response('next', { status: 200 }));
+    },
+  );
+  expect(reached).toEqual(true);
+  expect(await response.text()).toEqual('next');
+});
+
+test('actionErrorResponse surfaces a thrown scalar or object without a message as the dev detail', async () => {
+  const context = actionContext({ url: 'https://pages.example.test/form' });
+  const fromString = actionErrorResponse(context, '/form', 'plain failure', false);
+  expect(((await fromString.json()) as { detail: string }).detail).toEqual('plain failure');
+  const fromObject = actionErrorResponse(context, '/form', { code: 7 }, false);
+  expect(((await fromObject.json()) as { detail: string }).detail).toEqual('[object Object]');
+});
+
+test('browser-shaped bodies: a same-origin Fetch Metadata verdict admits the action; non-navigation evidence admits it', async () => {
+  // `sec-fetch-site: same-origin` with no Origin: the metadata branch decides
+  // first (not cross-site), then the no-Origin/no-Fetch-Site heuristic is
+  // skipped because Fetch Metadata was present.
+  const sameOrigin = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      'sec-fetch-site': 'same-origin',
+    },
+    body: 'message=hello',
+  });
+  const sameOriginExecution = await runActionProtocol(
+    createRequestScope(sameOrigin),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(sameOriginExecution.response?.status).toEqual(303);
+
+  // A browser form body with neither navigation marker is not browser-shaped:
+  // no text/html Accept, no Upgrade-Insecure-Requests.
+  const nonNavigation = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'application/json',
+    },
+    body: 'message=hello',
+  });
+  const nonNavigationExecution = await runActionProtocol(
+    createRequestScope(nonNavigation),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(nonNavigationExecution.response?.status).toEqual(303);
+});

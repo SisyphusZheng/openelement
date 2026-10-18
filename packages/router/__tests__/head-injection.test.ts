@@ -948,3 +948,56 @@ test('assertAllowlistedHeadFragment: ordinary meta/link attributes stay allowed'
     assertAllowlistedHeadFragment(fragment, ROUTE_FRAGMENT_CONTEXT);
   }
 });
+
+// ── scanner edges of the trusted-fragment predicates ──────────────────────
+//
+// The two structural scanners have deliberate copy/decide paths for malformed
+// or lookalike input; these pin the fail-closed and copy-through decisions.
+
+test('assertTrustedHeadHtml: CSS escapes fold to their decoded code point', () => {
+  // `\0` (NUL) and an out-of-range hex escape decode to U+FFFD; an ordinary
+  // escape decodes to its character. None of them can spell @import.
+  assertTrustedHeadHtml('<style>.\\0 { color: red }</style>', 'test-input');
+  assertTrustedHeadHtml('<style>.\\FFFFFF { color: red }</style>', 'test-input');
+  assertTrustedHeadHtml('<style>.\\41 { color: red }</style>', 'test-input');
+});
+
+test('assertTrustedHeadHtml: style attributes normalize with and without values', () => {
+  // A bare attribute (no value) keeps its name; a valued one is re-emitted
+  // escaped. Both are allowed here because the names are on the safelist.
+  assertTrustedHeadHtml('<style media>a { color: red }</style>', 'test-input');
+  assertTrustedHeadHtml('<style media="print" nonce>a { color: red }</style>', 'test-input');
+});
+
+test('assertTrustedHeadHtml: a malformed style attribute fails closed', () => {
+  assertThrowsIncludes(
+    () => assertTrustedHeadHtml('<style =x>a { color: red }</style>', 'test-input'),
+    OpenElementError,
+    'Malformed style attribute',
+  );
+});
+
+test('assertTrustedHeadHtml: a tag sharing the style prefix is not a style element', () => {
+  assertTrustedHeadHtml(
+    '<stylesheet-x></stylesheet-x><style>a { color: red }</style>',
+    'test-input',
+  );
+});
+
+test('assertTrustedHeadHtml: a lookalike closing tag is skipped before the real close', () => {
+  assertTrustedHeadHtml('<style>a { color: red }</styles></style>', 'test-input');
+});
+
+test('assertAllowlistedHeadFragment: declarations and empty attribute values fail closed', () => {
+  for (const fragment of ['<!doctype html>', '<?xml version="1.0"?>', '<meta content= >']) {
+    assertThrowsIncludes(
+      () => assertAllowlistedHeadFragment(fragment, ROUTE_FRAGMENT_CONTEXT),
+      OpenElementError,
+      ROUTE_FRAGMENT_CONTEXT,
+    );
+  }
+});
+
+test('assertAllowlistedHeadFragment: a lookalike closing tag inside style raw text is data', () => {
+  assertAllowlistedHeadFragment('<style>a { color: red }</styles></style>', ROUTE_FRAGMENT_CONTEXT);
+});
