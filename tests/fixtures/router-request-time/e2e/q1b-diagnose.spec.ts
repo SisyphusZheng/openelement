@@ -12,7 +12,12 @@
 
 import { expect, test } from '@playwright/test';
 
-const ISLAND_TAGS = ['decoupled-view', 'live-counter', 'zag-combobox-light', 'zag-combobox'];
+/**
+ * The /combobox page's own island set (page-combobox.tsx). Page-scope since
+ * #1544/B2: an island this page has no host for is never fetched, so waiting
+ * for the app-wide list here would wait on other routes' islands forever.
+ */
+const ISLAND_TAGS = ['zag-combobox-light', 'zag-combobox'];
 
 interface Probe {
   label: string;

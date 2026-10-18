@@ -33,8 +33,17 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { expect, test, type Page } from '@playwright/test';
 
-/** Every island the /combobox page activates on load. */
-const ISLAND_TAGS = ['decoupled-view', 'live-counter', 'zag-combobox-light', 'zag-combobox'];
+/**
+ * Every island the /combobox page HOSTS and therefore activates on load —
+ * that page's own set (app/components/page-combobox.tsx: two DSD
+ * `zag-combobox` hosts plus one light `zag-combobox-light`), not the app's.
+ * The gate below is page-scope (#1544/B2): a tag this page carries no host for
+ * is never fetched, so an app-wide list would wait forever on the two islands
+ * that belong to other routes. Cross-page coverage is not lost, it lives with
+ * the pages that own those hosts — `decoupled-view` in this file's
+ * /decoupled case, `live-counter` in live.spec.ts (/form, /live, ...).
+ */
+const ISLAND_TAGS = ['zag-combobox-light', 'zag-combobox'];
 
 /**
  * Bounded gate. The healthy define latency on this fixture is tens of
