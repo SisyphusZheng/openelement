@@ -1,6 +1,6 @@
 ---
 title: '样式'
-lede: '显式选择 shadow root 的页面渲染在带 declarative shadow DOM 的 custom element 内部——单靠全局样式表无法触及它们。编译默认是 light root。'
+lede: '显式声明的 shadow root 渲染在带 declarative shadow DOM 的 custom element 内部，全局样式表触及不到。默认是 light root。'
 order: 5
 ---
 

@@ -1,6 +1,6 @@
 ---
 title: 'Current Architecture'
-lede: 'OpenElement is a Web Components-native, static-first application framework. Custom Elements are the durable component contract; compiled JSX classes (`@element`) are the authoring model; Vite and Nitro are the official build and output path.'
+lede: 'Web Components-native, static-first framework: Custom Elements are the durable contract, compiled JSX the authoring model, Vite and Nitro the build path.'
 navLabel: 'Architecture'
 order: 10
 ---

@@ -1,6 +1,6 @@
 ---
 title: '当前架构'
-lede: 'openElement 是一个 Web Components 原生、static-first 的应用框架。Custom Elements 是持久的组件契约；编译型 JSX 类（`@element`）是创作模型；Vite 与 Nitro 是官方构建与输出路径。'
+lede: 'Web Components 原生、static-first 的框架：Custom Elements 是持久的契约，编译型 JSX 是创作模型，Vite 与 Nitro 是构建路径。'
 order: 10
 ---
 

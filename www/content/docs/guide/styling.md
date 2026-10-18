@@ -1,6 +1,6 @@
 ---
 title: 'Styling'
-lede: 'Pages that opt into an explicit shadow root render inside a custom element with declarative shadow DOM — a global stylesheet alone will not reach them. The compiled default is a light root.'
+lede: 'An explicit shadow root renders inside a custom element with declarative shadow DOM, out of a global stylesheet’s reach. The default is a light root.'
 order: 5
 ---
 
