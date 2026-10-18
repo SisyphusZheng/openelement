@@ -126,12 +126,15 @@ export async function applyWorkspaceAliases(
  * overwrite it replaced once destroyed the scaffold's catalog and CI died
  * with ERR_PNPM_CATALOG_ENTRY_NOT_FOUND_FOR_SPEC (alpha.14, run 38057211080).
  *
- * --no-frozen-lockfile: the scaffolded app's create-CLI install (the default
- * `pnpm install`) already wrote a registry-resolved pnpm-lock.yaml, and
- * applyWorkspaceAliases then rewrites the manifest (link: entries + fixture
- * pins). CI runners imply frozen installs, and that manifest rewrite is
- * exactly the change a frozen install refuses (ERR_PNPM_OUTDATED_LOCKFILE) —
- * same rationale as the starter smoke's file:// rewiring (#1530).
+ * --no-frozen-lockfile: the scaffolded app's manifest is rewritten here
+ * (link: entries + fixture pins) after the create CLI ran with --no-install —
+ * the qualify fixtures pass that flag (see scaffold-app.ts) so the
+ * not-yet-published `^<version>` ranges are never resolved against the
+ * registry. Whether the scaffold wrote a lockfile (only without --no-install)
+ * or none exists yet, CI runners imply frozen installs, and this manifest
+ * rewrite is exactly the change a frozen install refuses
+ * (ERR_PNPM_OUTDATED_LOCKFILE) — same rationale as the starter smoke's file://
+ * rewiring (#1530).
  */
 export async function installAppDependencies(appDir: string): Promise<void> {
   await ensureOwnWorkspaceRoot(appDir);

@@ -580,6 +580,13 @@ export async function prepareFixtureApp(tmpRoot: string): Promise<string> {
     workDir: tmpRoot,
     projectName: PROJECT_NAME,
     createCli: join(repoRoot, 'packages', 'create', 'src', 'cli.ts'),
+    // --no-install: the scaffold's default install resolves `^<version>`
+    // framework ranges against the registry, and the candidate version is
+    // unpublished at gate time — that install is the release:check
+    // ERR_PNPM_NO_MATCHING_VERSION trap (T3). applyWorkspaceAliases rewrites
+    // those deps to workspace `link:` entries and installAppDependencies below
+    // runs the real install against them.
+    extraArgs: ['--no-install'],
     copySources: { fromRoot: fixtureDir, files: FIXTURE_SOURCE_FILES },
   });
   await applyWorkspaceAliases(appDir, {
