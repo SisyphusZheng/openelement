@@ -139,23 +139,23 @@ export const blogCollection: CollectionOptions = {
 
 ```tsx
 // app/components/page-blog-post.tsx —— 由 open:compiled-element transform 编译
-import { element, OpenElement, property } from '@openelement/element';
+import { element, OpenElement, property, trustedHtml, type TrustedHtml } from '@openelement/element';
 
 @element('blog-post-page', { root: 'shadow-open' })
 export default class BlogPostPage extends OpenElement {
   @property({ reflect: false, attribute: false })
   title = '';
 
-  @property({ reflect: false, attribute: false })
-  html = '';
+  @property({ type: Object, reflect: false, attribute: false })
+  html: TrustedHtml = trustedHtml('');
 
   render() {
     return (
-      <>
+      <main>
         <h1>{this.title}</h1>
         {/* post.html is markdown authored in this repo — explicit trust boundary */}
         <article class='post-body' innerHTML={this.html} trustedHtml></article>
-      </>
+      </main>
     );
   }
 }

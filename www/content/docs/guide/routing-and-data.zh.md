@@ -68,7 +68,7 @@ import { element, OpenElement, property } from '@openelement/element';
 @element('guestbook-page', { root: 'shadow-open' })
 export default class GuestbookPage extends OpenElement {
   @property({ reflect: false, attribute: false })
-  entries: string[] = [];
+  entries: Array<{ id: string; text: string }> = [];
 
   @property({ reflect: false, attribute: false })
   message = '';
@@ -88,9 +88,9 @@ export default class GuestbookPage extends OpenElement {
           <button type='submit'>Send</button>
           <button type='submit' formaction='?/shout'>Shout</button>
         </form>
-        {this.error ? <p role='alert'>{this.error}</p> : <span></span>}
-        {this.echoed ? <p>echo={this.echoed}</p> : <span></span>}
-        <ul>{this.entries.map((entry) => <li>{entry}</li>)}</ul>
+        {this.error ? <p role='alert' data-message={this.error}>Please fix the errors above.</p> : <span></span>}
+        {this.echoed ? <p data-echoed={this.echoed}>Saved.</p> : <span></span>}
+        <ul>{this.entries.map((entry) => <li key={entry.id}>{entry.text}</li>)}</ul>
       </main>
     );
   }

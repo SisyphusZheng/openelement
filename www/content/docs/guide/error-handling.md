@@ -37,14 +37,14 @@ export default class PostPage extends OpenElement {
     return (
       <main>
         {this.status
-          ? <h1>{this.status}</h1>
+          ? <h1 data-status={this.status}>Request failed</h1>
           : (
             <form method='post' data-open-enhance>
               <input name='title' value={this.title} />
               <button type='submit'>Save</button>
-              {this.error ? <p role='alert'>{this.error}</p> : <span></span>}
             </form>
           )}
+        {this.error ? <p role='alert' data-message={this.error}>Please fix the errors above.</p> : <span></span>}
       </main>
     );
   }
