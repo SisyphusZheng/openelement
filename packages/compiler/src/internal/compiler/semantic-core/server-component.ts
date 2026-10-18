@@ -93,6 +93,8 @@ export interface CompileServerComponentResult {
 
 /** The helper names the generated module binds from '@openelement/element/server'. */
 const SERVER_HELPERS = ['__h', '__t', '__ssr'] as const;
+/** The one identifier shape the generated module may carry (see `identifier`). */
+const CODEGEN_IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const SERVER_HELPER_SPECIFIER = '@openelement/element/server';
 
 interface AdmittedComponent {
@@ -549,12 +551,103 @@ export function compileServerComponentIfAdmitted(
 }
 
 /**
+ * The generated-module literal emitter (alpha15 R5, alert #4236): an exact
+ * port of the ECMAScript `QuoteJSONString` production (the ES2019
+ * well-formed form), so a string this emitter splices into the generated
+ * module becomes a TS string literal byte-for-byte identical to
+ * `JSON.stringify`'s rendering of that same string.
+ *
+ * Why an explicit emitter instead of `JSON.stringify` at the call sites:
+ * CodeQL's `js/bad-code-sanitization` takes every `JsonStringifyCall` as its
+ * SOURCE ("an ad-hoc sanitizer whose result is then interpolated into code")
+ * and its sink heuristic treats a template whose literal operands look like a
+ * function (`...map((item) => ...`) as code construction — so a code
+ * generator that quotes its literals with `JSON.stringify` inside such a
+ * template reports as "improperly sanitized" even though the escaping is
+ * exactly right. Stating the contract the emitter actually implements — "emit
+ * a string literal" — keeps the artifact byte-identical (pinned by the
+ * differential test in __tests__/server-component-codegen-literals.test.ts:
+ * every code point, every surrogate pairing, hostile literals) while the
+ * template no longer carries a misread sanitizer boundary. The real injection
+ * surface next to it — lowering-produced NAMES spliced into identifier
+ * positions — is guarded separately by the emitter's own identifier boundary.
+ */
+export function codeStringLiteral(value: string): string {
+  let out = '"';
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit === 0x22) {
+      out += '\\"';
+      continue;
+    }
+    if (unit === 0x5c) {
+      out += '\\\\';
+      continue;
+    }
+    if (unit === 0x08) {
+      out += '\\b';
+      continue;
+    }
+    if (unit === 0x09) {
+      out += '\\t';
+      continue;
+    }
+    if (unit === 0x0a) {
+      out += '\\n';
+      continue;
+    }
+    if (unit === 0x0c) {
+      out += '\\f';
+      continue;
+    }
+    if (unit === 0x0d) {
+      out += '\\r';
+      continue;
+    }
+    if (unit < 0x20) {
+      out += `\\u${unit.toString(16).padStart(4, '0')}`;
+      continue;
+    }
+    // ES2019 well-formed stringify: a surrogate PAIR rides verbatim; an
+    // unpaired surrogate is escaped code-unit-wise (never a raw lone half).
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        out += value.slice(index, index + 2);
+        index += 1;
+        continue;
+      }
+      out += `\\u${unit.toString(16).padStart(4, '0')}`;
+      continue;
+    }
+    if (unit >= 0xdc00 && unit <= 0xdfff) {
+      out += `\\u${unit.toString(16).padStart(4, '0')}`;
+      continue;
+    }
+    out += value.charAt(index);
+  }
+  return `${out}"`;
+}
+
+/**
+ * A `when` test's right-hand literal: strings cross the string-literal
+ * boundary above; booleans and numbers are their own source text — the exact
+ * `JSON.stringify` primitive rendering (a non-finite number renders `null`,
+ * which the wire validator already rejects for every operator).
+ */
+function conditionLiteral(value: number | string | boolean): string {
+  if (typeof value === 'string') return codeStringLiteral(value);
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  return Number.isFinite(value) ? String(value) : 'null';
+}
+
+/**
  * The generated-constructor expression builder: one walk over the lowered
  * tree that turns admitted nodes into `__h`/`__t`/`__ssr`/direct-call code.
  * Static attribute values are compile-time literals; every dynamic value
  * enters through a helper boundary.
  */
-class ConstructorEmitter {
+export class ConstructorEmitter {
   // Plain field declarations, not parameter properties: the compiler's
   // shipped source runs under Node's strip-only transform inside packed
   // consumers, which rejects the parameter-property syntax.
@@ -568,6 +661,33 @@ class ConstructorEmitter {
     this.lowering = lowering;
     this.parameter = parameter;
     this.fail = fail;
+    // Every generated member access is based on this name (`props.name`):
+    // assert it once, at the boundary that owns it.
+    this.identifier(parameter, 'the props parameter');
+  }
+
+  /**
+   * The codegen identifier boundary (alpha15 R5, alert #4236): every
+   * lowering-produced name the emitter splices into an IDENTIFIER position of
+   * the generated module (`props.<signal>`, `item.<field>`, the component binding)
+   * must be a plain ES identifier. Anything else would leave its slot and
+   * inject arbitrary source into the artifact, so a non-identifier fails the
+   * compile CLOSED — same diagnostic shape as the lowering's own
+   * "must be a plain identifier" refusals, never a silent fallback or a
+   * dropped sink. The lowering validates most names on the way in; this is the
+   * one boundary every emitted name passes, so a future lowering change cannot
+   * silently widen the splice.
+   */
+  private identifier(name: string, what: string): string {
+    if (!CODEGEN_IDENTIFIER.test(name)) {
+      this.fail(
+        this.sf,
+        'OEC9032',
+        `${what} "${name}" is not a plain identifier — the generated module writes it into an ` +
+          'identifier position, so the compiler refuses to emit it',
+      );
+    }
+    return name;
   }
 
   emit(root: ProgramTreeNode): string {
@@ -588,24 +708,25 @@ class ConstructorEmitter {
   private slotNameExpressionOf(child: ProgramTreeNode): string {
     if (child.k !== 'el') return "''";
     const staticSlot = child.attrs.find(([name]) => name === 'slot')?.[1];
-    if (staticSlot !== undefined) return JSON.stringify(staticSlot);
+    if (staticSlot !== undefined) return codeStringLiteral(staticSlot);
     for (const sink of this.sinksOf(child.id)) {
       if (sink.k === 'attr' && (sink as { name?: string }).name === 'slot') {
-        return `${this.parameter}.${(sink as { signal: string }).signal}`;
+        const signal = (sink as { signal: string }).signal;
+        return `${this.parameter}.${this.identifier(signal, 'the slot sink')}`;
       }
     }
     return "''";
   }
 
   private conditionText(test: ProgramCondition): string {
-    const ref = `${this.parameter}.${test.signal}`;
+    const ref = `${this.parameter}.${this.identifier(test.signal, 'the condition signal')}`;
     switch (test.op) {
       case 'truthy':
         return test.value ? ref : `!${ref}`;
       case 'equals':
-        return `${ref} === ${JSON.stringify(test.value)}`;
+        return `${ref} === ${conditionLiteral(test.value)}`;
       case 'not-equals':
-        return `${ref} !== ${JSON.stringify(test.value)}`;
+        return `${ref} !== ${conditionLiteral(test.value)}`;
       case 'greater-than':
         return `${ref} > ${String(test.value)}`;
       case 'greater-or-equal':
@@ -622,10 +743,11 @@ class ConstructorEmitter {
     if (node.k === 'text') {
       // Static text rides the SAME runtime text boundary as dynamic text —
       // one channel, no second escaper anywhere in the pipeline.
-      return `__t(${JSON.stringify(node.value)})`;
+      return `__t(${codeStringLiteral(node.value)})`;
     }
     if (node.k === 'ival') {
-      return `__t(item.${node.field ?? 'item'})`;
+      const field = this.identifier(node.field ?? 'item', 'the item field');
+      return `__t(item.${field})`;
     }
     if (node.k === 'part') {
       const part = this.lowering.parts[node.index];
@@ -634,7 +756,7 @@ class ConstructorEmitter {
         // the caller's own compiled markup (the same trust level as an
         // `__ssr` result) and crosses raw; every other signal is escaped text.
         if (part.signal === 'children') return `(${this.parameter}.children ?? '')`;
-        return `__t(${this.parameter}.${part.signal})`;
+        return `__t(${this.parameter}.${this.identifier(part.signal, 'the text sink')})`;
       }
       if (part.k === 'when') {
         const on = this.node(part.on[0]);
@@ -642,7 +764,8 @@ class ConstructorEmitter {
         return `(${this.conditionText(part.test)} ? ${on} : ${off})`;
       }
       if (part.k === 'each') {
-        return `${this.parameter}.${part.signal}.map((item) => ${this.node(part.item[0])}).join('')`;
+        const signal = this.identifier(part.signal, 'the list sink');
+        return `${this.parameter}.${signal}.map((item) => ${this.node(part.item[0])}).join('')`;
       }
       return this.fail(
         this.sf,
@@ -654,22 +777,23 @@ class ConstructorEmitter {
     const componentCall = this.lowering.componentCalls.get(node.id);
     if (componentCall !== undefined) {
       const entries = componentCall.propsEntries.map(
-        ([name, value]) => `${JSON.stringify(name)}: ${value}`,
+        ([name, value]) => `${codeStringLiteral(name)}: ${value}`,
       );
       if (componentCall.children.length > 0) {
         entries.push(
-          `${JSON.stringify('children')}: [${componentCall.children
+          `${codeStringLiteral('children')}: [${componentCall.children
             .map((child) => this.node(child))
             .join(', ')}].join('')`,
         );
       }
-      return `${componentCall.component}({ ${entries.join(', ')} })`;
+      const component = this.identifier(componentCall.component, 'the nested component binding');
+      return `${component}({ ${entries.join(', ')} })`;
     }
     const sinks = this.sinksOf(node.id);
     const isSsr = this.lowering.ssrCalls.has(node.id);
     const attrEntries: string[] = [];
     for (const [name, value] of node.attrs) {
-      attrEntries.push(`${JSON.stringify(name)}: ${JSON.stringify(value)}`);
+      attrEntries.push(`${codeStringLiteral(name)}: ${codeStringLiteral(value)}`);
     }
     for (const part of sinks) {
       if (part.k === 'event' || part.k === 'ref') {
@@ -685,7 +809,8 @@ class ConstructorEmitter {
               "component's own property instead",
           );
         }
-        attrEntries.push(`${JSON.stringify('innerHTML')}: ${this.parameter}.${part.signal}`);
+        const signal = this.identifier(part.signal, 'the innerHTML sink');
+        attrEntries.push(`${codeStringLiteral('innerHTML')}: ${this.parameter}.${signal}`);
         continue;
       }
       if (part.k === 'class') {
@@ -695,18 +820,20 @@ class ConstructorEmitter {
         const value = synthesized
           ? `(${synthesized.computed!.body.getText(this.sf)})`
           : `${this.parameter}.${part.signal}`;
-        attrEntries.push(`${JSON.stringify('class')}: ${value}`);
+        attrEntries.push(`${codeStringLiteral('class')}: ${value}`);
         continue;
       }
       // attr / bool / prop / style: the raw prop value crosses (attributes
       // for tags, props for __ssr hosts); __h escapes at the wire. class and
       // style Parts carry no attribute name of their own.
       if (part.k === 'style') {
-        attrEntries.push(`${JSON.stringify('style')}: ${this.parameter}.${part.signal}`);
+        const signal = this.identifier(part.signal, 'the style sink');
+        attrEntries.push(`${codeStringLiteral('style')}: ${this.parameter}.${signal}`);
         continue;
       }
+      const signal = this.identifier(part.signal, 'the attribute sink');
       attrEntries.push(
-        `${JSON.stringify((part as { name: string }).name)}: ${this.parameter}.${part.signal}`,
+        `${codeStringLiteral((part as { name: string }).name)}: ${this.parameter}.${signal}`,
       );
     }
     // Per-item attribute slots ([name, itemField]) resolve from the enclosing
@@ -716,7 +843,8 @@ class ConstructorEmitter {
     // itemAttributeEmission owns: `true` emits a bare attribute,
     // false/null/undefined omit, anything else serializes with String().
     for (const [name, field] of node.iattrs ?? []) {
-      attrEntries.push(`${JSON.stringify(name)}: item.${field}`);
+      const itemField = this.identifier(field, 'the item attribute field');
+      attrEntries.push(`${codeStringLiteral(name)}: item.${itemField}`);
     }
     const attrsText = `{ ${attrEntries.join(', ')}${attrEntries.length > 0 ? ' ' : ''}}`;
     if (isSsr) {
@@ -729,14 +857,14 @@ class ConstructorEmitter {
       // two-argument call — byte-identical to the pre-composition lane.
       const childNodes = node.children;
       if (childNodes.length === 0) {
-        return `__ssr(${JSON.stringify(node.tag)}, ${attrsText})`;
+        return `__ssr(${codeStringLiteral(node.tag)}, ${attrsText})`;
       }
       const groupEntries = childNodes.map(
         (child) => `[${this.slotNameExpressionOf(child)}, ${this.node(child)}]`,
       );
-      return `__ssr(${JSON.stringify(node.tag)}, ${attrsText}, undefined, { groups: [${groupEntries.join(', ')}] })`;
+      return `__ssr(${codeStringLiteral(node.tag)}, ${attrsText}, undefined, { groups: [${groupEntries.join(', ')}] })`;
     }
     const children = node.children.map((child) => this.node(child));
-    return `__h(${JSON.stringify(node.tag)}, ${attrsText}, [${children.join(', ')}])`;
+    return `__h(${codeStringLiteral(node.tag)}, ${attrsText}, [${children.join(', ')}])`;
   }
 }

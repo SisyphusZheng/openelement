@@ -72,7 +72,7 @@
  * Exit 0 = every scanned invocation is fail-closed; 1 = at least one
  * violation (printed with file:line and the offending invocation).
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -526,9 +526,13 @@ export async function scanRepository(repoRoot: string): Promise<ScanReport> {
     }
   }
   for (const file of gateSurfaceFiles(repoRoot)) {
+    // One read, no check-then-use (#4237): a `statSync(file).isFile()` probe
+    // here is a TOCTOU window — the path can be swapped between the check and
+    // the read. A directory (or any unreadable path) throws on read and is
+    // skipped, which is exactly what the probe's filter did, so the scanned
+    // set is unchanged and the read is the only filesystem decision.
     let text: string;
     try {
-      if (!statSync(file).isFile()) continue;
       text = readFileSync(file, 'utf8');
     } catch {
       continue;
