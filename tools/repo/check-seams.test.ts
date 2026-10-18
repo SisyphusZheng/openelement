@@ -20,8 +20,10 @@
  *     in the row — no longer satisfies it), and a row carrying only that
  *     vocabulary is reported;
  *   - the evidence matrix: guard paths must be Git-tracked (a path that exists
- *     only in this working tree is reported), and an unreadable Git fails the
- *     check closed instead of assuming reproducibility;
+ *     only in this working tree is reported), a guard spelling covered by
+ *     `.gitignore` is reported even when the file does not exist in this tree
+ *     (the lane-versus-integration gap), and an unreadable Git fails the check
+ *     closed instead of assuming reproducibility;
  *   - the live tree: the registry as committed is clean, and every row carries
  *     the explicit clause.
  */
@@ -151,6 +153,26 @@ test('an unreadable Git fails closed instead of assuming guard evidence is repro
     '/nonexistent-root-for-tracking-proof',
   );
   expect(kinds(report.violations)).toContain('tracking-unavailable');
+});
+
+test('a guard spelling covered by .gitignore is reported even when the file does not exist', () => {
+  const report = checkSeamsMarkdown(
+    registry([
+      `| Sample | owner | writer → reader | \`artifact\` | ${VACCINE} \`tools/repo/check-vp-selector-flags.test.ts\`; negative proof in \`.zcode/scratch/proof-red.txt\` |`,
+    ]),
+    repoRoot,
+    {
+      tracked: new Set(['tools/repo/check-vp-selector-flags.test.ts']),
+      ignored: new Set(['.zcode/scratch/proof-red.txt']),
+    },
+  );
+  expect(kinds(report.violations)).toContain('guard-evidence-ignored');
+  expect(kinds(report.violations)).not.toContain('guard-not-tracked');
+});
+
+test('the live registry itself carries no .gitignore-only guard spelling', () => {
+  const report = checkSeams(repoRoot);
+  expect(kinds(report.violations)).not.toContain('guard-evidence-ignored');
 });
 
 test('a guard-cell test path that does not exist is reported', () => {

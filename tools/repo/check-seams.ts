@@ -37,6 +37,12 @@
  *     a local scratch file, a generated artifact, a path typed from memory —
  *     is not evidence a clone or CI run can reproduce, so it is a violation.
  *     The check fails closed when Git itself cannot be read.
+ *   - No guard-cell path spelling may be covered by `.gitignore`
+ *     (`git check-ignore`), whether or not the file exists in this working
+ *     tree. A lane worktree does not carry another tree's untracked files, so
+ *     "it does not exist here" is not a defence: the integrated tree reds
+ *     later. Negative proofs belong in the cell as a reproducible METHOD
+ *     (what to revert, what reds) or as a tracked artifact.
  *   - The registry must parse to at least one data row and at least one guard
  *     test overall: a scan that read nothing fails closed instead of
  *     reporting a vacuous pass.
@@ -92,6 +98,7 @@ export type SeamViolationKind =
   | 'guard-test-unresolved'
   | 'guard-not-a-test'
   | 'guard-not-tracked'
+  | 'guard-evidence-ignored'
   | 'tracking-unavailable'
   | 'vacuous';
 
@@ -132,6 +139,41 @@ export function gitTrackedPaths(root: string): Set<string> | undefined {
     });
     return new Set(output.split('\0').filter((entry) => entry !== ''));
   } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Whether a guard-cell token may be handed to `git check-ignore`: a
+ * repo-relative spelling (no absolute, route or virtual-id forms), which is
+ * what a citation of evidence looks like.
+ */
+export function isIgnoreCandidate(token: string): boolean {
+  if (!/^[A-Za-z0-9_.][A-Za-z0-9_@./-]*$/.test(token)) return false;
+  return token.includes('/') || /\.(?:ts|tsx|mts|js|mjs|cjs|css|json|md|mdx|html|txt)$/.test(token);
+}
+
+/**
+ * Which of `tokens` are covered by `.gitignore` under `root`, or undefined when
+ * Git cannot answer. An ignored spelling is never reproducible evidence, even
+ * when the file happens not to exist in this working tree — which is exactly
+ * how a lane can pass while the integrated tree reds.
+ */
+export function gitIgnoredPaths(tokens: readonly string[], root: string): Set<string> | undefined {
+  const candidates = tokens.filter(isIgnoreCandidate);
+  if (candidates.length === 0) return new Set();
+  try {
+    const output = execFileSync('git', ['check-ignore', '-z', '--stdin'], {
+      cwd: root,
+      input: `${candidates.join('\0')}\0`,
+      encoding: 'utf8',
+      maxBuffer: 16 * 1024 * 1024,
+      stdio: ['pipe', 'pipe', 'ignore'],
+    });
+    return new Set(output.split('\0').filter((entry) => entry !== ''));
+  } catch (error) {
+    // `git check-ignore` exits 1 when nothing matches — the normal case.
+    if ((error as { status?: number }).status === 1) return new Set();
     return undefined;
   }
 }
@@ -270,6 +312,11 @@ export interface SeamCheckOptions {
    * check closed instead of assuming the evidence is reproducible.
    */
   tracked?: ReadonlySet<string>;
+  /**
+   * The guard-cell path tokens covered by `.gitignore`. Omitted means "ask
+   * `git check-ignore`"; an unreadable Git fails the same way `tracked` does.
+   */
+  ignored?: ReadonlySet<string>;
 }
 
 /** Structural + semantic check of one registry document. */
@@ -340,6 +387,30 @@ export function checkSeamsMarkdown(
         'tracked; refusing to pass on an unverifiable tree',
     });
   }
+  // Every path spelling any guard cell names, whether or not it resolves in
+  // THIS working tree: an ignored spelling is unreproducible evidence even
+  // where the file happens not to exist, which is how a lane can pass while
+  // the integrated tree fails.
+  const guardTokens = new Set<string>();
+  for (const { text } of tableLines.slice(2)) {
+    const cells = splitTableCells(text);
+    if (cells.length !== EXPECTED_HEADER.length) continue;
+    for (const token of backtickedTokens(cells[4]!)) {
+      if (looksLikeRepoPath(token)) guardTokens.add(token);
+    }
+  }
+  const ignored =
+    options.ignored ??
+    (tracked === undefined ? undefined : gitIgnoredPaths([...guardTokens], root));
+  if (tracked !== undefined && ignored === undefined) {
+    violations.push({
+      kind: 'tracking-unavailable',
+      line: 0,
+      detail:
+        'git check-ignore could not be read under the root — a .gitignore-only guard spelling ' +
+        'cannot be ruled out; refusing to pass on an unverifiable tree',
+    });
+  }
 
   let rowCount = 0;
   let guardedRows = 0;
@@ -402,6 +473,19 @@ export function checkSeamsMarkdown(
         }
       }
     }
+    if (ignored !== undefined) {
+      for (const token of backtickedTokens(row[4])) {
+        if (!ignored.has(token)) continue;
+        violations.push({
+          kind: 'guard-evidence-ignored',
+          line,
+          detail:
+            `row ${JSON.stringify(seam)}: guard evidence ${JSON.stringify(token)} is covered by ` +
+            '.gitignore — a clone or CI run cannot reproduce it (state the reproducible method ' +
+            'or cite a tracked artifact instead)',
+        });
+      }
+    }
     if (!guard.resolved.some((entry) => entry.test)) {
       violations.push({
         kind: 'guard-not-a-test',
@@ -459,7 +543,8 @@ function main(): void {
   console.log(
     `seams:check: ${report.rowCount} rows / ${report.explicitRows} explicit — ` +
       `${report.guardedRows} row(s) carry an existing consumer-form guard test, every guard path ` +
-      'is Git-tracked, and every row states its Missing/unreadable behavior.',
+      'is Git-tracked, no guard spelling is .gitignore-only, and every row states its ' +
+      'Missing/unreadable behavior.',
   );
 }
 
