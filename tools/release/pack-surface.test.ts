@@ -122,6 +122,19 @@ test('pack surface: repository-internal paths and ADR citations fail', () => {
     ['task', 'Regenerate with: deno task --cwd packages/ui generate:ui-manifest'],
     ['tools path', 'generator lives in tools/repo/generate-export-files.ts'],
     ['site path', 'wired in www/vite.config.ts'],
+    // N2: every prefixed spelling of the same reference must fail too — the
+    // original pattern only saw the bare form, so `./`/`../`/absolute/
+    // installed-copy/backslash prefixes slipped through.
+    ['dot-relative path', 'see ./packages/router/src/authoring.ts'],
+    ['parent-relative path', 'see ../tools/repo/gate.ts'],
+    ['absolute host path', 'see /Users/dev/openelement/packages/router/src/authoring.ts'],
+    ['absolute CI path', 'see /home/runner/work/openelement/tools/repo/gate.ts'],
+    ['absolute private path', 'see /private/tmp/openelement/tools/repo/gate.ts'],
+    ['windows absolute path', 'see C:\\dev\\openelement\\packages\\router\\src\\authoring.ts'],
+    ['windows relative path', 'see packages\\router\\src\\authoring.ts'],
+    ['installed-copy path', 'node_modules/packages/x/y.ts'],
+    ['installed-copy nested path', '/app/node_modules/tools/lib/process.ts'],
+    ['internal ledger path', 'tracked in .zcode/plans/alpha15-debt-ledger.md'],
     ['adr id', 'compiled authoring (ADR-0143)'],
     ['adr spaced', 'authoring contract (ADR 0143)'],
     ['adr plural', 'historic decision records (ADRs) are maintainer vocabulary'],
@@ -141,6 +154,13 @@ test('pack surface: ordinary prose and package-relative paths pass', () => {
     "import manifestData from './generated-manifest.json' with { type: 'json' };",
     'deno task generate:ui-manifest',
     'docs/ is where the consumer keeps their own files',
+    // N2 guardrails: public URLs keep their path segments without being local
+    // repository references (the absolute-path form only trusts machine roots).
+    '// MDN: https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@view-transition',
+    'https://openelement.org/docs/guide/getting-started',
+    'https://github.com/open-element/openelement/tree/main/docs/adr',
+    // A larger name that merely ends in a guarded directory is not a path.
+    'toolspackages/router',
   ];
   for (const line of accepted) {
     expect(

@@ -37,11 +37,43 @@ import { type PackedMetadata, packedMetadata } from './npm-manifest.ts';
 /**
  * Repository directories a consumer cannot resolve. Matching requires a
  * directory boundary, so prose like "tests, HMR" or a consumer's own
- * `docs/guide/` path does not trip it. The captured directory name is group 2
- * (group 1 is the boundary character).
+ * `docs/guide/` path does not trip it. The captured directory name is group 1.
+ *
+ * N2: the original single pattern only saw the bare `dir/segment` form. It
+ * missed every spelling a path can take in shipped text — `./packages/…`,
+ * `../packages/…`, absolute host/CI paths (`/Users/…/packages/…`,
+ * `C:\repo\packages\…`), installed-copy paths (`node_modules/packages/…`) and
+ * the `.zcode/` internal ledger — so a repository-internal reference could
+ * ship simply by being prefixed. The three patterns below cover the forms and
+ * are matched after backslash normalization.
  */
-const REPO_PATH_PATTERN =
-  /(^|[^A-Za-z0-9_./-])(packages|tools|www|apps|tests|benchmarks|docs)\/[A-Za-z0-9._-]+/;
+const REPO_DIRECTORY = String.raw`(?:packages|tools|www|apps|tests|benchmarks|docs|\.zcode)`;
+
+/** One path component (a directory name or the leaf file name). */
+const PATH_SEGMENT = String.raw`[A-Za-z0-9._-]+`;
+
+/** Token start: the match must not continue a larger name or a path segment. */
+const TOKEN_BOUNDARY = String.raw`(?:^|[^A-Za-z0-9_$./-])`;
+
+/** Machine-local absolute roots a repo path can be buried under. */
+const ABSOLUTE_ROOT = String.raw`(?:/(?:Users|home|private|tmp|var|opt|mnt|Volumes|root|builds|workspace|scratch|github)|[A-Za-z]:)`;
+
+const REPO_PATH_PATTERNS: readonly RegExp[] = [
+  // Bare, `./` and `../` forms: `packages/x`, `./packages/x`, `../tools/x`.
+  new RegExp(String.raw`${TOKEN_BOUNDARY}(?:\.{1,2}/)?(${REPO_DIRECTORY})/${PATH_SEGMENT}`),
+  // Absolute forms: `/Users/dev/repo/packages/x`, `/home/runner/work/tools/x`,
+  // `C:/repo/www/x` (Windows originates as `C:\repo\www\x`; normalized first).
+  // The root token is followed by slash-prefixed segments, so the directory
+  // must be reached through the machine root — public URLs stay unflagged.
+  new RegExp(
+    String.raw`${TOKEN_BOUNDARY}${ABSOLUTE_ROOT}(?:/${PATH_SEGMENT})*/(${REPO_DIRECTORY})/${PATH_SEGMENT}`,
+  ),
+  // Installed-copy forms: `node_modules/packages/x`, optionally nested in a
+  // longer path (`/app/node_modules/packages/x`).
+  new RegExp(
+    String.raw`(?:^|[^A-Za-z0-9_$.-])node_modules/(?:[A-Za-z0-9._$-]+/)*(${REPO_DIRECTORY})/${PATH_SEGMENT}`,
+  ),
+];
 
 /** Decision-record vocabulary (`ADR-0143`, `ADR 0143`, `ADRs`). */
 const ADR_PATTERN = /\bADRs?\b|ADR[- ]\d{4}/;
@@ -89,13 +121,19 @@ export function findInternalReferences(
   const lines = text.split('\n');
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
-    const repoPath = line.match(REPO_PATH_PATTERN);
+    // Backslash spellings (`packages\router\src\x.ts`, `C:\repo\tools\x`) are
+    // the same reference; normalize for matching only (line numbers/bytes
+    // stay untouched).
+    const matchable = line.replaceAll('\\', '/');
+    const repoPath = REPO_PATH_PATTERNS.map((pattern) => matchable.match(pattern)).find(
+      (match) => match !== null,
+    );
     if (repoPath) {
       violations.push({
         packageName,
         path,
         line: index + 1,
-        message: `repository-internal path '${repoPath[2]}/' must not ship in an npm artifact`,
+        message: `repository-internal path '${repoPath[1]}/' must not ship in an npm artifact`,
       });
     }
     if (ADR_PATTERN.test(line)) {
