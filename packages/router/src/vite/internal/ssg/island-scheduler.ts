@@ -85,28 +85,40 @@ export interface IslandScheduler {
   observeVisible: () => void;
 }
 
-/**
- * Whether `root` currently carries a host for `tag` anywhere in the composed
- * tree. Islands live inside page-element DSD shadow roots (#562), so a
- * document query alone is never enough; the walk descends into every
- * element's shadow root and stops at the first match.
- */
-function hasIslandHost(root: ParentNode, tag: string): boolean {
-  if (root.querySelectorAll(tag).length > 0) return true;
-  const all = root.querySelectorAll('*');
-  for (let i = 0; i < all.length; i++) {
-    const shadow = (all[i] as HTMLElement).shadowRoot;
-    if (shadow && hasIslandHost(shadow, tag)) return true;
-  }
-  return false;
-}
-
 export function createIslandScheduler(deps: IslandSchedulerDeps): IslandScheduler {
   const log = deps.log;
   const win = deps.win;
   const doc = deps.doc;
   const map = deps.map;
   const strategies = deps.strategies;
+
+  /**
+   * Whether `root` currently carries a host for `tag` anywhere in the composed
+   * tree. Islands live inside page-element DSD shadow roots (#562), so a
+   * document query alone is never enough; the walk descends into every
+   * element's shadow root and stops at the first match.
+   *
+   * INVARIANT — this helper lives INSIDE the factory on purpose. The repo
+   * treats `createIslandScheduler.toString()` as a complete, self-contained
+   * scheduler: tests/fixtures/router-request-time/e2e/live.spec.ts:917 inlines
+   * exactly that string as a virtual client entry, and
+   * packages/router/__tests__/island-scheduler.test.ts documents the same
+   * "inlines verbatim" property. A module-level helper is absent from the
+   * inlined copy, so every load() there would throw
+   * `ReferenceError: hasIslandHost is not defined` while the bundled entry
+   * (which imports this module) kept working — a test-only failure that reads
+   * exactly like a product regression. Keep the factory self-contained; if
+   * this is ever hoisted back to module scope, that e2e must inline it too.
+   */
+  function hasIslandHost(root: ParentNode, tag: string): boolean {
+    if (root.querySelectorAll(tag).length > 0) return true;
+    const all = root.querySelectorAll('*');
+    for (let i = 0; i < all.length; i++) {
+      const shadow = (all[i] as HTMLElement).shadowRoot;
+      if (shadow && hasIslandHost(shadow, tag)) return true;
+    }
+    return false;
+  }
 
   /**
    * Start one island's import. Returns whether a load started HERE: false
