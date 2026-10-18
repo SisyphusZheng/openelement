@@ -33,6 +33,7 @@ import process from 'node:process';
 import readline from 'node:readline/promises';
 import { buildTemplates, resolveVersions, validateProjectName } from './template-builder.ts';
 import { createInstallCommand } from './install-command.ts';
+import { assertSupportedNode } from './node-version.ts';
 import { detectPackageManager, PACKAGE_MANAGERS } from './pm.ts';
 import { CREATE_VERSION } from './version.ts';
 
@@ -255,6 +256,13 @@ function printHandoff(relativeTarget: string, pm: string | null, startRequested:
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
+  // Fail closed on an unsupported host before parsing flags, choosing a
+  // template, or touching the filesystem (the module-scope catch renders the
+  // one actionable message as `error:` and exits 1, never a stack trace).
+  // --help and --version answer identically on every host, so they pass
+  // through even where the scaffold itself cannot run.
+  const hostQuestion = argv.some((arg) => ['-h', '--help', '-v', '--version'].includes(arg));
+  if (!hostQuestion) assertSupportedNode(process.versions.node);
   const flags = parseArgs(argv);
   if (flags.help) {
     printUsage();

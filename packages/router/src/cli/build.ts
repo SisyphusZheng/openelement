@@ -18,6 +18,7 @@ import process from 'node:process';
 import { formatError } from '@openelement/element';
 import { buildApp } from '../vite/index.ts';
 import { parseDiagnosticsChannels, writeDiagnosticsExit } from './diagnostics-exit.ts';
+import { enforceNodeFloor } from './node-version.ts';
 
 /**
  * Run the production build and exit with the build's verdict. Shared by the
@@ -41,6 +42,11 @@ export async function runBuildCli(argv: string[] = []): Promise<void> {
     process.exit(1);
   }
 }
+
+// The Node floor is checked before the `import.meta.main` dispatch below: on
+// Node < 24.2 that flag is `undefined`, so an ungated packed entry would exit 0
+// having done nothing at all.
+enforceNodeFloor();
 
 if (import.meta.main) {
   await runBuildCli(process.argv.slice(2));

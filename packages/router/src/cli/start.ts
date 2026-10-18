@@ -53,6 +53,7 @@ import {
   importAppConfigModule,
   resolveAppConfig,
 } from '../vite/app-config.ts';
+import { enforceNodeFloor } from './node-version.ts';
 
 // Resolved per-invocation, never snapshotted at module load (M-R5): a
 // module-level `process.cwd()` goes stale when the CLI is reused
@@ -403,6 +404,11 @@ export async function runServeCli(argv: string[]): Promise<void> {
     process.exit(1);
   }
 }
+
+// The Node floor is checked before the `import.meta.main` dispatch below: on
+// Node < 24.2 that flag is `undefined`, so an ungated packed entry would exit 0
+// having done nothing at all.
+enforceNodeFloor();
 
 if (import.meta.main) {
   await runServeCli(process.argv.slice(2));

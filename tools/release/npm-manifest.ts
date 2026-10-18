@@ -54,10 +54,15 @@ const PACKAGE_KEYWORDS: Record<string, string[]> = {
  * consumers on Node 24 plus a 24/26 serve matrix. The floor is 24.2, not
  * bare 24: the Router CLI entries (`src/cli/build.ts`, `src/cli/start.ts`)
  * gate their main block on `import.meta.main`, which Node added in 24.2.0 —
- * on 24.0/24.1 the guard is `undefined`, so the CLI would exit 0 without
- * doing anything. The starter template, the root engines, and the docs state
- * the same 24.2 floor (one version contract, four surfaces). The former
- * `deno` engine entries retired with the Deno consumer surface (owner
+ * on 24.0/24.1 the guard is `undefined`, so an unguarded CLI would exit 0
+ * without doing anything. This range is the *declared* floor only: npm warns
+ * on a mismatch and installs anyway, so the runtime half of the same contract
+ * lives in the CLI entries themselves (the shared `node-version` module each
+ * Router bin calls before its `import.meta.main` dispatch, and Create's
+ * pre-filesystem check), which fail closed with one actionable message. The
+ * starter template, the root engines, the template's `.node-version`, and the
+ * docs state the same 24.2 floor (one version contract, five surfaces). The
+ * former `deno` engine entries retired with the Deno consumer surface (owner
  * ruling 2026-10-03, ADR-0161 amendment): every retained package is a plain
  * Node program, and Create's CLI is a Node bin (`#!/usr/bin/env node`).
  */

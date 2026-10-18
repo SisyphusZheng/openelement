@@ -79,6 +79,7 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   // npm tarballs omit dotfiles even when a directory is included. Keep the
   // template non-hidden and write the expected dotfile into generated apps.
   ['gitignore.tmpl', '.gitignore'],
+  ['.node-version', '.node-version'],
   ['README.tmpl', 'README.md'],
   ['public/openelement-mark.svg', 'public/openelement-mark.svg'],
   // B5 (ADR-0161): the starter is a plain Node project. Framework

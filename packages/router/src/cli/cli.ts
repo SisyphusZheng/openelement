@@ -36,6 +36,7 @@
 
 import process from 'node:process';
 import { readFileSync } from 'node:fs';
+import { enforceNodeFloor } from './node-version.ts';
 
 /**
  * The one usage text both the no-argument and the unknown-command paths
@@ -110,6 +111,11 @@ async function main(): Promise<void> {
   console.error(command === undefined ? USAGE : `Unknown command "${command}".\n\n${USAGE}`);
   process.exit(1);
 }
+
+// The Node floor is checked before the `import.meta.main` dispatch below: on
+// Node < 24.2 that flag is `undefined`, so an ungated packed entry would exit 0
+// having done nothing at all.
+enforceNodeFloor();
 
 if (import.meta.main) {
   await main();

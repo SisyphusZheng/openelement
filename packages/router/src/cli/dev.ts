@@ -24,6 +24,7 @@
 
 import process from 'node:process';
 import { formatError } from '@openelement/element';
+import { enforceNodeFloor } from './node-version.ts';
 
 const USAGE = [
   'Usage: openelement dev [options]',
@@ -185,6 +186,11 @@ export async function runDevCli(argv: string[] = []): Promise<void> {
     process.exit(1);
   }
 }
+
+// The Node floor is checked before the `import.meta.main` dispatch below: on
+// Node < 24.2 that flag is `undefined`, so an ungated packed entry would exit 0
+// having done nothing at all.
+enforceNodeFloor();
 
 if (import.meta.main) {
   await runDevCli(process.argv.slice(2));
