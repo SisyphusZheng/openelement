@@ -67,6 +67,12 @@ interface EnhanceClient {
    * late island hydration via the scheduler's onIslandLoaded hook (#584).
    */
   scanSubmitRoots: (root: Document | ShadowRoot) => void;
+  /**
+   * Re-run the WebKit upgrade repair (morph-webkit-fix #604) over the live
+   * document. Called when an island's definition lands AFTER the morph that
+   * inserted its host: the post-insertion repair saw no constructor for it.
+   */
+  repairUpgrades: (doc: Document) => void;
 }
 
 export function createEnhanceClient(deps: EnhanceClientDeps): EnhanceClient {
@@ -92,5 +98,5 @@ export function createEnhanceClient(deps: EnhanceClientDeps): EnhanceClient {
     morph: align,
     islands: islands,
   });
-  return { scanSubmitRoots: form.scanSubmitRoots };
+  return { scanSubmitRoots: form.scanSubmitRoots, repairUpgrades: webkit.repairUpgrades };
 }

@@ -668,7 +668,10 @@ ${
   options.enhancedForms === true
     ? `  // #584: late-hydrating islands create their shadow roots after the
   // ready-time scan; rescan so enhanced forms inside them are heard.
-  onIslandLoaded: function () { __enhance.scanSubmitRoots(document); },`
+  // #604: a definition that lands after the morph repaired nothing at
+  // insertion time (no constructor existed yet), so the same WebKit repair
+  // runs again here — the moment the element can actually upgrade.
+  onIslandLoaded: function () { __enhance.repairUpgrades(document); __enhance.scanSubmitRoots(document); },`
     : '  // #597: no enhance layer — no submit-root rescan after island loads.\n  onIslandLoaded: null,'
 }
 });
