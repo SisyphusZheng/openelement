@@ -19,6 +19,7 @@
  */
 
 // Primary public API
+import process from 'node:process';
 import { build as viteBuild, type InlineConfig, type Plugin } from 'vite';
 import type { FrameworkOptions } from './framework.ts';
 import { createOpenPlugin } from './plugin.ts';
@@ -56,13 +57,36 @@ export function openPipeline(config: OpenPipelineConfig = {}): Plugin[] {
  * Consumers configure the adapter in `vite.config.ts`; this function owns the
  * invocation so CLI callers do not need to know the adapter's internal build
  * phases or Vite plugin ordering.
+ *
+ * KR-15: this is a PRODUCTION build. Vite derives `import.meta.env.PROD` from
+ * ambient `process.env.NODE_ENV`, not from `mode`, so a build launched from a
+ * test runner (`NODE_ENV=test`) or a dev shell silently emitted a
+ * development-semantics SSR bundle — `PROD=false`, so the production error
+ * channel stopped scrubbing and SSG 500 details fell back to stack traces
+ * (known-reds KR-15, Release P0 Gate). Pin production for the duration of the
+ * Vite call and restore the ambient value afterwards, so programmatic callers
+ * (and their tests) cannot leak a production NODE_ENV into the rest of the
+ * process. `mode` is made explicit for the same reason: the generated
+ * `import.meta.env.MODE` should say production even when a caller's ambient
+ * environment disagrees.
  */
 export async function buildApp(config: InlineConfig = {}): Promise<unknown> {
   // One build, one process, one set of exit records: the diagnostics envelope
   // exit (#1612) reads only THIS invocation's recorded diagnostics, never a
   // previous run's.
   resetBuildExitRecords();
-  return await viteBuild({ configLoader: 'native', ...config });
+  const ambientNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  try {
+    return await viteBuild({
+      configLoader: 'native',
+      ...config,
+      mode: config.mode ?? 'production',
+    });
+  } finally {
+    if (ambientNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = ambientNodeEnv;
+  }
 }
 
 export { openElement, type OpenElementOptions } from './app-vite.ts';
