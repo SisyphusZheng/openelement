@@ -92,3 +92,140 @@ test('a prologue inside a comment or a string is not hoisted', () => {
   expect(scoped.startsWith('@scope (oe-x) {')).toEqual(true);
   expect(scoped).toContain(`/* @import './decoy.css'; */`);
 });
+
+// ── F02: the projection is selector-only (postcss AST boundary) ────────────
+//
+// The projection must never rewrite a `:host`/`::slotted` token outside rule
+// selector position: declaration values, unquoted url() contents, at-rule
+// preludes, comments and strings are authored data, not selector grammar.
+
+test('declaration values are never projected (custom properties, animation, unquoted url)', () => {
+  const scoped = scopeLightRootCss(
+    'oe-x',
+    [
+      '.a { --selector: :host; }',
+      '.b { --sel: :host(.x); }',
+      '.c { --sel: ::slotted(span); }',
+      '.d { animation: :host 1s; }',
+      '.e { background: url(data:image/svg+xml;utf8,<svg>:host</svg>); }',
+      '.f { --context: :host-context(.dark); }',
+    ].join('\n'),
+  );
+
+  for (const authored of [
+    '--selector: :host;',
+    '--sel: :host(.x);',
+    '--sel: ::slotted(span);',
+    'animation: :host 1s;',
+    'url(data:image/svg+xml;utf8,<svg>:host</svg>)',
+    '--context: :host-context(.dark);',
+  ]) {
+    expect(scoped, `${authored} stays authored`).toContain(authored);
+  }
+  expect(scoped).not.toContain(':scope:is(.x)');
+  expect(scoped).not.toContain('slot > :is(span)');
+});
+
+test('at-rule preludes are never projected', () => {
+  const scoped = scopeLightRootCss(
+    'oe-x',
+    [
+      '@supports selector(:host) { .a { color: red; } }',
+      '@supports selector(:host(.x)) { .b { color: red; } }',
+      '@media (min-width: 10rem) and selector(:host) { .c { color: red; } }',
+    ].join('\n'),
+  );
+
+  expect(scoped).toContain('@supports selector(:host) {');
+  expect(scoped).toContain('@supports selector(:host(.x)) {');
+  expect(scoped).toContain('selector(:host)');
+  expect(scoped).not.toContain('selector(:scope');
+});
+
+test('escaped identifiers are not selector tokens', () => {
+  const scoped = scopeLightRootCss(
+    'oe-x',
+    [
+      String.raw`.icon\:host { color: red; }`,
+      String.raw`.icon\:host:hover { color: red; }`,
+      String.raw`.icon\:\:slotted\(p\) { color: red; }`,
+      String.raw`.icon\3a host { color: red; }`,
+      String.raw`.\[\&\:host\]\:block:host { display: block; }`,
+    ].join('\n'),
+  );
+
+  expect(scoped).toContain(String.raw`.icon\:host {`);
+  expect(scoped).toContain(String.raw`.icon\:host:hover {`);
+  expect(scoped).toContain(String.raw`.icon\:\:slotted\(p\) {`);
+  // A hex escape consumes its terminator: `\3a ` is the colon of the class
+  // name, and the following `host` is not a `:host` token either.
+  expect(scoped).toContain(String.raw`.icon\3a host {`);
+  // The Tailwind arbitrary-variant class keeps its escaped payload, and only
+  // the real trailing `:host` pseudo-class is projected.
+  expect(scoped).toContain(String.raw`.\[\&\:host\]\:block:scope {`);
+});
+
+test('attribute-selector contents are not selector grammar', () => {
+  const scoped = scopeLightRootCss(
+    'oe-x',
+    String.raw`.a[data-x=":host"] { color: blue; }
+.b[data-x=:host] { color: blue; }
+.c[data-x='::slotted(p)'] { color: blue; }`,
+  );
+
+  expect(scoped).toContain(String.raw`.a[data-x=":host"] {`);
+  expect(scoped).toContain(String.raw`.b[data-x=:host] {`);
+  expect(scoped).toContain(String.raw`.c[data-x='::slotted(p)'] {`);
+  expect(scoped).not.toContain(':scope');
+});
+
+test('matching is ASCII case-insensitive (N1)', () => {
+  const scoped = scopeLightRootCss(
+    'oe-x',
+    [
+      ':HOST { display: block; }',
+      ':Host([rail]) { color: red; }',
+      '::SLOTTED(p) { margin: 0; }',
+      ':HOST-CONTEXT(.dark) .x { color: red; }',
+      '.a { --x: :HOST; }',
+    ].join('\n'),
+  );
+
+  expect(scoped).toContain(':scope { display: block; }');
+  expect(scoped).toContain(':scope:is([rail]) {');
+  expect(scoped).toContain('slot > :is(p) {');
+  // The identifier continuation after `:HOST` makes it `:HOST-CONTEXT`, not
+  // the `:host` token; declaration text stays authored.
+  expect(scoped).toContain(':HOST-CONTEXT(.dark) .x {');
+  expect(scoped).toContain('--x: :HOST;');
+});
+
+test(':host-context stays authored (document decision) while :host projects around it', () => {
+  const scoped = scopeLightRootCss(
+    'oe-x',
+    ':host-context(.dark) :host { color: red; }\n:host-context(.light) .icon\\:host { color: blue; }',
+  );
+
+  expect(scoped).toContain(':host-context(.dark) :scope {');
+  expect(scoped).toContain(String.raw`:host-context(.light) .icon\:host {`);
+});
+
+test('a selector-only sheet is wrapped byte-for-byte', () => {
+  // Nothing in this sheet is a selector token; the body must be the authored
+  // bytes exactly (no postcss reserialization). The prologue split still
+  // applies to the at-rules the CSS grammar requires before other rules.
+  const css = [
+    '.a { --selector: :host; }',
+    '.b { background: url(data:image/svg+xml;utf8,<svg>:host</svg>); }',
+    '.c::before { content: ":host ::slotted(*)"; }',
+    '/* ::slotted(p) */',
+    '',
+  ].join('\n');
+  expect(scopeLightRootCss('oe-x', css)).toEqual(`@scope (oe-x) {\n${css}\n}`);
+});
+
+test('an unparseable sheet is wrapped verbatim instead of throwing', () => {
+  const css = '.a::before { content: ":host }';
+  const scoped = scopeLightRootCss('oe-x', css);
+  expect(scoped).toEqual(`@scope (oe-x) {\n${css}\n}`);
+});

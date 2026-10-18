@@ -92,7 +92,12 @@ const LIGHT_CARD_CSS = `:host {
 
 .light-card {
   --light-tone: rgb(0, 0, 200);
+  --selector: :host;
   color: var(--light-tone);
+}
+
+.icon\\:host {
+  color: rgb(0, 0, 0);
 }
 
 .light-card-shared {
@@ -420,6 +425,14 @@ test('the light edge resource is served scoped, the shadow one is not', async ()
   const scoped = resources.find((entry) => entry.body.includes('@scope (dev-css-light-card)'));
   expect(scoped, 'the light edge resource carries its scope').toBeTruthy();
   expect(scoped!.body, 'the light scope projects :host onto :scope').toContain(':scope');
+  // F02 on the real dev path: the projection is selector-only, so an escaped
+  // identifier and a declaration value that both spell `:host` arrive on the
+  // wire authored, not projected.
+  expect(scoped!.body, 'escaped identifier class stays authored').toContain(
+    String.raw`.icon\:host`,
+  );
+  expect(scoped!.body, 'declaration value stays authored').toContain('--selector: :host;');
+  expect(scoped!.body, 'escaped identifier was not projected').not.toContain('.icon\\:scope');
   const shadow = resources.find((entry) => entry.href !== scoped!.href);
   expect(shadow, 'the shadow edge resource is declared too').toBeTruthy();
   expect(shadow!.body, 'the shadow sheet ships unscoped').not.toContain('@scope (dev-css-card)');
