@@ -20,9 +20,10 @@
  * `idle`/`load`/`only` bucket imported every declared island chunk on every
  * page, which also dragged the shared element runtime into pages whose island
  * manifest is empty. A tag with no host keeps its factory (nothing is
- * consumed), so a later decision — a media-query change — can still activate
- * it. `open:ready` fires per strategy with the tags this page actually
- * activated, never for a bucket that started no load here.
+ * consumed), so a later decision — a media-query change or the post-morph
+ * rescan (`observeVisible`) — can still activate it. `open:ready` fires per
+ * strategy with the tags this page actually activated, never for a bucket
+ * that started no load here.
  *
  * The generated client entry imports this module through the
  * virtual:open-client-runtime specifier (resolved by build-client.ts) and the
@@ -78,11 +79,30 @@ export interface IslandSchedulerDeps {
 
 export interface IslandScheduler {
   /**
-   * Re-scan for client:visible island elements and observe any new ones.
-   * The enhance layer calls this after every morph: a replaced island is a
-   * new element and gets a fresh observer (#562). No-op without visible tags.
+   * The post-morph rescan (the enhance layer calls it after every morph):
+   * re-run the eager buckets, re-arm the idle attempt while a factory is
+   * still unconsumed, re-read the media matches, and observe new
+   * client:visible hosts. A replaced visible island is a new element and
+   * gets a fresh observer (#562); a host that arrived after its strategy's
+   * opportunity was spent is activated here (#1544/B2 follow-up, F01).
    */
   observeVisible: () => void;
+}
+
+/**
+ * Whether `root` currently carries a host for `tag` anywhere in the composed
+ * tree. Islands live inside page-element DSD shadow roots (#562), so a
+ * document query alone is never enough; the walk descends into every
+ * element's shadow root and stops at the first match.
+ */
+function hasIslandHost(root: ParentNode, tag: string): boolean {
+  if (root.querySelectorAll(tag).length > 0) return true;
+  const all = root.querySelectorAll('*');
+  for (let i = 0; i < all.length; i++) {
+    const shadow = (all[i] as HTMLElement).shadowRoot;
+    if (shadow && hasIslandHost(shadow, tag)) return true;
+  }
+  return false;
 }
 
 export function createIslandScheduler(deps: IslandSchedulerDeps): IslandScheduler {
@@ -91,33 +111,6 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
   const doc = deps.doc;
   const map = deps.map;
   const strategies = deps.strategies;
-
-  /**
-   * Whether `root` currently carries a host for `tag` anywhere in the composed
-   * tree. Islands live inside page-element DSD shadow roots (#562), so a
-   * document query alone is never enough; the walk descends into every
-   * element's shadow root and stops at the first match.
-   *
-   * INVARIANT — this helper lives INSIDE the factory on purpose. The repo
-   * treats `createIslandScheduler.toString()` as a complete, self-contained
-   * scheduler: the request-time fixture's live e2e spec inlines exactly that
-   * string as a virtual client entry, and the scheduler's own unit test
-   * documents the same "inlines verbatim" property. A module-level helper is absent from the
-   * inlined copy, so every load() there would throw
-   * `ReferenceError: hasIslandHost is not defined` while the bundled entry
-   * (which imports this module) kept working — a test-only failure that reads
-   * exactly like a product regression. Keep the factory self-contained; if
-   * this is ever hoisted back to module scope, that e2e must inline it too.
-   */
-  function hasIslandHost(root: ParentNode, tag: string): boolean {
-    if (root.querySelectorAll(tag).length > 0) return true;
-    const all = root.querySelectorAll('*');
-    for (let i = 0; i < all.length; i++) {
-      const shadow = (all[i] as HTMLElement).shadowRoot;
-      if (shadow && hasIslandHost(shadow, tag)) return true;
-    }
-    return false;
-  }
 
   /**
    * Start one island's import. Returns whether a load started HERE: false
@@ -198,17 +191,22 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
   function observeVisible(): void {
     // #1544/B2 follow-up: the ready-time scan is not the last word on the page
     // scope. An enhanced response morphs new HTML in, and this function is the
-    // rescan the client runtime already runs after every morph (#562) — but it
-    // only ever revisited the visible bucket, so a HOST that arrived after the
-    // ready scan left its island dead forever: the morph-inserted element kept
-    // its defer-hydration marker and never became interactive. Re-run the
-    // eager buckets here; load() nulls its map entry when a load starts, so an
-    // already-activated tag is skipped and open:ready keeps its
-    // one-event-per-activation shape.
+    // rescan the client runtime runs after every morph (#562). The first fix
+    // revisited only the eager buckets, which left an idle/media HOST that
+    // arrived after its strategy's one-shot opportunity was spent dead
+    // forever: the morph-inserted element kept its defer-hydration marker and
+    // never became interactive (F01). Re-run every unconsumed strategy here;
+    // load() nulls its map entry when a load starts, so an already-activated
+    // tag is skipped and open:ready keeps its one-event-per-activation shape.
     const lateLoad = loadAll(strategies.load);
     if (lateLoad.length > 0) dispatchReady('load', lateLoad);
     const lateOnly = loadAll(strategies.only);
     if (lateOnly.length > 0) dispatchReady('only', lateOnly);
+    // Idle keeps its browser-idle semantics (the retry is scheduled, never
+    // loaded synchronously); media re-reads the current match, since an
+    // always-matching query has no future `change` event to recover on.
+    rescanIdle();
+    rescanMedia();
     if (visibleTags.length === 0) return;
     if (typeof win.IntersectionObserver !== 'function') {
       const activated = loadAll(visibleTags);
@@ -252,8 +250,6 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
     });
   }
 
-  if (visibleTags.length > 0) onReady(observeVisible);
-
   // client:media islands - import when their declarative media query matches.
   // The generated entry creates these MediaQueryList values before
   // constructing the scheduler. Delivery is one-shot per tag; subsequent
@@ -282,10 +278,37 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
     else if (query.addListener) query.addListener(listener);
   }
 
+  /**
+   * Re-read the current match result for every media tag whose factory is
+   * still in the map. A query that matched at construction made its one
+   * activation attempt then; with no host on the page it was a no-op and the
+   * factory stayed unconsumed. After a morph the host exists, and an
+   * always-matching query never fires a later `change` event, so this rescan
+   * is the only recovery path. The map entry remains the one-shot guard; the
+   * `change` listener above keeps covering a query that starts matching later.
+   */
+  function rescanMedia(): void {
+    for (const tag of mediaTags) {
+      if (!map[tag]) continue;
+      if (deps.mediaQueries?.[tag]?.matches) dispatchMedia(tag);
+    }
+  }
+
   // client:idle islands - defer to browser idle
   const idleTags = strategies.idle;
-  if (idleTags.length > 0) {
+  let idlePending = false;
+
+  /**
+   * Schedule one idle activation attempt through the environment's preferred
+   * idle primitive (`requestIdleCallback` -> `requestAnimationFrame` -> the
+   * injected policy timeout). `idlePending` makes repeated rescans share one
+   * pending attempt instead of stacking callbacks.
+   */
+  function scheduleIdle(): void {
+    if (idlePending) return;
+    idlePending = true;
     const deferred = (): void => {
+      idlePending = false;
       const activated = loadAll(idleTags);
       if (activated.length > 0) dispatchReady('idle', activated);
     };
@@ -295,6 +318,26 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
       ((fn) => win.setTimeout(fn, deps.idleFallbackTimeoutMs));
     schedule(deferred);
   }
+
+  /**
+   * The idle half of the post-morph rescan (F01): the construction-time idle
+   * callback is almost always spent by the time a morph delivers the first
+   * host, so a still-unconsumed factory means the attempt must be scheduled
+   * again. Idle semantics survive because the retry goes through the same
+   * idle primitive; a consumed tag is out of the map, so the rescan can never
+   * double-load.
+   */
+  function rescanIdle(): void {
+    if (idlePending) return;
+    if (!idleTags.some((tag) => Boolean(map[tag]))) return;
+    scheduleIdle();
+  }
+
+  if (idleTags.length > 0) scheduleIdle();
+
+  // Register the ready-time scan last: the rescan reads the media/idle state
+  // above, and a synchronous `readyState` call must see it initialized.
+  if (visibleTags.length > 0) onReady(observeVisible);
 
   return { observeVisible: observeVisible };
 }

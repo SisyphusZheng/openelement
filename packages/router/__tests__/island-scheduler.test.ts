@@ -582,3 +582,337 @@ test('#1544/B2: a media island with no host fires nothing, and a later matching 
   expect(loaded).toEqual([]);
   expect(readyEvents).toEqual([]);
 });
+
+// ─── F01: the post-morph rescan covers every deferred strategy ─────────
+//
+// Each strategy's ready-time opportunity is one-shot: load/only run at
+// construct, idle runs when the browser first idles, media runs at construct
+// or on a match change, visible observes the hosts that exist. A morph can
+// deliver the FIRST host for a tag after that opportunity was spent; the map
+// entry is the only one-shot guard, so a still-unconsumed factory must be
+// re-armed by the post-morph rescan or the island stays dead forever (F01).
+
+type LateStrategy = 'load' | 'only' | 'visible' | 'idle' | 'media';
+
+interface LateHostRow {
+  strategy: LateStrategy;
+  importsBeforeMorph: number;
+  factoryUnconsumedBeforeMorph: boolean;
+  idleSchedulesBeforeMorph: number;
+  importsAfterRescan: number;
+  readyEventsAfterRescan: ReadyEvent[];
+  importsAfterSecondRescan: number;
+  readyEventsAfterSecondRescan: ReadyEvent[];
+}
+
+/** Run the five-strategy "no host → opportunity spent → morph → activate" scenario. */
+function runLateHostScenario(strategy: LateStrategy): LateHostRow {
+  const tag = 'x-late';
+  const readyEvents: ReadyEvent[] = [];
+  let imports = 0;
+  const body = new FakeElement('body');
+  const idleCallbacks: (() => void)[] = [];
+  let mediaListener: ((event: { matches: boolean }) => void) | null = null;
+
+  class FakeIO {
+    static instances: FakeIO[] = [];
+    cb: (entries: { isIntersecting: boolean }[]) => void;
+    constructor(cb: (entries: { isIntersecting: boolean }[]) => void) {
+      this.cb = cb;
+      FakeIO.instances.push(this);
+    }
+    observe(): void {}
+    disconnect(): void {}
+    intersect(): void {
+      this.cb([{ isIntersecting: true }]);
+    }
+  }
+
+  const win = makeWin({
+    requestIdleCallback: (fn: () => void) => {
+      idleCallbacks.push(fn);
+    },
+    ...(strategy === 'visible' ? { IntersectionObserver: FakeIO } : {}),
+  });
+  const map: Record<string, (() => Promise<unknown>) | null> = {
+    [tag]: () => {
+      imports += 1;
+      return Promise.resolve();
+    },
+  };
+  const strategies =
+    strategy === 'load'
+      ? STRATEGIES({ load: [tag] })
+      : strategy === 'only'
+        ? STRATEGIES({ only: [tag] })
+        : strategy === 'visible'
+          ? STRATEGIES({ visible: [tag] })
+          : strategy === 'idle'
+            ? STRATEGIES({ idle: [tag] })
+            : STRATEGIES({ media: [tag] });
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win,
+    doc: makeDoc(body, readyEvents),
+    map,
+    strategies,
+    ...(strategy === 'media'
+      ? {
+          mediaQueries: {
+            [tag]: {
+              matches: true,
+              addEventListener: (_type: string, fn: (event: { matches: boolean }) => void) => {
+                mediaListener = fn;
+              },
+            },
+          } as unknown as Record<string, MediaQueryList>,
+        }
+      : {}),
+    onIslandLoaded: null,
+  });
+
+  // 1. Spend the strategy's initial opportunity while the page has no host.
+  if (strategy === 'idle') {
+    idleCallbacks[idleCallbacks.length - 1]();
+  } else if (strategy === 'visible') {
+    // The ready scan found no host, so it observed nothing; nothing to fire.
+  }
+  const importsBeforeMorph = imports;
+  const factoryUnconsumedBeforeMorph = typeof map[tag] === 'function';
+  const idleSchedulesBeforeMorph = idleCallbacks.length;
+
+  // 2. The morph inserts the first host, then the post-morph rescan runs.
+  body.children.push(new FakeElement(tag));
+  scheduler.observeVisible();
+  // Resolve whatever the strategy needs to finish its activation step.
+  if (strategy === 'idle') idleCallbacks[idleCallbacks.length - 1]();
+  if (strategy === 'visible') FakeIO.instances[FakeIO.instances.length - 1].intersect();
+  const importsAfterRescan = imports;
+  const readyEventsAfterRescan = readyEvents.slice();
+
+  // 3. A second rescan (plus any opportunity it schedules) must stay silent.
+  scheduler.observeVisible();
+  if (strategy === 'idle' && idleCallbacks.length > idleSchedulesBeforeMorph + 1) {
+    idleCallbacks[idleCallbacks.length - 1]();
+  }
+  if (strategy === 'visible' && FakeIO.instances.length > 1) {
+    FakeIO.instances[FakeIO.instances.length - 1].intersect();
+  }
+  if (strategy === 'media') mediaListener?.({ matches: true });
+  return {
+    strategy,
+    importsBeforeMorph,
+    factoryUnconsumedBeforeMorph,
+    idleSchedulesBeforeMorph,
+    importsAfterRescan,
+    readyEventsAfterRescan,
+    importsAfterSecondRescan: imports,
+    readyEventsAfterSecondRescan: readyEvents.slice(),
+  };
+}
+
+test('#F01 five-strategy symmetry: a host arriving after the spent opportunity activates on the next rescan, exactly once', () => {
+  const rows = (['load', 'only', 'visible', 'idle', 'media'] as const).map(runLateHostScenario);
+  for (const row of rows) {
+    // The initial opportunity was spent with no host: nothing loaded, no event,
+    // and the factory stayed deferred rather than being dropped.
+    expect(row.importsBeforeMorph, `${row.strategy}: no import before the host`).toEqual(0);
+    expect(row.factoryUnconsumedBeforeMorph, `${row.strategy}: factory left for the retry`).toEqual(
+      true,
+    );
+    // The post-morph rescan activates the island exactly once and names the
+    // strategy in open:ready.
+    expect(row.importsAfterRescan, `${row.strategy}: one import after the rescan`).toEqual(1);
+    expect(row.readyEventsAfterRescan, `${row.strategy}: one ready event`).toEqual([
+      { strategy: row.strategy, islands: ['x-late'] },
+    ]);
+    // Repeated rescans are silent: the consumed map entry is the one-shot guard.
+    expect(row.importsAfterSecondRescan, `${row.strategy}: no duplicate import`).toEqual(1);
+    expect(row.readyEventsAfterSecondRescan, `${row.strategy}: no duplicate ready event`).toEqual([
+      { strategy: row.strategy, islands: ['x-late'] },
+    ]);
+  }
+});
+
+test('#F01 idle: a spent construction attempt is re-armed after a morph (same idle selection) and activates once', () => {
+  const readyEvents: ReadyEvent[] = [];
+  const body = new FakeElement('body');
+  const idleCallbacks: (() => void)[] = [];
+  let imports = 0;
+  const map: Record<string, (() => Promise<unknown>) | null> = {
+    'x-idle': () => {
+      imports += 1;
+      return Promise.resolve();
+    },
+  };
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin({ requestIdleCallback: (fn: () => void) => idleCallbacks.push(fn) }),
+    doc: makeDoc(body, readyEvents),
+    map,
+    strategies: STRATEGIES({ idle: ['x-idle'] }),
+    onIslandLoaded: null,
+  });
+  // The construction-time attempt runs with no host and is then spent.
+  expect(idleCallbacks.length).toEqual(1);
+  idleCallbacks[0]();
+  expect(imports).toEqual(0);
+  expect(readyEvents).toEqual([]);
+
+  // The morph delivers the first host; the rescan re-arms the idle attempt but
+  // never loads synchronously (idle semantics are the browser's decision).
+  body.children.push(new FakeElement('x-idle'));
+  scheduler.observeVisible();
+  expect(idleCallbacks.length).toEqual(2);
+  expect(imports).toEqual(0);
+  // Repeated rescans share the one pending attempt instead of stacking them.
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  expect(idleCallbacks.length).toEqual(2);
+
+  idleCallbacks[1]();
+  expect(imports).toEqual(1);
+  expect(readyEvents).toEqual([{ strategy: 'idle', islands: ['x-idle'] }]);
+
+  // Consumed: no third attempt, no duplicate event.
+  scheduler.observeVisible();
+  expect(idleCallbacks.length).toEqual(2);
+  expect(imports).toEqual(1);
+  expect(readyEvents).toEqual([{ strategy: 'idle', islands: ['x-idle'] }]);
+});
+
+test('#F01 idle: the re-armed attempt keeps the fallback selection (injected policy timeout)', () => {
+  const readyEvents: ReadyEvent[] = [];
+  const body = new FakeElement('body');
+  const scheduled: [() => void, number][] = [];
+  let imports = 0;
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    // Neither requestIdleCallback nor requestAnimationFrame exists.
+    win: makeWin({
+      setTimeout: (fn: () => void, delay?: number) => {
+        scheduled.push([fn, delay ?? 0]);
+        return 0;
+      },
+    }),
+    doc: makeDoc(body, readyEvents),
+    map: {
+      'x-idle': () => {
+        imports += 1;
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ idle: ['x-idle'] }),
+    onIslandLoaded: null,
+  });
+  expect(scheduled.length).toEqual(1);
+  expect(scheduled[0][1]).toEqual(25);
+  scheduled[0][0](); // spent with no host
+  expect(imports).toEqual(0);
+
+  body.children.push(new FakeElement('x-idle'));
+  scheduler.observeVisible();
+  expect(scheduled.length).toEqual(2);
+  expect(scheduled[1][1]).toEqual(25); // same policy timeout, same selection chain
+  scheduled[1][0]();
+  expect(imports).toEqual(1);
+  expect(readyEvents).toEqual([{ strategy: 'idle', islands: ['x-idle'] }]);
+});
+
+function mediaFixture(options: { matches: boolean; hostAtStart: boolean }) {
+  const readyEvents: ReadyEvent[] = [];
+  const body = options.hostAtStart
+    ? treeWithTags('x-media')
+    : (new FakeElement('body') as FakeElement);
+  let imports = 0;
+  let listeners = 0;
+  const mediaQueries = {
+    'x-media': {
+      matches: options.matches,
+      addEventListener: (_type: string, _fn: (event: { matches: boolean }) => void) => {
+        listeners += 1;
+      },
+    },
+  } as unknown as Record<string, MediaQueryList>;
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(),
+    doc: makeDoc(body, readyEvents),
+    map: {
+      'x-media': () => {
+        imports += 1;
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ media: ['x-media'] }),
+    mediaQueries,
+    onIslandLoaded: null,
+  });
+  return {
+    readyEvents,
+    body,
+    scheduler,
+    mediaQueries,
+    listeners: () => listeners,
+    imports: () => imports,
+  };
+}
+
+test('#F01 media: an already-matching query with no host activates on the post-morph rescan, once', () => {
+  const fixture = mediaFixture({ matches: true, hostAtStart: false });
+  expect(fixture.listeners()).toEqual(1);
+  expect(fixture.imports()).toEqual(0);
+  expect(fixture.readyEvents).toEqual([]);
+
+  fixture.body.children.push(new FakeElement('x-media'));
+  fixture.scheduler.observeVisible();
+  expect(fixture.imports()).toEqual(1);
+  expect(fixture.readyEvents).toEqual([{ strategy: 'media', islands: ['x-media'] }]);
+
+  // One-shot: rescans and later change events cannot re-import or re-fire.
+  fixture.scheduler.observeVisible();
+  expect(fixture.imports()).toEqual(1);
+  expect(fixture.readyEvents).toEqual([{ strategy: 'media', islands: ['x-media'] }]);
+});
+
+test('#F01 media: a non-matching query stays silent on the rescan; its change listener still activates the late host', () => {
+  const readyEvents: ReadyEvent[] = [];
+  const body = new FakeElement('body');
+  const listeners: Array<(event: { matches: boolean }) => void> = [];
+  let imports = 0;
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(),
+    doc: makeDoc(body, readyEvents),
+    map: {
+      'x-media': () => {
+        imports += 1;
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ media: ['x-media'] }),
+    mediaQueries: {
+      'x-media': {
+        matches: false,
+        addEventListener: (_type: string, fn: (event: { matches: boolean }) => void) => {
+          listeners.push(fn);
+        },
+      },
+    } as unknown as Record<string, MediaQueryList>,
+    onIslandLoaded: null,
+  });
+  // Host arrives, query still false: the rescan re-reads it and stays silent.
+  body.children.push(new FakeElement('x-media'));
+  scheduler.observeVisible();
+  expect(imports).toEqual(0);
+  expect(readyEvents).toEqual([]);
+  // The preserved change listener is the recovery path once it matches.
+  listeners[0]({ matches: true });
+  expect(imports).toEqual(1);
+  expect(readyEvents).toEqual([{ strategy: 'media', islands: ['x-media'] }]);
+});
