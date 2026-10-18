@@ -422,6 +422,19 @@ jobs:
           vp run --no-cache --fail-if-no-match --filter @openelement/tools-release pack:dry-run
           vp run --no-cache --fail-if-no-match --filter @openelement/tools-release pack-surface:check
 
+      # The documented bootstrap is `npm create @openelement <name>`. Its
+      # execution layer is registry-only (the candidate version does not exist
+      # on npm yet), so this step proves what is provable BEFORE the publish:
+      # npm's `@openelement` -> `@openelement/create` alias mapping against a
+      # cold offline cache, the packed candidate through the equivalent
+      # `npm exec --yes --package=<tarball>` form, and the packed CLI's printed
+      # usage text. The real alias call runs post-publish in
+      # published-consumers.yml (`--smoke`). Offline by construction: the probe
+      # makes no network request and fails when npm would.
+      - name: Create initializer alias probe (offline, packed tarball)
+        if: steps.check.outputs.already_published != 'true'
+        run: node tools/release/published-consumer-qualification.ts --prepublish-alias
+
       # Last gate before the irreversible step: operation, SHA, version and
       # the exact publish set are re-checked immediately before npm receives
       # anything. Drifted state (or an operation that is not publish) aborts

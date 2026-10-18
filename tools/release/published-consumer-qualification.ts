@@ -13,8 +13,17 @@
  * 2. Consumer smoke (`--smoke`): post-publish npm smoke test. Creates
  *    temporary consumer projects and verifies @openelement/element can be
  *    consumed from npm on Node (core imports and the router/vite build
- *    entry). Also checks the exact-version starter, and on request the
- *    jsDelivr CDN browser-safe export and the Nitro build output.
+ *    entry). Also checks the exact-version starter through BOTH documented
+ *    bootstrap surfaces — `npm exec <bin>` and the real
+ *    `npm create @openelement@<version>` initializer alias (registry-only by
+ *    design, so it only runs where the network and the published version
+ *    exist) — and on request the jsDelivr CDN browser-safe export and the
+ *    Nitro build output.
+ *
+ * 3. Pre-publish alias probe (`--prepublish-alias`): offline coverage of the
+ *    documented `npm create @openelement` bootstrap from the local packed
+ *    tarball (see the section below). It proves what CAN be proven before the
+ *    version exists on the registry, and names what cannot.
  *
  * This module also owns the canonical release-gate verdict contract (#1216,
  * A10.8; umbrella #1155; ADR-0151). A release
@@ -30,10 +39,14 @@
  */
 
 import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { formatError } from '@openelement/element';
 import { formatJson } from '@openelement/element/build-utils';
+import { readPackages } from '../lib/package-graph.ts';
+import { tarballPath } from '../lib/npm-tarball.ts';
 import { PACKAGE_VERSION } from '../repo/project-constants.ts';
 import { VITE_DEV_PIN } from '../repo/deps-vite-check.ts';
 import { runWithOutput } from '../lib/process.ts';
@@ -336,6 +349,230 @@ async function qualificationMain(): Promise<void> {
   }
 
   console.log(`[published-consumer] ${options.mode} qualification passed for ${options.version}`);
+}
+
+// ---------------------------------------------------------------------------
+// Pre-publish create-initializer alias probe (offline; local tarball)
+// ---------------------------------------------------------------------------
+//
+// The documented bootstrap is `npm create @openelement <name>`: npm's
+// initializer alias maps the bare scope to `@openelement/create` and installs
+// and runs that package's bin through npm exec. Two layers of that surface are
+// separable, and only one is coverable before the version is published:
+//
+// - Alias RESOLUTION (`@openelement` -> `@openelement/create@<tag>`): proven
+//   offline against a cold npm cache. The probe runs `npm create
+//   @openelement` with `--offline` and asserts the failed resolution NAMES
+//   `@openelement/create` — that is npm's alias mapping and nothing more.
+// - Alias EXECUTION cannot be covered pre-publish: npm resolves the package
+//   from the registry, so with the candidate version unpublished the only
+//   honest pre-publish outcome is the cold-cache failure the probe records
+//   (see docs/maintainers/known-reds-ledger.md). The post-publish smoke runs
+//   the real alias where the registry exists.
+// - Equivalent EXECUTION: `npm exec --yes --package=<local tarball> -- <bin>`
+//   is the install-and-run mechanism npm's own init uses, fed the packed
+//   candidate instead of a registry specifier. It runs fully offline and
+//   generates a real app from the artifact under qualification.
+// - Packed CLI + printed usage: the tarball is extracted and `node
+//   <tarball>/src/cli.js` runs with no arguments; its usage line must equal
+//   the canonical command string the create package exports (#1414).
+
+const CREATE_ALIAS_SCOPE = '@openelement';
+const CREATE_ALIAS_PACKAGE = '@openelement/create';
+
+export interface CreateAliasProbeOptions {
+  /** The packed @openelement/create tarball under qualification. */
+  tarball: string;
+  /** Repository root; defaults to the current working directory. */
+  repoRoot?: string;
+}
+
+export interface CreateAliasProbeEvidence {
+  version: string;
+  /** `@openelement/create`, the package npm's bare-scope alias resolved to. */
+  aliasPackage: string;
+  /** The offline resolution failure line proving the alias mapping. */
+  aliasResolutionEvidence: string;
+  /** Recorded limitation: the alias itself needs the registry. */
+  aliasExecution: string;
+  /** The equivalent npm-exec spelling that ran the candidate offline. */
+  execCommand: string[];
+  execBin: string;
+  generatedApp: string;
+  /** The packed CLI's printed usage line, equal to the canonical command. */
+  usageLine: string;
+}
+
+/**
+ * Qualify the create initializer surface offline from a packed tarball:
+ * alias resolution (cold-cache `npm create`), equivalent exec of the candidate
+ * artifact, packed-CLI invocation and printed usage. Throws on any mismatch;
+ * returns the evidence when the coverable layers hold.
+ */
+export async function probeCreateInitializerAlias(
+  options: CreateAliasProbeOptions,
+): Promise<CreateAliasProbeEvidence> {
+  const repoRoot = resolve(options.repoRoot ?? process.cwd());
+  const tarball = resolve(options.tarball);
+  if (!existsSync(tarball)) {
+    throw new Error(
+      `packed create tarball missing at ${tarball}; run the tools-release pack first`,
+    );
+  }
+  const root = await mkdtemp(join(tmpdir(), 'openelement-create-alias-'));
+  // The cache lives inside the probe tree and starts empty: `--offline` can
+  // then only answer from cache, so a registry resolution must fail as a
+  // cache miss instead of silently qualifying a previously cached copy.
+  const cache = join(root, 'npm-cache');
+  // npm's own flags travel before `--`; everything after it belongs to the
+  // initializer bin.
+  const offlineFlags = ['--cache', cache, '--offline', '--no-audit', '--no-fund'];
+  const npmRun = (args: string[], cwd: string) => runWithOutput('npm', args, { cwd });
+  try {
+    // 1. Alias resolution, offline: the failure must name the package npm's
+    //    bare-scope initializer alias maps to.
+    const aliasCwd = join(root, 'alias-resolution');
+    await mkdir(aliasCwd);
+    const alias = await npmRun(
+      ['create', CREATE_ALIAS_SCOPE, 'alias-resolution-app', '--yes', ...offlineFlags],
+      aliasCwd,
+    );
+    const aliasOutput = `${alias.stdout}\n${alias.stderr}`;
+    if (alias.success) {
+      throw new Error(
+        `npm create ${CREATE_ALIAS_SCOPE} succeeded against a cold offline cache; the offline ` +
+          'alias probe proves nothing (a candidate copy was cached?)',
+      );
+    }
+    // npm reports the packument it tried to fetch; accept the encoded and the
+    // plain spelling of the resolved package.
+    const resolutionLine = aliasOutput
+      .split('\n')
+      .find(
+        (line) =>
+          line.includes(`${CREATE_ALIAS_SCOPE}%2fcreate`) || line.includes(CREATE_ALIAS_PACKAGE),
+      );
+    if (resolutionLine === undefined) {
+      throw new Error(
+        `npm create ${CREATE_ALIAS_SCOPE} did not resolve to ${CREATE_ALIAS_PACKAGE}; the ` +
+          `initializer alias mapping changed:\n${tail(aliasOutput)}`,
+      );
+    }
+    if (existsSync(join(aliasCwd, 'alias-resolution-app'))) {
+      throw new Error(
+        'the offline alias probe generated an app; it cannot stand as a resolution-only proof',
+      );
+    }
+
+    // 2. Equivalent execution of the candidate artifact, through the same
+    //    install-and-run mechanism npm's own init uses.
+    const execBin = Object.keys(CREATE_BIN).sort()[0]!;
+    const execCwd = join(root, 'exec');
+    await mkdir(execCwd);
+    const execCommand = [
+      'exec',
+      '--yes',
+      `--package=${tarball}`,
+      ...offlineFlags,
+      '--',
+      execBin,
+      'alias-exec-app',
+      '--no-install',
+    ];
+    const exec = await npmRun(execCommand, execCwd);
+    const execOutput = `${exec.stdout}\n${exec.stderr}`;
+    if (!exec.success) {
+      throw new Error(
+        'npm exec from the packed create tarball failed; the candidate artifact cannot run ' +
+          `through the initializer exec form:\n${tail(execOutput)}`,
+      );
+    }
+    const generatedApp = join(execCwd, 'alias-exec-app');
+    if (!existsSync(join(generatedApp, 'package.json'))) {
+      throw new Error(`the npm exec form generated no app at ${generatedApp}`);
+    }
+    if (!execOutput.includes(`${CREATE_ALIAS_PACKAGE} ${PACKAGE_VERSION}`)) {
+      throw new Error(
+        `the generated app handoff box does not name ${CREATE_ALIAS_PACKAGE} ${PACKAGE_VERSION}; ` +
+          `a stale or foreign artifact answered the exec:\n${tail(execOutput)}`,
+      );
+    }
+
+    // 3. The packed CLI as a file, plus its printed usage text.
+    const extractDir = join(root, 'extract');
+    await mkdir(extractDir);
+    const untar = await runWithOutput('tar', ['-xzf', tarball, '-C', extractDir]);
+    if (!untar.success) throw new Error(`could not extract ${tarball}: ${tail(untar.stderr)}`);
+    const packedCli = join(extractDir, 'package', 'src', 'cli.js');
+    const usage = await runWithOutput('node', [packedCli], { cwd: root });
+    const usageOutput = `${usage.stdout}\n${usage.stderr}`;
+    if (usage.success) {
+      throw new Error(
+        'the packed CLI no-argument usage path exited 0; exit 1 is its documented code',
+      );
+    }
+    const { createInstallCommand } = (await import(
+      pathToFileURL(join(repoRoot, 'packages', 'create', 'src', 'install-command.ts')).href
+    )) as { createInstallCommand: () => string };
+    const canonical = createInstallCommand().trim();
+    const printed = usageOutput
+      .split('\n')
+      .find((line) => line.includes('@openelement'))
+      ?.replace(/^Usage \(Alpha\): /, '')
+      .trim();
+    if (printed !== canonical) {
+      throw new Error(
+        'the packed CLI does not print the canonical install command:\n' +
+          `    printed:   ${printed ?? '(none)'}\n    canonical: ${canonical}`,
+      );
+    }
+
+    return {
+      aliasExecution:
+        'not offline-coverable: npm resolves the alias from the registry and the candidate version ' +
+        'is unpublished before the release; the post-publish smoke runs the real npm create alias',
+      aliasPackage: CREATE_ALIAS_PACKAGE,
+      aliasResolutionEvidence: resolutionLine.trim(),
+      execBin,
+      execCommand,
+      generatedApp,
+      usageLine: printed,
+      version: PACKAGE_VERSION,
+    };
+  } finally {
+    await rm(root, { recursive: true }).catch(() => undefined);
+  }
+}
+
+/** The packed create tarball this checkout's pack run writes. */
+async function defaultCreateTarball(): Promise<string> {
+  const packages = await readPackages();
+  const create = packages.find((pkg) => pkg.name === CREATE_ALIAS_PACKAGE);
+  if (create === undefined) {
+    throw new Error(`${CREATE_ALIAS_PACKAGE} is not in the workspace package graph`);
+  }
+  const path = tarballPath(create);
+  if (!existsSync(path)) {
+    throw new Error(`packed tarball missing at ${path}; run the tools-release pack dry-run first`);
+  }
+  return path;
+}
+
+async function prepublishAliasMain(args: readonly string[]): Promise<void> {
+  const tarballIndex = args.indexOf('--tarball');
+  const explicit = tarballIndex >= 0 ? args[tarballIndex + 1] : undefined;
+  if (tarballIndex >= 0 && explicit === undefined) {
+    throw new Error('--tarball requires a path argument');
+  }
+  const tarball = explicit ?? (await defaultCreateTarball());
+  const evidence = await probeCreateInitializerAlias({ tarball });
+  console.log(`[create-alias] npm create ${CREATE_ALIAS_SCOPE} -> ${evidence.aliasPackage}`);
+  console.log(`[create-alias]   offline resolution: ${evidence.aliasResolutionEvidence}`);
+  console.log(`[create-alias] alias execution: ${evidence.aliasExecution}`);
+  console.log(`[create-alias] equivalent exec: npm ${evidence.execCommand.join(' ')}`);
+  console.log(`[create-alias] generated app: ${evidence.generatedApp} (scratch tree removed)`);
+  console.log(`[create-alias] packed CLI usage: ${evidence.usageLine}`);
+  console.log(`[create-alias] pre-publish create-initializer qualification passed`);
 }
 
 // ---------------------------------------------------------------------------
@@ -655,7 +892,35 @@ async function exactVersionStarterSmoke(version: string): Promise<void> {
     await run('pnpm', ['install'], `${tmpDir}/starter`);
     const typecheck = await run('pnpm', ['run', 'typecheck'], `${tmpDir}/starter`);
     if (!typecheck.success) throw new Error(`starter typecheck failed:\n${typecheck.output}`);
-    console.log('  ok: generated package graph and typecheck use the released version');
+
+    // The documented bootstrap ITSELF: `npm create @openelement@<version>`
+    // rides npm's initializer alias, which resolves the PUBLISHED package from
+    // the registry — the one layer the pre-publish probe cannot execute (it
+    // proves the offline alias mapping only, probeCreateInitializerAlias).
+    // This post-publish smoke is where the real alias call belongs.
+    const aliasApp = 'create-alias-starter';
+    const alias = await run(
+      'npm',
+      ['create', `@openelement@${version}`, aliasApp, '--yes'],
+      tmpDir,
+    );
+    if (!alias.success) {
+      throw new Error(`npm create @openelement@${version} failed:\n${alias.output}`);
+    }
+    const aliasManifest = (await readJson(`${tmpDir}/${aliasApp}/package.json`)) as {
+      dependencies: Record<string, string>;
+    };
+    for (const pkg of ['router', 'element']) {
+      const actual = aliasManifest.dependencies[`@openelement/${pkg}`];
+      const expected = `^${version}`;
+      if (actual !== expected) {
+        throw new Error(
+          `npm create @openelement@${version} generated starter dependency ` +
+            `@openelement/${pkg}=${actual ?? '<missing>'}, expected=${expected}`,
+        );
+      }
+    }
+    console.log(`  ok: npm create @openelement@${version} generated the published starter`);
   } finally {
     await rm(tmpDir, { recursive: true }).catch(() => undefined);
   }
@@ -847,8 +1112,13 @@ async function consumerSmokeMain(args: readonly string[]): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (process.argv.slice(2).includes('--smoke')) {
-    await consumerSmokeMain(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  if (args.includes('--smoke')) {
+    await consumerSmokeMain(args);
+    return;
+  }
+  if (args.includes('--prepublish-alias')) {
+    await prepublishAliasMain(args);
     return;
   }
   await qualificationMain();

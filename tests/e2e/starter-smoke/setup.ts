@@ -97,6 +97,37 @@ async function assertPackedCliPrintsCanonicalCommand(createCli: string): Promise
 }
 
 /**
+ * Pre-publish coverage of the documented bootstrap's npm initializer alias
+ * (T3). `npm create @openelement <name>` resolves `@openelement/create` from
+ * the REGISTRY, so before the release only the alias mapping is provable
+ * offline; the probe in tools/release/published-consumer-qualification.ts
+ * asserts that mapping against a cold npm cache, runs the packed candidate
+ * through the equivalent `npm exec --yes --package=<tarball> -- <bin>` form,
+ * and re-checks the packed CLI's printed usage. It lives in the release tool
+ * so the release workflow runs the SAME function through
+ * `--prepublish-alias` immediately before npm receives anything. The real
+ * `npm create @openelement@<version>` call runs post-publish in the same
+ * tool's consumer smoke.
+ */
+async function assertCreateInitializerAliasCoverage(createTarball: string): Promise<void> {
+  const probeUrl = pathToFileURL(
+    join(repoRoot, 'tools', 'release', 'published-consumer-qualification.ts'),
+  ).href;
+  const { probeCreateInitializerAlias } = (await import(probeUrl)) as {
+    probeCreateInitializerAlias: (options: { tarball: string; repoRoot?: string }) => Promise<{
+      aliasPackage: string;
+      usageLine: string;
+      version: string;
+    }>;
+  };
+  const evidence = await probeCreateInitializerAlias({ tarball: createTarball, repoRoot });
+  console.log(
+    `[starter-smoke setup] create initializer alias coverage passed: npm create @openelement -> ` +
+      `${evidence.aliasPackage} (offline mapping), packed usage "${evidence.usageLine}"`,
+  );
+}
+
+/**
  * Rewire the scaffolded starter's @openelement/* dependencies to the packed
  * current-SHA tarballs (B5, ADR-0161: dependency pins in package.json replace
  * the retired import-map rewrite). The starter's direct deps are element and
@@ -301,6 +332,7 @@ async function main(): Promise<void> {
 
   const createCli = join(depsDir, 'create', 'src', 'cli.js');
   await assertPackedCliPrintsCanonicalCommand(createCli);
+  await assertCreateInitializerAliasCoverage(tarballs.create);
   // The packed CLI is node-hosted and prompt-free: a bare node spawn is the
   // whole contract (no host permission flags on the Node consumer surface).
   // --no-install: this harness rewires every framework dependency to this
