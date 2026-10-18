@@ -29,8 +29,8 @@ consumer, and the docs site).
    and after the sweep, and the harness patch file the starter leg needs is
    removed again at the end of that leg.
 3. **The main worktree stays clean.** Its `git status --porcelain` was empty
-   before, during and after the measurement; the sweep writes only under
-   `/private/tmp`.
+   before, during and after the measurement; the sweep writes only outside the
+   repository.
 4. **The collector did not change.** Its sha256 matches the hash the previous
    edition used, and the canonical cross-check tool is byte-identical on both
    sides.
@@ -192,20 +192,29 @@ timing evidence; this round's raw numbers are below, advisory only.
 
 ## Reproduce
 
-```sh
-# baseline verification (A must be clean and at the pinned SHA)
-git -C /private/tmp/oe-ab-a rev-parse HEAD        # 3613d841c…
-git -C /private/tmp/oe-ab-a status --porcelain    # empty
+The measurement harness (collector, sweep driver, starter leg, report
+regression script and the canonical cross-check wrapper) is attached to this
+evaluation's release evidence rather than shipped in the published tree. The
+protocol it implements is:
 
-# candidate tree creation + tree-hash proof + independent install
-bash <repo>/.zcode/scratch/r4-ab/preflight-final-sha.sh <candidate-sha>
-
-# six-group interleaved sweep (reps=3, a vs c) + packed starter + timing table
-bash <repo>/.zcode/scratch/r4-ab/exec-final-sweep.sh /private/tmp/oe-ab-results-<tag>
-
-# independent canonical cross-check (all seven groups, both sides)
-node <repo>/.zcode/scratch/r4-ab/crosscheck-7.mjs
-```
+1. **Baseline.** Keep a detached worktree at `3613d841c` outside the repository
+   and verify its `git status --porcelain` is empty before and after the run.
+2. **Candidate tree.** Copy the clean candidate worktree (excluding `.git/`,
+   `node_modules/`, `dist/`, test output and caches) into a scratch directory,
+   snapshot it into a local git repository, and require its tree hash to equal
+   the candidate commit's tree hash before installing dependencies from its own
+   lockfile.
+3. **Sweep.** For each of the six build groups, alternate baseline and
+   candidate builds within each of three cold repetitions, clean each `dist`
+   first, then run one warm rebuild per side; collect per-file raw/gzip/brotli
+   bytes and the delivery closure from each output tree. Run the packed-starter
+   leg separately (pack tarballs, scaffold a consumer, install, then three
+   interleaved rebuilds).
+4. **Cross-check.** Recompute the class totals with
+   `tools/release/css-cost-report.ts` from each side's own tree and compare
+   them with the collector's numbers on the same `dist`.
+5. **Regression.** Re-read this document's tables and assert every number
+   against the recorded artifacts.
 
 ## Validation of this document
 
