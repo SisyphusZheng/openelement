@@ -264,3 +264,80 @@ test('a resumed root skips the leading declarative stylesheet link it was served
   );
   kernel.dispose();
 });
+
+/**
+ * The serializer emits one marked node per externalised sheet (N links) plus
+ * the inline fallback when a URL-less sheet survives, so the leading delivery
+ * run is a COUNT, not a boolean. A resume that skips one node treats the
+ * second delivery node as program drift and fails every such reconnect closed.
+ */
+test('a resumed root skips every leading declarative stylesheet link it was served with', () => {
+  const document = new TestDocument();
+  const message = signal('one');
+  const { element, kernel } = mount(document, 'oe-resume-element', ELEMENT_PROGRAM, { message });
+
+  kernel.connect();
+  const div = element.childNodes[0] as TestElement;
+  const before = childrenHtml(element);
+  kernel.disconnect();
+
+  const first = document.createElement('link');
+  first.setAttribute('rel', 'stylesheet');
+  first.setAttribute('href', '/client/assets/one.css');
+  first.setAttribute('data-oe-static-styles', '');
+  const second = document.createElement('link');
+  second.setAttribute('rel', 'stylesheet');
+  second.setAttribute('href', '/client/assets/two.css');
+  second.setAttribute('data-oe-static-styles', '');
+  element.insertBefore(second, element.childNodes[0] ?? null);
+  element.insertBefore(first, second);
+
+  expect(() => kernel.connect(), 'a two-link delivery run is not program drift').not.toThrow();
+  expect(element.childNodes[0], 'the first link keeps its identity').toBe(first);
+  expect(element.childNodes[1], 'the second link keeps its identity').toBe(second);
+  expect(element.childNodes[2], 'the program node keeps its identity').toBe(div);
+  expect(childrenHtml(element)).toEqual(
+    `<link rel="stylesheet" href="/client/assets/one.css" data-oe-static-styles="">` +
+      `<link rel="stylesheet" href="/client/assets/two.css" data-oe-static-styles="">${before}`,
+  );
+
+  message.value = 'two';
+  expect(childrenHtml(element), 'the resumed root still drives its program nodes').toEqual(
+    `<link rel="stylesheet" href="/client/assets/one.css" data-oe-static-styles="">` +
+      `<link rel="stylesheet" href="/client/assets/two.css" data-oe-static-styles="">` +
+      '<div><!--oe:p0-->two</div>',
+  );
+  kernel.dispose();
+});
+
+test('a resumed root skips a served link followed by the inline fallback', () => {
+  const document = new TestDocument();
+  const message = signal('one');
+  const { element, kernel } = mount(document, 'oe-resume-element', ELEMENT_PROGRAM, { message });
+
+  kernel.connect();
+  const div = element.childNodes[0] as TestElement;
+  kernel.disconnect();
+
+  const link = document.createElement('link');
+  link.setAttribute('rel', 'stylesheet');
+  link.setAttribute('href', '/client/assets/one.css');
+  link.setAttribute('data-oe-static-styles', '');
+  const fallback = document.createElement('style');
+  fallback.setAttribute('data-oe-static-styles', '');
+  fallback.appendChild(document.createTextNode('.a{color:red}'));
+  element.insertBefore(fallback, element.childNodes[0] ?? null);
+  element.insertBefore(link, fallback);
+
+  expect(() => kernel.connect(), 'link plus inline fallback is not program drift').not.toThrow();
+  expect(element.childNodes[0], 'the link keeps its identity').toBe(link);
+  expect(element.childNodes[1], 'the fallback keeps its identity').toBe(fallback);
+  expect(element.childNodes[2], 'the program node keeps its identity').toBe(div);
+
+  message.value = 'two';
+  expect(childrenHtml(element), 'the resumed root still drives its program nodes').toEqual(
+    `<link rel="stylesheet" href="/client/assets/one.css" data-oe-static-styles="">` +
+      '<style data-oe-static-styles="">.a{color:red}</style><div><!--oe:p0-->two</div>',
+  );
+  kernel.dispose();
+});

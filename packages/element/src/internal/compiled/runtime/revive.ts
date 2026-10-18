@@ -39,12 +39,12 @@ import {
 import { LifetimeScope } from '../lifetime-scope.ts';
 import {
   type CompiledProgramInstance,
+  countLeadingStaticStyleNodes,
   fail,
   fixedPartsAtNode,
   fixedPartsAtPath,
   isComment,
   isElement,
-  isStaticStyleNode,
   isText,
   type MountContext,
   removeNodes,
@@ -310,17 +310,18 @@ function attachEventsForEntry(ctx: MountContext, part: ProgramEachPart, entry: E
  * scope.
  *
  * The leading marked static-style nodes the serializer emitted are skipped by
- * the SAME predicate the claim uses (`isStaticStyleNode`): the inline fallback
- * of the pre-externalisation shape and the declarative `<link>` the alpha15 S
- * lane serves are both delivery, never program drift. A style-only assumption
- * here failed every reconnect of a served link root closed.
+ * the SAME count helper the claim uses (`countLeadingStaticStyleNodes`): the
+ * inline fallback of the pre-externalisation shape and the N declarative
+ * `<link>` nodes the alpha15 S lane serves are all delivery, never program
+ * drift. A boolean assumption here skipped one node and failed every reconnect
+ * of a multi-sheet root closed with `expected <div>, found <link>`.
  */
 export function reviveOwnedDom(
   ctx: MountContext,
   root: Node,
   ranges: OwnedRangeOptions = {},
 ): void {
-  const styleOffset = isStaticStyleNode(root.childNodes[0]) ? 1 : 0;
+  const styleOffset = countLeadingStaticStyleNodes(root);
   verifyNodes(ctx, root, styleOffset, ctx.program.template, 'template', [], false, ranges);
   const scope = new LifetimeScope();
   ctx.rootScope = scope;

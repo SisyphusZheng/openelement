@@ -30,6 +30,7 @@ import type {
   MountContext,
 } from './program-kernel.ts';
 import {
+  countLeadingStaticStyleNodes,
   createContext,
   displayValue,
   fail,
@@ -39,7 +40,6 @@ import {
   isElement,
   isFixedPart,
   isStaticStyleFallbackNode,
-  isStaticStyleNode,
   isText,
   itemAttrValue,
   itemTemplateFields,
@@ -722,25 +722,25 @@ function leadingStaticStyleNodeCount(
   options: CompiledHydrationOptions,
   owner: RootHydrationOwner,
 ): number {
-  let count = 0;
-  while (isStaticStyleNode(root.childNodes[count])) {
-    const node = root.childNodes[count];
-    if (isElement(node) && node.tagName.toLowerCase() === 'link') {
-      const href = node.getAttribute('href') ?? '';
-      const expected = options.expectedStyleLinks;
-      if (
-        expected !== undefined &&
-        expected.length > 0 &&
-        !isExpectedStyleResource(href, expected, { baseURI: documentBaseURI() })
-      ) {
-        hydrateFailure(
-          'template',
-          `unexpected static stylesheet resource ${JSON.stringify(styleResourceIdentity(href, { baseURI: documentBaseURI() }))}`,
-          owner,
-        );
-      }
+  // The leading run is counted by the shared runtime helper (one owner with the
+  // resume); this wrapper adds the claim's own resource validation.
+  const count = countLeadingStaticStyleNodes(root);
+  for (let index = 0; index < count; index++) {
+    const node = root.childNodes[index];
+    if (!isElement(node) || node.tagName.toLowerCase() !== 'link') continue;
+    const href = node.getAttribute('href') ?? '';
+    const expected = options.expectedStyleLinks;
+    if (
+      expected !== undefined &&
+      expected.length > 0 &&
+      !isExpectedStyleResource(href, expected, { baseURI: documentBaseURI() })
+    ) {
+      hydrateFailure(
+        'template',
+        `unexpected static stylesheet resource ${JSON.stringify(styleResourceIdentity(href, { baseURI: documentBaseURI() }))}`,
+        owner,
+      );
     }
-    count++;
   }
   return count;
 }
