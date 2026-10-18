@@ -13,6 +13,7 @@ import { admitStylesInitializer, collectSheetImports } from './style-imports.ts'
 import { type PropertyValueType, type SerializableValue } from '@openelement/protocol/part-program';
 import {
   camelToKebab,
+  FORBIDDEN_PROPERTY_NAMES,
   isSafeAttributeName as canonicalIsSafeAttributeName,
 } from '@openelement/protocol/forbidden-sinks';
 
@@ -497,6 +498,17 @@ function propertyFields(
       }
       if (!ts.isIdentifier(member.name)) {
         fail(member, 'OEC9005', 'property names must be identifiers');
+      }
+      // The declaration is a sink input like any other: the client facade
+      // writes the signal record under this name, so the shared deny list
+      // owns it on this boundary too (the same rule as `prop` sinks).
+      if (FORBIDDEN_PROPERTY_NAMES.has(member.name.text.toLowerCase())) {
+        fail(
+          member,
+          'OEC9005',
+          `property name "${member.name.text}" is unsafe — prototype-pollution primitives are on ` +
+            'the shared deny list; rename the property',
+        );
       }
       if (names.has(member.name.text)) {
         fail(member, 'OEC9005', `duplicate property "${member.name.text}"`);

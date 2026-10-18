@@ -32,6 +32,11 @@ function moduleWith(member: string, options = '{ root: "light" }'): string {
   ].join('\n');
 }
 
+/** One `@property` declaration, for the positive deny-list case. */
+function property(name: string, initializer: string): string {
+  return `  @property({ reflect: false })\n  ${name} = ${initializer};`;
+}
+
 function diagnosticsOf(source: string): Array<{ code: string; line?: number }> {
   try {
     compileElementProgram(source, FILE);
@@ -79,6 +84,21 @@ describe('@property diagnostics', () => {
       "  @property({ attribute: 'shared-name' })\n  first = 0;\n\n  @property({ attribute: 'shared-name' })\n  second = 0;",
       'OEC9023',
     ],
+    [
+      'a property name on the prototype-pollution deny list',
+      "  @property({ reflect: false })\n  __proto__ = 'x';",
+      'OEC9005',
+    ],
+    [
+      'the prototype name that would replace the class prototype',
+      "  @property({ reflect: false })\n  prototype = 'x';",
+      'OEC9005',
+    ],
+    [
+      'a property name on the deny list in any casing',
+      "  @property({ reflect: false })\n  __PROTO__ = 'x';",
+      'OEC9005',
+    ],
   ];
 
   for (const [label, member, code] of cases) {
@@ -94,6 +114,19 @@ describe('@property diagnostics', () => {
       ).toBeTypeOf('number');
     });
   }
+
+  test('ordinary property names stay admitted', () => {
+    // The deny list is exact: names that merely resemble a forbidden primitive
+    // compile, so the check cannot over-reject an ordinary component.
+    for (const name of ['label', '__proto', 'constructorName', 'prototypeOf']) {
+      expect(() => compileElementProgram(moduleWith(property(name, "'x'")), FILE)).not.toThrow();
+    }
+  });
+
+  test('the constructor spelling is refused by the parser before the deny list sees it', () => {
+    const diagnostics = diagnosticsOf(moduleWith(property('constructor', "'x'")));
+    expect(diagnostics.map((diagnostic) => diagnostic.code)).toContain('OEC9000');
+  });
 });
 
 describe('class-member diagnostics', () => {
