@@ -99,7 +99,11 @@ boundary, not a failure).
   `tests/fixtures/third-party-web-components/qualify.ts` (the late-host corpus,
   the per-engine record, the give-up listener) and
   `packages/router/__tests__/island-scheduler.test.ts` (T-1…T-20, including
-  T-6/T-6b/T-9/T-9b/T-14).
+  T-6/T-6b/T-9/T-9b/T-14). The fix leaves every pre-existing case intact: the
+  commit removes four lines from that file — all inside the shared DOM doubles
+  (`FakeElement.querySelectorAll`'s match expression, and `makeDoc`'s signature
+  and dispatch) — while all 28 pre-existing `test(` titles remain verbatim and
+  22 are added (28 → 50).
 - **Impact**: the third-party interop fixture could not go green, so the release
   train kept one red step, and the "client-only island inside a foreign shadow
   root" scenario was unqualified. **Resolved in this batch**: the release train
