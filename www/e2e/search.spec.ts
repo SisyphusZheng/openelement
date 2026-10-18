@@ -735,7 +735,7 @@ test.describe('Search session races', () => {
     await expect(results.getByRole('option').first()).toBeVisible({ timeout: 30_000 });
   });
 
-  test('an index init failure shows the missing-index message and the next open retries', async ({
+  test('an index init failure surfaces on the first search, and the next search retries', async ({
     page,
   }) => {
     const { dialog, input, results, empty } = locators(page);
@@ -750,10 +750,19 @@ test.describe('Search session races', () => {
       return route.continue();
     });
 
+    // T10 R3 moved the index load from "dialog open" to "first input", so the
+    // failure is reported when the reader actually searches — not while the
+    // dialog is still an empty box. The open itself stays quiet: the hint
+    // shows and nothing is fetched.
     await page.getByRole('button', { name: 'Search' }).click();
     await expect(input).toBeFocused();
+    await expect(empty).toContainText('Type at least 2 characters to search');
+    expect(attempts, 'opening the dialog must not load the index').toBe(0);
+
+    await input.pressSequentially('routing');
     await expect(empty).toContainText('Search index not found', { timeout: 15_000 });
 
+    // The retry rides the next search round, which is where the load now lives.
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await page.getByRole('button', { name: 'Search' }).click();
