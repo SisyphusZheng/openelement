@@ -74,7 +74,7 @@ export { VOID_TAGS } from '@openelement/protocol/void-tags';
  * descriptor through ONE code point, so a valid CSP nonce reaches every
  * framework-generated script tag uniformly.
  */
-export interface DocumentScriptDescriptor {
+interface DocumentScriptDescriptor {
   /** External script URL (attribute-escaped at serialization). */
   src?: string;
   /** Inline script body. Trusted input: never concatenate user content. */
@@ -83,7 +83,7 @@ export interface DocumentScriptDescriptor {
   type?: string;
 }
 
-export interface DocumentWrapOptions {
+interface DocumentWrapOptions {
   title?: string;
   lang?: string;
   clientScript?: string;

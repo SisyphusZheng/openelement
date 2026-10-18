@@ -33,7 +33,7 @@ import type { EachBlock, WhenBlock } from './blocks.ts';
  * block record/slot types ride as type-only imports (erased at emit), so
  * they create no module-graph edge.
  */
-export interface BlockBuilders {
+interface BlockBuilders {
   buildWhen(
     ctx: MountContext,
     parentScope: LifetimeScope,
@@ -89,11 +89,6 @@ export function attachItemEvents(
 /** Install the one set of Block builders. Called by the installing entries' module. */
 export function installBlockBuilders(builders: BlockBuilders): void {
   installed = builders;
-}
-
-/** The installed builders, or `undefined` on a blocks-free graph. */
-export function blockBuilders(): BlockBuilders | undefined {
-  return installed;
 }
 
 /**

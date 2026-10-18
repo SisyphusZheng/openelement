@@ -16,7 +16,7 @@ export interface Context<T> {
   readonly defaultValue: T;
 }
 
-export type ContextCallback<T> = (value: T, unsubscribe?: Unsubscribe) => void;
+type ContextCallback<T> = (value: T, unsubscribe?: Unsubscribe) => void;
 
 export interface ContextRequest<T = unknown> extends Event {
   readonly context: unknown;

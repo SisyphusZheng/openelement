@@ -110,7 +110,7 @@ export function convertToAttribute(
 }
 
 /** Coerce a JS-side property assignment into the compiled property type. */
-export function coercePropertyValue(record: CompiledPropertyMetadata, value: unknown): unknown {
+function coercePropertyValue(record: CompiledPropertyMetadata, value: unknown): unknown {
   if (value === null || value === undefined) return record.default;
   switch (record.type) {
     case 'boolean':

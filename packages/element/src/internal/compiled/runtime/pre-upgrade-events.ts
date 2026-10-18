@@ -272,7 +272,7 @@ function rebuildCaptureIndex(
  * (per-target dedup), hard capped, with detached records swept under
  * pressure and removals expressible as order-preserving takes.
  */
-export interface PreUpgradeRecordStore {
+interface PreUpgradeRecordStore {
   /** Retained records in capture order. */
   readonly events: PreUpgradeEvent[];
   /** Retain one latest record per target/type; drops the newcomer at the cap. */

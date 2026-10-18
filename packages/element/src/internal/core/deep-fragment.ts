@@ -53,7 +53,7 @@ function scrollToHash(hash: string, behavior: ScrollBehavior): HTMLElement | nul
   return target;
 }
 
-export interface DeepFragmentOptions {
+interface DeepFragmentOptions {
   /** Set false before installation to opt out for an application. */
   enabled?: boolean;
 }

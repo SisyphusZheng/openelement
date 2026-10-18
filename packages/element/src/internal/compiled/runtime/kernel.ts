@@ -128,7 +128,7 @@ interface ErrorRoutingHost {
  * resolved root's actual content and reports it here — the semantic owner of
  * the mode is the execution itself, never a pre-connect guess (#1213).
  */
-export type CompiledActivationMode = 'claim' | 'fresh';
+type CompiledActivationMode = 'claim' | 'fresh';
 
 /**
  * Truth of one successful kernel activation: the mode and the root it ran
@@ -140,14 +140,14 @@ export type CompiledActivationMode = 'claim' | 'fresh';
  * shadow/DSD-only, while a CSR/light connection keeps `onCsrRendered` on
  * every activation, reconnect included.
  */
-export interface CompiledKernelActivation {
+interface CompiledKernelActivation {
   readonly mode: CompiledActivationMode;
   readonly root: CompiledStyleRoot;
   readonly resumed: boolean;
   readonly origin: CompiledActivationMode;
 }
 
-export interface CompiledElementKernelOptions extends CompiledRuntimeHost {
+interface CompiledElementKernelOptions extends CompiledRuntimeHost {
   rootMode?: CompiledRootMode;
   /** A previously created closed root may be supplied on re-entry. */
   root?: CompiledStyleRoot;

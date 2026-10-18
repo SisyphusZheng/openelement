@@ -62,7 +62,7 @@ import { attachItemEvents, blockBuildersOrFail } from './blocks-seam.ts';
 import type { EachBlock, EachEntry, WhenBlock } from './blocks.ts';
 
 /** Stream bookkeeping a resumed instance must respect (owned ranges). */
-export interface OwnedRangeOptions {
+interface OwnedRangeOptions {
   /** Parts whose text range carries the stream's closing anchor. */
   streamParts?: ReadonlySet<number>;
   /** Parts whose streamed range is still pending (anchors only). */

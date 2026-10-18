@@ -34,7 +34,7 @@ import type { TextPartSlot } from './parts.ts';
 import type { EachBlock, WhenBlock } from './blocks.ts';
 import { LifetimeScope } from '../lifetime-scope.ts';
 
-export type ProgramFixedPart = Extract<
+type ProgramFixedPart = Extract<
   PartProgramV2['parts'][number],
   { k: 'attr' | 'prop' | 'bool' | 'class' | 'style' | 'html' | 'event' | 'ref' }
 >;
@@ -53,7 +53,7 @@ export type ProgramBranchSinkPart = Extract<
  * the same branch-relative suffix. Built once per MountContext; a program
  * without when Parts plans nothing.
  */
-export interface BranchPartPlan {
+interface BranchPartPlan {
   /** Branch-owned value sinks keyed by the owning when Part's index. */
   readonly byWhen: ReadonlyMap<
     number,
@@ -135,7 +135,7 @@ function buildBranchPartPlan(program: PartProgramV2): BranchPartPlan {
 }
 
 /** The retained binding of one Part anchor (see MountContext.bindings). */
-export type PartBinding = TextPartSlot | WhenBlock | EachBlock;
+type PartBinding = TextPartSlot | WhenBlock | EachBlock;
 
 export type CompiledEventHandler = (event: unknown) => void;
 export type CompiledRefHandler = (element: Element | null) => void | Unsubscribe;

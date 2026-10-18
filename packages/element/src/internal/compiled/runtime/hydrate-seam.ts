@@ -31,7 +31,7 @@ import type {
  * The hydration entry point's signature. Local to this seam so neither the kernel
  * nor this module needs a value import of the hydration implementation.
  */
-export type HydrationExecutor = (
+type HydrationExecutor = (
   program: PartProgramV2,
   host: CompiledRuntimeHost,
   root: Node,

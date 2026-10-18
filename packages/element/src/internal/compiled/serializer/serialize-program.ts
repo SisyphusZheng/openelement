@@ -58,14 +58,14 @@ import { unsafeStreamFrameAttribute } from '@openelement/protocol/stream-frame-p
 import { escapeText } from '../escape-text.ts';
 
 /** One emitted attribute: `name="value"`, or a bare `name` when `bare`. */
-export interface SerializedAttribute {
+interface SerializedAttribute {
   readonly name: string;
   readonly value: string;
   readonly bare: boolean;
 }
 
 /** A custom element handed to the nested-render seam (server composition). */
-export interface NestedElementView {
+interface NestedElementView {
   readonly tag: string;
   readonly attributes: ReadonlyArray<readonly [name: string, value: unknown]>;
   readonly properties: Readonly<Record<string, unknown>>;
@@ -74,7 +74,7 @@ export interface NestedElementView {
 }
 
 /** Fixed attribute-bearing sinks, the only Parts an element assembles. */
-export type ProgramAttributeSink =
+type ProgramAttributeSink =
   | ProgramAttrPart
   | ProgramPropPart
   | ProgramBoolPart

@@ -71,7 +71,7 @@ export type { CompiledProgramHost, CompiledSignalLike } from './shared.ts';
 export { assertCompiledProgram, CompiledProgramValidationError } from './shared.ts';
 export type { CompiledRootMode };
 
-export interface CompiledDsdOptions {
+interface CompiledDsdOptions {
   delegatesFocus?: boolean;
   clonable?: boolean;
   serializable?: boolean;
@@ -79,9 +79,9 @@ export interface CompiledDsdOptions {
   customElementRegistry?: boolean;
 }
 
-export type CompiledHostAttribute = readonly [name: string, value: unknown];
+type CompiledHostAttribute = readonly [name: string, value: unknown];
 
-export interface CompiledNestedElement {
+interface CompiledNestedElement {
   tag: string;
   attributes: readonly CompiledHostAttribute[];
   properties: Readonly<Record<string, unknown>>;
@@ -95,7 +95,7 @@ export interface CompiledNestedElement {
 // marked element; the client style scope still adopts the live sheets.
 export { STATIC_STYLES_MARKER } from '@openelement/protocol/part-program';
 
-export interface CompiledServerOptions {
+interface CompiledServerOptions {
   /** Root ownership mode. Shadow modes become a native DSD template. */
   mode?: CompiledRootMode;
   /** Host attributes emitted in caller-provided order. */
@@ -532,12 +532,12 @@ export interface StreamOwner {
   readonly instanceId: string;
 }
 
-export interface StreamSelection {
+interface StreamSelection {
   readonly owner: StreamOwner;
   readonly pendingParts: readonly number[];
 }
 
-export interface StreamExecutor {
+interface StreamExecutor {
   readonly shell: string;
   /** Returns only the owned range's HTML, without anchors or transport framing. */
   serializeResolved(owner: StreamOwner, partIndex: number, value: unknown): string;

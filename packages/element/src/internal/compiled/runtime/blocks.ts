@@ -157,7 +157,7 @@ export function whenActive(part: ProgramWhenPart, value: unknown): boolean {
   return conditionHolds(part.test, value);
 }
 
-export function buildItem(
+function buildItem(
   ctx: MountContext,
   blockScope: LifetimeScope,
   doc: Document,
@@ -193,7 +193,7 @@ export function buildItem(
 }
 
 /** The per-entry live item value per-item event listeners dispatch with. */
-export interface ItemBox {
+interface ItemBox {
   item: unknown;
 }
 

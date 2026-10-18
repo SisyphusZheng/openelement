@@ -385,24 +385,6 @@ export function signalOf(host: unknown, name: string): CompiledSignalLike<unknow
   return signal;
 }
 
-export function handlersOf(host: unknown): Record<string, (event: unknown) => void> {
-  if (!isRecord(host) || host.handlers === undefined) return {};
-  if (!isRecord(host.handlers)) {
-    throw new CompiledProgramValidationError('host.handlers', 'expected a handlers record');
-  }
-  const handlers: Record<string, (event: unknown) => void> = {};
-  for (const [name, handler] of Object.entries(host.handlers)) {
-    if (typeof handler !== 'function') {
-      throw new CompiledProgramValidationError(
-        `host.handlers.${name}`,
-        'handler must be a function',
-      );
-    }
-    handlers[name] = handler as (event: unknown) => void;
-  }
-  return handlers;
-}
-
 export function isRecordValue(value: unknown): value is Record<string, unknown> {
   return isRecord(value);
 }
