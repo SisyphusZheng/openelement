@@ -236,6 +236,15 @@ jobs:
         # workspace package/task). Tooling-spawned dispatch already injects the
         # flag unconditionally in tools/repo/vp-dispatch.ts vpTaskArgv.
         run: vp run --no-cache --fail-if-no-match --filter @openelement/tools-repo vp:selector-flags:check
+      - name: Seams registry (P8 reader)
+        # `docs/architecture/seams.md` is the ADR-0163 / P8 live registry, but
+        # nothing parsed it: AGENTS.md claimed "a seam missing either does not
+        # pass the gate" while a row could lose a cell, lose its guard test to a
+        # rename, or omit the KR-5 missing/unreadable clause without any gate
+        # noticing. checks-seams.ts parses the five-column table and fails
+        # closed on all three; the local gate:source and gate:release lists run
+        # the same task.
+        run: vp run --no-cache --fail-if-no-match --filter @openelement/tools-repo seams:check
       - name: Dependency review (PR only)
         if: github.event_name == 'pull_request'
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
