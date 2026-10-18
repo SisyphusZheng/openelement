@@ -331,6 +331,7 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
   const templates = await buildTemplates(resolveVersions(), 'sample-app');
   const expectedTargets = [
     '.gitignore',
+    '.node-version',
     'README.md',
     'app/components/page-404.css',
     'app/components/page-404.tsx',
@@ -1720,6 +1721,12 @@ test.skipIf(!pnpmAvailable)(
       expect(unpack.status, unpack.stderr.toString()).toEqual(0);
       await runCreate(join(tmpRoot, 'package', 'src', 'cli.js'), tmpRoot, 'sample-app');
       expect(existsSync(join(tmpRoot, 'sample-app', '.gitignore'))).toBeTruthy();
+      // The Node pin is a template DOTFILE: the packed payload has to carry it
+      // (the tarball is assembled from git ls-files + the templates glob, not
+      // `npm pack`, which would drop it).
+      const nodeVersionPath = join(tmpRoot, 'sample-app', '.node-version');
+      expect(existsSync(nodeVersionPath), 'the packed scaffold ships .node-version').toBeTruthy();
+      expect(readFileSync(nodeVersionPath, 'utf8').trim()).toMatch(/^\d+\.\d+\.\d+$/);
       expect(existsSync(join(tmpRoot, 'sample-app', 'app', 'routes', 'about.tsx'))).toBeTruthy();
       expect(
         existsSync(join(tmpRoot, 'sample-app', 'app', 'routes', 'api', 'ping.ts')),

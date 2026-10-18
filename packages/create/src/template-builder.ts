@@ -98,8 +98,14 @@ export function assertUnifiedProductVersions(versions: ProductVersions): Product
 // ruling — one default, no variant pair, no flag; the demo pages and islands
 // from #1530 ride on top of the Tailwind role sheet).
 export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
-  // npm tarballs omit dotfiles even when a directory is included. Keep the
-  // template non-hidden and write the expected dotfile into generated apps.
+  // Dotfiles ship as written: the create tarball is assembled by the release
+  // toolchain (tools/release/publish-npm.ts) from `git ls-files -co
+  // --exclude-standard` plus the `templates` publish glob, NOT by `npm pack`,
+  // so a hidden payload file — `.node-version`, the Node pin the generated
+  // project carries — survives the pack without a `.tmpl` rename. The two
+  // dotfile-shaped targets below are covered by the packed-scaffold test.
+  // (`gitignore.tmpl` predates that toolchain: it keeps the payload visible in
+  // a directory listing while the target stays `.gitignore`.)
   ['gitignore.tmpl', '.gitignore'],
   ['.node-version', '.node-version'],
   ['README.tmpl', 'README.md'],
