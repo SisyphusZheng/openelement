@@ -6,7 +6,6 @@
  * exactly like on static pages, and that static routes are untouched.
  */
 import { expect, test } from '@playwright/test';
-import { createIslandScheduler } from '../../../../packages/router/src/vite/internal/ssg/island-scheduler.ts';
 
 test.describe('request-time rendering', () => {
   test('GET /live renders loader data per request', async ({ request }) => {
@@ -912,53 +911,43 @@ test.describe('morph/enhance robustness (0.42.0-alpha.13, #603-#606)', () => {
   });
 
   test('client:visible island inside page DSD loads on intersection (#606)', async ({ page }) => {
-    // The REAL scheduler module, inlined exactly the way generateClientEntry
-    // inlines it, drives this handcrafted page — no fixture rebuild needed.
-    const schedulerSource = createIslandScheduler.toString();
-    let islandFetches = 0;
-    await page.route('**/virtual-entry.js', (route) =>
-      route.fulfill({
-        contentType: 'text/javascript',
-        body: `var __scheduler = (${schedulerSource})({
-  log: { warn: function () {} },
-  win: window,
-  doc: document,
-  map: { 'x-vis': function () { return import('/virtual-island.js'); } },
-  strategies: { load: [], idle: [], visible: ['x-vis'], only: [] },
-  onIslandLoaded: null,
-});`,
-      }),
-    );
-    await page.route('**/virtual-island.js', (route) => {
-      islandFetches++;
-      return route.fulfill({
-        contentType: 'text/javascript',
-        body: `customElements.define('x-vis', class extends HTMLElement {
-  connectedCallback() { this.setAttribute('data-hydrated', '1'); }
-});`,
+    // The REAL scheduler module runs through the fixture's normal module graph:
+    // /visible-probe is a built route whose generated client entry imports the
+    // scheduler (virtual:open-client-runtime/scheduler). Its island sits below a
+    // 5000px spacer inside the page's DSD shadow root, so the island module can
+    // only evaluate after the reader scrolls the host into view.
+    await page.addInitScript(() => {
+      (window as unknown as { __ready: string[] }).__ready = [];
+      document.addEventListener('open:ready', (event) => {
+        (window as unknown as { __ready: string[] }).__ready.push(
+          (event as CustomEvent).detail.strategy,
+        );
       });
     });
-    await page.route('**/sandbox', (route) =>
-      route.fulfill({
-        contentType: 'text/html',
-        body: `<!doctype html><html><body>
-<x-page><template shadowrootmode="open">
-  <div style="height:5000px">spacer</div>
-  <x-vis></x-vis>
-</template></x-page>
-<script>window.__ready = []; document.addEventListener('open:ready', function (e) { window.__ready.push(e.detail.strategy); });</script>
-<script type="module" src="/virtual-entry.js"></script>
-</body></html>`,
-      }),
-    );
-    await page.goto('/sandbox');
+    await page.goto('/visible-probe');
+    const probe = page.locator('visible-probe');
+    await expect(probe).toBeAttached();
     // The island lives inside the page host's DSD shadow root — a light-DOM
-    // querySelectorAll (the removed defineIsland path) never found it.
-    await expect(page.locator('x-vis')).toBeAttached();
-    expect(islandFetches).toBe(0);
-    await page.evaluate(() => globalThis.scrollTo(0, 5000));
-    await expect.poll(() => islandFetches).toBe(1);
-    await expect(page.locator('x-vis')).toHaveAttribute('data-hydrated', '1');
+    // querySelectorAll (the removed defineIsland path) never found it — and it
+    // is not hydrated yet because it has never intersected.
+    const beforeScroll = await page.evaluate(() => {
+      const pageHost = document.querySelector('visible-page');
+      const insideShadow = pageHost?.shadowRoot?.querySelector('visible-probe') ?? null;
+      return {
+        inPageShadow: insideShadow !== null,
+        inDocument: document.querySelector('visible-probe') !== null,
+        hydrated: insideShadow?.getAttribute('data-hydrated') ?? null,
+        ready: (window as unknown as { __ready: string[] }).__ready.slice(),
+      };
+    });
+    expect(beforeScroll.inPageShadow).toEqual(true);
+    expect(beforeScroll.inDocument).toEqual(false);
+    expect(beforeScroll.hydrated).toBeNull();
+    expect(beforeScroll.ready).not.toContain('visible');
+
+    // Scrolling the host into view is what starts the visible-strategy load.
+    await page.evaluate(() => globalThis.scrollTo(0, document.body.scrollHeight));
+    await expect(probe).toHaveAttribute('data-hydrated', '1');
     await expect
       .poll(() => page.evaluate(() => (window as never as { __ready: string[] }).__ready))
       .toContain('visible');
