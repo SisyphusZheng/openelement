@@ -110,6 +110,20 @@ boundary, not a failure).
 - **Latest observation**: run `39116176828` @ `f395b1e1f` — attempt 1 FAIL
   (`live.spec.ts:897`), attempt 2 FAIL (`lit-flow.spec.ts:246`), attempt 3
   SUCCESS (13/13 job instances).
+- **Latest observation (2026-10-18, pre-integration, t6-hygiene lane)**: the
+  flake was observed AGAIN, this time under parallel load (several lanes on one
+  machine) while that lane ran
+  `@openelement/fixture-router-request-time#gate`: firefox timed out in
+  `waitForIsland` (15 s `customElements` wait) on a THIRD spec,
+  `tests/fixtures/router-request-time/e2e/zag-combobox.spec.ts:349`
+  ("same-turn DOM move and disconnect/reconnect do not duplicate listeners");
+  that run was 314 passed / 1 failed. The spec alone passes in 1.3 s on an idle
+  machine and the whole gate re-run idle is 315 passed / exit 0 (1.1 m); the
+  reduced collection count is the `q1b-diagnose.spec.ts` retirement
+  (commit `38602f564`: 318 → 315, 1 test × 3 engines). No retry was used to
+  hide it, and the observation is not attributed to that lane's diff.
+  Attribution evidence: `wt-t6-hygiene/.zcode/scratch/t6-hygiene/06-gates.md`
+  (untracked lane scratch).
 
 ## KR-19 · `npm create @openelement` execution layer is not offline-coverable (coverage boundary)
 
