@@ -191,7 +191,10 @@ export function createFacadePropertyState(
   properties: CompiledPropertyMetadata[],
   computedFactories?: CompiledStatics['__computedFields'],
 ): FacadePropertyState {
-  const signals: Record<string, WritableSignal<unknown>> = {};
+  // Null prototype: compiled property names are metadata, and a name like
+  // `__proto__` must become an entry in the host record instead of replacing
+  // the record's prototype.
+  const signals: Record<string, WritableSignal<unknown>> = Object.create(null);
   const pending = new Map<string, unknown>();
   const record = element as unknown as Record<string, unknown>;
   for (const property of properties) {
@@ -442,7 +445,10 @@ export function bindProgramHandlers(
   ctor: object,
   program: PartProgram,
 ): Record<string, (event: unknown) => void> {
-  const handlers: Record<string, (event: unknown) => void> = {};
+  // Null prototype, same contract as the property-signal record above: a
+  // compiled handler name can be `__proto__`, which is an entry, not a
+  // prototype replacement.
+  const handlers: Record<string, (event: unknown) => void> = Object.create(null);
   const record = element as unknown as Record<string, unknown>;
   for (const name of programHandlerNames(program)) {
     const method = record[name];

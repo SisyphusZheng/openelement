@@ -376,7 +376,11 @@ function seedCompiledProperties(
   const properties = Array.isArray(ctor.__compiledProperties)
     ? ctor.__compiledProperties
     : ctor.__partProgram!.metadata.properties;
-  const signals: Record<string, ReturnType<typeof signal>> = {};
+  // Null prototype (the client facade's `createFacadePropertyState` contract):
+  // a compiled property named `__proto__` is a host signal entry, never the
+  // record's prototype, so the server seed and the client claim read the same
+  // signal for that name.
+  const signals: Record<string, ReturnType<typeof signal>> = Object.create(null);
   const hostAttrs: Array<readonly [string, unknown]> = [];
   for (const record of properties) {
     if (record.computed) continue;
