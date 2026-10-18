@@ -129,10 +129,20 @@ export function localeSwitchLabel(currentLocale: string): string {
   return LOCALE_LABELS[currentLocale] || currentLocale;
 }
 
+/**
+ * The sr-only completion of the locale switch's visible label.
+ *
+ * The label names the TARGET locale ("English" on a zh page, "中文" on an en
+ * page), so the note must be written in the language the reader is reading now
+ * — and the two branches were swapped: a zh page announced the English sentence
+ * "Switch to English", which both repeated the label's own word and put an
+ * English string on a Chinese page, while the en page carried the Chinese one.
+ * Each branch now states, in its own language, what the target edition covers.
+ */
 export function localeSwitchScopeNote(currentLocale: string): string {
   return currentLocale === 'zh'
-    ? 'Switch to English'
-    : '中文版本覆盖全站页面；博文与 CHANGELOG 归档以英文原文发布。';
+    ? '英文版本为全站原文；博文与 CHANGELOG 归档仅以英文发布。'
+    : 'The Chinese edition covers every page; blog posts and the CHANGELOG archive stay in the English original.';
 }
 
 export function filterNavSections(items: NavSection[], currentPath: string): NavSection[] {

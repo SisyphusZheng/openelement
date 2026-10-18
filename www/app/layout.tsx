@@ -326,9 +326,16 @@ export default class Layout extends OpenElement {
             ))}
           </nav>
           <main class='isolate w-full min-w-0 flex-1' id='main-content' tabindex='-1'>
-            <slot></slot>
+            {/* The docs navigation disclosure sits BEFORE the page content:
+                below 901px the desktop sidebar is out of the accessibility
+                tree, so this is the only section navigation a small-viewport
+                reader gets. It used to render after <slot>, which put the whole
+                article between the page title and its own navigation — a
+                keyboard or screen-reader reader had to walk the document to
+                reach it. The desktop sidebar (min-[901px]) is unaffected, and
+                the disclosure keeps [hidden] for island pages without one. */}
             <details
-              class='mx-4 mt-4 block min-[901px]:mx-0 min-[901px]:mt-0 min-[901px]:hidden'
+              class='mx-4 mt-4 mb-4 block min-[901px]:mx-0 min-[901px]:mt-0 min-[901px]:mb-0 min-[901px]:hidden'
               hidden={this.sidebarHidden}
               data-pagefind-ignore
             >
@@ -357,6 +364,7 @@ export default class Layout extends OpenElement {
                 ))}
               </nav>
             </details>
+            <slot></slot>
           </main>
         </div>
         <footer class='border-t border-border bg-popover/58 print:hidden!' data-pagefind-ignore>

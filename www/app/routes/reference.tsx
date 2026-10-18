@@ -684,40 +684,53 @@ export function ReferencePage(props: {
               <span>{props.headSummary}</span>
               <span>{props.headSource}</span>
             </div>
-            {props.referenceEntries.map((entry) => (
-              <div
-                class='grid grid-cols-[minmax(0,1fr)] items-start gap-2 border-b border-border py-4 min-[1101px]:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)_minmax(0,1.2fr)] min-[1101px]:gap-[clamp(1rem,4vw,3rem)]'
-                id={entry.anchor}
-                key={entry.key}
-              >
-                <div>
-                  <span class='inline text-primary font-mono text-(length:--text-base) font-bold wrap-anywhere'>
-                    {entry.name}
-                  </span>
-                  <span class='mt-1 block text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
-                    {entry.container}
-                  </span>
-                  <span class='me-1 rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
-                    {entry.kind}
-                  </span>
-                  <span class='me-1 rounded-md bg-transparent px-2 py-1 text-(length:--text-xs) text-primary empty:hidden shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-ring)_55%,transparent)]'>
-                    {entry.stability}
+            {/* The exports region is a list, and now says so: the rows were
+                plain divs, so a screen reader read one undifferentiated run of
+                text with no item count ("list, N items") and no way to step
+                between exports. The label comes from the section's own title;
+                the visual column header above stays a presentational legend
+                (aria-hidden), because each item carries its own name, summary
+                and source in reading order. A table mapping was considered and
+                rejected: with the header row hidden below 1101px, a role=table
+                would promise column semantics the narrow layout does not
+                render. */}
+            <div role='list' aria-label={props.s3Title}>
+              {props.referenceEntries.map((entry) => (
+                <div
+                  class='grid grid-cols-[minmax(0,1fr)] items-start gap-2 border-b border-border py-4 min-[1101px]:grid-cols-[minmax(0,1fr)_minmax(0,1.45fr)_minmax(0,1.2fr)] min-[1101px]:gap-[clamp(1rem,4vw,3rem)]'
+                  id={entry.anchor}
+                  role='listitem'
+                  key={entry.key}
+                >
+                  <div>
+                    <span class='inline text-primary font-mono text-(length:--text-base) font-bold wrap-anywhere'>
+                      {entry.name}
+                    </span>
+                    <span class='mt-1 block text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                      {entry.container}
+                    </span>
+                    <span class='me-1 rounded-md bg-border px-2 py-1 text-(length:--text-xs) text-primary empty:hidden'>
+                      {entry.kind}
+                    </span>
+                    <span class='me-1 rounded-md bg-transparent px-2 py-1 text-(length:--text-xs) text-primary empty:hidden shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--color-ring)_55%,transparent)]'>
+                      {entry.stability}
+                    </span>
+                  </div>
+                  <div>
+                    <p class='m-0 text-(length:--text-sm) leading-normal text-muted-foreground wrap-anywhere'>
+                      {entry.summary}
+                    </p>
+                    <code class='mt-2 block font-mono text-(length:--text-xs) leading-snug text-primary wrap-anywhere'>
+                      {entry.signature}
+                    </code>
+                    <p class='mt-3 mb-0 wrap-anywhere'>{entry.options}</p>
+                  </div>
+                  <span class='font-mono text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
+                    {entry.source}
                   </span>
                 </div>
-                <div>
-                  <p class='m-0 text-(length:--text-sm) leading-normal text-muted-foreground wrap-anywhere'>
-                    {entry.summary}
-                  </p>
-                  <code class='mt-2 block font-mono text-(length:--text-xs) leading-snug text-primary wrap-anywhere'>
-                    {entry.signature}
-                  </code>
-                  <p class='mt-3 mb-0 wrap-anywhere'>{entry.options}</p>
-                </div>
-                <span class='font-mono text-(length:--text-xs) text-muted-foreground wrap-anywhere'>
-                  {entry.source}
-                </span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </open-section-frame>
         <open-section-frame>
