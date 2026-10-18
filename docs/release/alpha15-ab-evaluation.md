@@ -16,8 +16,8 @@ snapshot, and both sides were swept again from scratch.
 | | |
 | --- | --- |
 | Baseline A | `3613d841c38c8fe7dbb94ae528e4dfc2eb6139ee` (detached worktree, never written) |
-| Candidate C | `4596a122d1ed35eeb5ff63621a90175eee23e98c` (snapshot `bc7b3ab66`, tree `9b53e576f`, 1584 files) |
-| Distance A→C | 176 commits |
+| Candidate C | `d9eb755d39bdc1763e75b7c3875208e8900b051e` (snapshot `e77f113d0`, tree `3299f3f50`, 1584 files) |
+| Distance A→C | 178 commits |
 | Collector | `collect.mjs`, sha256 `561968e8873be27168fc2ed3f48428736d01d35b6d1dc185e83992c128aee476` |
 | Cross-check | `tools/release/css-cost-report.ts`, byte-identical on both sides (blob `676f508d7`) |
 | Groups | `router-static-only`, `router-native-framework`, `router-lit-framework`, `router-ui-dogfood`, `router-unocss-probe`, `starter (packed)`, `www` |
@@ -30,10 +30,10 @@ snapshot, and both sides were swept again from scratch.
    the clean main worktree (excluding `.git/`, `node_modules/`, `dist/`,
    `test-results/`, `.npm-cache/`), snapshotted into a local git repository.
    The snapshot's tree hash equals the candidate commit's tree hash:
-   - commit tree: `9b53e576fb91ff7299102c8fd1d7ec0561fbb92d` (1584 files)
-   - copy tree: `9b53e576fb91ff7299102c8fd1d7ec0561fbb92d` (1584 files)
+   - commit tree: `3299f3f5095e399b75441634970ff945805613c9` (1584 files)
+   - copy tree: `3299f3f5095e399b75441634970ff945805613c9` (1584 files)
    No file differs, none is missing, none is extra. The snapshot's own commit
-   is `bc7b3ab661e2682015e464be6b2e641dcc794663`.
+   is `e77f113d05400d04e294a4f1692347bfa62f0dc7`.
 2. **Baseline A is never written.** `git status --porcelain` was empty before
    and after the sweep, and the harness patch file the starter leg needs is
    removed again at the end of that leg.
@@ -71,7 +71,7 @@ snapshot, and both sides were swept again from scratch.
 | router-unocss-probe | 140 160 | 148 513 | **+8 353** | 6.0 % | 43 872 | 47 256 | **+3 384** | 7.7 % | 37 653 | 40 604 | 10 | 14 |
 | starter (packed) | 674 382 | 710 096 | **+35 714** | 5.3 % | 175 910 | 187 684 | **+11 774** | 6.7 % | 144 068 | 153 544 | 23 | 26 |
 | www (pagefind excluded) | 12 042 864 | 11 986 116 | **−56 748** | -0.5 % | 2 101 987 | 2 084 970 | **−17 017** | -0.8 % | 1 595 154 | 1 582 278 | 222 | 206 |
-| www (pagefind included) | 13 605 279 | 13 650 796 | **+45 517** | 0.3 % | 3 569 065 | 3 654 505 | **+85 440** | 2.4 % | 3 054 532 | 3 145 311 | 322 | 308 |
+| www (pagefind included) | 13 605 279 | 13 650 796 | **+45 517** | 0.3 % | 3 569 065 | 3 654 506 | **+85 441** | 2.4 % | 3 054 532 | 3 145 312 | 322 | 308 |
 
 The docs site remains the only group that is **smaller than the baseline on
 its authored output** (pagefind excluded: −56 748 raw, −17 017 gzip) while its
@@ -96,7 +96,7 @@ tooling do not ship; only emitted artifacts move):
 | router-unocss-probe | 146 984 | 148 513 | +1 529 | 1.0 % | 46 639 | 47 256 | +617 | 1.3 % |
 | starter (packed) | 708 814 | 710 096 | +1 282 | 0.2 % | 187 161 | 187 684 | +523 | 0.3 % |
 | www (pagefind excluded) | 11 915 568 | 11 986 116 | +70 548 | 0.6 % | 2 087 299 | 2 084 970 | −2 329 | -0.1 % |
-| www (pagefind included) | 13 576 974 | 13 650 796 | +73 822 | 0.5 % | 3 653 557 | 3 654 505 | +948 | 0.03 % |
+| www (pagefind included) | 13 576 974 | 13 650 796 | +73 822 | 0.5 % | 3 653 557 | 3 654 506 | +949 | 0.03 % |
 
 The movement is attributable and small:
 
@@ -162,7 +162,7 @@ group except the third-party `pagefind` index:
 | router-ui-dogfood | `30:199308:56608` | `33:212722:62004` |
 | router-unocss-probe | `10:140160:43872` | `14:148513:47256` |
 | starter (packed) | `23:674382:175910` | `26:710096:187684` |
-| www (pagefind included) | `322:13605279:3569065` (br: 3054532/3054532/3054533) | `308:13650796:3654505` (gzip: 3654505/3654506/3654505; br: 3145311/3145312/3145311) |
+| www (pagefind included) | `322:13605279:3569065` (br: 3054532/3054533/3054532) | `308:13650796:3654506` (gzip: 3654506/3654505/3654505; br: 3145312/3145311/3145311) |
 
 The only non-collapse anywhere is the third-party `pagefind` output: on both
 sides its raw bytes and file counts are constant across repetitions while one
@@ -280,9 +280,18 @@ totals over both sides and all seven groups and reported **0 disagreements**.
 
 ## Delta note
 
-The measurement was taken on `4596a122d1ed35eeb5ff63621a90175eee23e98c`.
+The measurement was taken on `d9eb755d39bdc1763e75b7c3875208e8900b051e`.
 The only delta to the submitted final SHA is **this evaluation document**,
 which is not an input to any measured build (it lives under `docs/`, outside
 `www/content` and outside every package source set), so it cannot move a byte
 or a timing in the tables. The exact-SHA full qualification is re-run on the
 final SHA.
+
+This is the second sweep of the same candidate line. The first (at
+`4596a122d`) was invalidated by a post-measurement security fix in
+`packages/create/src/template-builder.ts` that replaced two quadratic regexes
+with linear scans; before freezing, the candidate was **re-measured from a
+freshly built tree** and the sweep reproduced the first measurement exactly —
+identical raw, gzip and file totals for every group — which is the machine
+proof that the fix moves no bytes. The numbers in this document are the
+re-measured set, not a copy of the earlier run.
