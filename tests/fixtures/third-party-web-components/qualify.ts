@@ -48,7 +48,10 @@ import { escapeRegExp } from '../../../tools/lib/text.ts';
 import { runStep } from '../../lib/qualify-harness/command-run.ts';
 import { extractSsrAdmissionPlan } from '../../lib/qualify-harness/admission-plan.ts';
 import { runRouterBuild } from '../../lib/qualify-harness/build-router.ts';
-import { launchQualifyBrowser } from '../../lib/qualify-harness/drive-chromium.ts';
+import {
+  launchQualifyBrowser,
+  type QualifyBrowserName,
+} from '../../lib/qualify-harness/drive-chromium.ts';
 import { scaffoldApp } from '../../lib/qualify-harness/scaffold-app.ts';
 import {
   applyWorkspaceAliases,
@@ -187,13 +190,16 @@ export interface LateHostEvidence {
   islandChunkRequests: number;
 }
 
-export async function verifyBrowser(distDir: string): Promise<{
+export async function verifyBrowser(
+  distDir: string,
+  browserName: QualifyBrowserName = 'chromium',
+): Promise<{
   capabilities: Record<string, BrowserCapabilityEvidence>;
   slotFirst: Record<string, SlotFirstEvidence>;
   browserVersion: string;
   lateHosts: LateHostEvidence;
 }> {
-  const session = await launchQualifyBrowser({ distDir });
+  const session = await launchQualifyBrowser({ distDir, browserName });
   try {
     const slotFirst: Record<string, SlotFirstEvidence> = {};
     const slotText = new Map(
@@ -1136,6 +1142,30 @@ function observeSsrForm(html: string, entry: CorpusEntry): SsrFormObservation {
   return { tagPresent, lightDomChildren, dsdTemplate, dataEid };
 }
 
+/**
+ * The engines the contract assertions must pass on (owner ruling, G1-5):
+ * registration, upgrade, late-host activation, exactly-once and the unused-tag
+ * zero-fetch control are contract-level, so a gap in any of them on any engine
+ * fails the run. `OPEN_ELEMENT_WC_ENGINES=chromium` is the fast local override;
+ * it narrows coverage and must never be set in CI.
+ */
+const CONTRACT_ENGINES: readonly QualifyBrowserName[] = ['chromium', 'firefox', 'webkit'];
+
+function resolveEngines(): QualifyBrowserName[] {
+  const raw = process.env.OPEN_ELEMENT_WC_ENGINES;
+  if (raw === undefined || raw.trim() === '') return [...CONTRACT_ENGINES];
+  const names = raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter((part) => part !== '') as QualifyBrowserName[];
+  for (const name of names) {
+    if (!CONTRACT_ENGINES.includes(name)) {
+      throw new Error(`OPEN_ELEMENT_WC_ENGINES: unknown engine "${name}"`);
+    }
+  }
+  return names.length > 0 ? names : [...CONTRACT_ENGINES];
+}
+
 async function main(): Promise<void> {
   const tmpRoot = await mkdtemp(join(tmpdir(), 'openelement-third-party-wc-'));
   const keep = process.env.OPEN_ELEMENT_KEEP_THIRD_PARTY_WC_SMOKE === '1';
@@ -1146,12 +1176,22 @@ async function main(): Promise<void> {
     const entryJs = await readFile(join(appDir, 'dist', 'server', 'entry.js'), 'utf8');
     const plan = extractSsrAdmissionPlan(entryJs);
     const decisionByTag = new Map(plan.decisions.map((d) => [d.tagName, d]));
-    const {
-      capabilities: browser,
-      slotFirst,
-      browserVersion,
-      lateHosts,
-    } = await verifyBrowser(join(appDir, 'dist'));
+    // Build once, then run the same probes on every contract engine. The
+    // harness throws inside verifyBrowser when a contract assertion fails, so
+    // a gap on ANY engine fails the run; what the record adds is the per-engine
+    // detail, so a difference is readable instead of being averaged away.
+    const engines = resolveEngines();
+    const perEngine: Partial<
+      Record<QualifyBrowserName, Awaited<ReturnType<typeof verifyBrowser>>>
+    > = {};
+    for (const engine of engines) {
+      perEngine[engine] = await verifyBrowser(join(appDir, 'dist'), engine);
+    }
+    // The advisory tier report keeps its historical basis — SSR HTML observed
+    // once, plus the reference engine's upgrade probes — so its numbers stay
+    // comparable with earlier runs. Per-engine evidence lives beside it.
+    const reference = perEngine.chromium ?? perEngine[engines[0]!]!;
+    const { capabilities: browser, slotFirst, browserVersion, lateHosts } = reference;
     const metadataProbes = await Promise.all(
       METADATA_PROBES.map(async (probe) => ({
         library: probe.library,
@@ -1237,6 +1277,9 @@ async function main(): Promise<void> {
         entrySha256: await hash(entryJs),
         node: process.version,
         chromium: browserVersion,
+        engines: Object.fromEntries(
+          engines.map((engine) => [engine, perEngine[engine]!.browserVersion]),
+        ),
       },
       entries: entries
         .filter((entry) => entry.tag !== 'wc-fixture')
@@ -1291,6 +1334,24 @@ async function main(): Promise<void> {
       // outside, that an unhosted island cost zero fetches while island chunks
       // did load, and exactly what the runtime said it gave up on.
       lateHosts,
+      // Which engines actually ran, and the contract-level result on each. The
+      // full per-engine probe detail sits in `engines` so a capability that one
+      // engine lacks is recorded rather than promoted or hidden.
+      contractEngines: engines,
+      engines: Object.fromEntries(
+        engines.map((engine) => {
+          const evidence = perEngine[engine]!;
+          return [
+            engine,
+            {
+              browserVersion: evidence.browserVersion,
+              lateHost: evidence.lateHosts,
+              capabilities: evidence.capabilities,
+              slotFirst: evidence.slotFirst,
+            },
+          ];
+        }),
+      ),
       tierReport,
     };
     const reportPath = process.env.OPEN_ELEMENT_TIER_REPORT;
