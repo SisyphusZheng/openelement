@@ -32,6 +32,28 @@ export function validateProjectName(name: string): string | null {
   return null;
 }
 
+/**
+ * The project name for an in-place scaffold (`npm create @openelement .`),
+ * derived from the directory's own name and lowered into the package-name
+ * grammar {@linkcode validateProjectName} enforces: a host directory called
+ * `My App` still generates a legal `my-app` manifest. The result is always a
+ * valid name, so the in-place path never fails on the host's directory name;
+ * a directory with no usable characters at all (a filesystem root) falls back
+ * to `app`.
+ */
+export function inPlaceProjectName(directory: string): string {
+  const normalized = directory.replace(/\\+/g, '/').replace(/\/+$/, '');
+  const base = normalized.slice(normalized.lastIndexOf('/') + 1);
+  const cleaned = base
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[^a-z0-9]+/, '')
+    .replace(/[-._]+$/, '')
+    .slice(0, MAX_PROJECT_NAME_LENGTH);
+  return cleaned === '' ? 'app' : cleaned;
+}
+
 interface ProductVersions {
   router: string;
   element: string;

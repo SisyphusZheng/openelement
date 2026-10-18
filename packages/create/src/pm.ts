@@ -14,6 +14,12 @@
  * managers installs it unchanged. Detection is therefore a preference order,
  * not a requirement: pnpm, then npm, then yarn, then bun — and only a PATH
  * with none of them fails.
+ *
+ * The module also owns the two lifecycle COMMAND spellings the CLI prints and
+ * every documented quickstart repeats (install dependencies, run dev): one
+ * builder each, so the handoff box and the guides cannot drift apart on
+ * package-manager spelling. With no manager named they fall back to the
+ * universal `npm` spelling — every one of the four runs the same scripts.
  */
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
@@ -22,6 +28,23 @@ import process from 'node:process';
 export const PACKAGE_MANAGERS = ['pnpm', 'npm', 'yarn', 'bun'] as const;
 
 export type PackageManager = (typeof PACKAGE_MANAGERS)[number];
+
+/**
+ * The spelling used when no manager was detected (a `--no-install` run on a
+ * PATH with none of the four): npm's commands are the ones every other
+ * manager's docs also accept, and all four run the same package.json scripts.
+ */
+export const DEFAULT_PACKAGE_MANAGER = 'npm';
+
+/** `<pm> install` — the command a consumer runs when the scaffold skipped it. */
+export function installDependenciesCommand(pm: PackageManager | null = null): string {
+  return `${pm ?? DEFAULT_PACKAGE_MANAGER} install`;
+}
+
+/** `<pm> run dev` — the command every documented quickstart spells. */
+export function devCommand(pm: PackageManager | null = null): string {
+  return `${pm ?? DEFAULT_PACKAGE_MANAGER} run dev`;
+}
 
 /** Probe `<pm> --version`; an off-PATH binary gives ENOENT. */
 export function packageManagerAvailable(pm: PackageManager): boolean {
