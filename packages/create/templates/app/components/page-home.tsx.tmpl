@@ -2,26 +2,14 @@
  * Home page element — the showcase landing page (static prerendered, the
  * default renderIntent mode).
  *
- * Compiled page: the render() below is lowered to a Part Program at build
- * time. The page uses a light root; its presentation is authored directly as
- * Tailwind utility classes, which compile into the document stylesheet the
- * build emits as a content-addressed asset and the served document declares
- * as a marked <link rel="stylesheet"> — so the page is styled with zero
- * client JS, and no CSS text is inlined or shipped in JavaScript. The one
- * rule in `static styles` is the root's own box, which has no markup to carry
- * it. The two island hosts (<my-counter>, <live-timer>) are static
- * custom-element hosts that the generated server entry expands through the
- * islands' own compiled classes.
- *
- * The site chrome (header, main block, footer) is NOT here: every page
- * renders inside the auto-registered layout
- * (app/layout.tsx), which owns that markup exactly once. The
- * compiled grammar lowers one root per render, so the page returns a single
- * content wrapper and the layout's <slot> carries it.
- *
- * The badge spans name each section's client cost: static sections ship
- * markup only; island sections hydrate a compiled island (see the island
- * modules under app/islands/).
+ * The compiled grammar lowers one root per render, so the page returns a
+ * single content wrapper; the header/footer chrome lives in the
+ * auto-registered layout (app/layout.tsx), which projects this render into its
+ * default slot. Presentation is authored as Tailwind utilities in the markup
+ * (the badge spans name each section's client cost); the one rule in
+ * `static styles` is the root's own box, which has no markup to carry it. The
+ * two island hosts (<my-counter>, <live-timer>) are expanded by the generated
+ * server entry through the islands' own compiled classes.
  */
 import { element, OpenElement } from "@openelement/element";
 import homePageStyles from "./page-home.css";
@@ -48,7 +36,7 @@ export default class HomePage extends OpenElement {
             Every page here is prerendered HTML. JavaScript loads only where a section is
             interactive — the badges below name the cost of each block. Edit{" "}
             <code class="rounded-[5px] border border-line bg-surface px-[0.35em] py-[0.08em] font-mono text-[0.85em]">
-              app/routes/index.tsx
+              app/components/page-home.tsx
             </code>{" "}
             to make it yours.
           </p>

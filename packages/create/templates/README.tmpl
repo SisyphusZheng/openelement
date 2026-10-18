@@ -13,6 +13,13 @@ names what it costs the client.
 
 Docs and guides: https://openelement.org
 
+Requires **Node.js 24.2+ (24.18.0 recommended)** and any one package manager:
+npm, pnpm, yarn, or bun. Node 24.2 is the floor the packed framework packages
+declare in their `engines` and CI exercises; 24.18.0 is the line this template
+is verified on, pinned by the scaffold's own `.node-version`. The generated
+project pins no package manager: every script is a plain command, so whichever
+manager you install with runs them all.
+
 One directory is generated rather than source: `.openElement/` at the project
 root holds the build's internal state (head-convention bookkeeping and build
 plans). The dev server and the build write it as needed; the `.gitignore`
@@ -132,18 +139,9 @@ a pin plus the router's own aligned dependency is what keeps the tree single.
 
 Install with whichever manager you prefer; the first install decides the
 lockfile and everything afterwards follows it. The manifest deliberately
-carries no `packageManager` field.
-
-If you add one, note who reads it: the Vite+ CLI's `vp install` picks its
-manager from `packageManager` first, then from the lockfile already present,
-and falls back to pnpm when neither answers — measured, including the two
-surprises. With `"packageManager": "pnpm@12.8.1"` and only npm installed,
-`vp install` still runs pnpm 12.8.1 (vp fetches that version itself), and with
-neither a field nor a lockfile it runs pnpm even when npm is installed. So the
-field is a pin, not a preference: leave it out, and make your FIRST install the
-manager you intend to keep. (`vp install` still needs the manager it picked for
-the lockfile-detected case — a `package-lock.json` with npm off the PATH fails
-with `error: Cannot find binary path for command 'npm'`.)
+carries no `packageManager` field: with the field absent, the manager you run
+first is the one that owns the project. The commands in this file are spelled
+`npm run …` only because npm's spelling works unchanged under all four.
 
 ## Styling ownership
 
@@ -176,16 +174,25 @@ unused.
 ## Dependency notes
 
 `@openelement/element` and `@openelement/router` are the runtime dependencies
-your app imports. Everything else rides devDependencies: `vite` (the tree the
-router's `oe dev` / `oe build` drive), `oxfmt` and `oxlint` (the `fmt` / `lint`
-scripts), the Tailwind-ON build-time pins, the dev-server pair —
-`@hono/vite-dev-server` (loaded lazily by the dev server) and its `hono` peer —
-and the `typescript` pin. None of them resolve under a production install:
-`npm install --omit=dev` in a production image installs only the runtime pair.
-The generated server entry itself imports no
-HTTP framework — it composes on the internal WinterCG layer (#1560); `hono`
-is an optional peer of `@openelement/router`, and `@openelement/router/hono`
-(`createHonoAdapter`) is the one opt-in if you ever want to mount the built
-handler inside your own Hono app. For Nitro deployments, the built handler
-bridges through the `@openelement/router/nitro-mount` subpath of the one
-`@openelement/router` dependency. Do not remove them.
+your app imports. Everything else this manifest declares rides devDependencies:
+`vite` (the tree the router's `oe dev` / `oe build` drive), `oxfmt` and `oxlint`
+(the `fmt` / `lint` scripts), the Tailwind-ON build-time pins, the dev-server
+pair — `@hono/vite-dev-server` (loaded lazily by the dev server) and its `hono`
+peer — and the `typescript` pin.
+
+`npm install --omit=dev` drops what this manifest declares as devDependencies —
+the Tailwind pair, `oxfmt`, `oxlint`, the Vite pin, `hono` — but it does not
+shrink the install to the runtime pair: `@openelement/router` declares its own
+dependencies (the compiler, the protocol package, TypeScript, PostCSS, `mime`,
+`pathe`) and npm installs those in a production install too. Vite, Element,
+`hono`, `marked` and `@hono/vite-dev-server` are optional peers of the router
+and are never auto-installed, so a `--omit=dev` tree has no Vite: run the build
+from the full install and ship only its output.
+
+The generated server entry itself imports no HTTP framework — it composes on
+the internal WinterCG layer — and `hono` is only an optional peer of
+`@openelement/router`: `@openelement/router/hono` (`createHonoAdapter`) is the
+one opt-in if you ever want to mount the built handler inside your own Hono
+app. For Nitro deployments, the built handler bridges through the
+`@openelement/router/nitro-mount` subpath of the one `@openelement/router`
+dependency. Do not remove them.

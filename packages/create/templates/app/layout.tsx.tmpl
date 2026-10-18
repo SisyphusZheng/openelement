@@ -1,25 +1,15 @@
 /**
- * app/layout.tsx — the auto-registered layout.
+ * app/layout.tsx — the auto-registered layout: header, main slot and footer
+ * exist here exactly once, so a page module carries only its own content.
  *
- * The convention path is enough: the build finds this module, registers its
- * compiled class under the `app-layout` tag, and renders EVERY page inside
- * it, projecting the page's own render into the default <slot>. The header
- * and footer markup lives here exactly once — a page module carries only its
- * own content.
+ * `root: 'shadow-open'` is what makes the projection work — the chrome renders
+ * in this element's shadow tree while the slotted page content stays in the
+ * page's light DOM. The markup below is styled with Tailwind utilities; the
+ * sheet in `static styles` holds only the host box, which has no markup to
+ * carry it.
  *
- * The shadow root (root: 'shadow-open') is what makes the projection work:
- * the chrome below renders in this element's shadow tree, while the slotted
- * page content stays in the page element's own light DOM. Layout tokens from
- * app/styles/theme.css inherit through the boundary.
- *
- * Every rule that names an element below is a Tailwind utility in the markup
- * (the chrome's class tokens compile into the scaffold's component
- * stylesheet and reach this shadow root as a marked <link>); the sheet in
- * `static styles` holds only the host box, which has no markup to carry it.
- *
- * The layout is a convention, not a requirement: delete this file and every
- * page still renders (back to carrying its own chrome), or opt out
- * explicitly with `layout: false` in openelement.config.ts.
+ * A convention, not a requirement: delete the file and pages render their own
+ * chrome again, or opt out with `layout: false` in openelement.config.ts.
  */
 import { element, OpenElement } from "@openelement/element";
 import siteChromeStyles from "./components/site-chrome.css";

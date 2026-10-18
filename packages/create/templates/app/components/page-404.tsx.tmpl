@@ -1,12 +1,8 @@
 /**
- * Styled 404 page element (#923): the request-time server renders this page
- * with a 404 status for unmatched paths; a build with no request-time route
- * prerenders the route (see ./../routes/404.tsx) to dist/404.html instead.
- * The path-derived tag is 'el-404'. Light root: presentation is authored as
- * Tailwind utility classes in the markup, and the one rule in `static styles`
- * is the root's own box, which has no markup to carry it. Like every page it
- * renders inside the layout (app/layout.tsx), which owns the header and
- * footer.
+ * Styled 404 page element (path-derived tag 'el-404'): the request-time server
+ * renders it with a 404 status for unmatched paths. Presentation is
+ * utility-first in the markup; the one rule in `static styles` is the root's
+ * own box.
  */
 import { element, OpenElement } from "@openelement/element";
 import notFoundPageStyles from "./page-404.css";

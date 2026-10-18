@@ -1,9 +1,5 @@
-/* site-chrome — the irreducible authored rule (alpha15 utility-first
- * migration): the shadow host's own box. A custom element is display:inline
- * by default and the host tag is not authored markup, so no utility can
- * carry it. Everything else the chrome needs (bars, brand, nav links) is
- * authored as Tailwind utilities on the elements in layout.tsx.
- * One owner per property: nothing here is also authored as a utility. */
+/* The chrome shadow host's box; the bars, brand and nav links are authored
+   as Tailwind utilities in layout.tsx. */
 :host {
   display: block;
 }

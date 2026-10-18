@@ -1,9 +1,5 @@
-/* page-about — the irreducible authored rule (alpha15 utility-first
- * migration): the light root's own box (the compiler rewrites `:host` to
- * `:scope` inside the root's @scope block). The host tag is not authored
- * markup, so no utility can carry it. Everything else the page needs is
- * authored as Tailwind utilities in page-about.tsx.
- * One owner per property: nothing here is also authored as a utility. */
+/* The page-about light root's box: a custom element is inline by default and
+   the host tag is not authored markup, so no utility can carry it. */
 :host {
   display: block;
 }

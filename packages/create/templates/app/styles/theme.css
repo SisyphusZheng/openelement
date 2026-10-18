@@ -1,29 +1,16 @@
-/* ═══════════════════════════════════════════════════════════════════════
-   The starter's theme sheet — the ONE styling source (Tailwind-ON is the
+/* The starter's theme sheet — the ONE styling source (Tailwind-ON is the
    single scaffold default; there is no variant pair and no flag).
 
-   Two layers share this file:
-   1. @theme roles — shadcn-style semantic names over Tailwind default scale
-      variables (var(--color-<ramp>-<step>)). Extend by naming a role on the
-      left and an existing Tailwind variable on the right.
-   2. The starter palette — the --color-paper/--color-ink/--color-brand role
-      names the scaffold's markup consumes as utilities (bg-paper, text-brand,
-      border-line, …), each seated on a role so the dark and forced-colors
-      pairs below apply everywhere.
-
-   `@theme static`, not plain `@theme`: a pruned theme variable would take the
-   palette aliases with it, and every utility reading one would resolve to
-   nothing. @openelement/ui's role table is static for the same reason.
+   Two layers: @theme roles (shadcn-style semantic names over Tailwind default
+   scale variables) and the starter palette the markup consumes as utilities
+   (bg-paper, text-brand, border-line, …), each seated on a role so the dark
+   and forced-colors pairs below apply everywhere. `@theme static` keeps a
+   pruned variable from taking its palette aliases down with it.
 
    Everything presentation-level is authored as Tailwind utilities in markup.
-   What stays in CSS is this token sheet, the document base below, and each
-   component's `:host` box rule — nothing else.
-
-   `npm run dev` and the build both compile this file through the official
-   @tailwindcss/vite pipeline driven by the router: dev serves the compile at
-   /.openElement/tailwind.css and links it in the document head, the build
-   emits the same compile as the content-hashed document stylesheet.
-   ═══════════════════════════════════════════════════════════════════════ */
+   This token sheet, the document base below, and each component's `:host` box
+   rule are the only CSS. Dev and the build compile this file through the
+   official @tailwindcss/vite pipeline. */
 
 @theme static {
   /* ── semantic roles (light), over the TW4 default scale.
@@ -69,17 +56,16 @@
   --color-brand: var(--color-primary);
   --color-brand-ink: var(--color-primary-foreground);
   --color-brand-soft: var(--color-secondary);
-  /* --color-ok seats on a *-foreground role, not a surface step: the badge
-     reads it as text on a low-% tint of itself, and a surface step there is
-     unreadable (≈1.1:1). */
+  /* --color-ok is read as text on a low-% tint of itself, so it seats on a
+     *-foreground role: a surface step there is unreadable (≈1.1:1). */
   --color-ok: var(--color-secondary-foreground);
 
   --font-sans: system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-/* Non-role design tokens. They stay out of @theme on purpose: nothing in the
-   utility grammar reads them, so they must not claim a theme namespace. */
+/* Non-role tokens: nothing in the utility grammar reads them, so they must
+   not claim a theme namespace. */
 :root {
   --radius-s: 6px;
   --radius-m: 10px;
@@ -88,10 +74,8 @@
   --shadow-1: 0 1px 3px 0 rgb(20 18 33 / 0.07);
 }
 
-/* Dark pairs (shadcn v4 convention; the selector matches the runtime theme
-   attribute the ui package documents). The palette aliases above resolve
-   through these roles, so re-seating a role re-seats every utility that
-   reads it. */
+/* Runtime dark pairs (shadcn v4 convention): re-seating a role here re-seats
+   every palette alias that resolves through it. */
 :root[data-theme="dark"],
 :host([data-theme="dark"]) {
   --color-background: var(--color-zinc-950);
@@ -123,8 +107,7 @@
   --color-ring: var(--color-violet-400);
 }
 
-/* Forced-colors layer: every role re-seats on a system color. Values are
-   system keywords — no author color survives the forcing. */
+/* Forced colors: every role re-seats on a system keyword. */
 @media (forced-colors: active) {
   :root {
     --color-background: Canvas;
@@ -149,9 +132,7 @@
   }
 }
 
-/* ── Document base (rides the same sheet; no separate tokens convention) ──
-   The document shell's <body> is not authored markup, so a class cannot
-   carry this — it is the one place the scaffold must style an element. */
+/* Document base: <body> is not authored markup, so a class cannot carry it. */
 body {
   margin: 0;
   background: var(--color-paper);
@@ -165,13 +146,9 @@ body {
   color: var(--color-brand-ink);
 }
 
-/* Automatic dark for the starter palette (no runtime): the role sheet's
-   data-theme pairs above cover runtime-toggled themes. The palette seats the
-   dark side here explicitly (#1582): the light violet-700 reads ≈2.8:1 on
-   zinc-950, so --color-brand mirrors the data-theme dark role (violet-400 on
-   violet-950 ink — 6.98:1 / 5.36:1) and the referenced soft/ok entries take
-   the dark secondary surface and the dark *-foreground ink instead of the
-   light ones. */
+/* Automatic dark for the palette, no runtime: the light violet-700 brand
+   reads ≈2.8:1 on zinc-950, so the dark side re-seats on the same steps the
+   data-theme pairs use (violet-400 on violet-950 ink — 6.98:1 / 5.36:1). */
 @media (prefers-color-scheme: dark) {
   :root {
     --color-paper: var(--color-zinc-950);

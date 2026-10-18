@@ -1,14 +1,8 @@
 /**
- * About page element — the fully static showcase page.
- *
- * Compiled page with the default static renderIntent: prerendered to HTML at
- * build time (SSG). There are NO islands on this page — everything below is
- * prerendered markup. Presentation is authored directly as Tailwind utility
- * classes, which compile into the document stylesheet; the one rule in
- * `static styles` is the root's own box, which has no markup to carry it.
- * The page renders inside the auto-registered layout (app/layout.tsx), which
- * owns the header, main block and footer. The compiled grammar lowers one
- * root per render, so the page returns a single content wrapper.
+ * About page element — the fully static showcase page: no islands, so nothing
+ * here ships JavaScript. The default static renderIntent prerenders it to HTML
+ * at build time; the layout owns the chrome; the one rule in `static styles`
+ * is the root's own box.
  */
 import { element, OpenElement } from "@openelement/element";
 import aboutPageStyles from "./page-about.css";

@@ -2,14 +2,9 @@
  * live-timer — client-only live stats island (compiled).
  *
  * hydrate: 'only' with ssr: false renders nothing on the server; the client
- * entry creates the DOM fresh from the compiled Part Program and starts the
- * clock in connectedCallback. Elapsed time is measured from the document's
- * time origin (performance.now()), so the number is honest page time, and
+ * entry builds the DOM from the compiled Part Program and starts the clock in
+ * connectedCallback, measured from the document's time origin.
  * disconnectedCallback stops the interval when the host leaves the tree.
- *
- * The clock's presentation is authored as Tailwind utilities on the same
- * span the render produces (#1582: the styling must sit on the element that
- * exists, never on a selector that can drift away from it).
  */
 import { defineIslandConfig } from "@openelement/router";
 import { element, OpenElement, property } from "@openelement/element";
@@ -17,16 +12,14 @@ import timerStyles from "./live-timer.css";
 
 export const openElement = defineIslandConfig({ hydrate: "only", ssr: false, dsd: false });
 
-// The interval handle rides the compiled per-instance property state: island
-// classes carry compiled @property fields and methods, and module-level
-// runtime statements are outside the compiled grammar (OEC9008). In the
-// browser setInterval returns a number, so the handle is a plain number here.
+// The interval handle rides compiled per-instance property state (module-level
+// runtime statements are outside the compiled grammar, OEC9008).
 @element("live-timer", { root: "shadow-open" })
 export default class LiveTimer extends OpenElement {
   static override styles = [timerStyles];
 
-  /** Elapsed seconds as preformatted text (compiled text Parts bind plain
-   * properties — no method calls in a text block, OEC9013). */
+  /** Elapsed seconds, preformatted: a compiled text Part binds a plain
+   * property, never a method call (OEC9013). */
   @property({ reflect: false, attribute: false })
   elapsed = "0.0";
 

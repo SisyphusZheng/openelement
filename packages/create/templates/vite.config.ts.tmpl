@@ -1,20 +1,12 @@
 import { openElement } from "@openelement/router/vite";
 import { defineConfig } from "vite";
 
-// Vite configuration only. Framework options live in openelement.config.ts —
-// the plugin reads that file itself, so the plugin call stays bare. The JSX
-// transform is owned by the plugin's compiler pass (TSX → Part Program);
-// nothing JSX-related needs configuring here.
-//
-// `vite` is a direct devDependency, pinned to the exact version
-// `@openelement/router` itself resolves against (8.0.16), so the tree carries
-// ONE Vite copy without a workspace catalog or an override redirecting it.
-//
-// Formatting and linting are their own tools — the `npm run fmt` / `npm run
-// lint` scripts run `oxfmt` / `oxlint`, which are devDependencies of this
-// project. Both run with their defaults: markdown, JSON, YAML, and CSS are
-// skipped, so the authored sources pass `npx oxfmt --check` and `npx oxlint`
-// out of the box.
+// Vite configuration only: framework options live in openelement.config.ts,
+// which the plugin reads itself, so the plugin call stays bare, and the JSX
+// transform is owned by the plugin's compiler pass. `vite` is a direct
+// devDependency pinned to the exact version @openelement/router resolves, so
+// the tree carries one Vite copy; `oxfmt` / `oxlint` back the `fmt` / `lint`
+// scripts and run with their defaults (markdown, JSON, YAML and CSS skipped).
 export default defineConfig({
   base: "/",
   plugins: [...openElement()],
