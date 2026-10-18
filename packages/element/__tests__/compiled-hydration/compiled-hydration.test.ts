@@ -833,7 +833,6 @@ test('alpha.3 claim preserves nested custom-element node identity without enteri
   expect(root.childNodes[0]).toBe(shell);
   expect(shell.childNodes[0]).toBe(foreign);
   claimed.dispose();
-  expect(true).toBeTruthy();
 });
 
 test('claim leaves an independently SSG-expanded empty custom host to its own program', () => {

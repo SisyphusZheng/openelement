@@ -95,6 +95,13 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
+    // N5: an accidental `.only` must never silently narrow a suite. Vitest 5
+    // removed the old `forbidOnly` switch; `allowOnly` is its exact
+    // replacement, and its default is `!process.env.CI` — i.e. local runs
+    // would allow `.only` and quietly run a subset. Pin it false so both the
+    // local gate and CI fail on an `.only` (projects inherit this root test
+    // config unless they override the option).
+    allowOnly: false,
     // The deno test runner executed every file in one sequential process; the
     // suites share fixture dists and spawn port-bound servers, so parallel
     // file execution reintroduces races that never existed pre-migration.
