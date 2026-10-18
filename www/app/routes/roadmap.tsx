@@ -9,6 +9,9 @@ import {
   COMMON_PUBLISHED_VERSION,
   prereleasePublishStatus,
   REGISTRY_NOTE,
+  stableLineNote,
+  stableLineTitle,
+  STABLE_LINE,
 } from '../data/version.ts';
 import { siteHead } from '#site-ui/head.ts';
 import { contentLocale } from '#site-ui/locale.ts';
@@ -93,8 +96,7 @@ const entries: Record<SiteLocale, TimelineEntry[]> = {
 const content = {
   en: {
     headTitle: 'Roadmap',
-    headDescription:
-      'The openElement roadmap: the v1.0.0-alpha.1 baseline, the stable 0.43 maintenance baseline and the gated path to v1.0.',
+    headDescription: `The openElement roadmap: the v1.0.0-alpha.1 baseline, the ${STABLE_LINE.series} stable maintenance line and the gated path to v1.0.`,
     pageTitle: 'Roadmap',
     heroLede:
       'OpenElement roadmap labels describe the public product surface, tied to package truth, docs truth and CI evidence rather than a wish list.',
@@ -102,9 +104,16 @@ const content = {
       '[{"id":"release-line","label":"Release line"},{"id":"product-boundary","label":"Product boundary"},{"id":"decision-matrix","label":"Decision matrix"},{"id":"system-visual","label":"System visual"}]',
     architecture: 'Architecture',
     freezeBadge: 'Alpha baseline — v1.0.0-alpha.1',
-    nowTitle: '0.43.3 remains stable while the 1.0 Alpha baseline lands.',
-    nowCopy: (version: string) =>
-      `${version} is the published stable maintenance line. 1.0 Alpha is the new baseline: Element and Router as the public core, Create as the supported entry, UI as experimental — with no supported migration from 0.x.`,
+    // The "now" band states the two lines the release record proves. Both
+    // halves derive (data/version.ts ← the generated release-line module ←
+    // CHANGELOG.md + docs/release/release-state.json): the series the stable
+    // maintenance line closed at, and the version npm actually serves on the
+    // per-package `latest` dist-tag beside the current source baseline. The
+    // former literal called the 1.0 prerelease the "published stable
+    // maintenance line" — a claim the record contradicts.
+    nowTitle: stableLineTitle('en'),
+    nowCopy: stableLineNote('en'),
+    registryLabel: 'Per-package npm latest:',
     releaseLineIndex: '01 / release line',
     releaseLineTitle: 'From shipped evidence to v1.0 freeze.',
     releaseLineCopy:
@@ -187,9 +196,10 @@ const content = {
       '[{"id":"release-line","label":"发布线"},{"id":"product-boundary","label":"产品边界"},{"id":"decision-matrix","label":"决策矩阵"},{"id":"system-visual","label":"系统图示"}]',
     architecture: '架构',
     freezeBadge: 'Alpha 基线 — v1.0.0-alpha.1',
-    nowTitle: '0.43.3 保持稳定，1.0 Alpha 基线正在落地。',
-    nowCopy: (version: string) =>
-      `${version} 是已发布的稳定维护线。1.0 Alpha 是新基线：Element 与 Router 为公共核心，Create 为正式入口，UI 为实验性能力，不提供从 0.x 的受支持迁移。`,
+    // See the en block: the zh band derives the same two lines.
+    nowTitle: stableLineTitle('zh'),
+    nowCopy: stableLineNote('zh'),
+    registryLabel: '各包 npm latest：',
     releaseLineIndex: '01 / 发布线',
     releaseLineTitle: '从已交付证据，到 v1.0 冻结。',
     releaseLineCopy: '这条线刻意收窄：只有经得起文档、包导出与构建验证检验的表述，才会留在这里。',
@@ -275,6 +285,8 @@ export function RoadmapPage(props: {
   freezeBadge: string;
   nowTitle: string;
   nowCopy: string;
+  registryLabel: string;
+  registryNote: string;
   timelineAria: string;
   rows: Array<{
     key: string;
@@ -349,6 +361,12 @@ export function RoadmapPage(props: {
               <p class='mt-3 mb-2 text-foreground font-bold leading-[1.3]'>{props.nowTitle}</p>
               <p class='m-0 text-muted-foreground text-(length:--text-sm) leading-(--leading-normal)'>
                 {props.nowCopy}
+              </p>
+              {/* The per-package registry truth the band's claims derive from,
+                  printed beside them: the status text names no version of its
+                  own, so the reader can check every package against the note. */}
+              <p class='m-0 mt-2 text-muted-foreground text-(length:--text-xs) leading-(--leading-normal)'>
+                {props.registryLabel} <code>{props.registryNote}</code>
               </p>
             </div>
             <div class='grid grid-cols-[minmax(0,1fr)] gap-[clamp(2rem,6vw,5rem)] [align-items:start] min-[1121px]:grid-cols-[minmax(0,1fr)_minmax(280px,0.38fr)]'>
@@ -617,7 +635,9 @@ export default definePage(RoadmapPage, {
       releaseLineCopy: t.releaseLineCopy,
       freezeBadge: t.freezeBadge,
       nowTitle: t.nowTitle,
-      nowCopy: t.nowCopy(REGISTRY_NOTE),
+      nowCopy: t.nowCopy,
+      registryLabel: t.registryLabel,
+      registryNote: REGISTRY_NOTE,
       timelineAria: t.timelineAria,
       rows,
       designRuleTitle: t.designRuleTitle,

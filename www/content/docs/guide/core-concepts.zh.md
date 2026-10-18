@@ -99,5 +99,5 @@ export const openElement = defineIslandConfig({ hydrate: 'idle', ssr: true, dsd:
 ## 另见
 
 - [路由与数据](/zh/guide/routing-and-data)——这些元素之上的页面、loader 与 action。
-- [快速开始](/zh/guide/getting-started)——创建项目的三条命令。
+- [快速开始](/zh/guide/getting-started)——创建项目的 {{QUICKSTART_COMMAND_COUNT}} 条命令。
 - [DSD 渲染](/zh/architecture/dsd)——服务端输出背后的平台契约。

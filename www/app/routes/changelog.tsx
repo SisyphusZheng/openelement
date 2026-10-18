@@ -28,11 +28,22 @@ export const meta = { section: '', label: 'Changelog', order: 20 };
 // and the live register speaks only of the dist-tags it carries.
 const sharedLatestBare = (PUBLISHED_LATEST_SHARED ?? '').replace(/^v/, '');
 
+/**
+ * The register's headline value. A bare "none" beside a "Current" badge read as
+ * "the project has no current release" — true only of the (absent) COMMON
+ * STABLE version, and silent about the line every package actually serves. The
+ * label now names that line: the shared prerelease version when one exists (the
+ * 1.0 alpha line today), the stable version when a complete stable release
+ * exists, and only then the no-value spelling.
+ */
+const registerVersionLabel =
+  COMMON_PUBLISHED_VERSION ?? (sharedLatestBare === '' ? COMMON_PUBLISHED_LABEL : sharedLatestBare);
+
 const content = {
   en: {
     headTitle: 'Changelog',
     headDescription:
-      'The openElement release register — current per-package npm dist-tags — plus the repository CHANGELOG.md historical archive. Machine-checked release truth lives in docs/release/release-state.json.',
+      'The openElement release register — current per-package npm dist-tags — plus the repository CHANGELOG.md archive. Truth: docs/release/release-state.json.',
     eyebrow: 'Changelog',
     pageTitle: 'The register, then the archive.',
     lede: 'The register reflects the current per-package npm dist-tags. The archive below renders the repository CHANGELOG.md unchanged; machine-checked release truth lives in docs/release/release-state.json.',
@@ -41,12 +52,12 @@ const content = {
     railLabels: ['Published', 'Stable line', 'Withdrawn', 'Historical archive'],
     publishedIntro:
       'The project follows Keep a Changelog and SemVer. Historical entries preserve older names where they describe older releases; current docs use the openElement contract.',
-    stampCurrent: 'Current',
+    stampCurrent: COMMON_PUBLISHED_VERSION === null ? 'Per-package latest' : 'Current',
     regCurrentSummary:
       COMMON_PUBLISHED_VERSION === null
         ? sharedLatestBare === ''
           ? 'There is no common complete version: the published packages\u2019 npm latest values differ — see the per-package register above.'
-          : `There is no common complete version: every published package\u2019s npm latest is the same prerelease, ${sharedLatestBare}.`
+          : `1.0 alpha line: every published package\u2019s npm latest is the same prerelease, ${sharedLatestBare}. No common stable version is published.`
         : `Every published package serves the common stable version ${COMMON_PUBLISHED_VERSION}.`,
     stableHeading: 'Stable line',
     stableBody: `No stable release covers every published package. The stable lines and the packages each one covered are recorded in the archive below and machine-checked in docs/release/release-state.json. The static, request-time, and Universal WC SSR contracts remain frozen under ADR-0119, ADR-0122, and ADR-0135; ADR-0140 admits compatible patches without scheduling a 0.44 feature train.`,
@@ -73,12 +84,12 @@ const content = {
     railLabels: ['已发布', '稳定线', '已撤回', '历史归档'],
     publishedIntro:
       '本项目遵循 Keep a Changelog 与 SemVer。历史条目在描述旧版本时保留旧名称；当前文档使用 openElement 契约。',
-    stampCurrent: '当前',
+    stampCurrent: COMMON_PUBLISHED_VERSION === null ? '各包 latest' : '当前',
     regCurrentSummary:
       COMMON_PUBLISHED_VERSION === null
         ? sharedLatestBare === ''
           ? '不存在共同完整版本：各发布包的 npm latest 互不相同——见上方逐包登记表。'
-          : `不存在共同完整版本：各发布包的 npm latest 同为预发布版本 ${sharedLatestBare}。`
+          : `1.0 alpha 线：各发布包的 npm latest 同为预发布版本 ${sharedLatestBare}；不存在共同 stable 版本。`
         : `全部发布包都已提供共同稳定版本 ${COMMON_PUBLISHED_VERSION}。`,
     stableHeading: '稳定线',
     stableBody: `没有任何 stable 版本覆盖全部发布包。各条稳定线及其覆盖范围记录在下方归档中，并由 docs/release/release-state.json 机器校验。静态、请求时与 Universal WC SSR 契约继续受 ADR-0119、ADR-0122 和 ADR-0135 冻结；ADR-0140 允许兼容 patch，但不预排 0.44 功能列车。`,
@@ -268,7 +279,7 @@ export default definePage(PageChangelog, {
       withdrawnBody: text.withdrawnBody,
       footnote: text.footnote,
       registryNote: REGISTRY_NOTE,
-      commonVersionLabel: COMMON_PUBLISHED_LABEL,
+      commonVersionLabel: registerVersionLabel,
       railItems: ids.map((id, index) => ({
         id,
         href: `#${id}`,

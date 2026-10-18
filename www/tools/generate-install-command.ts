@@ -25,6 +25,7 @@ import {
   CREATE_PACKAGE_SPECIFIER,
   createInstallCommand,
 } from '../../packages/create/src/install-command.ts';
+import { QUICKSTART_SOURCE, quickstartCommands } from '../lib/quickstart.ts';
 import { readFile, writeFile } from 'node:fs/promises';
 import process from 'node:process';
 
@@ -117,6 +118,121 @@ const canonicalCommand = createInstallCommand('my-app');
 const canonicalShape = commandShape(canonicalCommand);
 
 /**
+ * Quickstart consistency: the fence is the ONE authored sequence, and every
+ * count sentence is a claim about it.
+ *
+ * The manual said "three commands" on the hub and in core-concepts while
+ * getting-started's Install fence listed four. The fix is not a frozen number
+ * (the starter lane owns that fence and may legitimately change its length):
+ * the count derives from the parsed fence (www/lib/quickstart.ts), and this gate
+ * checks the things a derivation cannot check by itself —
+ *   1. each locale's fence carries the same steps, starting from the create
+ *      CLI's canonical install command;
+ *   2. each locale's prose count word equals the fence's step count (the word
+ *      is authored text; it cannot be interpolated);
+ *   3. the consumers still derive (placeholder / generated constant) and carry
+ *      no stale spelled-out count.
+ * Nothing here pins "4": before the starter lane's three-command revision the
+ * gate passes at 4, after it passes at 3 — the invariant is agreement, not a
+ * number.
+ */
+const COUNT_WORDS: Readonly<Record<'en' | 'zh', readonly string[]>> = {
+  en: [
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+  ],
+  zh: ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'],
+};
+
+const QUICKSTART_DOCS: ReadonlyArray<{
+  file: string;
+  locale: 'en' | 'zh';
+  countPattern: RegExp;
+}> = [
+  {
+    file: QUICKSTART_SOURCE,
+    locale: 'en',
+    countPattern: /^([A-Za-z]+) commands\b/mu,
+  },
+  {
+    file: 'www/content/docs/guide/getting-started.zh.md',
+    locale: 'zh',
+    countPattern: /^([一二三四五六七八九十]+)条命令/mu,
+  },
+];
+
+/** The count sentences that must keep deriving from the sequence. */
+const QUICKSTART_DERIVING_FILES: readonly string[] = [
+  'www/content/docs/guide/core-concepts.md',
+  'www/content/docs/guide/core-concepts.zh.md',
+  'www/app/routes/docs/index.tsx',
+];
+
+/** The stale spellings the manual carried before the count was derived. */
+const STALE_COUNT_CLAIM = /\bthree commands\b|三条命令/u;
+
+async function quickstartFailures(): Promise<string[]> {
+  const failures: string[] = [];
+  const sequences: string[][] = [];
+  for (const doc of QUICKSTART_DOCS) {
+    const text = await readFile(join(repoRoot, doc.file), 'utf8');
+    let commands: string[];
+    try {
+      commands = quickstartCommands(text, doc.file);
+    } catch (cause) {
+      failures.push((cause as Error).message);
+      continue;
+    }
+    sequences.push(commands);
+    const table = COUNT_WORDS[doc.locale];
+    const match = doc.countPattern.exec(text);
+    const spelled = match ? table.findIndex((word) => word === match[1]!.toLowerCase()) : -2;
+    if (spelled !== commands.length) {
+      failures.push(
+        `${doc.file}: the quickstart count sentence says ` +
+          `'${match?.[1] ?? 'nothing'}' but its Install fence carries ` +
+          `${commands.length} commands (${table[commands.length] ?? '?'})`,
+      );
+    }
+  }
+  if (sequences.length === 2 && sequences[0]!.join('\n') !== sequences[1]!.join('\n')) {
+    failures.push(
+      'the two getting-started locales document different quickstart sequences:\n' +
+        `    en: ${sequences[0]!.join(' | ')}\n` +
+        `    zh: ${sequences[1]!.join(' | ')}`,
+    );
+  }
+  for (const file of QUICKSTART_DERIVING_FILES) {
+    const text = await readFile(join(repoRoot, file), 'utf8');
+    if (STALE_COUNT_CLAIM.test(text)) {
+      failures.push(
+        `${file}: spells a stale quickstart count — derive it instead ` +
+          '(《{{QUICKSTART_COMMAND_COUNT}}》 in content, quickstartCommandCountPhrase ' +
+          'in the hub route)',
+      );
+    }
+    const derives = file.endsWith('.tsx')
+      ? text.includes('quickstartCommandCountPhrase')
+      : text.includes('{{QUICKSTART_COMMAND_COUNT}}');
+    if (!derives) {
+      failures.push(`${file}: the quickstart count no longer derives from the Install fence`);
+    }
+  }
+  return failures;
+}
+
+/**
  * The canonical command truncated to the same token count as `command`. The
  * documented-command match never carries the project name (the regex ends at
  * the specifier), so a verbatim copy equals this prefix exactly.
@@ -162,7 +278,7 @@ export async function buildInstallCommand(): Promise<InstallCommandBuild> {
     }
   }
 
-  return { command: canonicalCommand, failures };
+  return { command: canonicalCommand, failures: [...failures, ...(await quickstartFailures())] };
 }
 
 export function renderInstallCommandModule(build: InstallCommandBuild): string {

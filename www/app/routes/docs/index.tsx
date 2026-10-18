@@ -3,6 +3,7 @@ import { siteHead } from '#site-ui/head.ts';
 import { contentLocale } from '#site-ui/locale.ts';
 import { localizePath } from '#site-ui/link.ts';
 import { packageCountModifier, sourceLineStamp } from '../../data/version.ts';
+import { quickstartCommandCountPhrase } from '../../data/quickstart.ts';
 
 // The hub is the manual's first entry: it opens the guide section the rest of
 // /guide/* fills, so the sidebar tree and the URL tree name the same family.
@@ -12,6 +13,13 @@ export const meta = { section: 'Guide', label: 'Docs', order: 0 };
 // the hub copy moves with the surface and no hand-written numeral can go stale.
 const countEn = packageCountModifier('en');
 const countZh = packageCountModifier('zh');
+
+// The Get-started entrance advertises how long the quickstart is. That count is
+// a claim about getting-started's own Install fence, so it derives from the
+// sequence (data/quickstart.ts) — the hub said 3 while the fence listed 4, and
+// core-concepts repeated the stale number in both locales.
+const quickstartEn = quickstartCommandCountPhrase('en');
+const quickstartZh = quickstartCommandCountPhrase('zh');
 
 const content = {
   en: {
@@ -38,14 +46,14 @@ const content = {
 
 const entrances = {
   en: [
-    ['Get started', 'Zero to a running application in three commands.', '/guide/getting-started'],
+    ['Get started', `Zero to a running application in ${quickstartEn}.`, '/guide/getting-started'],
     ['Tutorial', 'Build a page, an island and a form action, step by step.', '/guide/tutorial'],
     ['API reference', `The ${countEn} surface, export by export.`, '/reference'],
     ['Architecture', 'Who owns what, and why the boundaries hold.', '/architecture'],
     ['Roadmap', 'Where the stable line goes next.', '/roadmap'],
   ],
   zh: [
-    ['快速开始', '三条命令，从零到可运行的应用。', '/guide/getting-started'],
+    ['快速开始', `${quickstartZh}，从零到可运行的应用。`, '/guide/getting-started'],
     ['教程', '逐步构建一个页面、一个 island 与一个表单 action。', '/guide/tutorial'],
     ['API 参考', `${countZh}接口面，逐个 export 列出。`, '/reference'],
     ['架构', '谁负责什么，以及边界为何成立。', '/architecture'],

@@ -99,5 +99,5 @@ The in-repo js-framework-benchmark harness was removed on 2026-10-03; the upstre
 ## See also
 
 - [Routing and Data](/guide/routing-and-data) — pages, loaders and actions on top of these elements.
-- [Getting Started](/guide/getting-started) — the three commands that create a project.
+- [Getting Started](/guide/getting-started) — the {{QUICKSTART_COMMAND_COUNT}} commands that create a project.
 - [DSD Rendering](/architecture/dsd) — how Declarative Shadow DOM carries the server output.
