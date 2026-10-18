@@ -21,10 +21,13 @@
 
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { afterAll, beforeAll, expect, test } from 'vitest';
+import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 import { build, type Plugin } from 'vite';
 import { analyzeModuleSemantics } from '@openelement/compiler';
-import { walkModuleGraph } from '../src/vite/internal/module-graph-walk.ts';
+import {
+  ModuleWalkDiagnosticCode,
+  walkModuleGraph,
+} from '../src/vite/internal/module-graph-walk.ts';
 
 const FIXTURE = join(import.meta.dirname!, '../__test_fixtures__/module-walk');
 const ROOT = FIXTURE;
@@ -259,4 +262,43 @@ test('a bounded walk reports truncation instead of crawling without limit', asyn
   });
   expect(result.truncated).toBe(true);
   expect(result.files.length).toBeLessThanOrEqual(2);
+});
+
+test('an analysis failure is reported with its code, never swallowed as "no edges"', async () => {
+  // The negative proof for the fail-open this walk used to have: a source the
+  // module analysis cannot survive (deeply nested parens overflow its stack)
+  // returned an empty specifier list, indistinguishable from "imports
+  // nothing". The walk must now report file + code on the result AND on the
+  // build log, and keep the module in its file set.
+  const pathological = join(FIXTURE, 'app/components/pathological.ts');
+  writeFileSync(pathological, `const value = ${'('.repeat(60_000)}1${')'.repeat(60_000)};\n`);
+  const warnings: string[] = [];
+  const warn = vi.spyOn(console, 'warn').mockImplementation((...args: unknown[]) => {
+    warnings.push(args.map((arg) => String(arg)).join(' '));
+  });
+  try {
+    const result = await walkModuleGraph({ resolve: () => Promise.resolve(null) }, [pathological]);
+
+    expect(result.skipped.analysisFailed).toEqual(1);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]!.code).toEqual(ModuleWalkDiagnosticCode.ANALYSIS_FAILED);
+    expect(result.diagnostics[0]!.file).toEqual(pathological);
+    expect(result.diagnostics[0]!.message).toMatch(/call stack/i);
+    // The build log carries the code too: a result object nobody reads is not
+    // a report.
+    expect(warnings.some((line) => line.includes(ModuleWalkDiagnosticCode.ANALYSIS_FAILED))).toBe(
+      true,
+    );
+    // The walk neither died nor dropped the module from its file set.
+    expect(result.files).toContain(pathological);
+
+    // Positive control: a clean walk reports nothing.
+    const clean = join(FIXTURE, 'app/components/clean-probe.ts');
+    writeFileSync(clean, 'export const clean = 1;\n');
+    const cleanResult = await walkModuleGraph({ resolve: () => Promise.resolve(null) }, [clean]);
+    expect(cleanResult.diagnostics).toEqual([]);
+    expect(cleanResult.skipped.analysisFailed).toEqual(0);
+  } finally {
+    warn.mockRestore();
+  }
 });

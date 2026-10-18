@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import process from 'node:process';
 import { join, relative } from 'pathe';
 import type { BuildArtifacts, BuildPlan } from '@openelement/protocol/ssg';
@@ -7,6 +7,7 @@ import { fsPathToModuleSpecifier } from './internal/ssg/module-specifier.ts';
 import { resolveIslandHydrate } from './internal/ssg/island-scanner.ts';
 import { formatJson, normalizeSeparators } from '@openelement/element/build-utils';
 import { formatError } from '@openelement/element';
+import { buildError } from '../internal/error-codes.ts';
 import { DEFAULT_OUT_DIR, OPEN_ELEMENT_DIR } from './internal/paths.ts';
 import { walkFileEntries } from './internal/html-files.ts';
 
@@ -85,22 +86,59 @@ function files(root: string): string[] {
 }
 
 /**
+ * Stable codes for the build manifest's own evidence. Local to this module:
+ * this is build-evidence plumbing, not part of the authoring/build-contract
+ * catalogue in `src/internal/error-codes.ts`, so it lives with its raise site.
+ */
+export const BuildEvidenceErrorCode = {
+  /**
+   * `dist/server/server-manifest.json` exists but cannot be turned into the
+   * request-time route evidence the build manifest carries (unreadable,
+   * malformed JSON, or a `requestTimeRoutes` field outside the documented
+   * array shape).
+   */
+  REQUEST_TIME_MANIFEST_UNREADABLE: 'OE_BUILD_EVIDENCE_REQUEST_TIME_MANIFEST_UNREADABLE',
+} as const;
+
+/**
  * Request-time route evidence for the build manifest, derived from the
  * emitted dist/server/server-manifest.json.
  * Returns {} for pure-static builds so their evidence shape is unchanged.
+ *
+ * The distinction is load-bearing: a MISSING manifest is the pure-static
+ * shape (no request-time evidence to carry), while a manifest that exists and
+ * cannot be read is a build failure. This used to be one bare `catch {}` over
+ * both, which silently dropped the evidence and let the build report success
+ * with a manifest indistinguishable from a pure-static one.
  */
 function readRequestTimeRouteEvidence(outputDir: string): { requestTimeRoutes?: string[] } {
+  const manifestPath = join(outputDir, 'server', 'server-manifest.json');
+  if (!existsSync(manifestPath)) return {};
+  let manifest: { requestTimeRoutes?: Array<{ path?: unknown }> };
   try {
-    const manifest = JSON.parse(
-      readFileSync(join(outputDir, 'server', 'server-manifest.json'), 'utf8'),
-    ) as { requestTimeRoutes?: Array<{ path?: unknown }> };
-    const paths = (manifest.requestTimeRoutes ?? [])
-      .map((route) => route.path)
-      .filter((path): path is string => typeof path === 'string');
-    return paths.length > 0 ? { requestTimeRoutes: paths } : {};
-  } catch {
-    return {};
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as typeof manifest;
+  } catch (error) {
+    throw buildError(
+      BuildEvidenceErrorCode.REQUEST_TIME_MANIFEST_UNREADABLE,
+      `[${BuildEvidenceErrorCode.REQUEST_TIME_MANIFEST_UNREADABLE}] request-time build ` +
+        `evidence is unreadable: ${manifestPath} could not be parsed as JSON. The build ` +
+        'manifest must not silently lose its request-time routes; fix or remove the emitted ' +
+        'server manifest.',
+      { cause: error instanceof Error ? error : new Error(String(error)) },
+    );
   }
+  if (manifest.requestTimeRoutes !== undefined && !Array.isArray(manifest.requestTimeRoutes)) {
+    throw buildError(
+      BuildEvidenceErrorCode.REQUEST_TIME_MANIFEST_UNREADABLE,
+      `[${BuildEvidenceErrorCode.REQUEST_TIME_MANIFEST_UNREADABLE}] request-time build ` +
+        `evidence is malformed: ${manifestPath} carries requestTimeRoutes as ` +
+        `${typeof manifest.requestTimeRoutes}, not the documented array.`,
+    );
+  }
+  const paths = (manifest.requestTimeRoutes ?? [])
+    .map((route) => route.path)
+    .filter((path): path is string => typeof path === 'string');
+  return paths.length > 0 ? { requestTimeRoutes: paths } : {};
 }
 
 export function collectBuildArtifacts(plan: BuildPlan): BuildArtifacts {

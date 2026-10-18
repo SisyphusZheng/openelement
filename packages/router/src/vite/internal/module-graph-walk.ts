@@ -40,6 +40,32 @@
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
 import { analyzeModuleSemantics } from '@openelement/compiler';
+import { createLogger } from '@openelement/element';
+
+const log = createLogger('module-graph-walk');
+
+/**
+ * Stable codes for what the walk could not do. A code here is always paired
+ * with a diagnostic on the returned result AND a warning on the build log:
+ * the walker's boundaries are reported, never silent (the same contract
+ * `truncated` follows).
+ */
+export const ModuleWalkDiagnosticCode = {
+  /**
+   * The compiler's module analysis threw for a source the walk had already
+   * admitted (a parser that overflows its stack, an analysis invariant). The
+   * module's static edges are unknown, so the walk records the file and the
+   * cause instead of dropping the edges into an empty specifier list.
+   */
+  ANALYSIS_FAILED: 'OE_MODULE_WALK_ANALYSIS_FAILED',
+} as const;
+
+/** One reported walk failure: a code, the module it happened on, its cause. */
+export interface ModuleWalkDiagnostic {
+  readonly code: (typeof ModuleWalkDiagnosticCode)[keyof typeof ModuleWalkDiagnosticCode];
+  readonly file: string;
+  readonly message: string;
+}
 
 /** The plugin-context surface the walk needs (a real Vite/Rolldown context). */
 export interface ModuleWalkResolver {
@@ -60,7 +86,18 @@ export interface ModuleWalkResult {
     readonly nonSource: number;
     readonly unresolved: number;
     readonly dynamic: number;
+    /**
+     * Sources whose specifier analysis threw: their static edges are NOT in
+     * `files`, so the caller can tell an incomplete graph from a complete one
+     * (see `diagnostics`).
+     */
+    readonly analysisFailed: number;
   };
+  /**
+   * Failures the walk hit and reported instead of swallowing. Empty on a clean
+   * walk; every entry also reached the build log as a `[CODE]` warning.
+   */
+  readonly diagnostics: readonly ModuleWalkDiagnostic[];
   /**
    * Dynamic `import('literal')` specifiers, collected only when the caller
    * opts in (`collectDynamicImports`). A dynamic import is not a static edge
@@ -88,7 +125,15 @@ export async function walkModuleGraph(
   const files: string[] = [];
   const visited = new Set<string>();
   const queue: string[] = [];
-  const skipped = { external: 0, virtual: 0, nonSource: 0, unresolved: 0, dynamic: 0 };
+  const skipped = {
+    external: 0,
+    virtual: 0,
+    nonSource: 0,
+    unresolved: 0,
+    dynamic: 0,
+    analysisFailed: 0,
+  };
+  const diagnostics: ModuleWalkDiagnostic[] = [];
   const dynamicImports: Array<{ specifier: string; importer: string }> = [];
   let truncated = false;
 
@@ -118,7 +163,20 @@ export async function walkModuleGraph(
         dynamicImports.push({ specifier, importer: file });
       }
     }
-    for (const specifier of staticSpecifiersOf(source, file)) {
+    const analysis = staticSpecifiersOf(source, file);
+    if (analysis.failure !== undefined) {
+      skipped.analysisFailed += 1;
+      const message =
+        analysis.failure instanceof Error ? analysis.failure.message : String(analysis.failure);
+      diagnostics.push({ code: ModuleWalkDiagnosticCode.ANALYSIS_FAILED, file, message });
+      log.warn(
+        `[${ModuleWalkDiagnosticCode.ANALYSIS_FAILED}] ${file}: the module analysis failed ` +
+          `(${message}); this module's static edges are not part of the walk. Reported, never ` +
+          'silent: a graph hole here is exactly what the graph-derived style and admission ' +
+          'passes must not read as "no edges".',
+      );
+    }
+    for (const specifier of analysis.specifiers) {
       let resolved: { id: string; external?: boolean | 'absolute' | 'relative' } | null;
       try {
         resolved = await resolver.resolve(specifier, file);
@@ -149,7 +207,7 @@ export async function walkModuleGraph(
     }
   }
 
-  return { files, skipped, dynamicImports, truncated };
+  return { files, skipped, dynamicImports, truncated, diagnostics };
 }
 
 /**
@@ -157,12 +215,22 @@ export async function walkModuleGraph(
  * import/export declarations only; a dynamic `import()` is deliberately not
  * part of the static reachability contract (`skipped.dynamic` is reserved for
  * callers that scan for them explicitly).
+ *
+ * A throwing analysis is returned as `failure`, never as an empty specifier
+ * list: the caller reports it (`OE_MODULE_WALK_ANALYSIS_FAILED`) instead of
+ * mistaking "analysis blew up" for "this module imports nothing".
  */
-function staticSpecifiersOf(source: string, file: string): readonly string[] {
+function staticSpecifiersOf(
+  source: string,
+  file: string,
+): { specifiers: readonly string[]; failure?: unknown } {
   try {
-    return analyzeModuleSemantics(source, file, { collectSpecifiers: true }).moduleSpecifiers ?? [];
-  } catch {
-    return [];
+    return {
+      specifiers:
+        analyzeModuleSemantics(source, file, { collectSpecifiers: true }).moduleSpecifiers ?? [],
+    };
+  } catch (failure) {
+    return { specifiers: [], failure };
   }
 }
 

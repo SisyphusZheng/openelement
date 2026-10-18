@@ -5,6 +5,7 @@ import { expect, test } from 'vitest';
 import { join } from 'node:path';
 import { OpenElementBuildContext } from '../src/vite/build-context.ts';
 import {
+  BuildEvidenceErrorCode,
   collectBuildArtifacts,
   createProductionBuildPlan,
   writeBuildEvidence,
@@ -57,6 +58,77 @@ test('production BuildPlan returns typed failure evidence for a missing output',
   // stable core case-insensitively.
   expect(result.errors[0]).toMatch(/no such file or directory/i);
   expect(result.errors[0]).toContain('/definitely/missing/openelement-build/dist');
+});
+
+test('request-time evidence is carried from the emitted server manifest', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'oe-build-plan-request-time-'));
+  try {
+    const ctx = new OpenElementBuildContext({});
+    ctx.phase3.root = root;
+    ctx.phase3.outDir = 'dist';
+    const plan = createProductionBuildPlan(ctx);
+    await mkdir(join(root, 'dist', 'server'), { recursive: true });
+    await writeFile(join(root, 'dist', 'index.html'), '<html>ok</html>');
+    await writeFile(
+      join(root, 'dist', 'server', 'server-manifest.json'),
+      JSON.stringify({ requestTimeRoutes: [{ path: '/live' }, { path: 42 }] }),
+    );
+
+    const result = collectBuildArtifacts(plan);
+    expect(result.success).toEqual(true);
+    // The documented route paths are carried; a non-string path is dropped
+    // from the evidence rather than failing the build.
+    expect(result.manifest.requestTimeRoutes).toEqual(['/live']);
+  } finally {
+    await rm(root, { recursive: true });
+  }
+});
+
+test('a malformed server manifest fails the build with its code, never a silent drop', async () => {
+  // Negative proof for the build-plan fail-open: an existing-but-unparseable
+  // server manifest used to return {} from a bare `catch {}`, so the build
+  // reported success with evidence indistinguishable from a pure-static one.
+  const root = await mkdtemp(join(tmpdir(), 'oe-build-plan-request-time-bad-'));
+  try {
+    const ctx = new OpenElementBuildContext({});
+    ctx.phase3.root = root;
+    ctx.phase3.outDir = 'dist';
+    const plan = createProductionBuildPlan(ctx);
+    await mkdir(join(root, 'dist', 'server'), { recursive: true });
+    await writeFile(join(root, 'dist', 'index.html'), '<html>ok</html>');
+    const manifestPath = join(root, 'dist', 'server', 'server-manifest.json');
+    await writeFile(manifestPath, '{ not json');
+
+    const result = collectBuildArtifacts(plan);
+    expect(result.success).toEqual(false);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain(BuildEvidenceErrorCode.REQUEST_TIME_MANIFEST_UNREADABLE);
+    expect(result.errors[0]).toContain(manifestPath);
+  } finally {
+    await rm(root, { recursive: true });
+  }
+});
+
+test('a non-array requestTimeRoutes field fails the build with its code', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'oe-build-plan-request-time-shape-'));
+  try {
+    const ctx = new OpenElementBuildContext({});
+    ctx.phase3.root = root;
+    ctx.phase3.outDir = 'dist';
+    const plan = createProductionBuildPlan(ctx);
+    await mkdir(join(root, 'dist', 'server'), { recursive: true });
+    await writeFile(join(root, 'dist', 'index.html'), '<html>ok</html>');
+    await writeFile(
+      join(root, 'dist', 'server', 'server-manifest.json'),
+      JSON.stringify({ requestTimeRoutes: '/live' }),
+    );
+
+    const result = collectBuildArtifacts(plan);
+    expect(result.success).toEqual(false);
+    expect(result.errors[0]).toContain(BuildEvidenceErrorCode.REQUEST_TIME_MANIFEST_UNREADABLE);
+  } finally {
+    await rm(root, { recursive: true });
+  }
 });
 
 test('writeBuildEvidence writes the build artifacts manifest', async () => {
