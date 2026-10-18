@@ -93,19 +93,24 @@ publish; a missing environment fails the job closed instead of publishing:
 The candidate gate is split so a pull request gets fast, honest feedback
 without giving up any release-time proof.
 
-- `@openelement/tools-repo#gate:source` — the local source gate (twelve
-  steps): `generate:all`, `typecheck`, the dependency-age quarantine check,
-  the Element and Router unit suites, markdown lint, the vp-selector-flags
-  check, the content-dates manifest check, the public-interface snapshot, the
-  request-time and base-path fixture gates, and the Element browser gate
-  (Chromium). No
+- `@openelement/tools-repo#gate:source` — the local source gate (thirteen
+  steps: twelve `@`-qualified tasks plus `check:dep-age`; the `gate:source`
+  script in `tools/repo/package.json` is the authoritative list and count):
+  `generate:all`, `typecheck`, the dependency-age quarantine check, the
+  Element and Router unit suites, markdown lint, the vp-selector-flags check,
+  `seams:check`, the content-dates manifest check, the public-interface
+  snapshot, the request-time and base-path fixture gates, and the Element
+  browser gate (Chromium). No
   workflow invokes this task; `pnpm run verify` and `pnpm run verify:core`
-  are its entry points. Ten of its twelve steps also run in AutoFlow CI
-  through the `lint`, `test`, `e2e`, and `pack` jobs, including
-  `@openelement/tools-repo#typecheck` (the `tools/` project), which the `lint`
-  job runs; the request-time and base-path fixture gates run only in the
+  are its entry points. Eleven of those steps also run in AutoFlow CI through
+  the `lint` and `test` jobs — `generate:all`, the `tools/` project's
+  `@openelement/tools-repo#typecheck`, the dependency-age check, markdown lint
+  (inside `vp run check`), the vp-selector-flags check, `seams:check`, the
+  content-dates manifest check and the public-interface snapshot in `lint`;
+  both unit suites and the Chromium browser gate in `test` — while the
+  request-time and base-path fixture gates run only in the
   `e2e-full` full-qualification layer (main pushes and `full_qualification`
-  dispatches) — so a PR can be green while they are unexercised. The separate
+  dispatches), so a PR can be green while they are unexercised. The separate
   `pack` job owns `@openelement/tools-release#gate:packed`; the
   `fresh-install` job runs the cold-cache install/typecheck proof only on the
   `main` push and full-qualification layer. A green

@@ -6,12 +6,28 @@ The repository publishes six public packages for two core products:
 - `@openelement/element` — Element.
 - `@openelement/compiler` — the Element compiler (semantic core plus Vite integration).
 - `@openelement/router` — Router Route Mode, Framework Mode, and the application lifecycle
-  tooling (Vite orchestration under `./vite`, Nitro mount under `./nitro-mount`, and the
-  `dev`/`build`/`start`/`preview` CLI under `./cli/*`). Host-tooling dependencies are optional
-  peers, so a Route Mode install pulls no Vite, Nitro, Element, or Node host dependencies.
-  `nitro` is deliberately not declared even as an optional peer: npm auto-places optional
-  peers when they resolve — applications that deploy through `./nitro-mount` install
-  `nitro` themselves (pinned line: `tools/release/nitro-compatibility.ts`, Vite 8 compatible).
+  tooling. The programmatic entry points are subpath exports: Vite orchestration under
+  `./vite`, the Nitro mount under `./nitro-mount`, and exactly two CLI subpaths,
+  `./cli/build` and `./cli/start`. The lifecycle commands are not exports — they are
+  subcommands of the package's bin, which npm installs under two names (`openelement` and
+  the short `oe`), and they are `dev`, `build` and `start`; `preview` is not a fourth
+  command, it is `start --mode=preview` (static-only serve, which refuses a build carrying
+  a request-time server). `dev` is deliberately bin-only: no application imports a dev
+  server, so it has no subpath.
+  A Route Mode **install** is the published manifest, not the workspace one. The tarball's
+  `dependencies` are `@openelement/protocol`, `@openelement/compiler`,
+  `@openelement/url-pattern-list`, `mime`, `pathe`, `postcss`, `postcss-value-parser` and
+  the pinned `typescript`; the host tooling — `vite`, `@openelement/element`, `hono`,
+  `@hono/vite-dev-server`, `marked`, `@tailwindcss/vite`, `unocss` and the Lit SSR
+  packages — is declared as **optional peers**, which npm never auto-installs, so a Route
+  Mode install pulls no Vite, Element, or Nitro host tooling. The pack step is what
+  performs that split: it moves `@openelement/element` out of `dependencies` into the
+  optional-peer set and strips every optional peer from `dependencies`
+  (`tools/release/publish-npm.ts`), which is why the workspace manifest still lists
+  Element and Vite as dependencies while the published artifact does not.
+  `nitro` is deliberately not declared even as an optional peer: applications that deploy
+  through `./nitro-mount` install `nitro` themselves (pinned line:
+  `tools/release/nitro-compatibility.ts`, Vite 8 compatible).
 - `@openelement/create` — thin consumer scaffolding.
 - `@openelement/ui` — experimental UI primitives, maintained in this repository outside the
   1.0 stable promise.

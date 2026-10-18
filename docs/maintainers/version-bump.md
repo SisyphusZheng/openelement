@@ -6,11 +6,12 @@ surface. This page replaces `version-bump-transitional.md`, deleted when the
 alpha9 C5 rewrite (#1508) absorbed the last hand-edited sites. The historical
 lessons that manual carried are folded in below.
 
-## The twelve text points
+## The twelve release-line points
 
 The count is derived from the six-package line: the dry run prints the plan and
-its `points:` line is the authoritative tally (currently 12 release-line points
-plus the workspace-member and root stamps below).
+its `points:` line is the authoritative tally — today 12 release-line points
+plus 4 workspace-member stamps (16 files in all). The workspace root declares
+no `version` field, so it is listed as a skipped member, never stamped.
 
 | # | site | token |
 | --- | --- | --- |
@@ -29,7 +30,7 @@ member
 (canonical globs, `!` exclusions honored) and stamps the members whose
 `version` sits on the release line's shape — same major.minor.patch base as
 the line, riding a prerelease train. The private members (`www`,
-`tools/repo`, `tools/release`, `apps/saas`) ride the same train as the
+`tools/repo`, `tools/release`, `apps/saas` — four today) ride the same train as the
 published packages and must never fall behind: a lagging member is rewritten
 from its own current version straight to the target. Members on a
 non-release-line version (the test fixtures' `0.0.0`) are never touched; the
@@ -63,7 +64,8 @@ pnpm --dir tools/repo run version-bump 1.0.0-alpha.N --write      # apply + gene
 ```
 
 1. **Review the dry run.** It prints the diff of every pending point — the
-   twelve release-line sites plus each lagging workspace member (#1524) — the
+   twelve release-line sites plus each lagging release-line-shaped workspace
+   member (#1524; four today, so a full plan is a 16-file `points:` line) — the
    skipped-member audit, and the generated-output preview; it fails closed if
    any anchor has drifted (for example a hand-edited sentence the rewriter
    can no longer find). When the release line already sits at the target but

@@ -24,9 +24,13 @@ you import from the package root or use Framework Mode. The declarations are
 checked against that contract by a strict, isolated npm consumer.
 
 Host tooling lives behind explicit subpath exports (`./vite`, `./cli/build`,
-`./cli/start`) whose dependencies are optional peers; the lifecycle commands
-run through the package's `openelement` bin, whose subcommands dispatch to
-the same two CLI entries. The `./nitro-mount`
+`./cli/start`); Vite is an optional peer, so a Route Mode install does not pull
+it. The lifecycle commands are bin subcommands rather than exports: the package
+installs one dispatcher under two names — the long `openelement` and the short
+`oe` — and it answers `dev`, `build` and `start`, where `preview` is not a
+fourth command but `start --mode=preview` (static-only serve). `dev` is
+bin-only: no application imports a dev server, so it deliberately has no
+subpath. The `./nitro-mount`
 deployment subpath instead expects the deploying application to install
 `nitro` itself: declaring it as a peer would make npm auto-place
 `nitro@3.0.0`, whose own `vite@^7` peer conflicts with the tooling's

@@ -16,10 +16,12 @@ static About page, an `/api/ping` server route, and a Tailwind-ON design-token
 sheet (the `@theme` role table; one template, no variants). The generated
 project is a plain Node project with no package-manager pin: every script is a
 plain command, the manifest declares no `packageManager` field, and the
-scaffold ships no `pnpm-workspace.yaml`, so npm, pnpm, yarn, and bun can all
-create → install → dev → build → test → fmt/lint it. The repository's own
+scaffold ships no `pnpm-workspace.yaml`, so the generated project installs and
+runs its lifecycle scripts under npm, pnpm, yarn, or bun. (The bootstrap itself
+is documented as `npm create` / `npx`; the `pnpm dlx` form names the two-bin
+package explicitly.) The repository's own
 development flow (Vite+ / `vp`) stays in this repository and appears nowhere in
-the generated project.
+the generated manifest or scripts.
 
 ## Usage (1.0 Alpha)
 
@@ -112,11 +114,14 @@ npm create @openelement@0.43 my-app
 ## Requirements
 
 - **Bootstrap:** Node.js 24.2+ with npm (or pnpm for the `pnpm dlx` variant) —
-  the verified floor this repository exercises in CI.
+  the verified floor this repository exercises in CI. The generator checks the
+  host version before it writes anything: an older Node exits 1 with the exact
+  install command instead of scaffolding a project it cannot run.
 - **Generated project:** Node.js 24.2+ (the floor the packed `@openelement/*`
-  engines declare and CI exercises; `.node-version` pins the development
-  line) and any one of npm, pnpm, yarn, or bun for the lifecycle scripts —
-  nothing in the scaffold requires a specific manager.
+  engines declare and CI exercises) and any one of npm, pnpm, yarn, or bun for
+  the lifecycle scripts — nothing in the scaffold requires a specific manager.
+  The scaffold ships a `.node-version` pinning 24.18.0, the development line
+  this repository pins at its root.
 - **git (optional):** `git init` runs by default and skips silently when git
   is not on PATH.
 
@@ -153,6 +158,8 @@ npm create @openelement@0.43 my-app
     `prefers-color-scheme`)
 - `public/` - static assets
 - `README.md` and `.gitignore` - starter docs and ignore rules
+- `.node-version` - the Node development pin (`24.18.0`; the supported floor
+  stays `24.2`)
 
 The generated dependency set intentionally keeps protocol and build internals
 out of the starter surface. Advanced contracts remain available through the
