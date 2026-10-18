@@ -14,6 +14,7 @@
     "e2e:browsers": "node ../tools/repo/site-e2e-run.ts --retries 1",
     "generate:content": "node ../tools/repo/run-in.ts --root .. -- node www/tools/generate-site-content-data.ts",
     "check:content-data": "node ../tools/repo/run-in.ts --root .. -- node www/tools/generate-site-content-data.ts --check",
+    "check:site-budget": "node ../tools/repo/run-in.ts --root .. -- node www/tools/check-site-budget.ts",
     "generate:nav": "node ../tools/repo/run-in.ts --root .. -- node www/tools/generate-site-nav.ts",
     "check:nav": "node ../tools/repo/run-in.ts --root .. -- node www/tools/generate-site-nav.ts --check",
     "generate:article-routes": "node ../tools/repo/run-in.ts --root .. -- node www/tools/generate-site-article-routes.ts",

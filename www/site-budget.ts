@@ -36,3 +36,44 @@ export const SITE_BUDGET = {
   islandKB: 84,
   totalJsKB: 344,
 } as const;
+
+/**
+ * Report-only dimensions (T10 R7, G3-approved): the numbers the enforced SLO
+ * above never covered — page HTML, first-view CSS, the font artifact and the
+ * home page's off-origin hero media. They are BASELINES measured on the
+ * alpha.15 candidate build (2026-10-18, lane/t10-audit), not aspirations:
+ * `www/tools/check-site-budget.ts` prints actual-vs-baseline and exits 0
+ * unless `--strict` is passed, so this phase records the shape of the site
+ * without turning a fresh measurement into a red gate.
+ *
+ * Why report-only first: these are whole-page figures measured on one machine.
+ * The repository already documents the cross-runner byte spread (the tolerance
+ * notes in www/tools/check-doc-figures.ts), so widening the SLO needs a
+ * tolerance policy and a stable CI baseline — a deliberate follow-up, not a
+ * detail to guess at now.
+ *
+ * `mediaKB` is deliberately the largest number in this file: the home page's
+ * dragon frames and idle video are fetched from assets.openelement.org and are
+ * a research target (HERO constraint: study only, never gated). It is listed so
+ * the figure is visible next to the others, not so a gate can fail on it.
+ */
+export const SITE_BUDGET_REPORT_ONLY = {
+  /** Median gzipped bytes of a page's HTML (the generated mega-page excluded). */
+  htmlMedianKB: 15,
+  /** Largest gzipped HTML page — the generated /reference index. */
+  htmlMaxKB: 230,
+  /** Gzipped bytes of every stylesheet one page links (both big sheets). */
+  cssKB: 43,
+  /** Every font file the artifact ships, raw bytes (woff2 is already compressed). */
+  fontKB: 377,
+  /**
+   * Media bytes INSIDE the artifact that a built page references. Deliberately
+   * 0: the site ships no same-origin images beyond SVG icons, and the home
+   * page's ~10 MB of dragon media lives on assets.openelement.org (HEAD-measured
+   * 59 frames approx 5.6 MB + a 5,061,261 B idle mp4, recorded in the T10
+   * register §2.7). A number copied from that origin into this file would be a
+   * stale claim the build cannot verify, so the off-origin figure stays in the
+   * register where its measurement command lives.
+   */
+  mediaKB: 0,
+} as const;
