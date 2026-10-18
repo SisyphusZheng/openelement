@@ -738,11 +738,10 @@ export class Lowering {
       if (name === 'class' && literal !== true && text !== null) this.collectClassCandidates(text);
     }
 
+    // Sink ownership is the owning element's identity, never the path: branch
+    // element addresses are branch-relative, so sibling branches share one.
     const hasHtmlSink = this.parts.some(
-      (part) =>
-        part.k === 'html' &&
-        part.path.length === path.length &&
-        part.path.every((value, index) => value === path[index]),
+      (part) => part.k === 'html' && part.location.node === elementId,
     );
     if (trustedHtmlCapability && !hasHtmlSink) {
       this.fail(sourceNode, 'OEC9026', 'trustedHtml capability marker requires an innerHTML sink');
