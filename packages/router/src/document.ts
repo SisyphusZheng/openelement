@@ -33,7 +33,7 @@ import {
   type ClientScriptDescriptor,
   normalizeClientScriptDescriptors,
 } from './loading/module/nonce.ts';
-import { assertNoScriptTags, assertTrustedHeadHtml } from './internal/head-safety.ts';
+import { assertAllowlistedHeadFragment, assertNoScriptTags } from './internal/head-safety.ts';
 import { authoringError, DocumentErrorCode } from './internal/error-codes.ts';
 
 export type { ClientScriptDescriptor };
@@ -232,12 +232,17 @@ export function resolvePageDocument(
     fail('head.dangerouslyHeadFragments must be an array of strings.');
   }
   // Route-resolved fragments are the only raw-head channel reachable from
-  // request data (loader output, params, query), so they get the same two
-  // fail-closed predicates as the config-time channels: no <script> at all,
-  // and every <style> must pass the CSS blacklist.
+  // request data (loader output, params, query), so they are held to a whole
+  // -fragment allowlist, not just the script/style predicates the config-time
+  // channels (headExtras, inject.headFragments — build configuration, not
+  // request data) use: only top-level <meta>/<link>/<style> elements plus
+  // whitespace may appear, so request data can never close the head early,
+  // inject a body, or hijack the document's base URL. The script predicate
+  // stays first so the failing author gets its established "use inject.scripts"
+  // guidance (and every <script> spelling the regex knows is named as such).
   for (const fragment of dangerouslyHeadFragments ?? []) {
     assertNoScriptTags(fragment, 'head.dangerouslyHeadFragments');
-    assertTrustedHeadHtml(fragment, 'head.dangerouslyHeadFragments');
+    assertAllowlistedHeadFragment(fragment, 'head.dangerouslyHeadFragments');
   }
   if (canonical !== undefined && typeof canonical !== 'string') {
     fail('head.canonical must be a string.');

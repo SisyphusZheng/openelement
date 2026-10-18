@@ -7,7 +7,11 @@
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
 import { OpenElementError } from '@openelement/element';
-import { assertNoScriptTags, assertTrustedHeadHtml } from '../src/internal/head-safety.ts';
+import {
+  assertAllowlistedHeadFragment,
+  assertNoScriptTags,
+  assertTrustedHeadHtml,
+} from '../src/internal/head-safety.ts';
 import { buildHeadExtras, validateSafeUrl } from '../src/vite/head-injection.ts';
 import { buildCriticalHeadExtras } from '../src/vite/internal/ssg/critical-assets.ts';
 
@@ -818,4 +822,129 @@ test('assertTrustedHeadHtml: escaped whitespace cannot split the CSS blacklist',
     '<style>@font-face { font-family: X; src: url("/assets/fonts/x.woff2") format("woff2") }</style>',
     'test-input',
   );
+});
+
+// ─── assertAllowlistedHeadFragment (route-resolved channel) ────
+//
+// The route-resolved fragment channel accepts ONLY top-level meta/link/style
+// elements and whitespace. These are the exact negative cases the independent
+// audit proved reached the head raw before this gate (probe-s5/s5b), plus the
+// ambiguous shapes the scanner must fail closed on.
+
+const ROUTE_FRAGMENT_CONTEXT = 'head.dangerouslyHeadFragments';
+
+test('assertAllowlistedHeadFragment: accepts the meta/link/style allowlist', () => {
+  const allowed = [
+    '',
+    '   \n\t ',
+    '<meta charset="utf-8">',
+    '<meta property="og:title" content="Notes">',
+    '<link rel="preload" href="/font.woff2" as="font" crossorigin>',
+    '<style media="print">body { color: black; }</style>',
+    '  <meta name="a" content="<not markup>">\n<link rel="icon" href="/i.svg"> ',
+    '<META NAME="x" CONTENT="y">',
+  ];
+  for (const fragment of allowed) {
+    assertAllowlistedHeadFragment(fragment, ROUTE_FRAGMENT_CONTEXT);
+  }
+});
+
+test('assertAllowlistedHeadFragment: rejects every way out of the head', () => {
+  const rejected = [
+    // closes the head / injects a body
+    '</head><body><h1>pwned</h1>',
+    // hijacks every relative URL on the page
+    '<base href="https://evil.example/">',
+    // comments can hide the rest of the head from later scanners
+    '<!--',
+    '<!-- <meta charset="utf-8">',
+    // scripts in every spelling, including an EOF-terminated opener
+    '<script',
+    '<script>',
+    '<script src="/x.js"></script>',
+    '<script/>',
+    // embedders and foreign content
+    '<iframe src="/x"></iframe>',
+    '<object data="/x"></object>',
+    '<template><meta charset="utf-8"></template>',
+    '<svg><g></g></svg>',
+    '<math><mtext></mtext></math>',
+    // any other tag and any text
+    '<div>not a head element</div>',
+    'plain text between tags',
+    '<title>t</title>',
+    // unterminated or ambiguous markup
+    '<meta charset="utf-8"',
+    '<style>body { color: black; }',
+    '<style/>',
+    '<meta name="x" content=<script>>',
+    '<meta name="x" content="y"',
+    '<',
+  ];
+  for (const fragment of rejected) {
+    assertThrowsIncludes(
+      () => assertAllowlistedHeadFragment(fragment, ROUTE_FRAGMENT_CONTEXT),
+      OpenElementError,
+      ROUTE_FRAGMENT_CONTEXT,
+    );
+  }
+});
+
+test('assertAllowlistedHeadFragment: the style element keeps the CSS blacklist', () => {
+  assertThrowsIncludes(
+    () =>
+      assertAllowlistedHeadFragment(
+        '<style>@import url("https://evil.example/x.css");</style>',
+        ROUTE_FRAGMENT_CONTEXT,
+      ),
+    OpenElementError,
+    'Unsafe CSS',
+  );
+  assertThrowsIncludes(
+    () =>
+      assertAllowlistedHeadFragment(
+        '<style>body { background: url("javascript:alert(1)"); }</style>',
+        ROUTE_FRAGMENT_CONTEXT,
+      ),
+    OpenElementError,
+    'Unsafe CSS',
+  );
+});
+
+test('assertAllowlistedHeadFragment: allowlisted tags cannot smuggle script via event handlers', () => {
+  const rejected = [
+    '<link rel="stylesheet" href="/x.css" onload="alert(1)">',
+    '<link rel="stylesheet" href="/x.css" onerror="alert(1)">',
+    '<link rel=stylesheet href=/x.css onload=alert(1)>',
+    '<link rel="stylesheet" href="/x.css" ONLOAD="alert(1)">',
+    '<link rel="stylesheet" href="/x.css" onload>',
+    // The meta spelling of a redirect is the <base> hijack this gate refuses.
+    '<meta http-equiv="refresh" content="0; url=https://evil.example/">',
+    '<meta http-equiv=refresh content=0>',
+    // Malformed attribute grammar fails closed rather than guessing the parse.
+    '<meta charset="utf-8" / junk>',
+    '<meta charset="utf-8" = "x">',
+    '<meta charset="utf-8>',
+  ];
+  for (const fragment of rejected) {
+    assertThrowsIncludes(
+      () => assertAllowlistedHeadFragment(fragment, ROUTE_FRAGMENT_CONTEXT),
+      OpenElementError,
+      ROUTE_FRAGMENT_CONTEXT,
+    );
+  }
+});
+
+test('assertAllowlistedHeadFragment: ordinary meta/link attributes stay allowed', () => {
+  const allowed = [
+    '<link rel="stylesheet" href="/x.css" media="print" integrity="sha384-x" crossorigin>',
+    '<link rel="preload" href="/font.woff2" as="font" type="font/woff2" crossorigin />',
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'">',
+    '<meta charset=utf-8>',
+    '<meta name=viewport content="width=device-width, initial-scale=1">',
+    '<meta property="og:image" content="https://cdn.example/i.png">',
+  ];
+  for (const fragment of allowed) {
+    assertAllowlistedHeadFragment(fragment, ROUTE_FRAGMENT_CONTEXT);
+  }
 });

@@ -21,6 +21,7 @@ import {
   actionRedirectResponse,
   createActionBodyLimit,
   runActionProtocol,
+  safeRedirectLocation,
 } from '../src/vite/internal/server-runtime/action-runtime.ts';
 import {
   boundRequestScope,
@@ -589,4 +590,102 @@ test('createActionBodyLimit swaps the bound request for the buffered twin on str
   );
   expect(await response.text()).toEqual('message=streamed');
   expect(buffered).not.toBeNull();
+});
+
+// ─── PRG Location normalization (alpha15 security lane S4) ────────────
+//
+// The PRG target is derived from the request's own pathname. A pathname that
+// starts with `//` (reachable whenever a catch-all route matches, e.g.
+// `POST //evil.example/x`) is protocol-relative once emitted as `Location`
+// (and in the fetch channel's `redirect` ActionResult), so the browser
+// navigates to another origin. The target is one canonical absolute path on
+// this origin: exactly one leading `/`, no control characters, search kept.
+
+async function successRedirect(
+  path: string,
+  fetchChannel: boolean,
+): Promise<{ status: number; location: string | null }> {
+  const { context, state } = formPost({
+    path,
+    origin: 'https://pages.example.test',
+    fetchHeader: fetchChannel,
+  });
+  const execution = await runActionProtocol(
+    context,
+    { action: () => ({ ok: true }) },
+    { env: {} },
+    statusPage,
+    state,
+  );
+  const response = execution.response!;
+  if (fetchChannel) {
+    const body = (await response.json()) as { type: string; status: number; location: string };
+    return { status: body.status, location: body.location };
+  }
+  return { status: response.status, location: response.headers.get('Location') };
+}
+
+test('PRG Location never emits a protocol-relative target (both channels)', async () => {
+  for (const fetchChannel of [false, true]) {
+    expect(await successRedirect('//evil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/evil.example/x',
+    });
+    expect(await successRedirect('///evil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/evil.example/x',
+    });
+  }
+});
+
+test('PRG Location canonicalizes a backslash target and keeps the same-origin path', async () => {
+  for (const fetchChannel of [false, true]) {
+    // WHATWG URL parsing folds a raw backslash into `/` for special schemes,
+    // so `/\evil.example/x` arrives as `//evil.example/x` and must canonicalize.
+    expect(await successRedirect('/\\evil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/evil.example/x',
+    });
+    // A percent-encoded backslash is a path character, not a separator: the
+    // canonical form keeps it and stays on this origin.
+    expect(await successRedirect('/%5Cevil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/%5Cevil.example/x',
+    });
+  }
+});
+
+test('PRG Location keeps search params and stays a single absolute path', async () => {
+  for (const fetchChannel of [false, true]) {
+    expect(await successRedirect('/form?keep=1&other=2', fetchChannel)).toEqual({
+      status: 303,
+      location: '/form?keep=1&other=2',
+    });
+    // Percent-encoded CR/LF never become raw bytes in the header.
+    expect(await successRedirect('/form%0D%0Azip', fetchChannel)).toEqual({
+      status: 303,
+      location: '/form%0D%0Azip',
+    });
+  }
+});
+
+test('safeRedirectLocation: one canonical absolute path, whatever the input shape', () => {
+  // Normal targets are unchanged (existing PRG behaviour, search kept).
+  expect(safeRedirectLocation('/form', 'keep=1')).toEqual('/form?keep=1');
+  expect(safeRedirectLocation('/form', '')).toEqual('/form');
+  // Protocol-relative and multi-slash pathnames collapse to exactly one `/`.
+  expect(safeRedirectLocation('//evil.example/x', '')).toEqual('/evil.example/x');
+  expect(safeRedirectLocation('///evil.example/x', '')).toEqual('/evil.example/x');
+  expect(safeRedirectLocation('//', '')).toEqual('/');
+  expect(safeRedirectLocation('', '')).toEqual('/');
+  // Raw backslashes are path separators to the WHATWG parser: canonicalize.
+  expect(safeRedirectLocation('\\\\evil.example/x', '')).toEqual('/evil.example/x');
+  expect(safeRedirectLocation('/a\\b', '')).toEqual('/a/b');
+  // Control characters never reach the header/JSON target.
+  expect(safeRedirectLocation('/a\r\nb\tc\u0000d', '')).toEqual('/abcd');
+  expect(safeRedirectLocation('/form', 'x=1\r\ny=2')).toEqual('/form?x=1y=2');
+  // Percent-encoded bytes are already header-safe path/query characters.
+  expect(safeRedirectLocation('/%5Cevil.example/x', 'q=%0D%0A')).toEqual(
+    '/%5Cevil.example/x?q=%0D%0A',
+  );
 });

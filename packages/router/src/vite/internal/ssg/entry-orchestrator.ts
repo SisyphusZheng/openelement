@@ -51,8 +51,39 @@ import { renderNotFoundRoute } from './entry-not-found-codegen.ts';
 import { pageRouteTagExpr, renderImport } from './entry-route-helpers.ts';
 import { renderApiRoute, renderMiddleware } from './entry-server-codegen.ts';
 import { renderSsgSection } from './entry-render-ssg.ts';
+import { hasControlCharacter } from '../../../internal/control-characters.ts';
+import { buildError, DescriptorErrorCode } from '../../../internal/error-codes.ts';
 import { quoteGeneratedJavaScriptValue } from './codegen-literals.ts';
 import { selectRendererAdapter } from './renderer-adapter.ts';
+
+/**
+ * One module import the generated entry embeds: `import * as $v from <q>`.
+ *
+ * The path comes from a project filename (route/renderer/middleware), so it is
+ * always QUOTED with {@linkcode quoteGeneratedJavaScriptValue}: an apostrophe,
+ * backslash or line terminator in the filename is a character inside the
+ * emitted string, never a quote that ends the specifier and injects code into
+ * the entry the build and SSG phases import. This gate refuses the values a
+ * module graph cannot carry at all — a non-string from a hand-built
+ * descriptor, an empty path, or control characters — with a stable code
+ * instead of emitting a specifier that parses but can never resolve.
+ */
+function assertEmittableModuleImportPath(
+  importPath: unknown,
+  kind: string,
+): asserts importPath is string {
+  if (
+    typeof importPath !== 'string' ||
+    importPath.length === 0 ||
+    hasControlCharacter(importPath)
+  ) {
+    throw buildError(
+      DescriptorErrorCode.MODULE_IMPORT,
+      `A ${kind} module import path cannot be emitted into the generated entry: ` +
+        `${JSON.stringify(importPath)}. Module paths must be non-empty printable strings.`,
+    );
+  }
+}
 
 /**
  * Render an EntryDescriptor into a complete virtual module string.
@@ -165,14 +196,25 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push('');
 
   // --- Route module imports ---
+  // Paths are project filenames: quote them (a filename may contain `'`, `\`
+  // or line terminators) and fail closed on values the emitter cannot carry.
   for (const route of [...desc.apiRoutes, ...desc.pageRoutes]) {
-    lines.push(`import * as ${route.varName} from '${route.importPath}'`);
+    assertEmittableModuleImportPath(route.importPath, 'route');
+    lines.push(
+      `import * as ${route.varName} from ${quoteGeneratedJavaScriptValue(route.importPath)}`,
+    );
   }
   for (const renderer of desc.renderers) {
-    lines.push(`import * as ${renderer.varName} from '${renderer.importPath}'`);
+    assertEmittableModuleImportPath(renderer.importPath, 'renderer');
+    lines.push(
+      `import * as ${renderer.varName} from ${quoteGeneratedJavaScriptValue(renderer.importPath)}`,
+    );
   }
   for (const mwScope of desc.middlewareScopes) {
-    lines.push(`import * as ${mwScope.varName} from '${mwScope.importPath}'`);
+    assertEmittableModuleImportPath(mwScope.importPath, 'middleware');
+    lines.push(
+      `import * as ${mwScope.varName} from ${quoteGeneratedJavaScriptValue(mwScope.importPath)}`,
+    );
   }
   // middleware.use entries are MODULE PATHS — the entry imports each module
   // and hands its default export to the factory, which composes them at the

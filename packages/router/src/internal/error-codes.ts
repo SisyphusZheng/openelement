@@ -115,6 +115,14 @@ export const DescriptorErrorCode = {
   CORS: 'OE_DESCRIPTOR_CORS',
   /** A `middleware.use` entry is not a module path (string). */
   MIDDLEWARE_USE: 'OE_DESCRIPTOR_MIDDLEWARE_USE',
+  /**
+   * A route/renderer/middleware module path the generated entry cannot
+   * embed: not a string, empty, or carrying control characters. The entry
+   * quotes every specifier, so this gate only refuses values a module graph
+   * cannot carry (a hand-built descriptor or a filename the scanner should
+   * have rejected) — never a merely unusual-but-printable path.
+   */
+  MODULE_IMPORT: 'OE_DESCRIPTOR_MODULE_IMPORT',
   /** A stream route reaches an opaque renderer wrapper. */
   STREAM_RENDERER: 'OE_DESCRIPTOR_STREAM_RENDERER',
   /** Streaming conflicts with the compiled layout wrapper. */

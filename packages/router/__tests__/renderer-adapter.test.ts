@@ -118,13 +118,18 @@ const routes: RouteEntry[] = [
 // checkout: 2931 (58-char root) → 2862, and the CI checkout produces this
 // same 2862/hash instead of 2914. The lit entry is byte-IDENTICAL (3167,
 // same hash): it carries no element-services import at all.
+// alpha15 security lane S3 re-baseline: the route/renderer/middleware module
+// imports are emitted through quoteGeneratedJavaScriptValue (a generated-entry
+// code-injection fix), so the server entries' specifiers changed from single to
+// double quotes: same byte COUNT (16773/16876, the cross-mode delta is still
+// 103), new hashes. Client bytes are untouched.
 const expected = {
   native: {
-    server: [16773, '04e5526b2999d71d4a70251bf63283d4c2191fe91850257fbd99adb628df702c'],
+    server: [16773, 'cf8c6e65e5f10d6f38881e1844318eb14eba6a5100fa8581153a11f0039ce401'],
     client: [2862, 'e9629cded31adcb2237afa612acd50c1bd9cd8a17dbd889ab1ae46066616e5ed'],
   },
   lit: {
-    server: [16876, '320a139438dc9b1d6d421c329631899eb5cff657769672ea8e45e0f30a67c724'],
+    server: [16876, 'b5754048cfe273e4db9150deaa01aab89df17a387c9dda3f333e68294072b6c2'],
     client: [3167, '7dcb18fd659ffe53b039adfc5139a2496e1b4c02b5d4322ed6c216606511f418'],
   },
 } as const;

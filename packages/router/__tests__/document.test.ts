@@ -319,3 +319,51 @@ test('resolvePageDocument + wrapInDocument: the resolved JSON-LD reaches <head> 
     headline: 'Notes</script><script>alert(1)</script>',
   });
 });
+
+// ─── Route-resolved raw fragment allowlist (alpha15 security lane S5) ───
+//
+// `dangerouslyHeadFragments` is the only raw-head channel reachable from
+// request data (loader output, params, query), and it is concatenated into
+// `<head>` as authored bytes. The two legacy predicates (script regex + style
+// scan) let `</head>`, `<base>`, comments and an EOF-terminated `<script`
+// through, so the route channel now admits ONLY top-level meta/link/style
+// elements plus inter-element whitespace.
+
+test('resolvePageDocument: dangerouslyHeadFragments rejects markup that can leave the head', () => {
+  const escapes = [
+    '</head><body><h1>pwned</h1>',
+    '<base href="https://evil.example/">',
+    '<!-- <meta charset="utf-8">',
+    '<script',
+    '<iframe src="/x"></iframe>',
+    '<object data="/x"></object>',
+    '<template><meta charset="utf-8"></template>',
+    '<svg><g></g></svg>',
+    '<math><mtext></mtext></math>',
+    '<div>not a head element</div>',
+    'plain text between tags',
+    '<meta charset="utf-8"',
+  ];
+  for (const fragment of escapes) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ dangerouslyHeadFragments: [fragment] }, ctx()),
+      OpenElementError,
+      'head.dangerouslyHeadFragments',
+    );
+  }
+});
+
+test('resolvePageDocument: dangerouslyHeadFragments accepts the meta/link/style allowlist', () => {
+  const document = resolvePageDocument(
+    {
+      dangerouslyHeadFragments: [
+        '  <meta property="og:title" content="Notes">\n',
+        '<link rel="preload" href="/font.woff2" as="font" crossorigin>',
+        '<style media="print">body { color: black; }</style>',
+        ' <meta name="x" content="<not markup>"> ',
+      ],
+    },
+    ctx(),
+  );
+  expect(document.dangerouslyHeadFragments?.length).toEqual(4);
+});
