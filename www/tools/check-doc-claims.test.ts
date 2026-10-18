@@ -113,6 +113,42 @@ describe('version literals', () => {
   test('a version inside an address literal is not a claim', () => {
     expect(pick(run({ 'README.md': 'Bind to 127.0.0.1 only.' }), 'version')).toEqual([]);
   });
+
+  test('engine build numbers pass in an evidence record, whatever their digits', () => {
+    const ledger = 'docs/maintainers/known-reds-ledger.md';
+    // The real shape: the three engines a qualification run used.
+    expect(
+      pick(
+        run({ [ledger]: 'every engine (chromium 147.0.7727.15, firefox 148.0.2, webkit 26.4)' }),
+        'version',
+      ),
+    ).toEqual([]);
+    // The class is a SHAPE, not a value: an unseen build still passes here, so
+    // the exemption cannot rot into a list of blessed numbers.
+    expect(pick(run({ [ledger]: 'firefox 999.999.999' }), 'version')).toEqual([]);
+    // docs/release holds qualification evidence too.
+    expect(pick(run({ 'docs/release/evidence.md': 'chromium 147.0.7727.15' }), 'version')).toEqual(
+      [],
+    );
+  });
+
+  test('the same engine number outside an evidence record stays red', () => {
+    const findings = pick(
+      run({ 'README.md': 'Tested on firefox 148.0.2, chromium and webkit.' }),
+      'version',
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain('evidence-class');
+  });
+
+  test('a tree version stays red even inside the evidence record', () => {
+    const findings = pick(
+      run({ 'docs/maintainers/known-reds-ledger.md': 'the source line is 1.0.0-alpha.99' }),
+      'version',
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.message).toContain('not a tree version');
+  });
 });
 
 describe('package subpaths', () => {

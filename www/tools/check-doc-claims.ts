@@ -639,14 +639,56 @@ export function codeSpans(text: string): Array<{ value: string; index: number }>
 
 const PLACEHOLDER = /[<>{}$…]|\.\.\./;
 
+/**
+ * Engine-version claims: `chromium 147.0.7727.15`, `firefox 148.0.2`,
+ * `webkit 26.4`, `Safari 16.4`.
+ *
+ * A browser build number is not a release version. It names the engine that
+ * produced a qualification result, and the exact build IS the evidence: an
+ * "engine unchanged" claim, a three-engine pass and a flake attribution all
+ * lose their value if the number is rounded, and a value-shaped allowlist entry
+ * would let a typo (`firefox 999.999.999`) pass. So this class is exempt BY
+ * SHAPE — any engine build number passes, whatever its digits — and BY SCOPE:
+ * the exemption holds only in the evidence files that record qualification
+ * results (`docs/maintainers/known-reds-ledger.md` and `docs/release/**`).
+ * Everywhere else an engine number stays a red unknown-version finding, with a
+ * message that names this class and where it belongs. That keeps the rule's
+ * default intact: a version literal no manifest can explain must fail unless it
+ * is a browser build in an evidence record.
+ */
+export const ENGINE_EVIDENCE_FILES: readonly string[] = ['docs/maintainers/known-reds-ledger.md'];
+
+/** Whether a file may state engine build numbers as evidence. */
+export function isEngineEvidenceFile(file: string): boolean {
+  return ENGINE_EVIDENCE_FILES.includes(file) || file.startsWith('docs/release/');
+}
+
+const ENGINE_PREFIX =
+  /(?:^|[^\w-])(firefox|chromium|webkit|chrome|safari|gecko|playwright|edge)[\s:=]{0,2}v?$/i;
+
+/**
+ * The engine name immediately preceding the version literal at `index`, or null
+ * when the literal is an ordinary version. Reads the same line only, so a
+ * sentence that mentions an engine earlier cannot exempt an unrelated number.
+ */
+export function engineVersionContext(text: string, index: number): string | null {
+  const lineStart = text.lastIndexOf('\n', index - 1) + 1;
+  const match = ENGINE_PREFIX.exec(text.slice(lineStart, index));
+  return match ? match[1]! : null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Rules
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** 1. Version literals must be a version the tree or the registry actually has. */
+/**
+ * 1. Version literals must be a version the tree or the registry actually has —
+ * except an engine build number inside an evidence record (see
+ * {@link ENGINE_EVIDENCE_FILES}).
+ */
 export function checkVersions(files: Map<string, string>, corpus: Corpus): Finding[] {
   const findings: Finding[] = [];
-  const pattern = /(?<![\w.])v?(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)(?![\w.])/g;
+  const pattern = /(?<![\w.])v?(\d+\.\d+\.\d+(?:-[a-z]+\.\d+)?)(?![\w])(?!\.\d)/g;
   for (const [file, text] of files) {
     for (const match of text.matchAll(pattern)) {
       const version = match[1]!;
@@ -655,6 +697,23 @@ export function checkVersions(files: Map<string, string>, corpus: Corpus): Findi
         allowed(corpus, 'version', version, file) ||
         allowed(corpus, 'version', `v${version}`, file)
       ) {
+        continue;
+      }
+      const engine = engineVersionContext(text, match.index!);
+      if (engine !== null) {
+        // The claim is an engine build number: exempt in an evidence record,
+        // still red anywhere else (the default the rule exists to keep).
+        if (isEngineEvidenceFile(file)) continue;
+        findings.push({
+          rule: 'version',
+          file,
+          line: lineOf(text, match.index!),
+          value: version,
+          message:
+            `names the engine build "${engine} ${version}". An engine build number is evidence-class: ` +
+            `state it in ${ENGINE_EVIDENCE_FILES.join(' or ')} / docs/release/** (where the exact build is the record), ` +
+            'or drop the number — a version literal here must match a tree version, a dependency pin, or the registry',
+        });
         continue;
       }
       findings.push({
