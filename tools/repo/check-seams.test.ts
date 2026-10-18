@@ -15,10 +15,15 @@
  *   - the guard matrix: a nonexistent `*.test.ts` path is a violation, a repo
  *     guard script (`check-*.ts`) is accepted, and a fixture-relative token
  *     (`e2e/probe.spec.ts` after the fixture directory) resolves;
- *   - the vaccine matrix: the missing/unreadable-behavior statement is
- *     required, and the wording the audit used to find the 14 lacking rows is
- *     accepted;
- *   - the live tree: the registry as committed is clean.
+ *   - the vaccine matrix: the literal missing/unreadable-behavior clause is
+ *     required (the earlier liberal vocabulary match — "fails closed" anywhere
+ *     in the row — no longer satisfies it), and a row carrying only that
+ *     vocabulary is reported;
+ *   - the evidence matrix: guard paths must be Git-tracked (a path that exists
+ *     only in this working tree is reported), and an unreadable Git fails the
+ *     check closed instead of assuming reproducibility;
+ *   - the live tree: the registry as committed is clean, and every row carries
+ *     the explicit clause.
  */
 import { expect, test } from 'vitest';
 import { fileURLToPath } from 'node:url';
@@ -105,6 +110,49 @@ test('a row without the missing/unreadable-behavior statement is reported', () =
   expect(kinds(report.violations)).toContain('missing-vaccine');
 });
 
+test('the liberal vaccine vocabulary without the literal clause is reported', () => {
+  const report = checkSeamsMarkdown(
+    registry([
+      `| Sample | owner | writer → reader | \`artifact\` absent → the reader fails closed with a default; nothing else. | \`tools/repo/check-vp-selector-flags.test.ts\` |`,
+    ]),
+    repoRoot,
+  );
+  expect(kinds(report.violations)).toContain('missing-vaccine');
+  expect(report.explicitRows).toBe(0);
+});
+
+test('guard evidence that exists but is not Git-tracked is reported', () => {
+  const report = checkSeamsMarkdown(
+    registry([
+      `| Sample | owner | writer → reader | \`artifact\` | ${VACCINE} \`tools/repo/check-vp-selector-flags.test.ts\` |`,
+    ]),
+    repoRoot,
+    { tracked: new Set(['docs/architecture/seams.md']) },
+  );
+  expect(kinds(report.violations)).toContain('guard-not-tracked');
+});
+
+test('guard evidence in the tracked set passes the evidence rule', () => {
+  const report = checkSeamsMarkdown(
+    registry([
+      `| Sample | owner | writer → reader | \`artifact\` | ${VACCINE} \`tools/repo/check-vp-selector-flags.test.ts\` |`,
+    ]),
+    repoRoot,
+    { tracked: new Set(['tools/repo/check-vp-selector-flags.test.ts']) },
+  );
+  expect(report.violations).toEqual([]);
+});
+
+test('an unreadable Git fails closed instead of assuming guard evidence is reproducible', () => {
+  const report = checkSeamsMarkdown(
+    registry([
+      `| Sample | owner | writer → reader | \`artifact\` | ${VACCINE} \`tools/repo/check-vp-selector-flags.test.ts\` |`,
+    ]),
+    '/nonexistent-root-for-tracking-proof',
+  );
+  expect(kinds(report.violations)).toContain('tracking-unavailable');
+});
+
 test('a guard-cell test path that does not exist is reported', () => {
   const report = checkSeamsMarkdown(
     registry([
@@ -168,4 +216,5 @@ test('the live seams registry is clean (this is the drift guard, not a smoke tes
   ).toEqual([]);
   expect(report.rowCount).toBeGreaterThanOrEqual(43);
   expect(report.guardedRows).toBe(report.rowCount);
+  expect(report.explicitRows).toBe(report.rowCount);
 });

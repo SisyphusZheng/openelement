@@ -25,14 +25,24 @@
  *     (`*.test.ts`, `*.spec.tsx`, …) but does not resolve is a violation, so
  *     a renamed/deleted guard cannot stay registered. The row needs at least
  *     one guard that IS a test/spec file, not just any existing path.
- *   - Every row must carry the vaccine statement — the KR-5 clause's behavior
- *     vocabulary (`missing`/`unreadable`/`absent` or an explicit
- *     failure/default/nothing phrasing). This is the same liberal match the
- *     DC-4 audit used to find the 14 rows that had none; the check exists so
- *     a NEW row cannot omit it (and so those 14 cannot drift back).
+ *   - Every row must carry the vaccine statement LITERALLY, one English
+ *     clause per row: `Missing/unreadable behavior: …`. The earlier liberal
+ *     match (`missing`/`unreadable`/`fail`/`default`/`nothing` anywhere in the
+ *     row) passed all 43 rows while only 14 stated the behavior explicitly —
+ *     an unrelated "fails closed" elsewhere in the row satisfied it. The
+ *     clause is now the row's own sentence, so the registry cannot answer the
+ *     KR-5 question by accident.
+ *   - Every path the guard cell resolves must be TRACKED by Git
+ *     (`git ls-files`). A guard path that exists only in a working tree —
+ *     a local scratch file, a generated artifact, a path typed from memory —
+ *     is not evidence a clone or CI run can reproduce, so it is a violation.
+ *     The check fails closed when Git itself cannot be read.
  *   - The registry must parse to at least one data row and at least one guard
  *     test overall: a scan that read nothing fails closed instead of
  *     reporting a vacuous pass.
+ *
+ * The CLI reports `N rows / M explicit` so a shrinking explicit set is visible
+ * in the gate log instead of hiding behind "0 violations".
  *
  * CLI:
  *   node tools/repo/check-seams.ts [--root=<dir>]
@@ -42,6 +52,7 @@
  */
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
@@ -51,12 +62,12 @@ export const SEAMS_PATH = 'docs/architecture/seams.md';
 export const EXPECTED_HEADER = ['Seam', 'Owner', 'Direction', 'Crossing artifacts', 'Guard test'];
 
 /**
- * KR-5 vaccine vocabulary: a row must answer "what does the reader do when the
- * artifact is missing or unreadable". The audit's liberal match; a row can
- * always satisfy it with an explicit "Missing/unreadable behavior: …" clause.
+ * KR-5 vaccine clause: a row must answer "what does the reader do when the
+ * artifact is missing or unreadable" in this exact spelling, in English. The
+ * literal is the contract the registry's rows are written against; a row that
+ * merely contains the words somewhere does not answer the question.
  */
-export const VACCINE_PATTERN =
-  /\b(missing|unreadable|absent|fail(?:s|ed|ing|ure)?|default(?:s|ed)?|nothing)\b/i;
+export const VACCINE_CLAUSE = 'Missing/unreadable behavior:';
 
 /** A path spelled as a test file: renamed/deleted ones must fail the check. */
 const TEST_FILE_SPELLING = /\.(?:test|spec)\.(?:ts|tsx|mts|js|mjs|cjs)$/;
@@ -80,6 +91,8 @@ export type SeamViolationKind =
   | 'missing-guard'
   | 'guard-test-unresolved'
   | 'guard-not-a-test'
+  | 'guard-not-tracked'
+  | 'tracking-unavailable'
   | 'vacuous';
 
 export interface SeamViolation {
@@ -99,7 +112,42 @@ export interface SeamReport {
   rowCount: number;
   /** Rows whose guard cell resolved at least one existing test file. */
   guardedRows: number;
+  /** Rows carrying the literal `Missing/unreadable behavior:` clause. */
+  explicitRows: number;
   violations: SeamViolation[];
+}
+
+/**
+ * Every path Git tracks under `root`, or undefined when Git cannot be read
+ * (no repository, no `git` binary). Undefined fails the check closed: the
+ * registry's evidence may not be assumed reproducible.
+ */
+export function gitTrackedPaths(root: string): Set<string> | undefined {
+  try {
+    const output = execFileSync('git', ['ls-files', '-z'], {
+      cwd: root,
+      encoding: 'utf8',
+      maxBuffer: 64 * 1024 * 1024,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return new Set(output.split('\0').filter((entry) => entry !== ''));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Whether a repo-relative file or directory is covered by `git ls-files`. */
+export function isTrackedPath(
+  tracked: ReadonlySet<string>,
+  repoRelative: string,
+  kind: 'file' | 'dir',
+): boolean {
+  if (kind === 'file') return tracked.has(repoRelative);
+  const prefix = repoRelative.endsWith('/') ? repoRelative : `${repoRelative}/`;
+  for (const path of tracked) {
+    if (path.startsWith(prefix)) return true;
+  }
+  return false;
 }
 
 /** Split one markdown table line into cells, honoring GFM `\|` escapes. */
@@ -186,7 +234,7 @@ export function resolveSeamPath(
 
 /** One row's guard-cell analysis. */
 interface GuardAnalysis {
-  resolved: Array<{ path: string; test: boolean }>;
+  resolved: Array<{ path: string; kind: 'file' | 'dir'; test: boolean }>;
   unresolvedTestSpellings: string[];
 }
 
@@ -205,6 +253,7 @@ function analyzeGuardCell(
       lastDir = hit.kind === 'dir' ? hit.path : dirname(hit.path);
       guard.resolved.push({
         path: hit.path,
+        kind: hit.kind,
         test: TEST_FILE_SPELLING.test(token) || GUARD_SCRIPT_SPELLING.test(token),
       });
       continue;
@@ -214,14 +263,27 @@ function analyzeGuardCell(
   return guard;
 }
 
+export interface SeamCheckOptions {
+  /**
+   * The Git-tracked path set to validate guard evidence against. Omitted
+   * means "read `git ls-files` under the root"; an unreadable Git fails the
+   * check closed instead of assuming the evidence is reproducible.
+   */
+  tracked?: ReadonlySet<string>;
+}
+
 /** Structural + semantic check of one registry document. */
-export function checkSeamsMarkdown(markdown: string, root: string): SeamReport {
+export function checkSeamsMarkdown(
+  markdown: string,
+  root: string,
+  options: SeamCheckOptions = {},
+): SeamReport {
   const violations: SeamViolation[] = [];
   const lines = markdown.split(/\r?\n/);
   const tableStart = lines.findIndex((line) => line.startsWith('|'));
   if (tableStart === -1) {
     violations.push({ kind: 'table-missing', line: 0, detail: 'no markdown table found' });
-    return { rowCount: 0, guardedRows: 0, violations };
+    return { rowCount: 0, guardedRows: 0, explicitRows: 0, violations };
   }
   const tableLines: Array<{ line: number; text: string }> = [];
   for (let index = tableStart; index < lines.length; index++) {
@@ -234,7 +296,7 @@ export function checkSeamsMarkdown(markdown: string, root: string): SeamReport {
       line: tableStart + 1,
       detail: `table needs a header, a separator and at least one data row; found ${tableLines.length} line(s)`,
     });
-    return { rowCount: 0, guardedRows: 0, violations };
+    return { rowCount: 0, guardedRows: 0, explicitRows: 0, violations };
   }
   const exists = (repoRelative: string): boolean => existsSync(join(root, repoRelative));
   const kindOf = (repoRelative: string): 'file' | 'dir' => {
@@ -268,8 +330,20 @@ export function checkSeamsMarkdown(markdown: string, root: string): SeamReport {
     });
   }
 
+  const tracked = options.tracked ?? gitTrackedPaths(root);
+  if (tracked === undefined) {
+    violations.push({
+      kind: 'tracking-unavailable',
+      line: 0,
+      detail:
+        'git ls-files could not be read under the root — guard evidence cannot be proven ' +
+        'tracked; refusing to pass on an unverifiable tree',
+    });
+  }
+
   let rowCount = 0;
   let guardedRows = 0;
+  let explicitRows = 0;
   for (const { line, text } of tableLines.slice(2)) {
     rowCount++;
     const cells = splitTableCells(text);
@@ -295,13 +369,16 @@ export function checkSeamsMarkdown(markdown: string, root: string): SeamReport {
       }
     });
     if (empty) continue;
-    if (!VACCINE_PATTERN.test(row.join(' '))) {
+    if (row.join(' ').includes(VACCINE_CLAUSE)) {
+      explicitRows++;
+    } else {
       violations.push({
         kind: 'missing-vaccine',
         line,
         detail:
-          `row ${JSON.stringify(seam)}: no missing/unreadable-behavior statement — the KR-5 ` +
-          'vaccine clause requires what the reader does when the artifact is missing or unreadable',
+          `row ${JSON.stringify(seam)}: no literal ${JSON.stringify(VACCINE_CLAUSE)} clause — the ` +
+          'KR-5 vaccine clause requires the row to STATE what the reader does when the artifact ' +
+          'is missing or unreadable, in that clause',
       });
     }
     const guard = analyzeGuardCell(row[4], exists, kindOf);
@@ -311,6 +388,19 @@ export function checkSeamsMarkdown(markdown: string, root: string): SeamReport {
         line,
         detail: `row ${JSON.stringify(seam)}: guard test ${JSON.stringify(unresolved)} does not exist`,
       });
+    }
+    if (tracked !== undefined) {
+      for (const entry of guard.resolved) {
+        if (!isTrackedPath(tracked, entry.path, entry.kind)) {
+          violations.push({
+            kind: 'guard-not-tracked',
+            line,
+            detail:
+              `row ${JSON.stringify(seam)}: guard evidence ${JSON.stringify(entry.path)} exists ` +
+              'but is not tracked by Git — a clone or CI run cannot reproduce it',
+          });
+        }
+      }
     }
     if (!guard.resolved.some((entry) => entry.test)) {
       violations.push({
@@ -327,20 +417,21 @@ export function checkSeamsMarkdown(markdown: string, root: string): SeamReport {
   if (rowCount === 0) {
     violations.push({ kind: 'vacuous', line: tableStart + 1, detail: 'table has no data rows' });
   }
-  return { rowCount, guardedRows, violations };
+  return { rowCount, guardedRows, explicitRows, violations };
 }
 
 /** Read and check the registry at `<root>/docs/architecture/seams.md`. */
-export function checkSeams(root: string): SeamReport {
+export function checkSeams(root: string, options: SeamCheckOptions = {}): SeamReport {
   const file = join(root, SEAMS_PATH);
   if (!existsSync(file)) {
     return {
       rowCount: 0,
       guardedRows: 0,
+      explicitRows: 0,
       violations: [{ kind: 'registry-missing', line: 0, detail: `${SEAMS_PATH} does not exist` }],
     };
   }
-  return checkSeamsMarkdown(readFileSync(file, 'utf8'), root);
+  return checkSeamsMarkdown(readFileSync(file, 'utf8'), root, options);
 }
 
 function formatViolation(violation: SeamViolation): string {
@@ -361,13 +452,14 @@ function main(): void {
     for (const violation of report.violations) console.error(formatViolation(violation));
     process.exit(1);
   }
-  if (report.rowCount === 0 || report.guardedRows === 0) {
+  if (report.rowCount === 0 || report.guardedRows === 0 || report.explicitRows === 0) {
     console.error('seams:check: no seam rows with guard tests found — refusing a vacuous pass.');
     process.exit(1);
   }
   console.log(
-    `seams:check: ${report.rowCount} row(s), ${report.guardedRows} with an existing consumer-form ` +
-      'guard test, every row carries owner/direction/artifacts and the vaccine statement.',
+    `seams:check: ${report.rowCount} rows / ${report.explicitRows} explicit — ` +
+      `${report.guardedRows} row(s) carry an existing consumer-form guard test, every guard path ` +
+      'is Git-tracked, and every row states its Missing/unreadable behavior.',
   );
 }
 
