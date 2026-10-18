@@ -2,7 +2,7 @@
 import { tmpdir } from 'node:os';
 import {
   assertPackedTarballsFresh,
-  runProcess,
+  runConsumer,
   walkPackedDeclarations,
 } from './consumer-packaged-shared.ts';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
@@ -15,16 +15,6 @@ import { PACKAGE_VERSION } from '../repo/project-constants.ts';
 const repoRoot = resolve(import.meta.dirname!, '../..');
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
 const TYPES_TIMEOUT_MS = 5 * 60_000;
-
-function run(
-  command: string,
-  args: string[],
-  cwd: string,
-  env: Record<string, string>,
-  timeoutMs: number,
-): Promise<{ success: boolean; output: string }> {
-  return runProcess(command, args, cwd, { timeoutMs, env });
-}
 
 const uiTarball = join(repoRoot, 'packages', 'ui', `openelement-ui-${PACKAGE_VERSION}.tgz`);
 const elementTarball = join(
@@ -65,12 +55,11 @@ try {
       },
     }),
   );
-  const install = await run(
+  const install = await runConsumer(
     'npm',
     ['install', '--ignore-scripts', '--no-audit', '--no-fund'],
     tmp,
-    { NPM_CONFIG_CACHE: join(tmp, '.npm-cache') },
-    INSTALL_TIMEOUT_MS,
+    { env: { NPM_CONFIG_CACHE: join(tmp, '.npm-cache') }, timeoutMs: INSTALL_TIMEOUT_MS },
   );
   if (!install.success) throw new Error(`Packed UI installation failed:\n${install.output}`);
   console.log(
@@ -126,12 +115,11 @@ if (manifest.packageName !== '@openelement/ui') throw new Error('unexpected UI m
       include: ['./main.ts'],
     }),
   );
-  const types = await run(
+  const types = await runConsumer(
     'node',
     ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
     tmp,
-    {},
-    TYPES_TIMEOUT_MS,
+    { timeoutMs: TYPES_TIMEOUT_MS },
   );
   if (!types.success) throw new Error(`Packed UI consumer typecheck failed:\n${types.output}`);
   console.log(

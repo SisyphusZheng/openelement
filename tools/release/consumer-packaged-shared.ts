@@ -73,7 +73,7 @@ import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { spawnCommand } from '../repo/node-command.ts';
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { formatJson } from '@openelement/element/build-utils';
@@ -212,9 +212,38 @@ export async function runProcess(
   }
 }
 
+/**
+ * The consumer harnesses' one convenience runner: `runProcess` with the
+ * timeout/env knobs in a single options object. Every consumer script used to
+ * carry its own pass-through `run(...)` re-spelling this call (and two of them
+ * disagreed on the parameter order).
+ */
+export function runConsumer(
+  command: string,
+  args: string[],
+  cwd: string,
+  options: ProcessRunOptions = {},
+): Promise<ProcessRunResult> {
+  return runProcess(command, args, cwd, options);
+}
+
+/**
+ * Run a consumer command and fail on a non-zero exit, carrying the child's
+ * combined output as the error message (the element authoring proof's
+ * contract).
+ */
+export async function runConsumerOrThrow(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<void> {
+  const result = await runProcess(command, args, cwd);
+  if (!result.success) throw new Error(result.output);
+}
+
 // Let the OS choose from its ephemeral range (same rationale as
 // consumer-packaged-starter.ts: fixed ranges collide with parallel CI jobs).
-function reservePort(): Promise<number> {
+export function reservePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once('listening', () => {
@@ -224,6 +253,156 @@ function reservePort(): Promise<number> {
     probe.once('error', reject);
     probe.listen({ port: 0, host: '127.0.0.1' });
   });
+}
+
+/**
+ * One consumer lifecycle server: reserve a port, boot the packed app's
+ * dev/start command, wait until it answers the first probe over the wire,
+ * assert every `[path, marker]` probe, optionally run the browser matrix while
+ * the server is up, then stop the whole process group.
+ *
+ * A green exit alone is not lifecycle evidence: the packed artifacts must
+ * actually serve the documented routes. The starter and ui-app harnesses each
+ * spelled this server lifecycle out twice (and drifted in the failure path);
+ * this is the one implementation both now call.
+ */
+export interface ConsumerServerExercise {
+  label: string;
+  /**
+   * Command + argv for one launch. The reserved port is passed in so servers
+   * configured by CLI flag (vite dev) and by env (cli/start) share the
+   * lifecycle.
+   */
+  launch: (port: number) => { command: string; args: string[] };
+  cwd: string;
+  /** Extra environment merged over process.env, under the OPEN_ELEMENT_* pins. */
+  env?: Record<string, string>;
+  /** `[path, marker]` probes asserted over the wire once the server answers. */
+  probes: ReadonlyArray<readonly [string, string]>;
+  /** Runs while the server is up, after the HTTP probes (the browser matrix). */
+  afterReady?: (baseUrl: string) => Promise<void>;
+}
+
+export async function exerciseServer(spec: ConsumerServerExercise): Promise<number> {
+  const { label, cwd, env = {}, probes } = spec;
+  const port = await reservePort();
+  const { command, args } = spec.launch(port);
+  const server = spawn(command, args, {
+    cwd,
+    env: {
+      ...process.env,
+      ...env,
+      OPEN_ELEMENT_PORT: String(port),
+      OPEN_ELEMENT_HOST: '127.0.0.1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // Own process group: the stop below must signal pnpm's node/sh
+    // grandchildren (vite, cli/start) too, not just pnpm — orphaned
+    // grandchildren keep the inherited stdio pipes open and the piped-output
+    // pumps keep this process from ever exiting the success path (observed on
+    // macOS; the same teardown contract as withServer above).
+    detached: true,
+  });
+  let exited = false;
+  server.addListener('exit', () => {
+    exited = true;
+  });
+  const stdoutChunks: Uint8Array[] = [];
+  const stderrChunks: Uint8Array[] = [];
+  void (async () => {
+    for await (const chunk of server.stdout!) stdoutChunks.push(chunk);
+  })();
+  void (async () => {
+    for await (const chunk of server.stderr!) stderrChunks.push(chunk);
+  })();
+  const stdoutText = () =>
+    new TextDecoder().decode(Buffer.concat(stdoutChunks.map((c) => Buffer.from(c))));
+  const stderrText = () =>
+    new TextDecoder().decode(Buffer.concat(stderrChunks.map((c) => Buffer.from(c))));
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`;
+    let ready = false;
+    const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
+    while (Date.now() < deadline && !exited) {
+      try {
+        const response = await fetch(`${baseUrl}${probes[0]![0]}`);
+        await response.text();
+        ready = true;
+        break;
+      } catch {
+        await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+      }
+    }
+    if (!ready) {
+      throw new Error(
+        `${label} did not become ready within ${SERVER_READY_TIMEOUT_MS}ms:\n${stdoutText()}\n${stderrText()}`,
+      );
+    }
+    for (const [path, marker] of probes) {
+      const response = await fetch(`${baseUrl}${path}`);
+      const body = await response.text();
+      if (response.status !== 200 || !body.includes(marker)) {
+        throw new Error(
+          `${label} probe ${path} failed: status=${response.status}, missing marker ${marker}`,
+        );
+      }
+    }
+    if (spec.afterReady) await spec.afterReady(baseUrl);
+    console.log(`${label} passed (port ${port}).`);
+  } catch (error) {
+    // Preserve the server-side cause of a failed probe (the dev leg's KR-10
+    // regression surfaces as SSR output, not as an exit code).
+    const failure = error instanceof Error ? error : new Error(String(error));
+    failure.message = `${failure.message}\n${stdoutText().slice(-8000)}\n${stderrText().slice(-8000)}`;
+    throw failure;
+  } finally {
+    if (!exited) {
+      try {
+        // Negative pid: signal the whole process group (see detached above).
+        process.kill(-server.pid!, 'SIGTERM');
+      } catch {
+        // process group already gone
+      }
+    }
+    await new Promise((resolveSettled) => {
+      if (exited) resolveSettled(null);
+      else server.addListener('exit', () => resolveSettled(null));
+    });
+  }
+  return port;
+}
+
+/**
+ * A packed consumer must resolve its dependencies through the scratch
+ * project's node_modules, never back into the repository (a workspace link
+ * would qualify source, not the packed artifact). One implementation, three
+ * consumers: the starter, the UI appliance and the UnoCSS leg each had their
+ * own copy.
+ */
+export async function assertConsumerDoesNotResolveIntoRepository(
+  nodeModules: string,
+  consumer: string,
+): Promise<void> {
+  const candidates: string[] = [];
+  for (const entry of readdirSync(nodeModules, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const path = join(nodeModules, entry.name);
+    if (entry.name.startsWith('@') && entry.isDirectory()) {
+      for (const nested of readdirSync(path, { withFileTypes: true })) {
+        candidates.push(join(path, nested.name));
+      }
+    } else {
+      candidates.push(path);
+    }
+  }
+  for (const path of candidates) {
+    const resolved = await realpath(path).catch(() => path);
+    if (resolved === repoRoot || resolved.startsWith(`${repoRoot}/`)) {
+      throw new Error(
+        `${consumer} resolved a dependency into the repository: ${path} -> ${resolved}`,
+      );
+    }
+  }
 }
 
 /**

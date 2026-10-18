@@ -18,7 +18,6 @@
  * the packed app via the packed @openelement/router/nitro-mount.
  */
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { cp, mkdtemp, realpath, rm } from 'node:fs/promises';
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
@@ -28,7 +27,7 @@ import { formatJson } from '@openelement/element/build-utils';
 import { PACKAGE_VERSION } from '../repo/project-constants.ts';
 import { VITE_DEV_PIN } from '../repo/deps-vite-check.ts';
 import { NITRO_VERSION } from './nitro-compatibility.ts';
-import { assertPackedTarballsFresh, runProcess } from './consumer-packaged-shared.ts';
+import { assertPackedTarballsFresh, reservePort, runProcess } from './consumer-packaged-shared.ts';
 
 const repoRoot = resolve(import.meta.dirname!, '../..');
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
@@ -274,16 +273,8 @@ export default class PackedLive extends OpenElement {
     `PASS packed-serve-${runtime} nitro — ${nitroPreset} output built from the packed app`,
   );
 
-  // Reserve a loopback port with a bind-and-close probe.
-  const port = await new Promise<number>((resolve, reject) => {
-    const probe = createServer();
-    probe.once('listening', () => {
-      const addr = probe.address() as { port: number };
-      probe.close(() => resolve(addr.port));
-    });
-    probe.once('error', reject);
-    probe.listen({ port: 0, host: '127.0.0.1' });
-  });
+  // Reserve a loopback port with the shared bind-and-close probe.
+  const port = await reservePort();
   server = spawn(runtime, [nitroEntry], {
     cwd: tmp,
     env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },

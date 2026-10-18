@@ -46,18 +46,18 @@
  * covers both without workflow changes).
  */
 
-import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
-import { existsSync, readdirSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import {
+  assertConsumerDoesNotResolveIntoRepository,
   assertPackedTarballsFresh,
   consumerPnpmOverridesYaml,
-  runProcess,
+  exerciseServer,
+  runConsumer,
 } from './consumer-packaged-shared.ts';
 import { PACKAGE_VERSION, RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { readPackages } from '../lib/package-graph.ts';
@@ -76,149 +76,7 @@ async function readJson<T = unknown>(path: string | URL): Promise<T> {
 const repoRoot = resolve(import.meta.dirname!, '../..');
 const BUILD_TIMEOUT_MS = 10 * 60_000;
 const NPM_INSTALL_TIMEOUT_MS = 5 * 60_000;
-const SERVER_READY_TIMEOUT_MS = 3 * 60_000;
 const BROWSER_TIMEOUT_MS = 2 * 60_000;
-
-function run(
-  command: string,
-  args: string[],
-  cwd: string,
-  timeoutMs?: number,
-  env?: Record<string, string>,
-): Promise<{ success: boolean; output: string }> {
-  return runProcess(command, args, cwd, { timeoutMs, env });
-}
-
-async function assertConsumerDoesNotResolveIntoRepository(nodeModules: string): Promise<void> {
-  const candidates: string[] = [];
-  for (const entry of readdirSync(nodeModules, { withFileTypes: true })) {
-    if (entry.name.startsWith('.')) continue;
-    const path = join(nodeModules, entry.name);
-    if (entry.name.startsWith('@') && entry.isDirectory()) {
-      for (const nested of readdirSync(path, { withFileTypes: true })) {
-        candidates.push(join(path, nested.name));
-      }
-    } else {
-      candidates.push(path);
-    }
-  }
-  for (const path of candidates) {
-    const resolvedReal = await realpath(path).catch(() => path);
-    if (resolvedReal === repoRoot || resolvedReal.startsWith(`${repoRoot}/`)) {
-      throw new Error(
-        `Packed UI consumer resolved a dependency into the repository: ${path} -> ${resolvedReal}`,
-      );
-    }
-  }
-}
-
-// Let the OS choose from its ephemeral range (fixed ranges collide with
-// parallel CI jobs).
-function reservePort(): Promise<number> {
-  return new Promise((resolveProbe, reject) => {
-    const probe = createServer();
-    probe.once('listening', () => {
-      const addr = probe.address() as { port: number };
-      probe.close(() => resolveProbe(addr.port));
-    });
-    probe.once('error', reject);
-    probe.listen({ port: 0, host: '127.0.0.1' });
-  });
-}
-
-/**
- * Boot one lifecycle server (dev/start) over the packed output, wait for it to
- * answer HTTP, assert every [path, marker] probe over the wire, then stop it.
- * A green exit alone is not lifecycle evidence (same contract as the starter
- * leg).
- */
-async function exerciseServer(
-  label: string,
-  argsFor: (port: number) => string[],
-  cwd: string,
-  probes: ReadonlyArray<readonly [string, string]>,
-  /** Runs while the server is up, after the HTTP probes (the browser matrix). */
-  afterReady?: (baseUrl: string) => Promise<void>,
-): Promise<void> {
-  const port = await reservePort();
-  const server = spawn('pnpm', argsFor(port), {
-    cwd,
-    env: { ...process.env, OPEN_ELEMENT_PORT: String(port), OPEN_ELEMENT_HOST: '127.0.0.1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    // Own process group: the stop below must signal pnpm's node/sh
-    // grandchildren (vite, cli/start) too, not just pnpm — orphaned
-    // grandchildren keep the inherited stdio pipes open and the piped-output
-    // pumps keep this process from ever exiting the success path (observed on
-    // macOS; same teardown contract as the starter harness).
-    detached: true,
-  });
-  let exited = false;
-  server.addListener('exit', () => {
-    exited = true;
-  });
-  const stdoutChunks: Uint8Array[] = [];
-  const stderrChunks: Uint8Array[] = [];
-  void (async () => {
-    for await (const chunk of server.stdout!) stdoutChunks.push(chunk);
-  })();
-  void (async () => {
-    for await (const chunk of server.stderr!) stderrChunks.push(chunk);
-  })();
-  const stdoutText = () =>
-    new TextDecoder().decode(Buffer.concat(stdoutChunks.map((c) => Buffer.from(c))));
-  const stderrText = () =>
-    new TextDecoder().decode(Buffer.concat(stderrChunks.map((c) => Buffer.from(c))));
-  try {
-    const baseUrl = `http://127.0.0.1:${port}`;
-    let ready = false;
-    const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
-    while (Date.now() < deadline && !exited) {
-      try {
-        const response = await fetch(`${baseUrl}${probes[0][0]}`);
-        await response.text();
-        ready = true;
-        break;
-      } catch {
-        await new Promise((resolveWait) => setTimeout(resolveWait, 150));
-      }
-    }
-    if (!ready) {
-      throw new Error(
-        `${label} did not become ready within ${SERVER_READY_TIMEOUT_MS}ms:\n${stdoutText()}\n${stderrText()}`,
-      );
-    }
-    for (const [path, marker] of probes) {
-      const response = await fetch(`${baseUrl}${path}`);
-      const body = await response.text();
-      if (response.status !== 200 || !body.includes(marker)) {
-        throw new Error(
-          `${label} probe ${path} failed: status=${response.status}, missing marker ${marker}`,
-        );
-      }
-    }
-    if (afterReady) await afterReady(baseUrl);
-    console.log(`${label} passed (port ${port}).`);
-  } catch (error) {
-    // Preserve the server-side cause of a failed probe (the dev leg's KR-10
-    // regression surfaces as SSR output, not as an exit code).
-    const failure = error instanceof Error ? error : new Error(String(error));
-    failure.message = `${failure.message}\n${stdoutText().slice(-8000)}\n${stderrText().slice(-8000)}`;
-    throw failure;
-  } finally {
-    if (!exited) {
-      try {
-        // Negative pid: signal the whole process group (see detached above).
-        process.kill(-server.pid!, 'SIGTERM');
-      } catch {
-        // process group already gone
-      }
-    }
-    await new Promise((resolveSettled) => {
-      if (exited) resolveSettled(null);
-      else server.addListener('exit', () => resolveSettled(null));
-    });
-  }
-}
 
 // ─── The dependency-only utility probe (S-C2/S-13) ──────────────────────────
 //
@@ -355,12 +213,9 @@ async function packUtilityWidget(dir: string): Promise<string> {
     join(pkgDir, 'src', 'theme.css'),
     `@theme {\n  ${PROBE_ROLE}: ${PROBE_ROLE_VALUE};\n}\n`,
   );
-  const packed = await run(
-    'npm',
-    ['pack', '--pack-destination', dir],
-    pkgDir,
-    NPM_INSTALL_TIMEOUT_MS,
-  );
+  const packed = await runConsumer('npm', ['pack', '--pack-destination', dir], pkgDir, {
+    timeoutMs: NPM_INSTALL_TIMEOUT_MS,
+  });
   if (!packed.success) {
     throw new Error(`Packing @acme/utility-widget failed:\n${packed.output}`);
   }
@@ -1229,12 +1084,9 @@ async function runUtilityBrowserMatrix(starter: string, baseUrl: string): Promis
   await writeFile(probePath, UI_UTILITY_PROBE_SCRIPT);
   const failures: string[] = [];
   for (const browserName of ['chromium', 'firefox', 'webkit'] as const) {
-    const probe = await run(
-      process.execPath,
-      [probePath, baseUrl, browserName],
-      starter,
-      BROWSER_TIMEOUT_MS,
-    );
+    const probe = await runConsumer(process.execPath, [probePath, baseUrl, browserName], starter, {
+      timeoutMs: BROWSER_TIMEOUT_MS,
+    });
     if (probe.success && probe.output.includes(`UI-UTILITY-OK ${browserName}`)) {
       // Record the measurements themselves, not just the verdict: the A/B rows
       // are the evidence a reviewer reads (computed values + geometry + engine
@@ -1289,7 +1141,7 @@ async function main(): Promise<void> {
     const routerTarball = tarballFor('@openelement/router');
     const elementTarball = tarballFor('@openelement/element');
 
-    const install = await run(
+    const install = await runConsumer(
       'npm',
       [
         'install',
@@ -1300,18 +1152,16 @@ async function main(): Promise<void> {
         ...tarballs,
       ],
       tmp,
-      NPM_INSTALL_TIMEOUT_MS,
-      npmEnv,
+      { timeoutMs: NPM_INSTALL_TIMEOUT_MS, env: npmEnv },
     );
     if (!install.success) throw new Error(`Packed package installation failed:\n${install.output}`);
 
     const createBinName = Object.keys(CREATE_BIN).sort()[0];
-    const create = await run(
+    const create = await runConsumer(
       'npm',
       ['exec', createBinName, '--', 'starter', '--no-install'],
       tmp,
-      NPM_INSTALL_TIMEOUT_MS,
-      npmEnv,
+      { timeoutMs: NPM_INSTALL_TIMEOUT_MS, env: npmEnv },
     );
     if (!create.success) throw new Error(`Packed starter generation failed:\n${create.output}`);
     if (!create.output.includes(`@openelement/create ${CREATE_VERSION}`)) {
@@ -1465,17 +1315,20 @@ async function main(): Promise<void> {
     await writeFile(join(starter, 'app', 'components', 'ui-lab.tsx'), UI_LAB_COMPONENT);
     await writeFile(join(starter, 'app', 'routes', 'ui-lab.tsx'), UI_LAB_ROUTE);
 
-    const installStarter = await run(
-      'pnpm',
-      ['install', '--no-frozen-lockfile'],
-      starter,
-      NPM_INSTALL_TIMEOUT_MS,
-    );
+    const installStarter = await runConsumer('pnpm', ['install', '--no-frozen-lockfile'], starter, {
+      timeoutMs: NPM_INSTALL_TIMEOUT_MS,
+    });
     if (!installStarter.success) {
       throw new Error(`UI-appliance dependency install failed:\n${installStarter.output}`);
     }
-    await assertConsumerDoesNotResolveIntoRepository(join(tmp, 'node_modules'));
-    await assertConsumerDoesNotResolveIntoRepository(join(starter, 'node_modules'));
+    await assertConsumerDoesNotResolveIntoRepository(
+      join(tmp, 'node_modules'),
+      'Packed UI consumer',
+    );
+    await assertConsumerDoesNotResolveIntoRepository(
+      join(starter, 'node_modules'),
+      'Packed UI consumer',
+    );
 
     // Read the installed package's own sheet bytes: the emitted assets are
     // compared against THESE bytes (the package the appliance installed), never
@@ -1498,11 +1351,14 @@ async function main(): Promise<void> {
     // `Unknown file extension ".css"` from Node's ESM loader; without the dev
     // style-edge intake it dies at the `.css` module's default export. The DSD
     // marker proves the component sheets reached the rendered shadow roots.
-    await exerciseServer(
-      'Packed UI appliance dev server',
-      (port) => ['run', 'dev', '--port', String(port), '--host', '127.0.0.1', '--strictPort'],
-      starter,
-      [
+    await exerciseServer({
+      label: 'Packed UI appliance dev server',
+      launch: (port) => ({
+        command: 'pnpm',
+        args: ['run', 'dev', '--port', String(port), '--host', '127.0.0.1', '--strictPort'],
+      }),
+      cwd: starter,
+      probes: [
         ['/', 'Rendered before JavaScript arrives'],
         ['/ui-lab', '<open-button'],
         ['/ui-lab', '<open-dialog'],
@@ -1513,11 +1369,11 @@ async function main(): Promise<void> {
         // its authored text is never inlined into the HTML.
         ['/ui-lab', '.openElement/authored-css.'],
       ],
-    );
+    });
 
     // Lifecycle leg 2 — typecheck: the appliance's own `tsc --noEmit` against
     // the packed UI declarations.
-    const typecheck = await run('pnpm', ['run', 'typecheck'], starter);
+    const typecheck = await runConsumer('pnpm', ['run', 'typecheck'], starter);
     if (!typecheck.success) {
       throw new Error(`Packed UI appliance typecheck failed:\n${typecheck.output}`);
     }
@@ -1528,7 +1384,9 @@ async function main(): Promise<void> {
     // the bundler as module edges, and without the style-edge intake the build
     // fails at MISSING_EXPORT (`"default" is not exported by
     // ".../open-button.css"`).
-    const build = await run('pnpm', ['run', 'build'], starter, BUILD_TIMEOUT_MS);
+    const build = await runConsumer('pnpm', ['run', 'build'], starter, {
+      timeoutMs: BUILD_TIMEOUT_MS,
+    });
     if (!build.success) throw new Error(`Packed UI appliance SSG build failed:\n${build.output}`);
 
     const serverEntry = join(starter, 'dist', 'server', 'index.js');
@@ -1725,20 +1583,25 @@ async function main(): Promise<void> {
 
     // Lifecycle leg 4 — start: serve the built output through the documented
     // local entry (cli/start) and assert the appliance page over HTTP.
-    await exerciseServer('Packed UI appliance start server', () => ['run', 'start'], starter, [
-      ['/', 'Rendered before JavaScript arrives'],
-      ['/ui-lab', '<open-button'],
-      ['/ui-lab', '/client/assets/'],
-      ['/ui-lab', 'data-oe-static-styles'],
-    ]);
+    await exerciseServer({
+      label: 'Packed UI appliance start server',
+      launch: () => ({ command: 'pnpm', args: ['run', 'start'] }),
+      cwd: starter,
+      probes: [
+        ['/', 'Rendered before JavaScript arrives'],
+        ['/ui-lab', '<open-button'],
+        ['/ui-lab', '/client/assets/'],
+        ['/ui-lab', 'data-oe-static-styles'],
+      ],
+    });
     // Gap B: the same running server feeds the real-engine computed-style matrix.
-    await exerciseServer(
-      'Packed UI appliance start server (browser matrix)',
-      () => ['run', 'start'],
-      starter,
-      [['/ui-lab', '<open-button']],
-      (baseUrl) => runUtilityBrowserMatrix(starter, baseUrl),
-    );
+    await exerciseServer({
+      label: 'Packed UI appliance start server (browser matrix)',
+      launch: () => ({ command: 'pnpm', args: ['run', 'start'] }),
+      cwd: starter,
+      probes: [['/ui-lab', '<open-button']],
+      afterReady: (baseUrl) => runUtilityBrowserMatrix(starter, baseUrl),
+    });
   } finally {
     await rm(tmp, { recursive: true }).catch(() => undefined);
   }

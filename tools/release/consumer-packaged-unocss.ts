@@ -53,12 +53,11 @@
  */
 
 import { spawn } from 'node:child_process';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { existsSync, readdirSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
-import { assertPackedTarballsFresh, runProcess } from './consumer-packaged-shared.ts';
+import { assertPackedTarballsFresh, reservePort, runConsumer } from './consumer-packaged-shared.ts';
 import { RETAINED_PACKAGE_NAMES } from '../repo/project-constants.ts';
 import { consumerPnpmOverridesYaml } from './consumer-packaged-shared.ts';
 import { tarballPath } from '../lib/npm-tarball.ts';
@@ -71,27 +70,6 @@ const SERVER_READY_TIMEOUT_MS = 3 * 60_000;
 const BROWSER_TIMEOUT_MS = 3 * 60_000;
 const DEV_BOOT_TIMEOUT_MS = 3 * 60_000;
 const DEV_FEEDBACK_TIMEOUT_MS = 90_000;
-
-function run(
-  command: string,
-  args: string[],
-  cwd: string,
-  timeoutMs?: number,
-): Promise<{ success: boolean; output: string }> {
-  return runProcess(command, args, cwd, { timeoutMs });
-}
-
-function reservePort(): Promise<number> {
-  return new Promise((resolveProbe, reject) => {
-    const probe = createServer();
-    probe.once('listening', () => {
-      const address = probe.address() as { port: number };
-      probe.close(() => resolveProbe(address.port));
-    });
-    probe.once('error', reject);
-    probe.listen({ port: 0, host: '127.0.0.1' });
-  });
-}
 
 /** The application's `uno.config.ts`: ordinary UnoCSS configuration. */
 const UNO_CONFIG = `import { defineConfig, presetWind4 } from 'unocss';
@@ -923,7 +901,9 @@ async function devConsumptionSession(app: string): Promise<string> {
 
     // 6. The packed island UPGRADES on the dev page — the one dev fact HTTP
     //     cannot see, so it runs last, after every wire-level fact above.
-    const upgrade = await run('node', ['pw-dev-probe.mjs', baseUrl], app, BROWSER_TIMEOUT_MS);
+    const upgrade = await runConsumer('node', ['pw-dev-probe.mjs', baseUrl], app, {
+      timeoutMs: BROWSER_TIMEOUT_MS,
+    });
     if (!upgrade.success || !upgrade.output.includes('DEV-UPGRADE-OK chromium')) {
       throw new Error(`the dev upgrade probe failed:\n${upgrade.output.slice(0, 4000)}`);
     }
@@ -1102,7 +1082,9 @@ async function main(): Promise<void> {
       'app/islands/probe-card.css': CARD_CSS,
     });
 
-    const install = await run('pnpm', ['install', '--no-frozen-lockfile'], app, INSTALL_TIMEOUT_MS);
+    const install = await runConsumer('pnpm', ['install', '--no-frozen-lockfile'], app, {
+      timeoutMs: INSTALL_TIMEOUT_MS,
+    });
     if (!install.success) throw new Error(`pnpm install failed:\n${install.output}`);
     await assertNoRepositoryResolution(join(app, 'node_modules'));
 
@@ -1112,7 +1094,9 @@ async function main(): Promise<void> {
     // UnoCSS and admits that package reaches the adapter's refusal, and the
     // refusal must be a CODE rather than a half-styled build — the claim the
     // repository's own fixture asserts in-process, here on a packed install.
-    const refused = await run('pnpm', ['exec', 'oe', 'build'], app, BUILD_TIMEOUT_MS);
+    const refused = await runConsumer('pnpm', ['exec', 'oe', 'build'], app, {
+      timeoutMs: BUILD_TIMEOUT_MS,
+    });
     if (refused.success) {
       throw new Error(
         'the packed build admitted @openelement/ui under UnoCSS: its Tailwind `@theme` ' +
@@ -1154,7 +1138,9 @@ async function main(): Promise<void> {
     // The app defines `typecheck: tsc --noEmit` — the starter template's
     // documented surface — and a packed consumer that cannot typecheck its own
     // app against the packed declarations is broken however well it builds.
-    const typecheck = await run('pnpm', ['run', 'typecheck'], app, INSTALL_TIMEOUT_MS);
+    const typecheck = await runConsumer('pnpm', ['run', 'typecheck'], app, {
+      timeoutMs: INSTALL_TIMEOUT_MS,
+    });
     if (!typecheck.success) {
       throw new Error(`the packed consumer's typecheck failed:\n${typecheck.output}`);
     }
@@ -1162,7 +1148,9 @@ async function main(): Promise<void> {
       'Phase T: the packed consumer typechecks (pnpm run typecheck) against the packed declarations.',
     );
 
-    const build = await run('pnpm', ['exec', 'oe', 'build'], app, BUILD_TIMEOUT_MS);
+    const build = await runConsumer('pnpm', ['exec', 'oe', 'build'], app, {
+      timeoutMs: BUILD_TIMEOUT_MS,
+    });
     if (!build.success) throw new Error(`packed build failed:\n${build.output}`);
 
     const html = await readFile(join(app, 'dist', 'index.html'), 'utf8');
@@ -1189,16 +1177,18 @@ async function main(): Promise<void> {
     }
 
     // The engine probes run against the packed `oe start`, on every engine.
-    const installBrowsers = await run(
+    const installBrowsers = await runConsumer(
       'pnpm',
       ['exec', 'playwright', 'install', '--with-deps', 'chromium', 'firefox', 'webkit'],
       app,
-      INSTALL_TIMEOUT_MS,
+      { timeoutMs: INSTALL_TIMEOUT_MS },
     );
     if (!installBrowsers.success) {
       // A machine that already carries the engines needs no download; only a
       // real absence is a blocker.
-      const list = await run('pnpm', ['exec', 'playwright', '--version'], app, 60_000);
+      const list = await runConsumer('pnpm', ['exec', 'playwright', '--version'], app, {
+        timeoutMs: 60_000,
+      });
       if (!list.success) throw new Error(`playwright unavailable in the consumer:\n${list.output}`);
     }
 
@@ -1253,7 +1243,9 @@ async function main(): Promise<void> {
 
       const engineFailures: string[] = [];
       for (const engine of ['chromium', 'firefox', 'webkit']) {
-        const probe = await run('node', ['pw-probe.mjs', baseUrl, engine], app, BROWSER_TIMEOUT_MS);
+        const probe = await runConsumer('node', ['pw-probe.mjs', baseUrl, engine], app, {
+          timeoutMs: BROWSER_TIMEOUT_MS,
+        });
         if (!probe.success) {
           engineFailures.push(`${engine}:\n${probe.output.slice(0, 4000)}`);
         } else {
