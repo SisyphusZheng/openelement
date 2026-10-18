@@ -21,8 +21,17 @@
  */
 
 import { describe, expect, test } from 'vitest';
-import { compileServerComponentModule } from '../src/internal/compiler/semantic-core/server-component.ts';
+import {
+  ConstructorEmitter,
+  compileServerComponentModule,
+} from '../src/internal/compiler/semantic-core/server-component.ts';
+import {
+  CompiledElementError,
+  failAt,
+} from '../src/internal/compiler/semantic-core/compiler-diagnostics.ts';
 import { analyzeModuleSemantics } from '../src/internal/compiler/semantic-core/module-analysis.ts';
+import { typescriptParser } from '../src/internal/compiler/semantic-core/parse-module.ts';
+import type { Lowering } from '../src/internal/compiler/semantic-core/lower-program.ts';
 
 const FILE = '/proj/app/server/card.tsx';
 
@@ -354,5 +363,51 @@ describe('admission: the shared walk is the one semantic authority', () => {
       thrown = error;
     }
     expect(thrown).toBeDefined();
+  });
+});
+
+/** One emitter over a lowering-shaped source tree, with a real fail closure. */
+function emitterOf(lowering: { parts?: unknown[] }): ConstructorEmitter {
+  const { sourceFile } = typescriptParser.parseModule(
+    'export const probe = 1;\n',
+    '/proj/probe.tsx',
+  );
+  return new ConstructorEmitter(
+    sourceFile,
+    {
+      parts: [],
+      componentCalls: new Map(),
+      ssrCalls: new Set(),
+      ...lowering,
+    } as unknown as Lowering,
+    'props',
+    failAt(sourceFile),
+  );
+}
+
+/**
+ * The codegen identifier boundary (retained from 953f190dd, unchanged by the
+ * literal-emitter revert): every lowering-produced name the emitter splices
+ * into an identifier position must be a plain ES identifier; anything else
+ * fails the compile CLOSED with OEC9032 instead of leaving its slot.
+ */
+describe('the codegen identifier boundary fails closed', () => {
+  test('a non-identifier sink name is rejected, not emitted', () => {
+    const emitter = emitterOf({ parts: [{ k: 'text', signal: 'name; globalThis.pwned = 1' }] });
+    let thrown: unknown;
+    try {
+      emitter.emit({ k: 'part', index: 0 });
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(CompiledElementError);
+    expect(
+      (thrown as CompiledElementError).diagnostics.map((diagnostic) => diagnostic.code),
+    ).toEqual(['OEC9032']);
+  });
+
+  test('a legitimate identifier emits the expected member access', () => {
+    const emitter = emitterOf({ parts: [{ k: 'text', signal: 'label' }] });
+    expect(emitter.emit({ k: 'part', index: 0 })).toBe('__t(props.label)');
   });
 });
