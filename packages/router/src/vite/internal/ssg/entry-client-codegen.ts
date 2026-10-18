@@ -304,13 +304,12 @@ export const ELEMENT_SERVICES_RUNTIME_SPECIFIERS = {
  * built entry, `vite/dev-island-client.ts` for the dev entry — so the
  * specifier the generated entry carries has exactly one resolution rule.
  *
- * The literals stay LITERAL: the vp-pack guard extracts the consumer-side
- * path-consumed module set from literal `runtimeModulePath` arguments
- * (tools/lib/vp-pack.test.ts), and these wrappers are reached only through the
- * generated entry's import STRING — no pack module edge exists, so a computed
- * argument would drop them from the router tarball and the package would ship
- * a client entry importing modules it does not contain (the B2 pack
- * regression).
+ * The literals stay LITERAL: the release toolchain's vp-pack guard extracts the
+ * consumer-side path-consumed module set from literal `runtimeModulePath`
+ * arguments, and these wrappers are reached only through the generated entry's
+ * import STRING — no pack module edge exists, so a computed argument would drop
+ * them from the router tarball and the package would ship a client entry
+ * importing modules it does not contain (the B2 pack regression).
  */
 export function resolveElementServicesRuntimeModule(id: string): string | null {
   switch (id) {
