@@ -26,6 +26,14 @@ Owner 批准 4/4，均按本文 §11 的推荐取值；第 5 条（引擎口径�
 - 三引擎 e2e 是最重的一腿，执行前与 lead 协调机器资源（另有 lane 在跑 gate）。
 - **三引擎首跑若出现 firefox 红，不得用重试掩盖**（KR-18：owner 已定 `retries=0`，禁止恢复 retries/skip）：按台账格式记录现象 + 证据路径，标 `flaky`/`open`，如实上报，由 lead 决定是否允许记账后的 rerun。
 
+### 三引擎是门禁默认值（裁决 + 代价，已记）
+
+- **默认引擎集 = `chromium,firefox,webkit`**：`qualify.ts` 的 `CONTRACT_ENGINES` 即门禁默认。理由是 D5 的台账纪律 —— 若默认 chromium、由调用方设 env，则 KR-17 的退役证据依赖「调用方设对」，门禁本身不成立。
+- **`OPEN_ELEMENT_WC_ENGINES` 只是本地迭代的收窄手段**：用完必须复跑默认集；**不得**作为 CI / release 的常规配置。
+- **已接受的代价**：`@openelement/fixture-third-party-web-components#smoke` 的浏览器段约为原来的 **3 倍**，而该 target 挂在 `@openelement/tools-release#gate:packed` → `release:check`（以及 CI 的 `published-consumers` workflow）。**`release:check` 会因此变慢**，这是 owner 在 G1-5 明确知悉并接受的取舍（契约证据优先于门禁时长）。
+- 结构上只 build 一次（`prepareFixtureApp`），三引擎各开一个 session，所以 ×3 只落在浏览器段，不落在外层 `pnpm install` / router build / `stencil build` 上。
+- 三引擎首跑结果（chromium 147.0.7727.15 / firefox 148.0.2 / webkit 26.4）：**契约级断言三引擎全绿、零失败、零引擎差异**，因此**没有**触发「非契约探针按引擎记 `null`」的分类裁决。实测 `elapsedMs` 5638 / 5987 / 5675，`attempts` 均为 6（预算在三个引擎上都成立）。
+
 ## 实现偏离（已批准意图内）
 
 实现 `672847cb7` 时，**冻结既有 28 例零修改**这一硬约束（§4.5 I-4）逼出了三处对 §3.1 伪代码字面的收敛。三条都不改 B2 / F01 的语义，也都由既有钉法直接证明其必要性，经 lead 判定**在 G1 批准意图内**（不需重开决策门）。在此集中登记，便于 owner 复审一处可见。
