@@ -100,10 +100,9 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
    *
    * INVARIANT — this helper lives INSIDE the factory on purpose. The repo
    * treats `createIslandScheduler.toString()` as a complete, self-contained
-   * scheduler: tests/fixtures/router-request-time/e2e/live.spec.ts:917 inlines
-   * exactly that string as a virtual client entry, and
-   * packages/router/__tests__/island-scheduler.test.ts documents the same
-   * "inlines verbatim" property. A module-level helper is absent from the
+   * scheduler: the request-time fixture's live e2e spec inlines exactly that
+   * string as a virtual client entry, and the scheduler's own unit test
+   * documents the same "inlines verbatim" property. A module-level helper is absent from the
    * inlined copy, so every load() there would throw
    * `ReferenceError: hasIslandHost is not defined` while the bundled entry
    * (which imports this module) kept working — a test-only failure that reads
