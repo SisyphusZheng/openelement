@@ -66,10 +66,16 @@ async function waitForServer(base: string, timeoutMs = 30_000): Promise<void> {
 
 test.describe('CSRF same-origin floor (#811)', () => {
   test.beforeAll(async () => {
-    test.skip(
-      !existsSync(SERVER_ENTRY),
-      'fixture dist missing — run pnpm --dir tests/fixtures/router-request-time run build first',
-    );
+    // N3: a missing fixture build used to `test.skip` the whole describe from
+    // inside beforeAll — a green gate with the entire CSRF floor unexercised.
+    // That is a broken prerequisite, not an environment skip; fail closed.
+    if (!existsSync(SERVER_ENTRY)) {
+      throw new Error(
+        'fixture dist missing — run the fixture build first ' +
+          '(node packages/router/src/cli/build.ts in tests/fixtures/router-request-time); ' +
+          'the CSRF gate must not pass with its subject unbuilt',
+      );
+    }
     startFixtureServer(CSRF_ON_PORT, false);
     startFixtureServer(CSRF_OFF_PORT, true);
     await waitForServer(csrfOnBase);
