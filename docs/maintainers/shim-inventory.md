@@ -7,7 +7,27 @@ release 周期用这把尺子重温一遍。本文件是那个此前缺失的登
 
 处置只有三档：**现在删** / **条件到即删**（条件写死，条件到即执行删除，
 不等下一次评审）/ **保留为平台边缘**（平台尚未追上，删除条件是平台事件
-而非工程事件）。默认倾向删：登记一项却不写条件 = 缺陷。
+而非工程事件），外加 **已删**（退役已执行的历史记录）。默认倾向删：登记
+一项却不写条件 = 缺陷。这条封闭词表由
+`tools/repo/check-shims.ts`（`@openelement/tools-repo#shims:check`，跑在
+`gate:source` 里）机器校验。
+
+## English summary
+
+`shim-inventory.md` is the P5 shim registry: every compatibility layer,
+adapter and polyfill in the tree, with its owner, direction, reason to exist,
+retirement condition and disposition. Dispositions are a closed set — **delete
+now** (`现在删`), **delete when the condition lands** (`条件到即删`), **keep as a
+platform edge** (`保留为平台边缘`) — plus `已删` for a retirement that has already
+executed. A registered shim without a written retirement condition is a defect.
+
+`tools/repo/check-shims.ts` (`@openelement/tools-repo#shims:check`) reads this
+file in `gate:source`: every row's location must exist and be Git-tracked (or be
+struck through and absent, for an executed retirement), every row must have a
+detail section carrying an owner and a non-empty retirement condition, and every
+`path:line` citation must stay inside its file. The full English translation of
+the prose below is an alpha16 candidate; this summary plus the machine-checked
+table is the contract today.
 
 方向一栏回答"谁写、谁读"——P8 接缝（见
 [seams.md](../architecture/seams.md)）在跨界工件上有常驻守卫测试；本表
@@ -26,20 +46,21 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 | 1 | 岛 CSS 压缩变换（#1543） | ~~`packages/router/src/vite/internal/island-css.ts`~~ | **已删（#1558）** |
 | 2 | `styleAssetProtocol` 激活开关（#1553） | ~~element 编译器选项~~ | **已删（#1558）** |
 | 3 | CSS 双适配器：fetch 回退形态（#1553） | `packages/router/src/vite/internal/style-assets.ts` | 条件到即删（Safari + 工具链）；单一化子裁决待 owner |
-| 4 | dev/SSR 内联 sheet 适配器（#1553） | 同上 | 条件到即删（同 #3 的判定翻转或 dev 走 HTTP） |
+| 4 | dev/SSR 内联 sheet 适配器（#1553） | `packages/router/src/vite/internal/style-assets.ts` | 条件到即删（同 #3 的判定翻转或 dev 走 HTTP） |
 | 5 | `ShimStyleSheet`（SSR 侧 CSSStyleSheet） | `packages/element/src/internal/core/style-sheet.ts` | 保留为平台边缘 |
 | 6 | SSR 全局垫片（CSSStyleSheet banner + customElements stub） | `packages/router/src/vite/internal/ssg/ssr-polyfills.ts` | 保留为平台边缘 |
-| 7 | 浏览器怪癖台账（#579/#604/#610） | `morph-webkit-fix.ts`、`form-enhance.ts` | 保留为平台边缘（各条目自带删除条件） |
+| 7 | 浏览器怪癖台账（#579/#604/#610） | `packages/router/src/vite/internal/ssg/morph-webkit-fix.ts`、`packages/router/src/vite/internal/ssg/form-enhance.ts` | 保留为平台边缘（各条目自带删除条件） |
 | 8 | `@lit-labs/ssr` 全局 DOM shim | `packages/router/src/lit-ssr.ts` 等 | 保留为平台边缘（上游 + 教义） |
 | 9 | Nitro mount 适配 | `packages/router/src/nitro-mount.ts` | 保留为平台边缘（P5 明示的部署边界） |
 | 10 | node:http `serveFetch` 适配 | `packages/router/src/internal/node-http.ts` | 保留为平台边缘 |
 | 11 | Workers `nodeCompat`（unenv） | `apps/saas/nitro.config.ts`、fixture 同形 | 保留为平台边缘 |
-| 12 | `Deno.Command` 形状仿真（deno→node 残余） | ~~`tools/repo/node-command.ts`~~ | **已删（N-1：重塑为一等 spawn 助手，2026-10-13）** |
-| 13 | TypeScript `ParserPort` 后端 | `packages/element/src/internal/compiler/semantic-core/parse-module.ts` | 保留为平台边缘（双触发器已写死） |
+| 12 | `Deno.Command` 形状仿真（deno→node 残余） | `tools/repo/node-command.ts`（形状仿真已删，模块保留为一等 spawn 助手） | **已删（N-1：重塑为一等 spawn 助手，2026-10-13）** |
+| 13 | TypeScript `ParserPort` 后端 | `packages/compiler/src/internal/compiler/semantic-core/parse-module.ts` | 保留为平台边缘（双触发器已写死） |
 | 14 | signal 引擎 Preact 适配 | `packages/element/src/internal/signal/` | 保留为平台边缘 |
 | 15 | `@openelement/url-pattern-list` 维护 fork | `packages/router/src/internal/router/route-table.ts` | 保留为平台边缘（附评估结论） |
 | 16 | CEM 兼容分类（第三方 WC 准入） | `packages/router/src/vite/internal/ssg/cem-compat.ts` | 保留为平台边缘（产品互操作面） |
 | 17 | 渲染器适配缝（native / lit） | `packages/router/src/vite/internal/ssg/renderer-adapter.ts` | 保留为平台边缘（教义，非债） |
+| 18 | legacy 虚拟入口 id（`virtual:open-hono-entry`，ADR-0152） | `packages/router/src/vite/plugin-virtual-modules.ts` | 条件到即删（随下一次产物命名不兼容变更一起改名） |
 
 没有"现在删"项：扫描发现的文本级残余（脚本头部陈旧的 `deno run` 用法
 散文）已在 alpha8/alpha10 清理；其余命中要么已含书面退役条件，要么是
@@ -50,6 +71,8 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 
 ### 1. 岛 CSS 压缩变换（#1543）——已删（#1558，2026-10-07）
 
+- 所有者（历史）：router OE Vite plugin（`packages/router/src/vite/internal/island-css.ts`，
+  已随本项删除）。
 - 退役条件已满足：#1558 把唯一创作形态改为 `.css` 文件 + import（css
   字符串模板整体退役，P5 无 shim），island chunk 里不再有任何 JS 内嵌
   CSS 可压。`island-css.ts` 与 `open:minify-island-css` transform、
@@ -58,6 +81,8 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 
 ### 2. `styleAssetProtocol` 激活开关（#1553）——已删（#1558，2026-10-07）
 
+- 所有者（历史）：element 编译器选项 / router 样式准入（`style-admission.ts`
+  + OEC9028，已随本项删除）。
 - 退役条件已满足（ADR-0164 2026-10-07 修正案所记录的条件）：#1558 删除
   字符串准入机器（`style-admission.ts` + OEC9028）时一并退役了该选项，
   样式请求通道改为对编译模块的已授权 `.css` import 边的无条件登记
@@ -72,9 +97,9 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
   双重不可用——rolldown 1.0.3 对原生形态 MISSING_EXPORT 硬失败，
   Safari 截至 27 未实现（[ADR-0164](../adr/ADR-0164-island-style-asset-protocol.md)
   附录 C）。能力判定是构建期事实：`NATIVE_CSS_MODULE_SCRIPTS = false`
-  （`style-assets.ts:77`），现实构建全部产出 fetch 形态（TLA 守卫，
+  （`style-assets.ts:113`），现实构建全部产出 fetch 形态（TLA 守卫，
   fail-closed）。
-- 退役条件（已写在 `style-assets.ts:42-44`）：当某个工具链既能打包原生
+- 退役条件（已写在 `style-assets.ts:52-53`）：当某个工具链既能打包原生
   形态、又能覆盖交付舰队（即 Safari 落地 CSS Module Script）时，翻转
   判定，删除 fetch 生成器 `fetchSheetAdapterModule`。
 - 开放子裁决（issue #1559 记录，owner 默认倾向"机制更少"）：(a) 维持
@@ -87,7 +112,7 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 
 ### 4. dev/SSR 内联 sheet 适配器——dev 半边已删除（S-C1.3），SSR 文本形态保留为边界
 
-- 历史所有者：router（`inlineSheetAdapterModule`（已删除）/
+- 所有者（历史）：router（`inlineSheetAdapterModule`（已删除）/
   `serverStyleAssetPlugin`（保留），同在原 `style-assets.ts`）。
 - 方向：dev server / SSR build → 模块图内联的 sheet 文本。
 - 退役条件之一已经兑现（alpha15 S-C1.3，"dev 学会用 HTTP 服务协议资产"）：
@@ -113,7 +138,9 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 
 ### 5. `ShimStyleSheet`（SSR 侧 CSSStyleSheet）——保留为平台边缘
 
-- 所有者：element core（`packages/element/src/internal/core/style-sheet.ts:54-70`）。
+- 所有者：element core（`packages/element/src/internal/core/style-sheet.ts:12`
+  `parseRules`、`packages/element/src/internal/core/style-sheet.ts:97`
+  `ShimStyleSheet`）。
 - 方向：运行期 `StyleSheetLike` 契约——浏览器委托原生 `CSSStyleSheet`，
   Node SSR 落到内存 shim，序列化器经 `cssRules` 读回规则。
 - 平台缺口：受支持的服务端运行时（Node 24）没有可构造、可读
@@ -142,24 +169,24 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 - 所有者：router morph client（`morph-webkit-fix.ts`、`form-enhance.ts`，
   模块头即"KNOWN-BROWSER-QUIRKS 反腐台账"）。
 - 方向：客户端运行时 → 浏览器引擎差异。
-- 各条目自带删除条件，条件未到（2026-10 现状）：
-  - #579 DSD 只由 HTML parser 实例化，DOMParser 树保持惰性
-    `instantiateDsd()` 先于插入手动实例化 → "所有引擎对 DOMParser 树
-    实例化 DSD"即删；
-  - #604 WebKit 对 parser-inert 文档迁入 shadow root 的元素永久跳过
-    升级，`repairShadowUpgrades()` 重插补票 → "WebKit 在 adoption 时
-    升级此类元素"即删；
-  - #610 submit 事件并非每个引擎都 composed，文档级监听看不见 DSD 内
-    表单，`attachSubmit()` 逐 shadow root 挂接 → "submit 全引擎
-    composed（或表单不再住 shadow root）"即删。
+- 退役条件（P5；各条目自带删除条件，条件到即删对应条目及其 workaround，无需另行
+  评审；2026-10 现状条件未到）：#579 DSD 只由 HTML parser 实例化，DOMParser
+  树保持惰性 `instantiateDsd()` 先于插入手动实例化 → "所有引擎对 DOMParser 树
+  实例化 DSD"即删；#604 WebKit 对 parser-inert 文档迁入 shadow root 的元素永久跳过
+  升级，`repairShadowUpgrades()` 重插补票 → "WebKit 在 adoption 时
+  升级此类元素"即删；#610 submit 事件并非每个引擎都 composed，文档级监听看不见 DSD 内
+  表单，`attachSubmit()` 逐 shadow root 挂接 → "submit 全引擎
+  composed（或表单不再住 shadow root）"即删。
 - 处置：保留为平台边缘。台账纪律已内建：条件到即删对应条目及其
   workaround，无需另行评审。
 
 ### 8. `@lit-labs/ssr` 全局 DOM shim——保留为平台边缘
 
-- 所有者：router lit 渲染器（`lit-ssr.ts:26` 副作用首导入，`:9-11`
-  Server-only 契约；`renderer-adapter.ts:87`、`plugin-virtual-modules.ts:39-43`、
-  `build-ssg.ts:68` 装配同一事实）。
+- 所有者：router lit 渲染器（`packages/router/src/lit-ssr.ts:26` 副作用首导入，
+  `packages/router/src/lit-ssr.ts:9-11` Server-only 契约；
+  `packages/router/src/vite/internal/ssg/renderer-adapter.ts:87`、
+  `packages/router/src/vite/plugin-virtual-modules.ts:40-44`、
+  `packages/router/src/cli/build-ssg.ts:68` 装配同一事实）。
 - 方向：服务端全局 DOM shim → Lit SSR 渲染通道。
 - 存在原因：`@lit-labs/ssr` 需要 DOM 全局（`installWindowOnGlobal` 只补
   缺失项）；这是上游依赖的形状，不是我们自建的层。
@@ -231,11 +258,14 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 
 ### 13. TypeScript `ParserPort` 后端——保留为平台边缘
 
-- 所有者：element 编译器（`parse-module.ts`，语义核唯一解析缝，#1473）。
+- 所有者：element 编译器（现 `@openelement/compiler`；
+  `packages/compiler/src/internal/compiler/semantic-core/parse-module.ts`
+  `typescriptParser`，语义核唯一解析缝，#1473）。
 - 方向：TS JS 解析 API → 语义核 AST。
 - 存在原因：oxc 尚未稳定支持标准装饰器；tsgo 原生 API 尚未成为受支持
   解析入口。
-- 退役条件（已写在 `parse-module.ts:11-19`，双触发器取先到）：TS 6 线
+- 退役条件（双触发器取先到；已写在
+  `packages/compiler/src/internal/compiler/semantic-core/parse-module.ts:11-19`）：TS 6 线
   JS-API 维护终止，或 oxc 标准装饰器宣告稳定——届时 `typescriptParser`
   换为 oxc/tsgo 后端实现，TS 实现随删，管线与诊断契约不动。
 - 处置：保留为平台边缘（工具链适配器，触发器已写死）。
@@ -254,7 +284,7 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 
 - 所有者：router 路由核（`route-table.ts:1-2` 独一消费点；独立仓库
   `open-element/url-pattern-list` 维护 fork，npm 0.6.0，
-  `packages/router/package.json:33`；供给链已有 provenance 闸
+  `packages/router/package.json:40`；供给链已有 provenance 闸
   `tests/fixtures/url-pattern-list-audit` + `minimumReleaseAge`）。
 - 方向：URLPatternList（多模式优先级匹配数据结构）→ RouteTable 索引。
 - 评估结论（本任务对 issue #1559 候选 3 的回答）：**该包不是
@@ -298,6 +328,22 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
   垫片——它是主产物。
 - 处置：保留为平台边缘。
 
+### 18. legacy 虚拟入口 id（`virtual:open-hono-entry`，ADR-0152）——条件到即删
+
+- 所有者：router OE Vite plugin（`packages/router/src/vite/plugin-virtual-modules.ts:14`
+  `VIRTUAL_ENTRY_ID` 是唯一声明点；`packages/router/src/vite/internal/ssg/build-postprocess.ts:250`
+  的 `_virtual_open-hono-entry` 前缀判定是唯一读者）。
+- 方向：虚拟模块 id → dev/SSR 入口代码 + 产物文件名的 `_virtual_` 前缀。
+- 存在原因：ADR-0152（2026-09-16 修正案）定性——该 id 与其
+  `_virtual_open-hono-entry` 资产前缀是**保留的 legacy 名称，不携带依赖
+  语义**；hono 已不是路由内部实现，改名只会搅动构建产物名称而没有可观察
+  的变化。
+- 退役条件：下一次产物命名 / 布局的不兼容变更（或该 id 不再出现在任何
+  产物名中，例如 SSG 产物命名重排）随那次变更一起改名为
+  `virtual:open-element-entry` 并删除旧前缀判定；单独为改名而改名已被
+  ADR-0152 否决。
+- 处置：条件到即删（随下一次产物命名不兼容变更一起改名）。
+
 ## 审计中排除的非垫片（避免下次重查）
 
 - `jsx-runtime.ts` / `jsx-dev-runtime.ts`：标准 JSX runtime 入口点，
@@ -310,18 +356,26 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
   关键资源管线，与 #1543 的 JS 内嵌 CSS 无关。
 - `tools/lib/compatibility-date.ts`、`check-retired-api-refs.ts`、
   `pack-surface.ts` 等：门禁工具，是退役的执行者而非待退役者。
-- `packages/element/src/internal/compiled/runtime/test-engine.ts`：
+- `packages/element/__tests__/compiled-runtime/test-engine.ts`：
   测试替身，不交付。
-- `html-escape.ts:183`、`security.ts:15` 等处注释里的"retired"：已偿
+- `packages/element/src/internal/core/html-escape.ts:256`、
+  `packages/element/src/internal/core/security.ts:15` 等处注释里的"retired"：已偿
   债务的墓碑记录，指认的是删掉的东西。
 - `tests/fixtures/url-pattern-list-audit`：供给链证明 fixture（#15 的
   守卫），非运行时代码。
 
 ## 复审机制
 
-本登记簿由"平台追账评审"（[design-principles](../architecture/design-principles.zh.md)
-末节）按 release 周期驱动：每周期逐行重估"条件到即删"的到期情况与
+本登记簿由"平台追账评审"（[design-principles](../architecture/design-principles.md#platform-catch-up-review)；
+逐版本记录见 [platform-catch-up.md](../release/platform-catch-up.md)）按 release 周期驱动：每周期逐行重估"条件到即删"的到期情况与
 "平台边缘"的追账进度，新 shim 入场时必须同时入表并写死条件。与
 [seams.md](../architecture/seams.md) 的分工：接缝表管"谁写谁读、守卫
 在哪"，本表管"为何存在、何时能删"；同一工件两边都该有一行，交叉引用
 即可，不重复维护事实。
+
+机器面：`tools/repo/check-shims.ts`（`@openelement/tools-repo#shims:check`）
+在 `gate:source` 里读本文件——汇总表每行的位置必须存在且被 Git 跟踪
+（已删行相反：划线且不存在）、每个编号必须有详情小节且带非空的所有者与
+退役条件、每条 `path:line` 引用必须落在文件行数内。评审结论改的是文字，
+机器守住的是"登记项不会没有主人、不会没有退役条件、不会指向不存在的
+路径"。
