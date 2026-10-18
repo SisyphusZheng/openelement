@@ -66,6 +66,17 @@ gates now see what they claim to see.
   qualified fixture gates run without retries and fail when their fixture build
   is missing; accidental `.only` fails; the packed-artifact internal-path guard
   catches every prefixed spelling; the CLI production pin has a negative proof.
+- **Breaking — the generated scaffold is package-manager neutral.** `@openelement/create`
+  no longer resolves anything through a pnpm `catalog:`: every `catalog:` specifier is gone
+  from the shipped payloads, `vite-plus` is no longer a template dependency, `vite` is a
+  direct `8.0.16` pin, and the template's `pnpm-workspace.yaml` and the `packageManager`
+  field are deleted. The CLI detects pnpm → npm → yarn → bun and installs with the first one
+  present, failing only when none is (with a message naming all four). The generated `dev`
+  script now runs the router bin (`oe dev`, a new bin-only subcommand that reuses the
+  existing Vite dev server — `dev` deliberately has no `./cli/*` subpath), and `fmt`/`lint`
+  run `oxfmt`/`oxlint`; `build`/`start`/`typecheck`/`test` were already manager-neutral. A
+  scaffold therefore installs and runs under any of the four managers instead of
+  hard-failing without pnpm.
 - **Docs and records.** The user-facing docs, release procedure, ADR statuses,
   version-bump bookkeeping, public architecture package graph and CHANGELOG are
   reconciled with the alpha.15 tree.
