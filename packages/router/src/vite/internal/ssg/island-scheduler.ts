@@ -185,6 +185,19 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
   }
 
   function observeVisible(): void {
+    // #1544/B2 follow-up: the ready-time scan is not the last word on the page
+    // scope. An enhanced response morphs new HTML in, and this function is the
+    // rescan the client runtime already runs after every morph (#562) — but it
+    // only ever revisited the visible bucket, so a HOST that arrived after the
+    // ready scan left its island dead forever: the morph-inserted element kept
+    // its defer-hydration marker and never became interactive. Re-run the
+    // eager buckets here; load() nulls its map entry when a load starts, so an
+    // already-activated tag is skipped and open:ready keeps its
+    // one-event-per-activation shape.
+    const lateLoad = loadAll(strategies.load);
+    if (lateLoad.length > 0) dispatchReady('load', lateLoad);
+    const lateOnly = loadAll(strategies.only);
+    if (lateOnly.length > 0) dispatchReady('only', lateOnly);
     if (visibleTags.length === 0) return;
     if (typeof win.IntersectionObserver !== 'function') {
       const activated = loadAll(visibleTags);

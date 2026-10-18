@@ -456,6 +456,52 @@ test('#1544/B2: a bucket whose tags have no host on this page starts no load and
   expect(typeof map['x-idle']).toEqual('function');
 });
 
+// #1544/B2 follow-up (R3 lane): the ready-time scan is not the last word.
+// An enhanced response morphs new HTML into the page, so an island host can
+// arrive AFTER the initial scan — and a host this page did not carry at ready
+// time used to keep its island dead forever (user-visible: an island delivered
+// by an enhanced response never became interactive, while the same island
+// hydrated normally on a page that declared the host up front). observeVisible()
+// is the post-morph rescan path the client runtime already calls (#562); it must
+// re-run the eager buckets too.
+test('#1544/B2 follow-up: a host arriving after the ready scan activates on the next rescan, exactly once', async () => {
+  const readyEvents: ReadyEvent[] = [];
+  const loaded: string[] = [];
+  const body = treeWithTags(); // zero-island page shape at ready time
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(),
+    doc: makeDoc(body, readyEvents),
+    map: {
+      'x-late': () => {
+        loaded.push('x-late');
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ load: ['x-late'] }),
+    onIslandLoaded: null,
+  });
+  // Ready time: no host, so no load and no event (the B2 gate above).
+  expect(loaded).toEqual([]);
+  expect(readyEvents).toEqual([]);
+
+  // The morph lands: the host is in the tree, and the post-morph rescan runs.
+  body.children.push(new FakeElement('x-late'));
+  scheduler.observeVisible();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'load', islands: ['x-late'] }]);
+
+  // Idempotent: repeated rescans are silent — the activated tag is out of the
+  // map, so open:ready stays one event per activation rather than one per scan.
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'load', islands: ['x-late'] }]);
+});
+
 test('#1544/B2: a bucket fires open:ready with exactly the tags this page carries', () => {
   const readyEvents: ReadyEvent[] = [];
   const loaded: string[] = [];
