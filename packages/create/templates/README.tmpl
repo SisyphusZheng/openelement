@@ -30,14 +30,14 @@ runs first writes its lockfile, and every command below works the same.
 
 ## The JS cost map
 
-| Surface                              | Ships JavaScript?     | Why                                      |
-| ------------------------------------ | --------------------- | ---------------------------------------- |
-| `/` hero + architecture sections     | no                    | prerendered markup, styled with CSS      |
-| `/` counter island (`my-counter`)    | yes, hydrates on idle | the one interactive piece                |
-| `/` live timer island (`live-timer`) | yes, client-only      | a live clock has nothing to prerender    |
+| Surface                              | Ships JavaScript?     | Why                                               |
+| ------------------------------------ | --------------------- | ------------------------------------------------- |
+| `/` hero + architecture sections     | no                    | prerendered markup, styled with CSS               |
+| `/` counter island (`my-counter`)    | yes, hydrates on idle | the one interactive piece                         |
+| `/` live timer island (`live-timer`) | yes, client-only      | a live clock has nothing to prerender             |
 | `/about`                             | no islands of its own | fully static SSG output, no island chunk executes |
-| `/api/ping`                          | no (server)           | a plain `Request → Response` handler     |
-| `/404` (unmatched paths)             | no (server)           | dynamic 404 from the styled 404 page     |
+| `/api/ping`                          | no (server)           | a plain `Request → Response` handler              |
+| `/404` (unmatched paths)             | no (server)           | dynamic 404 from the styled 404 page              |
 
 The badge on each section is a Tailwind utility string on the span itself
 (`bg-ok/8 text-ok` for a static section, `bg-brand-soft text-brand` for an
