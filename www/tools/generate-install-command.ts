@@ -21,10 +21,7 @@
  */
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  CREATE_PACKAGE_SPECIFIER,
-  createInstallCommand,
-} from '../../packages/create/src/install-command.ts';
+import { createInstallCommand } from '../../packages/create/src/install-command.ts';
 import { QUICKSTART_SOURCE, quickstartCommands } from '../lib/quickstart.ts';
 import { readFile, writeFile } from 'node:fs/promises';
 import process from 'node:process';
@@ -58,47 +55,9 @@ const DISPLAY_FILES: readonly string[] = [
   'www/e2e/cinematic-home.spec.ts',
 ];
 
-/**
- * A documented install command: either the canonical `npm create @openelement`
- * spelling (npm's `@scope` initializer alias resolves it to the create package
- * at the scope's default dist-tag — versionless, so it rides `latest`) or a
- * Node runner (npm exec / npx / pnpm dlx, including the pnpm form's explicit
- * `--package=` + bin — the packed package ships two bins, so a bare
- * `pnpm dlx` cannot resolve one) invoking the create package. The tag slot is
- * optional in both: a copy may pin an exact version or a channel on purpose.
- * The match ends at the specifier — the project name that follows is a free
- * example.
- */
-const DOCUMENTED_COMMAND =
-  /(?:npm exec|npx|pnpm dlx)\b[^`\n]*?@openelement\/create(?:@[^\s`]+)?|npm create\s+@openelement(?:@[^\s`]+)?/g;
-
-const DOCUMENTED_SPECIFIER = /@openelement\/create(?:@[^\s`]+)?/;
-
-/**
- * The comparable shape of an install command: its package specifier with the
- * dist-tag slot normalized, so a deliberately pinned version is compared on the
- * package alone. Runner and flags are the docs' choice among the verified
- * spellings; the package is the CLI's. The canonical
- * `npm create @openelement` spelling normalizes through npm's `@scope` →
- * `@scope/create` initializer alias, so every verified form compares equal on
- * the same package, whether or not it names a tag.
- */
-function commandShape(command: string): string {
-  const direct = command.match(DOCUMENTED_SPECIFIER)?.[0];
-  // Anchor the tag strip on the final `@<tag>` segment (no `@` inside it), so
-  // the package name survives the normalization; a versionless specifier
-  // already carries the default tag (`latest`).
-  if (direct) {
-    return direct.includes('@openelement/create@')
-      ? direct.replace(/@[^@\s`]+$/, '@<tag>')
-      : `${CREATE_PACKAGE_SPECIFIER}@<tag>`;
-  }
-  // `npm create @openelement(@<tag>)`: the alias form carries the scope, not
-  // the package name — normalize it to the package it resolves to.
-  const alias = command.match(/@openelement(?:@[^\s`]+)?/)?.[0];
-  if (alias) return `${CREATE_PACKAGE_SPECIFIER}@<tag>`;
-  return '';
-}
+// The install-command shape predicate lives in one place, shared with the
+// doc-claims gate (which covers the wider prose corpus).
+import { DOCUMENTED_COMMAND, commandShape } from './lib/install-command-shape.ts';
 
 /**
  * Files whose copies must carry the canonical spelling verbatim — only the

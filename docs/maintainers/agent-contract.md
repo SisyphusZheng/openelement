@@ -208,6 +208,9 @@ coded failure surface.
 | Version bump | `pnpm --dir tools/repo run version-bump <version> [--write]` | One knob: twelve release-line points plus the four release-line-shaped workspace-member stamps — 16 files today (the dry run's `points:` line is authoritative); see `docs/maintainers/version-bump.md`. |
 | Workflow lint | `zizmor --offline .` | Required after touching anything under `.github` — workflows AND composite actions. |
 | Cross-system seams | (register + test) | A seam change registers in `docs/architecture/seams.md` AND ships a consumer-form test (constitution P8, ADR-0163); a seam missing either does not pass the gate. |
+| Shim inventory | `vp run --fail-if-no-match @openelement/tools-repo#shims:check` | `docs/maintainers/shim-inventory.md` is a hand-maintained registry with a mechanical reader: every row carries an existing tracked path, an owner, a status, and a non-empty retirement condition. The reader rides `gate:source`. |
+| Doc claims | `vp run --fail-if-no-match @openelement/www#check:doc-claims` | Every machine-checkable factual claim in the covered docs (versions, commands, subpaths, gate and CI counts, ADR and path references, locale parity, the meta-description budget) must agree with the file that owns the fact. Narrative prose is explicitly out of scope; exemptions live in the checker's allowlist and each needs a reason. |
+| ADR index | `vp run --fail-if-no-match @openelement/tools-repo#adr-index:check` | A record must be listed, its links resolvable, and a non-active record annotated `SUPERSEDED` / `RETIRED` / `EXECUTED`; the reader rides `gate:source`. |
 | Publish dispatch | (GitHub Actions) | Requires main push CI green FIRST — the exact-SHA contract. |
 
 ## Maintaining this contract

@@ -93,14 +93,14 @@ publish; a missing environment fails the job closed instead of publishing:
 The candidate gate is split so a pull request gets fast, honest feedback
 without giving up any release-time proof.
 
-- `@openelement/tools-repo#gate:source` — the local source gate (thirteen
-  steps: twelve `@`-qualified tasks plus `check:dep-age`; the `gate:source`
+- `@openelement/tools-repo#gate:source` — the local source gate (sixteen
+  steps: fifteen `@`-qualified tasks plus `check:dep-age`; the `gate:source`
   script in `tools/repo/package.json` is the authoritative list and count):
   `generate:all`, `typecheck`, the dependency-age quarantine check, the
   Element and Router unit suites, markdown lint, the vp-selector-flags check,
-  `seams:check`, the content-dates manifest check, the public-interface
-  snapshot, the request-time and base-path fixture gates, and the Element
-  browser gate (Chromium). No
+  `seams:check`, `shims:check`, `adr-index:check`, the content-dates manifest
+  check, `www#check:doc-claims`, the public-interface snapshot, the request-time
+  and base-path fixture gates, and the Element browser gate (Chromium). No
   workflow invokes this task; `pnpm run verify` and `pnpm run verify:core`
   are its entry points. Eleven of those steps also run in AutoFlow CI through
   the `lint` and `test` jobs — `generate:all`, the `tools/` project's
@@ -110,7 +110,9 @@ without giving up any release-time proof.
   both unit suites and the Chromium browser gate in `test` — while the
   request-time and base-path fixture gates run only in the
   `e2e-full` full-qualification layer (main pushes and `full_qualification`
-  dispatches), so a PR can be green while they are unexercised. The separate
+  dispatches), and `shims:check`, `adr-index:check` and `www#check:doc-claims`
+  are local-only until a workflow adopts them, so a PR can be green while they
+  are unexercised. The separate
   `pack` job owns `@openelement/tools-release#gate:packed`; the
   `fresh-install` job runs the cold-cache install/typecheck proof only on the
   `main` push and full-qualification layer. A green

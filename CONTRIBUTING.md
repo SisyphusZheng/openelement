@@ -85,14 +85,20 @@ package name:
 The gates are split in two layers. CI's fast PR layer is the `lint`, `test`,
 `e2e`, and `pack` jobs in `.github/workflows/autoflow-ci.yml`, and it runs on
 every pull request targeting `main` and on pushes to `main` and
-`alpha15-consolidation`. `tools/repo#gate:source` (12
-steps) is the LOCAL source gate: no workflow invokes it, and `pnpm run verify`
-and `pnpm run verify:core` are its entry points. Ten of its twelve steps also
-run in CI through those jobs — `@openelement/tools-repo#typecheck` (the
-`tools/` project) now runs in the `lint` job; only the request-time and
+`alpha15-consolidation`. `tools/repo#gate:source` (16
+steps: fifteen `@`-qualified tasks plus `check:dep-age`) is the LOCAL source
+gate: no workflow invokes the aggregate task, and `pnpm run verify`
+and `pnpm run verify:core` are its entry points. Eleven of those steps also
+run in CI through the fast jobs — `@openelement/tools-repo#typecheck` (the
+`tools/` project), the dependency-age quarantine, markdown lint (inside
+`vp run check`), the vp-selector flags check, the seams registry, the
+content-date manifest, the interface snapshot, `generate:all`, and the
+Element/Router unit suites plus the Chromium browser gate. The request-time and
 base-path fixture gates stay outside the fast layer, in the `e2e-full`
-full-qualification layer (main pushes and `full_qualification` dispatches) —
-so run `pnpm run verify:core` before relying on those two. The steps that need
+full-qualification layer (main pushes and `full_qualification` dispatches), and
+`shims:check`, `adr-index:check` and `www#check:doc-claims` are local-only
+until a workflow adopts them —
+so run `pnpm run verify:core` before relying on those. The steps that need
 a built Site, coverage, deploy
 fixtures, or three-engine browser matrices live in `tools/repo#gate:release`
 and run on the release train via `release:check` before anything is published.

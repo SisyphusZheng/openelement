@@ -31,6 +31,7 @@
     "emit:rss": "node ../tools/repo/run-in.ts --root .. -- node www/tools/emit-site-rss.ts",
     "check:content": "node ../tools/repo/run-in.ts --root .. -- node www/tools/check-content-examples.ts",
     "check:content-dates": "node ../tools/repo/run-in.ts --root .. -- node www/tools/check-content-dates.ts",
+    "check:doc-claims": "node ../tools/repo/run-in.ts --root .. -- node www/tools/check-doc-claims.ts",
     "check:doc-figures": "node ../tools/repo/run-in.ts --root .. -- node www/tools/check-doc-figures.ts",
     "check:retired-url": "node ../tools/repo/run-in.ts --root .. -- node www/tools/check-retired-urls.ts",
     "refresh:retired-url": "node ../tools/repo/run-in.ts --root .. -- node www/tools/check-retired-urls.ts --refresh",
