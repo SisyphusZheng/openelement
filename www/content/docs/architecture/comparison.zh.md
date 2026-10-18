@@ -89,7 +89,7 @@ OpenElement × Supabase × Cloudflare 是第一方全栈交付路径，所有权
 | -------------------- | ------------------------------------------------ |
 | 预渲染文档           | 74 个 HTML 文件                                  |
 | `sitemap.xml` URL 数 | 72                                               |
-| 静态产物总量         | 13.0 MiB（13,629,023 B）                         |
+| 静态产物总量         | 13.0 MiB（13,633,816 B）                         |
 | island manifest      | 74 份——每页一份                                  |
 | 搜索索引             | 每个语言 36 页（en、zh），72 个 fragment，1.6 MiB |
 
@@ -115,7 +115,7 @@ docs 站点就是一个普通的 openElement 应用（同样有 island），所�
 | `island-open-cinematic-scroll` | 7,509 | 2,923 |
 | `island-open-code-block`       | 4,120 | 1,574 |
 | `island-open-hero-polish`      | 5,312 | 2,148 |
-| `client.js`                    | 7,947 | 2,301 |
+| `client.js`                    | 9,476 | 2,914 |
 
 ```bash
 ls -l www/dist/client/islands/*.js

@@ -91,7 +91,7 @@ Numbers measured on 2026-10-18 from the docs site's own build (`www/dist`, built
 | ---------------------- | -------------------------------------------------- |
 | Pre-rendered documents | 74 HTML files                                      |
 | URLs in `sitemap.xml`  | 72                                                 |
-| Total static output    | 13.0 MiB (13,629,023 B)                            |
+| Total static output    | 13.0 MiB (13,633,816 B)                            |
 | Island manifests       | 74 — one per page                                  |
 | Search index           | 36 pages per locale (en, zh), 72 fragments, 1.6 MiB |
 
@@ -117,7 +117,7 @@ The docs site is a normal openElement app, islands included, so its client outpu
 | `island-open-cinematic-scroll` | 7,509 | 2,923 |
 | `island-open-code-block`       | 4,120 | 1,574 |
 | `island-open-hero-polish`      | 5,312 | 2,148 |
-| `client.js`                    | 7,947 | 2,301 |
+| `client.js`                    | 9,476 | 2,914 |
 
 ```bash
 ls -l www/dist/client/islands/*.js
