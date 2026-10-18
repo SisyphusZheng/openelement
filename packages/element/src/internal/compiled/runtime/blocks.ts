@@ -27,6 +27,7 @@ import {
 import type { LifetimeScope } from '../lifetime-scope.ts';
 import type { MountContext } from './program-kernel.ts';
 import {
+  assertSafeUrlAttribute,
   displayValue,
   fail,
   guardedUpdate,
@@ -504,6 +505,7 @@ function updateItemValues(
     if (next === null) {
       if (slot.element.hasAttribute(slot.name)) slot.element.removeAttribute(slot.name);
     } else if (slot.element.getAttribute(slot.name) !== next) {
+      assertSafeUrlAttribute(slot.name, next);
       slot.element.setAttribute(slot.name, next);
     }
   }

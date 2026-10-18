@@ -18,10 +18,15 @@ import {
 // is an OpenElementError carrying a code from the catalogue, so a consumer
 // classifies a compiled-runtime failure by code instead of by message prefix.
 import {
+  AuthoringErrorCode,
   raiseFrameworkError,
   RUNTIME_MESSAGES_ENABLED,
   RuntimeErrorCode,
 } from '@openelement/protocol/errors';
+// The ONE protocol URL policy (the `__h` server constructor's boundary): every
+// class-lane DOM attribute write judges URL-carrying values through it rather
+// than growing a second scheme list.
+import { unsafeStreamFrameAttribute } from '@openelement/protocol/stream-frame-policy';
 import type { RuntimeProgramIR } from '../runtime-program.ts';
 // Type-only (erased): the binding shapes this context records, owned by the
 // Part and Block modules that create them.
@@ -357,9 +362,9 @@ export function isElement(node: Node): node is Element {
  * only these two shapes are ever asked for the marker, so every other node is
  * rejected without touching attributes it may not carry.
  *
- * ONE owner, two consumers: the claim (`leadingStaticStyleNodeCount`) and the
- * resume (`reviveOwnedDom`) must skip exactly the same nodes — a resume that
- * skipped only the old inline fallback would treat a served delivery link as
+ * ONE owner, two consumers: the claim and the resume both skip exactly the
+ * leading run counted by {@linkcode countLeadingStaticStyleNodes} — a resume
+ * that skipped only one node would treat the rest of the delivery run as
  * program drift and fail the reconnect closed. Keep this predicate here, in the
  * runtime core both executors already import; do not reintroduce a private copy.
  */
@@ -373,6 +378,19 @@ export function isStaticStyleNode(node: Node | undefined): boolean {
   return tag === 'style' || node.getAttribute('rel') === 'stylesheet';
 }
 
+/**
+ * How many marked static-style nodes the serializer emitted as the root's
+ * leading children: one per externalised sheet (`<link rel="stylesheet">`) plus
+ * the inline `<style>` fallback when a URL-less sheet survives. It is a COUNT,
+ * not a boolean — the S lane's root shape can carry several delivery nodes, and
+ * both the claim and the resume must skip exactly all of them.
+ */
+export function countLeadingStaticStyleNodes(root: Node): number {
+  let count = 0;
+  while (isStaticStyleNode(root.childNodes[count])) count++;
+  return count;
+}
+
 /** True for the marked inline fallback node (the one hydration may retire). */
 export function isStaticStyleFallbackNode(node: Node | undefined): boolean {
   return (
@@ -382,6 +400,22 @@ export function isStaticStyleFallbackNode(node: Node | undefined): boolean {
 
 export function displayValue(value: unknown): string {
   return value === null || value === undefined ? '' : String(value);
+}
+
+/**
+ * The class lane's one URL-write guard: a URL-carrying attribute name whose
+ * value carries a script-bearing scheme is refused BEFORE the DOM write, with
+ * the same `OE_UNSAFE_URL_SINK` code the server constructor (`__h`) raises for
+ * its markup sinks. The predicate is the ONE shared protocol policy; do not
+ * reintroduce a scheme list here.
+ */
+export function assertSafeUrlAttribute(name: string, value: string): void {
+  if (!unsafeStreamFrameAttribute(name, value)) return;
+  fail(
+    AuthoringErrorCode.UNSAFE_URL_SINK,
+    `[compiled-runtime] URL attribute ${JSON.stringify(name)} received a script-bearing ` +
+      `scheme (${JSON.stringify(value.slice(0, 32))}); the value is refused.`,
+  );
 }
 
 export function removeNodes(nodes: readonly Node[]): void {

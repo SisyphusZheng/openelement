@@ -44,7 +44,15 @@ import {
   type ProgramWhenPart,
 } from '@openelement/protocol/part-program';
 import { VOID_TAGS } from '@openelement/protocol/void-tags';
-import { raiseFrameworkError, RuntimeErrorCode } from '@openelement/protocol/errors';
+import {
+  AuthoringErrorCode,
+  raiseFrameworkError,
+  RuntimeErrorCode,
+} from '@openelement/protocol/errors';
+// The ONE shared URL-attribute policy (the same predicate the server `__h`
+// constructor screens with): the compiled class lane must fail closed exactly
+// like `__h` for a script-bearing scheme.
+import { unsafeStreamFrameAttribute } from '@openelement/protocol/stream-frame-policy';
 // Canonical text-node escape contract (#1272) — the one shared implementation;
 // do not reintroduce a private copy.
 import { escapeText } from '../escape-text.ts';
@@ -328,12 +336,27 @@ function slotNameOf(
   return name;
 }
 
+/**
+ * Assemble one element's attribute bytes. Every assembled attribute — a static
+ * template attribute, a dynamic sink value, or an each-item slot — passes the
+ * ONE shared URL policy here, so both serializers (server and seed) refuse a
+ * script-bearing `href`/`src`/`action`/`formaction` exactly like the server
+ * constructor `__h` does.
+ */
 function attributeText(seams: SerializeProgramSeams, attributes: readonly SerializedAttribute[]) {
-  return attributes
-    .map((attr) =>
-      attr.bare ? ` ${attr.name}` : ` ${attr.name}="${seams.escapeAttr(attr.value)}"`,
-    )
-    .join('');
+  let text = '';
+  for (const attr of attributes) {
+    if (!attr.bare && unsafeStreamFrameAttribute(attr.name, attr.value)) {
+      raiseFrameworkError(
+        'validation',
+        AuthoringErrorCode.UNSAFE_URL_SINK,
+        `[compiled-serializer] URL attribute ${JSON.stringify(attr.name)} received a ` +
+          `script-bearing scheme (${JSON.stringify(attr.value.slice(0, 32))}); the value is refused.`,
+      );
+    }
+    text += attr.bare ? ` ${attr.name}` : ` ${attr.name}="${seams.escapeAttr(attr.value)}"`;
+  }
+  return text;
 }
 
 function serializeElement(

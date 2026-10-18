@@ -23,6 +23,7 @@ import type {
   MountContext,
 } from './program-kernel.ts';
 import {
+  assertSafeUrlAttribute,
   createContext,
   displayValue,
   fail,
@@ -79,7 +80,10 @@ export function mountNodes(
     }
     if (node.k === 'el') {
       const el = doc.createElement(node.tag);
-      for (const [name, value] of node.attrs) el.setAttribute(name, value);
+      for (const [name, value] of node.attrs) {
+        assertSafeUrlAttribute(name, value);
+        el.setAttribute(name, value);
+      }
       if (node.iattrs !== undefined) {
         if (item === NO_ITEM || !itemPart) {
           fail(
@@ -89,7 +93,10 @@ export function mountNodes(
         }
         for (const [name, field] of node.iattrs) {
           const value = itemAttrValue(item, field);
-          if (value !== null) el.setAttribute(name, value);
+          if (value !== null) {
+            assertSafeUrlAttribute(name, value);
+            el.setAttribute(name, value);
+          }
           itemAttrSlots?.push({ element: el, name, field });
         }
       }

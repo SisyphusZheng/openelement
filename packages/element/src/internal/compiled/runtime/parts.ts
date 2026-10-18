@@ -26,6 +26,7 @@ import { attributeValueOf, classValueOf, styleValueOf } from '../server/shared.t
 import { RuntimeErrorCode } from '@openelement/protocol/errors';
 import type { LifetimeScope } from '../lifetime-scope.ts';
 import {
+  assertSafeUrlAttribute,
   displayValue,
   fail,
   isElement,
@@ -175,8 +176,12 @@ function propertySink(element: Element): PropertySink {
 
 function applyProperty(element: Element, name: string, value: unknown, initial: boolean): void {
   const sink = propertySink(element);
+  const serialized = attributeValueOf(value);
+  // A property Part mirrors its value onto the attribute on the initial write,
+  // and the property itself may reflect to a URL attribute: screen the value
+  // before either channel takes it, exactly like an attr Part.
+  if (serialized !== null) assertSafeUrlAttribute(name, serialized);
   if (initial) {
-    const serialized = attributeValueOf(value);
     if (serialized === null) element.removeAttribute(name);
     else element.setAttribute(name, serialized);
   }
@@ -184,8 +189,12 @@ function applyProperty(element: Element, name: string, value: unknown, initial: 
 }
 
 function applyAttribute(element: Element, name: string, value: string | null): void {
-  if (value === null) element.removeAttribute(name);
-  else element.setAttribute(name, value);
+  if (value === null) {
+    element.removeAttribute(name);
+    return;
+  }
+  assertSafeUrlAttribute(name, value);
+  element.setAttribute(name, value);
 }
 
 function applyBoolean(element: Element, name: string, value: boolean): void {
