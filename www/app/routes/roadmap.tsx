@@ -171,6 +171,9 @@ const content = {
     visualCopy:
       'Published package ownership and the public architecture must remain mechanically identical.',
     packageMatrixLabel: 'package matrix',
+    // Accessible name for the package matrix visual: authored per locale so the
+    // zh page never announces the component's English default (T10 R2).
+    packageGraphLabel: 'package graph',
     productBoundaryMeta: 'product boundary',
     releaseDisciplineLabel: 'release discipline',
     v10PostureMeta: 'v1.0 posture',
@@ -253,6 +256,7 @@ const content = {
     visualTitle: '包图是发布产物的一部分。',
     visualCopy: '已发布的包归属与公开架构必须保持机械一致。',
     packageMatrixLabel: '包矩阵',
+    packageGraphLabel: '包依赖图',
     productBoundaryMeta: '产品边界',
     releaseDisciplineLabel: '发布纪律',
     v10PostureMeta: 'v1.0 姿态',
@@ -325,6 +329,7 @@ export function RoadmapPage(props: {
   visualTitle: string;
   visualCopy: string;
   packageMatrixLabel: string;
+  packageGraphLabel: string;
   productBoundaryMeta: string;
   releaseDisciplineLabel: string;
   v10PostureMeta: string;
@@ -514,6 +519,7 @@ export function RoadmapPage(props: {
                   variant='packages'
                   emphasis='high'
                   motion='auto'
+                  label={props.packageGraphLabel}
                 ></open-standards-visual>
               </open-artifact-panel>
               <open-artifact-panel>
@@ -667,6 +673,7 @@ export default definePage(RoadmapPage, {
       visualTitle: t.visualTitle,
       visualCopy: t.visualCopy,
       packageMatrixLabel: t.packageMatrixLabel,
+      packageGraphLabel: t.packageGraphLabel,
       productBoundaryMeta: t.productBoundaryMeta,
       releaseDisciplineLabel: t.releaseDisciplineLabel,
       v10PostureMeta: t.v10PostureMeta,

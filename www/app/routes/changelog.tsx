@@ -53,6 +53,9 @@ const content = {
     publishedIntro:
       'The project follows Keep a Changelog and SemVer. Historical entries preserve older names where they describe older releases; current docs use the openElement contract.',
     stampCurrent: COMMON_PUBLISHED_VERSION === null ? 'Per-package latest' : 'Current',
+    // Accessible name of the register block: authored per locale (T10 R2) —
+    // the zh page announced the English 'Release register' before.
+    registryAria: 'Release register',
     regCurrentSummary:
       COMMON_PUBLISHED_VERSION === null
         ? sharedLatestBare === ''
@@ -85,6 +88,7 @@ const content = {
     publishedIntro:
       '本项目遵循 Keep a Changelog 与 SemVer。历史条目在描述旧版本时保留旧名称；当前文档使用 openElement 契约。',
     stampCurrent: COMMON_PUBLISHED_VERSION === null ? '各包 latest' : '当前',
+    registryAria: '发布登记表',
     regCurrentSummary:
       COMMON_PUBLISHED_VERSION === null
         ? sharedLatestBare === ''
@@ -142,6 +146,7 @@ export function PageChangelog(props: {
   railItems: Array<{ id: string; href: string; label: string; depth: string }>;
   publishedIntro: string;
   stampCurrent: string;
+  registryAria: string;
   regCurrentSummary: string;
   stableHeading: string;
   commonVersionLabel: string;
@@ -188,7 +193,7 @@ export function PageChangelog(props: {
         >
           {props.publishedIntro}
         </p>
-        <div class='mt-8 mb-10 border-t border-border' aria-label='Release register'>
+        <div class='mt-8 mb-10 border-t border-border' aria-label={props.registryAria}>
           <div class='border-b border-border bg-primary/14 p-5 shadow-[inset_4px_0_0_var(--color-primary)]'>
             <div class='flex flex-wrap items-baseline gap-3'>
               <span class='text-[clamp(1.9rem,3.4vw,2.8rem)] leading-none font-extrabold tracking-[-0.02em] text-foreground'>
@@ -272,6 +277,7 @@ export default definePage(PageChangelog, {
       metaSuffix: text.metaSuffix,
       publishedIntro: text.publishedIntro,
       stampCurrent: text.stampCurrent,
+      registryAria: text.registryAria,
       regCurrentSummary: text.regCurrentSummary,
       stableHeading: text.stableHeading,
       stableBody: text.stableBody,

@@ -57,9 +57,15 @@ export function PageBlogPost(props: {
         hidden={props.notFoundHidden}
         data-pagefind-ignore
       >
-        <h1 class='mb-4 font-black leading-[1.05] tracking-[-0.06em] text-foreground text-(length:--text-5xl) min-[481px]:text-(length:--text-6xl) min-[901px]:text-[clamp(2.7rem,6vw,5.5rem)]'>
+        {/* The fallback's "404" is a paragraph, not an <h1>: this block is
+            hidden on a served article, but it still ships in the HTML, and a
+            second top-level heading in the document outline is exactly the
+            kind of markup defect a validator or a future `hidden` removal
+            turns into a real one (T10 R4). The article below owns the page's
+            one <h1>. */}
+        <p class='mb-4 font-black leading-[1.05] tracking-[-0.06em] text-foreground text-(length:--text-5xl) min-[481px]:text-(length:--text-6xl) min-[901px]:text-[clamp(2.7rem,6vw,5.5rem)]'>
           404
-        </h1>
+        </p>
         <p class='my-2 text-sm leading-[1.72] text-foreground min-[901px]:text-(length:--text-base)'>
           {props.notFoundMessage}: {props.slug}
         </p>
