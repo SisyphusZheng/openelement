@@ -42,15 +42,68 @@ export function validateProjectName(name: string): string | null {
  * to `app`.
  */
 export function inPlaceProjectName(directory: string): string {
-  const normalized = directory.replace(/\\+/g, '/').replace(/\/+$/, '');
-  const base = normalized.slice(normalized.lastIndexOf('/') + 1);
-  const cleaned = base
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/g, '-')
-    .replace(/\.{2,}/g, '.')
-    .replace(/^[^a-z0-9]+/, '')
-    .replace(/[-._]+$/, '')
-    .slice(0, MAX_PROJECT_NAME_LENGTH);
+  // Everything below is a linear scan on purpose: the regex spellings this
+  // replaces (`/\/+$/`, `/[-._]+$/`) are quadratic on a long run of the
+  // repeated character, which CodeQL rightly reports as a ReDoS shape, and the
+  // directory name is host input (a directory really can be named `/////…`).
+  // Backslash runs collapse to one '/', then trailing slashes are dropped.
+  let normalized = '';
+  for (const char of directory) {
+    const mapped = char === '\\' ? '/' : char;
+    if (mapped === '/' && normalized.endsWith('/')) continue;
+    normalized += mapped;
+  }
+  let normalizedEnd = normalized.length;
+  while (normalizedEnd > 0 && normalized[normalizedEnd - 1] === '/') normalizedEnd -= 1;
+  const trimmed = normalized.slice(0, normalizedEnd);
+  const base = trimmed.slice(trimmed.lastIndexOf('/') + 1);
+
+  // Runs of characters outside the package-name grammar collapse to one '-'.
+  let slug = '';
+  let inIllegalRun = false;
+  for (const char of base.toLowerCase()) {
+    const legal =
+      (char >= 'a' && char <= 'z') ||
+      (char >= '0' && char <= '9') ||
+      char === '.' ||
+      char === '_' ||
+      char === '-';
+    if (legal) {
+      slug += char;
+      inIllegalRun = false;
+    } else if (!inIllegalRun) {
+      slug += '-';
+      inIllegalRun = true;
+    }
+  }
+
+  // Runs of two or more dots collapse to one dot.
+  let dedotted = '';
+  let dots = 0;
+  for (const char of slug) {
+    if (char === '.') {
+      dots += 1;
+      if (dots > 1) continue;
+    } else {
+      dots = 0;
+    }
+    dedotted += char;
+  }
+
+  // Strip leading non-alphanumerics and the trailing run of `-._`.
+  let start = 0;
+  while (start < dedotted.length) {
+    const char = dedotted[start];
+    if ((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) break;
+    start += 1;
+  }
+  let end = dedotted.length;
+  while (end > start) {
+    const char = dedotted[end - 1];
+    if (char === '-' || char === '.' || char === '_') end -= 1;
+    else break;
+  }
+  const cleaned = dedotted.slice(start, end).slice(0, MAX_PROJECT_NAME_LENGTH);
   return cleaned === '' ? 'app' : cleaned;
 }
 
