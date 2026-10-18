@@ -101,7 +101,10 @@ test.describe('Accessibility coverage sweep (axe)', () => {
         ),
       );
       for (const label of new Set(labels)) {
-        if (label === '' || !/^[\x20-\x7e]+$/u.test(label)) continue;
+        // The subject is untranslated English WORDS: a numeric or symbol-only
+        // label ("404" on the zh error page) is language-neutral, not a
+        // translation defect.
+        if (label === '' || !/^[\x20-\x7e]+$/u.test(label) || !/[A-Za-z]/u.test(label)) continue;
         if (label in ZH_ARIA_ALLOWLIST) continue;
         untranslated.push(`${route}: '${label}'`);
       }
