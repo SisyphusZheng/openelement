@@ -455,7 +455,7 @@ jobs:
           # tag, so every light-root island failed the claim with 'unexpected
           # trailing nodes' and never hydrated — and is wired here now that the
           # delivery is leading and the shared static-style predicate is single
-          # owner; 318/318 three-engine.
+          # owner; the full suite passes on all three engines.
           vp run --no-cache --fail-if-no-match --filter @openelement/fixture-router-base-path gate
           vp run --no-cache --fail-if-no-match --filter @openelement/fixture-router-request-time gate
       - name: Nitro proofs
