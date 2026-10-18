@@ -615,17 +615,47 @@ try {
   // A forced reload re-runs this loop: the marker set after activation only
   // survives when no further reload arrives within the stability window.
   // Playwright re-installs waitForFunction predicates across navigations.
+  //
+  // The reload can also land in the handoff between the predicate above and
+  // the evaluate below (no context to install it into): the page navigates,
+  // the execution context is destroyed, and the evaluate throws. The loop
+  // exists to absorb exactly that reload, so a destroyed context re-enters
+  // the loop instead of aborting the warm-up. Only that class is absorbed —
+  // every other error propagates — and the iteration stays bounded by the
+  // same deadline, so an app that never settles still fails here.
+  const contextDestroyed = (error: unknown): boolean =>
+    /Execution context was destroyed/.test(String(error));
   for (;;) {
     if (Date.now() > deadline) throw new Error('dev warm-up timed out');
     await page.waitForFunction(islandActive, undefined, { timeout: 120000, polling: 500 });
-    await page.evaluate(() => {
-      (globalThis as { __devWarmup?: string }).__devWarmup = 'stable';
-    });
+    let markerSet = false;
+    try {
+      await page.evaluate(() => {
+        (globalThis as { __devWarmup?: string }).__devWarmup = 'stable';
+      });
+      markerSet = true;
+    } catch (error) {
+      if (!contextDestroyed(error)) throw error;
+    }
+    if (!markerSet) continue;
     await page.waitForTimeout(STABILITY_MS);
-    const survived = await page.evaluate(() =>
-      (globalThis as { __devWarmup?: string }).__devWarmup === 'stable'
-    );
-    if (survived && await page.evaluate(islandActive)) break;
+    let survived = false;
+    try {
+      survived = await page.evaluate(() =>
+        (globalThis as { __devWarmup?: string }).__devWarmup === 'stable'
+      );
+    } catch (error) {
+      if (!contextDestroyed(error)) throw error;
+      continue;
+    }
+    let stillActive = false;
+    try {
+      stillActive = await page.evaluate(islandActive);
+    } catch (error) {
+      if (!contextDestroyed(error)) throw error;
+      continue;
+    }
+    if (survived && stillActive) break;
   }
   console.log('DEV-WARMUP-OK ' + renderer);
 } finally {
