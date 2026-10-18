@@ -1,12 +1,39 @@
 /**
- * Content gate: one discovery pass over the authored Markdown, two
+ * Content gate: one discovery pass over the authored Markdown, three
  * invariants. Every fenced `@openelement/*` named import must resolve
- * against the generated export inventory (no broken teaching imports), and
- * every TypeScript/JavaScript fence in the maintained authoring surface
- * must type-check against the real framework sources (#1159, B2.4;
- * hardened #1307). Merging the import inventory into this entry keeps the
- * fence parser, the content walk, and the diagnostics in one place; the
- * former standalone content-imports checker is retired.
+ * against the generated export inventory (no broken teaching imports), every
+ * TypeScript/JavaScript fence in the maintained authoring surface must
+ * type-check against the real framework sources (#1159, B2.4; hardened
+ * #1307), and every fence that authors a COMPILED unit must actually compile
+ * through the real compiler (the docs-bug gate: a recipe the reader copies
+ * must build). Merging the import inventory into this entry keeps the fence
+ * parser, the content walk, and the diagnostics in one place; the former
+ * standalone content-imports checker is retired.
+ *
+ * Compile invariant (fail closed): a fence is admitted by the same two
+ * admission bridges the real build uses — `compileElementModule` for an
+ * `@element`-decorated TSX module, then `compileServerComponentIfAdmitted`
+ * for a server-function page module — with the router's own island sidecar
+ * (`ISLAND_ADMISSION`, so `export const openElement = defineIslandConfig(…)`
+ * is admitted exactly as in an app). An OEC diagnostic fails the gate with
+ * the compiler's own boundary+fix message, so a documented recipe cannot rot
+ * into "does not build". De-duplication is by fence bytes (the en/zh pairs
+ * carry identical code); the blog stays out of scope for the same historical
+ * reason as the type-check.
+ *
+ * Fragment rule: a fence that is not a whole compiled unit (a JSX snippet, a
+ * `render()` body excerpt, an options object, a config block) is exactly the
+ * fence where BOTH admission bridges answer null — that is the compiler's
+ * own module boundary, never a heuristic here. Such fences stay covered by
+ * the type-check invariant and are not compile-run.
+ *
+ * Documented-rejection exclusion (deliberate, small, per-page): the grammar
+ * reference (`compiled-grammar.md` + its `.zh.md` mirror) intentionally prints
+ * REJECTED forms next to the admitted ones; a whole-page compile run cannot
+ * tell a teaching-negative fence from a teaching-positive one, and the
+ * admitted forms on that page are covered by the compiler's own suites. No
+ * other page is excluded — a page that merely shows real code is a bug when
+ * the compiler refuses it, not an exclusion.
  *
  * Type-check scope and suppression: see below.
  *
@@ -49,6 +76,11 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackages } from '../../tools/lib/package-graph.ts';
 import { apiReference } from '../app/data/_generated-api-reference.ts';
+import {
+  compileElementModule,
+  compileServerComponentIfAdmitted,
+} from '../../packages/compiler/src/compiler.ts';
+import { ISLAND_ADMISSION } from '../../packages/protocol/src/island-admission.ts';
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import process from 'node:process';
 
@@ -191,6 +223,79 @@ export function extractExamples(file: string, markdown: string): ContentExample[
   return examples;
 }
 
+/**
+ * Pages that intentionally document rejected grammar (see the header): the
+ * ONLY compile-run exclusions. Keep this list per-page and rationale-bearing;
+ * growing it to hide a real docs bug is exactly the regression this gate
+ * exists to catch.
+ */
+export const COMPILE_EXCLUDED_PAGES: ReadonlyMap<string, string> = new Map([
+  [
+    'www/content/docs/guide/compiled-grammar.md',
+    'the grammar reference prints rejected forms beside the admitted ones; ' +
+      'admitting whole-page fences would either wave the rejected forms through or ' +
+      'bury the admitted examples, and the admitted forms are pinned by the compiler suites',
+  ],
+  [
+    'www/content/docs/guide/compiled-grammar.zh.md',
+    'zh mirror of the grammar reference (same rationale)',
+  ],
+]);
+
+/** True when this example's page is an explicit documented-rejection page. */
+export function isCompileExcluded(file: string): boolean {
+  return COMPILE_EXCLUDED_PAGES.has(file);
+}
+
+/** The compiler options the real build passes: the router's island sidecar. */
+const COMPILE_OPTIONS = { staticSidecars: [ISLAND_ADMISSION] } as const;
+
+/** One fence's virtual module id; the compiler derives diagnostics/source maps from it. */
+function virtualExampleId(example: ContentExample, index: number): string {
+  return `${example.file}#fence-${index + 1}.tsx`;
+}
+
+/** Extract coded compiler diagnostics from a failed admission bridge. */
+function compilerDiagnostics(error: unknown): Array<{ code: string; message: string }> {
+  const diagnostics = (error as { diagnostics?: Array<{ code?: unknown; message?: unknown }> })
+    .diagnostics;
+  if (!Array.isArray(diagnostics)) return [];
+  return diagnostics.map((diagnostic) => ({
+    code: typeof diagnostic.code === 'string' ? diagnostic.code : 'OEC????',
+    message: typeof diagnostic.message === 'string' ? diagnostic.message : String(diagnostic),
+  }));
+}
+
+/**
+ * Run one example fence through the real compiler admission bridges. Returns
+ * the failures the build would report; [] means the fence is either a valid
+ * compiled unit or the compiler's own module boundary rejected it as a
+ * fragment (null from both bridges), which the type-check invariant covers.
+ */
+export function compileExample(example: ContentExample): ExampleFailure[] {
+  if (isCompileExcluded(example.file)) return [];
+  const id = virtualExampleId(example, example.index);
+  try {
+    if (compileElementModule(example.code, id, COMPILE_OPTIONS) !== null) return [];
+    if (compileServerComponentIfAdmitted(example.code, id) !== null) return [];
+    return [];
+  } catch (error) {
+    const diagnostics = compilerDiagnostics(error);
+    if (diagnostics.length === 0) {
+      return [{ file: example.file, message: `example failed to compile: ${String(error)}` }];
+    }
+    return diagnostics.map((diagnostic) => ({
+      file: `${example.file} (block ${example.index + 1})`,
+      message: `${diagnostic.code}: ${diagnostic.message}`,
+    }));
+  }
+}
+
+/** Compile-run every maintained-surface example fence (fail closed on OEC diagnostics). */
+export function compileExamples(examples: ContentExample[]): ExampleFailure[] {
+  return examples.flatMap((example) => compileExample(example));
+}
+
 /** Build a paths map resolving workspace @openelement/* specifiers to files. */
 export async function workspacePaths(): Promise<Record<string, string[]>> {
   const paths: Record<string, string[]> = {};
@@ -321,6 +426,7 @@ export interface ContentGateResult {
   importFailures: ExampleFailure[];
   exampleFailures: ExampleFailure[];
   patternFailures: ExampleFailure[];
+  compileFailures: ExampleFailure[];
 }
 
 export async function checkContent(): Promise<ContentGateResult> {
@@ -355,11 +461,13 @@ export async function checkContent(): Promise<ContentGateResult> {
     importFailures,
     patternFailures,
     exampleFailures: await typeCheckExamples(examples),
+    compileFailures: compileExamples(examples),
   };
 }
 
 if (import.meta.main) {
-  const { importFailures, patternFailures, exampleFailures } = await checkContent();
+  const { importFailures, patternFailures, exampleFailures, compileFailures } =
+    await checkContent();
   if (importFailures.length > 0) {
     console.error('Content import check failed:');
     for (const failure of importFailures) {
@@ -378,10 +486,22 @@ if (import.meta.main) {
       console.error(`- ${failure.file}: ${failure.message}`);
     }
   }
-  if (importFailures.length > 0 || patternFailures.length > 0 || exampleFailures.length > 0) {
+  if (compileFailures.length > 0) {
+    console.error('Content example compile failed (the documented code does not build):');
+    for (const failure of compileFailures) {
+      console.error(`- ${failure.file}: ${failure.message}`);
+    }
+  }
+  if (
+    importFailures.length > 0 ||
+    patternFailures.length > 0 ||
+    exampleFailures.length > 0 ||
+    compileFailures.length > 0
+  ) {
     process.exit(1);
   }
   console.log(
-    'Content gate passed (imports resolved, authoring patterns clean, examples type-checked).',
+    'Content gate passed (imports resolved, authoring patterns clean, examples type-checked ' +
+      'and compiled).',
   );
 }
