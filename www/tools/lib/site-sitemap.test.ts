@@ -79,6 +79,40 @@ test('renderSitemapXml: stable schema, home priority, per-route lastmod', () => 
   const docsBlock = xml.split('<loc>https://openelement.org/docs</loc>')[1].split('</url>')[0];
   expect(docsBlock.includes('<lastmod>')).toEqual(false);
   expect(xml.match(/<lastmod>/g)?.length).toEqual(1);
+  // No locales passed: the document stays the plain single-tree sitemap (no
+  // xhtml namespace, no alternate rows) — the default is the pre-alternates
+  // shape, so a caller that has no locale configuration cannot emit a broken
+  // hreflang set.
+  expect(xml.includes('xhtml')).toEqual(false);
+  expect(xml.includes('rel="alternate"')).toEqual(false);
+});
+
+test('renderSitemapXml: every URL carries its locale alternates plus x-default', () => {
+  const xml = renderSitemapXml(['/', '/docs', '/zh', '/zh/docs'], {
+    locales: ['en', 'zh'],
+    defaultLocale: 'en',
+  });
+  expect(xml.includes('xmlns:xhtml="http://www.w3.org/1999/xhtml"')).toBeTruthy();
+  // The default-locale URL treats itself as the canonical tree: en + zh
+  // alternates, and x-default pointing at the default-locale URL.
+  const rootBlock = xml.split('<loc>https://openelement.org/</loc>')[1]!.split('</url>')[0]!;
+  expect(rootBlock).toContain(
+    '<xhtml:link rel="alternate" hreflang="en" href="https://openelement.org/"/>',
+  );
+  expect(rootBlock).toContain(
+    '<xhtml:link rel="alternate" hreflang="zh" href="https://openelement.org/zh"/>',
+  );
+  expect(rootBlock).toContain(
+    '<xhtml:link rel="alternate" hreflang="x-default" href="https://openelement.org/"/>',
+  );
+  // A locale-prefixed URL names the same pair: the zh page's alternates are
+  // still the en canonical and the zh tree, not a second localized copy.
+  const zhBlock = xml.split('<loc>https://openelement.org/zh/docs</loc>')[1]!.split('</url>')[0]!;
+  expect(zhBlock).toContain('hreflang="en" href="https://openelement.org/docs"');
+  expect(zhBlock).toContain('hreflang="zh" href="https://openelement.org/zh/docs"');
+  expect(zhBlock).toContain('hreflang="x-default" href="https://openelement.org/docs"');
+  // Two alternates + x-default per URL, for all four enumerated URLs.
+  expect(xml.match(/rel="alternate"/g)?.length).toEqual(12);
 });
 
 test('renderRobotsTxt: allow all plus sitemap pointer', () => {

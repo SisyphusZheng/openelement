@@ -52,7 +52,14 @@ export async function generateSiteSitemap(dist = join(repoRoot, SITE_DIST)): Pro
   const lastmod = await articleLastmodByRoute(publicRoutes);
   const sitemapPath = join(dist, 'sitemap.xml');
   const robotsPath = join(dist, 'robots.txt');
-  await writeFile(sitemapPath, renderSitemapXml(publicRoutes, { lastmod }));
+  await writeFile(
+    sitemapPath,
+    renderSitemapXml(publicRoutes, {
+      lastmod,
+      locales: SITE_LOCALES,
+      defaultLocale: SITE_DEFAULT_LOCALE,
+    }),
+  );
   await writeFile(robotsPath, renderRobotsTxt());
   return [sitemapPath, robotsPath];
 }
