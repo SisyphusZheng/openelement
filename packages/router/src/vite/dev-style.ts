@@ -53,6 +53,49 @@ import type { DevStyleSession } from './internal/dev-style-session.ts';
 
 const log = createLogger('router-vite:style-dev');
 
+/**
+ * Rebuild the dev entry DESCRIPTOR from the cached phase-1 scan facts.
+ *
+ * The descriptor bakes `state.headExtrasValue` when it is generated, and the
+ * virtual entry module the dev server renders from is `renderEntry(descriptor)`
+ * — so a head contribution made AFTER the descriptor was built is invisible to
+ * the document until the descriptor (and the cached module) are refreshed.
+ *
+ * That ordering is reachable on a COLD dev start: Vite 8 runs a plugin
+ * container's `buildStart` lazily on the first `resolveId`
+ * (`EnvironmentPluginContainer.resolveId` awaits its own `buildStart`), and
+ * `open:core`'s `configureServer` resolves through that container to derive
+ * the admitted package set. An app with a `app/layout.tsx`/`app/head.tsx`
+ * convention walks a real module graph there, so `buildStart` can run from
+ * inside `open:core`'s configureServer — BEFORE this plugin's own
+ * configureServer contributes the document stylesheet. Without the refresh the
+ * first cold document head renders from a descriptor built before the link
+ * existed (D2: cold `oe dev` served the unstyles base while `oe build`/`start`
+ * was correct).
+ *
+ * This is the #1028 rescan sequence minus the filesystem rescan: the only fact
+ * that moved is the head channel, and the descriptor does not depend on any
+ * other late-settled plugin data.
+ */
+function refreshEntryDescriptor(state: OpenPluginState): void {
+  generateEntry(
+    state,
+    state.ctx.phase1.cachedRoutes ?? [],
+    state.ctx.phase1.islandTagNames,
+    state.ctx.phase1.packageManifests,
+    state.ctx.phase1.islandFiles,
+  );
+  if (state.entryDescriptor) {
+    state.ctx.phase1.ssrAdmissionPlan = state.entryDescriptor.ssrAdmissionPlan;
+  }
+}
+
+/** Drop the cached virtual entry module so the next request re-evaluates it. */
+function invalidateEntryModule(server: ViteDevServer): void {
+  const entry = server.moduleGraph.getModuleById(RESOLVED_ENTRY_ID);
+  if (entry) server.moduleGraph.invalidateModule(entry);
+}
+
 /** The peer's plugin hooks this wrapper proxies. */
 type ProxiedHook = 'configResolved' | 'configureServer' | 'transform' | 'hotUpdate';
 
@@ -221,6 +264,12 @@ export function devStylePlugin(state: OpenPluginState, session: DevStyleSession)
         // blocklist. Idempotent across Vite's config re-resolution: the setter
         // re-points the framework's own link instead of accumulating one.
         setFrameworkStylesheets(state, [tailwindEntryUrl(base)]);
+        // The head channel is baked into the entry descriptor: rebuild it (and
+        // drop the cached virtual entry) so a cold start whose buildStart ran
+        // early (see refreshEntryDescriptor) still links the sheet on the very
+        // first document render.
+        refreshEntryDescriptor(state);
+        invalidateEntryModule(server);
         await callPeerHook(plugins, 'configResolved', this, [server.config]);
         // The channel verdict, stated where a dev run shows it.
         log.info(
@@ -286,6 +335,11 @@ export function devStylePlugin(state: OpenPluginState, session: DevStyleSession)
         }
       });
       setFrameworkStylesheets(state, [url()]);
+      // Same descriptor refresh as the Tailwind branch: the first cold
+      // document render must carry the link even when buildStart already ran
+      // inside open:core's configureServer.
+      refreshEntryDescriptor(state);
+      invalidateEntryModule(server);
       log.info(
         `${plan.provider} document entry active — the compiled stylesheet is served at ` +
           `${url()} and linked in the document head`,
@@ -303,22 +357,9 @@ export function devStylePlugin(state: OpenPluginState, session: DevStyleSession)
         // The served link is baked twice: applyResolvedOptions (called above)
         // refreshes state.headExtrasValue, but the entry DESCRIPTOR captured
         // the old value and the virtual entry module renders from the
-        // descriptor. Rebuild the descriptor from the phase-1 scan facts (the
-        // #1028 rescan sequence minus the filesystem rescan — the only fact
-        // that moved is the stylesheet hrefs) and invalidate the entry module
-        // so the dev server re-evaluates it on the next request.
-        generateEntry(
-          state,
-          state.ctx.phase1.cachedRoutes ?? [],
-          state.ctx.phase1.islandTagNames,
-          state.ctx.phase1.packageManifests,
-          state.ctx.phase1.islandFiles,
-        );
-        if (state.entryDescriptor) {
-          state.ctx.phase1.ssrAdmissionPlan = state.entryDescriptor.ssrAdmissionPlan;
-        }
-        const entry = server.moduleGraph.getModuleById(RESOLVED_ENTRY_ID);
-        if (entry) server.moduleGraph.invalidateModule(entry);
+        // descriptor — refresh both so the reload serves the new hrefs.
+        refreshEntryDescriptor(state);
+        invalidateEntryModule(server);
         server.ws.send({ type: 'full-reload' });
       };
       // The engine's configuration moved: the generator was rebuilt by the

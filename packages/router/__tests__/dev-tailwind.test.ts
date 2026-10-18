@@ -732,3 +732,65 @@ test('the fixture tree stays free of retired-entry leftovers', () => {
   // come back from any code path this suite exercises.
   expect(existsSync(join(FIXTURE_DIR, '.openElement/tailwind-preset'))).toEqual(false);
 });
+
+/**
+ * D2 cold-start regression: the very FIRST document a cold dev server renders
+ * must link the document sheet, including for the app shape where
+ * `open:core`'s configureServer triggers the Vite plugin container's LAZY
+ * `buildStart` (Vite 8 awaits a container's buildStart on its first
+ * `resolveId`) before this plugin's configureServer contributes the link.
+ *
+ * The trigger is the convention layout: the admitted-package derivation walks
+ * `app/layout.tsx`, which resolves through the plugin container and starts
+ * buildStart early; the entry DESCRIPTOR then bakes the pre-link head. The
+ * fixture therefore uses the layout convention (no `layout` option) — the
+ * existing suite's `layout: false` shape never enters that ordering.
+ */
+test('cold dev start links the document sheet before any warm-up request (D2)', async () => {
+  const coldStartFixture = join(
+    import.meta.dirname!,
+    '../__test_fixtures__/tailwind-dev-cold-start-layout',
+  );
+  writeFixtureAt(coldStartFixture, 'p-8');
+  writeFileSync(join(coldStartFixture, 'app/layout.css'), `:host { display: block; }\n`, 'utf8');
+  writeFileSync(
+    join(coldStartFixture, 'app/layout.tsx'),
+    `import { element, OpenElement } from '@openelement/element';
+import styles from './layout.css';
+
+@element('app-layout', { root: 'shadow-open' })
+export default class Layout extends OpenElement {
+  static override styles = [styles];
+
+  render() {
+    return (
+      <div>
+        <header class='p-4'>chrome</header>
+        <slot></slot>
+      </div>
+    );
+  }
+}
+`,
+    'utf8',
+  );
+  try {
+    // No `layout` option: the convention file above is what activates the
+    // layout graph walk (and therefore the early buildStart ordering).
+    const handle = await bootDev(
+      openElement({
+        routesDir: 'app/routes',
+        islandsDir: 'app/islands',
+        tailwind: { theme: ['app/styles/theme.css'] },
+      }),
+      coldStartFixture,
+    );
+    handles.push(handle);
+
+    // FIRST request on a cold server: no priming fetch, no reload.
+    const doc = await fetchDoc(handle);
+    expect(doc, 'the cold-start document links the compiled entry').toContain(ENTRY_URL);
+  } finally {
+    rmSync(coldStartFixture, { recursive: true, force: true });
+  }
+});
