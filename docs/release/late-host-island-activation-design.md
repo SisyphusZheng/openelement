@@ -26,6 +26,18 @@ Owner 批准 4/4，均按本文 §11 的推荐取值；第 5 条（引擎口径�
 - 三引擎 e2e 是最重的一腿，执行前与 lead 协调机器资源（另有 lane 在跑 gate）。
 - **三引擎首跑若出现 firefox 红，不得用重试掩盖**（KR-18：owner 已定 `retries=0`，禁止恢复 retries/skip）：按台账格式记录现象 + 证据路径，标 `flaky`/`open`，如实上报，由 lead 决定是否允许记账后的 rerun。
 
+## 实现偏离（已批准意图内）
+
+实现 `672847cb7` 时，**冻结既有 28 例零修改**这一硬约束（§4.5 I-4）逼出了三处对 §3.1 伪代码字面的收敛。三条都不改 B2 / F01 的语义，也都由既有钉法直接证明其必要性，经 lead 判定**在 G1 批准意图内**（不需重开决策门）。在此集中登记，便于 owner 复审一处可见。
+
+| # | 偏离 | 为什么必须 | 既有钉法（证明其必要性） |
+| --- | --- | --- | --- |
+| D-1 | **`idle` 不参与探测**：`pendingTags()` 在 `idlePending === true` 时跳过 idle tag | idle bucket 自带 deferred step。探测在构造末尾 arm，此刻 idle 尝试**必然**还 outstanding；再为它排一个 timer 就是给同一个 tag 排两次 deferred step | `#605 idle fallback defers through setTimeout with the injected policy timeout`（断言 `scheduled.length === 1`）、`#F01 idle: the re-armed attempt keeps the fallback selection`（断言重扫后恰好 2 个 timer 且 `[1][1] === 25`） |
+| D-2 | **探测搭 ready 门，不抢跑**：`readyState === 'loading'` 且存在 `visible` island 时，构造末尾不 arm，改由 `onReady(rescanAndArm)` 在那次扫描结束时 arm | `onReady(observeVisible)` 在等 DOMContentLoaded；若探测直接调 `observeVisible()`，就会在文档 ready 前挂上 observer，破坏 ready 扫描承诺的延后语义 | `the ready-time visible scan waits for DOMContentLoaded on a loading document`（断言 `observed === []` 且 `listeners.length === 1`） |
+| D-3 | **`visible` 命中即 settle**：命中记入 `probeSettled`，`pendingTags()` 跳过已 settle 的 tag | `visible` island 的 host 存在但未进入视口是**健康态**，不是缺 host。不 settle 则探测每轮重复命中、耗尽预算，并对完全正常的 tag 报 `open:island-host-timeout`（假诊断） | `#1039 detached visible island is released and a reinsert gets a fresh observer`（证明 visible 的 host-present 状态由 observer 链路拥有，与"缺 host"无关） |
+
+`observeVisible()` 的函数体逐字未改（F01 语义冻结）；新增的只是 `rescanAndArm = observeVisible(); armProbe()` 这层**幂等**包装（`armProbe()` 在已 arm / 已注销 / 无 pending tag 时立即返回）。另在实现中移除了两处死分支以保覆盖：`endWindow` 内永远为假的 `probePending` 清 timer 块（真正需要清的是 `onIslandLoadActivity` 内那次，由 T-8 覆盖），以及 `giveUp` 载荷改用重算的 `pendingTags()`（避免点名已 settle 的 tag）。
+
 ## 0. 决策摘要
 
 **问题**：第三方 WC（Lit）组件在**自己的 open shadow root 内后创建** `<wc-open-child>`；B2 的 host-gated load 在 ready 扫描时找不到 host，factory 留在 map 里；而**该页面上根本不存在任何 rescan 触发路径**（enhance 层不存在、`visible` bucket 为空）→ island 永不注册 → smoke `missing=wc-open-child`。这是**泛用互操作缺陷**：任何「第三方组件在自身 shadow root 内创建 openElement island host」的应用都坏，与 Lit 无关。
