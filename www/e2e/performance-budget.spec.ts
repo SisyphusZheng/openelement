@@ -1,18 +1,33 @@
 /**
  * Performance budget harness (T10 R8, G3-approved).
  *
- * The repository had no LCP/CLS/INP measurement anywhere: the only performance
- * assertions were "loads within 5 seconds"
+ * CHROMIUM-ONLY. This spec measures through CDP — `context.newCDPSession`,
+ * CPU throttling, `Network.emulateNetworkConditions`,
+ * `Network.loadingFinished` — none of which exist in Firefox or WebKit. Rather
+ * than skip there (the candidate proof forbids skips, and a skip would read as
+ * coverage that does not exist), `playwright.config.ts` lists this file in
+ * CHROMIUM_ONLY_SPECS and the firefox/webkit projects ignore it. It was
+ * collected by all three projects at first, and the release check caught the
+ * consequence: two engine failures at `context.newCDPSession`.
+ *
+ * How to run the baseline:
+ *   pnpm --dir www run e2e:chromium -- e2e/performance-budget.spec.ts
+ *   PERF_RUNS=3 pnpm --dir www run e2e:chromium -- --workers=1 e2e/performance-budget.spec.ts
+ * (`e2e:chromium` is the project-scoped script; under `e2e:browsers` the
+ * firefox and webkit legs do not collect this spec by design.)
+ *
+ * Why it exists: the repository had no LCP/CLS/INP measurement anywhere, and
+ * the only performance assertions were "loads within 5 seconds"
  * (accessibility-performance.spec.ts:199,208), which cannot see a regression
  * that is real but smaller than a second. This spec measures the built site
  * under a mobile-4G + 4x-CPU profile — cold cache, fresh context, N runs per
  * route, median reported — and compares against the committed baseline in
  * `perf-baseline.json`.
  *
- * Deliberately NOT a hard gate yet (the owner's "测而不 fail"): absolute
- * milliseconds on a shared CI runner are noise, and the repository already
- * documents a 0.3% byte spread for identical trees across runner images
- * (www/tools/check-doc-figures.ts). The comparison therefore reports
+ * Deliberately NOT a hard gate yet (the owner's "measure, do not fail"):
+ * absolute milliseconds on a shared CI runner are noise, and the repository
+ * already documents a 0.3% byte spread for identical trees across runner
+ * images (www/tools/check-doc-figures.ts). The comparison therefore reports
  * regressions as test annotations and only fails when PERF_STRICT=1 is set, at
  * which point the band below becomes the budget.
  *

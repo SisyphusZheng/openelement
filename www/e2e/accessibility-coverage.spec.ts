@@ -32,7 +32,6 @@ const SWEPT_ROUTES = [
   '/guide/core-concepts',
   '/architecture',
   '/architecture/comparison',
-  '/reference',
   '/changelog',
   '/roadmap',
   '/errors',
@@ -40,7 +39,6 @@ const SWEPT_ROUTES = [
   '/blog/1-0-0-alpha-1-baseline',
   '/zh',
   '/zh/docs',
-  '/zh/reference',
   '/zh/changelog',
   '/zh/roadmap',
   '/zh/errors',
@@ -70,6 +68,12 @@ function scan(page: Page, route: string) {
   }
   return builder.analyze();
 }
+
+// The two generated mega-pages (2.09 MB each) are scanned by
+// accessibility-mega-pages.spec.ts instead of here: Firefox intermittently
+// stops making progress on them under a full three-engine run, and Playwright
+// scopes `testIgnore` to files, not to individual tests. That file carries the
+// coverage note (including the one Firefox gap it leaves).
 
 test.describe('Accessibility coverage sweep (axe)', () => {
   for (const route of SWEPT_ROUTES) {
