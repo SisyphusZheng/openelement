@@ -169,3 +169,39 @@ boundary, not a failure).
   (that is the mapping proof, not an error); the discriminator run
   `npm create @nope-probe-scope … --offline` names `@nope-probe-scope/create`,
   so the assertion really tracks npm's mapping.
+
+## KR-20 · Third-party WC qualification: advisory T0 tier report reads 0/11
+
+- **Symptom**: the fixture's advisory tier report (`OPEN_ELEMENT_TIER_REPORT`)
+  reports `0/11 T0 proved` while the smoke's contract assertions all pass and
+  the process exits 0. The 11 entries fail in two shapes: 8 (the tags with no
+  authored slot-first child) report the same capture-gap trio — `slot-first
+  no-JS content not proved`, `:defined styling transition not proved`,
+  `pre-upgrade identity not captured`; the 3 slot-first probe tags
+  (`wc-lit-counter`, `sl-button`, `md-filled-button`) report `host or child
+  identity lost on upgrade` (the pre-upgrade capture ran, the identity did not
+  survive the upgrade).
+- **Not related to the late-host fix (T8)**: those are the slot-first /
+  `:defined` / pre-upgrade-identity probes. The late-host contract is asserted
+  separately (registration, upgrade, nested open shadow root, light-DOM late
+  append, closed-root non-crash, unused-tag 0 fetch) and passes. **There is no
+  comparable baseline**: before the T8 fix the run never reached the browser
+  stage (it stopped at `missing=wc-open-child`), and the t3 negative-proof log
+  stops at the registry trap, so the T0 count was never observable.
+- **Evidence path**: lane t8-design @ `672847cb7`, chromium base run, smoke
+  exit 0; tier report and log at
+  `wt-t8-design/.zcode/scratch/t8/tier-chromium-base.json` and
+  `wt-t8-design/.zcode/scratch/t8/smoke-chromium-base.log` (lane scratch,
+  UNTRACKED). The committed anchor for the gap vocabulary is
+  `tests/fixtures/third-party-web-components/qualify.ts` (the `t0Failures`
+  list inside the advisory `tierReport`).
+- **Impact**: the tier report is advisory and does not gate the smoke
+  (`qualify.ts` prints it and returns; the gate is the contract assertions
+  before the record), so the release train is unaffected. But a reader sees
+  `0/11` with no explanation, which reads as a failed qualification.
+- **Owner**: alpha16 — not this batch.
+- **Retirement condition**: either the three slot-first probes pass on
+  chromium, or the report states them as unsupported-by-design.
+- **Latest observation**: 2026-10-18, lane t8-design @ `672847cb7` (chromium,
+  base run): `third-party Web Components diagnostic completed: 0/11 T0 proved;
+  T1/T2 not run`, smoke exit 0, zero error markers in the log.
