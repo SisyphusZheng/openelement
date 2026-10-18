@@ -54,32 +54,71 @@ boundary, not a failure).
 
 ## KR-17 · Third-party WC qualification: `wc-open-child` never registers
 
+- **Status**: FIXED (product commit `323fd54df`, lane `672847cb7`) — retired in
+  this batch; the evidence is below.
 - **Symptom**: the fixture's browser verification throws
   `custom-element registration failed; missing=wc-open-child`. The tag is a
   client-only island whose host is created later, inside a third-party (Lit)
   component's shadow root.
-- **Root-cause direction (alpha15 fix-batch report)**: B2 page-scope host
-  gating defers `client:load` islands until a host exists, but this host is
-  created after activation inside a foreign shadow root — there is no
-  morph/rescan trigger for that late host.
-- **Evidence path**: `.zcode/plans/alpha15-fix-batch-report-2026-10-18.md`
-  (§5, alpha15 close-out report). The same failure reproduces at the pre-PR
-  tree `53fc1d4fb` and with a published alpha.14 scaffold under the unmodified
-  harness, so it predates this batch. Fixture sources:
-  `tests/fixtures/third-party-web-components/app/islands/wc-open-child.tsx`,
-  `.../qualify.ts` (the registration wait). Lane log (untracked):
-  `.zcode/scratch/t3-release/fixture-smoke-fixed.log`.
-- **Impact**: the third-party interop fixture cannot go green, so the release
-  train keeps one red step; the "client-only island inside a foreign shadow
-  root" scenario is unqualified.
-- **Owner**: alpha15 batch — T8 takes the fixture follow-up; the product-fix
-  vs fixture-adjustment decision stays with the owner (report options a/b/c).
-- **Retirement condition**: T8's three-engine, multi-library cases green
-  (`wc-open-child` registers and upgrades inside the Lit shadow root), or an
-  owner-recorded decision that the scenario is out of contract.
-- **Latest observation**: 2026-10-18, lane/t3-release @ `f395b1e1f` (KR-16 fix
-  applied): the smoke reaches the browser stage and fails exactly with
-  `missing=wc-open-child`, browser errors empty.
+- **Root cause (confirmed)**: B2's page-scope gate reads the page once, at
+  module evaluation. `wc-open-child` is created inside the Lit host's own open
+  shadow root only after `wc-client.ts` — a separate async chunk — lands, and on
+  that page shape nothing ever looks again: with no enhanced forms the enhance
+  layer (the only caller of `observeVisible()`) is never generated, and with no
+  `client:visible` island the ready-time visible scan is not registered either.
+  The scheduler suite pinned the deferral but never the absence of a trigger.
+- **Fix (T8, this batch)**: `packages/router/src/vite/internal/ssg/island-scheduler.ts`
+  runs a bounded late-host probe — while the page still carries a declared
+  factory nobody has consumed, it re-asks the composed tree for those tags (one
+  fused traversal for the whole pending set) and hands a hit to the existing
+  rescan. It adds no activation path: `load()`'s host gate stays the only one,
+  so a page with no host still fetches nothing. Budget 6 scans per window,
+  3000 ms per window, at most 3 windows renewed by island-load activity, 9000 ms
+  absolute; a spent budget announces `open:island-host-timeout` (registered as a
+  P8 seam in `docs/architecture/seams.md`) instead of dropping the tags
+  silently. Commits: product `323fd54df` (lane `672847cb7`), fixture corpus
+  `a035fdb60` (lane `9cce43828`), three-engine structure `9d1479b90` (lane
+  `d4a826ebd`), seam row `38560ea5f` (lane `cd8915701`).
+- **Evidence path**: `vp run --no-cache --fail-if-no-match --filter
+  @openelement/fixture-third-party-web-components smoke`, default engine set
+  chromium + firefox + webkit, **exit 0**. Contract-level cases, 0 failures on
+  every engine (chromium 147.0.7727.15, firefox 148.0.2, webkit 26.4): Lit,
+  FAST, a real Stencil `dist-custom-elements` host compiled from the fixture's
+  own source, and a bare native element each creating an island inside its own
+  OPEN shadow root (one of them through a nested pair); a light-DOM late append
+  into Shoelace, Material Web and Ionic; exactly-once registration and upgrade;
+  a closed-root host present but neither registered nor upgraded, with no page
+  error; `open:island-host-timeout` firing exactly once per engine, naming 4
+  pending tags with `attempts: 6` and `elapsedMs` 5638 / 5987 / 5675; the unused
+  island at `chunkRequests` 0 against 17 / 17 / 15 other island chunks fetched
+  on the same page (the positive control that keeps the zero meaningful). **The
+  harness does not retry — this run had 0 retries, 0 pageerrors, 0 timeout
+  markers.** Lane logs (UNTRACKED, lane t8-design):
+  `wt-t8-design/.zcode/scratch/t8/smoke-3engine.log` and
+  `wt-t8-design/.zcode/scratch/t8/tier-3engine.json`. Committed anchors:
+  `tests/fixtures/third-party-web-components/qualify.ts` (the late-host corpus,
+  the per-engine record, the give-up listener) and
+  `packages/router/__tests__/island-scheduler.test.ts` (T-1…T-20, including
+  T-6/T-6b/T-9/T-9b/T-14).
+- **Impact**: the third-party interop fixture could not go green, so the release
+  train kept one red step, and the "client-only island inside a foreign shadow
+  root" scenario was unqualified. **Resolved in this batch**: the release train
+  no longer keeps this red step, and the scenario is qualified on three engines.
+- **Owner**: alpha15 batch (T8). Closed.
+- **Retirement condition**: MET — T8's three-engine, multi-library cases green
+  (`wc-open-child` registers and upgrades inside the Lit shadow root on
+  chromium, firefox and webkit).
+- **Not this entry**: the advisory tier report still reads `0/11 T0 proved`;
+  that is **KR-20** (alpha16), a separate probe-gap item, not a regression of
+  this one. Readers should not read the two together.
+- **Non-contract observation (recorded, no action taken)**: webkit requested 15
+  island chunks where chromium and firefox each requested 17, for the same page
+  and the same dist. It affects only the floor of the zero-fetch positive
+  control (which asserts > 0), breaks no assertion, and is left as an
+  engine-level request-deduplication difference.
+- **Latest observation**: 2026-10-18, lane t8-design @ `d4a826ebd` (main-tree
+  `9d1479b90`), three-engine run: exit 0, contract failures 0, engine
+  differences 0.
 
 ## KR-18 · firefox fixture flake: `live.spec.ts:897` and `lit-flow.spec.ts:246`
 
