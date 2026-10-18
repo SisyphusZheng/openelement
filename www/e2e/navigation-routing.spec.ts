@@ -32,6 +32,18 @@ test.describe('Direct URL Access', () => {
 
   for (const route of routes) {
     test(`"${route.path}" loads successfully with correct title`, async ({ page }) => {
+      // Environment tolerance, not a weaker assertion: the title/status checks
+      // below are unchanged. The generated /reference page is 2.09 MB of HTML;
+      // Firefox loads it in ~5 s when it runs alone (measured 2026-10-18), but
+      // under a full three-engine run it intermittently stops making progress
+      // and hits the default 120 s limit (release:check, same day). The ceiling
+      // matches the one the resident gate gives its own /reference scan
+      // (accessibility-gate.spec.ts), and the route stays in every engine — the
+      // point is to keep Firefox's navigation coverage of the page, not to
+      // dodge it. Tracked as the local Firefox large-page trap (§1.4/R7) and
+      // the Firefox flake class recorded as KR-18 in
+      // docs/maintainers/known-reds-ledger.md.
+      if (route.path === '/reference') test.setTimeout(420_000);
       const response = await page.goto(route.path);
       await page.waitForLoadState('networkidle');
 
