@@ -9,6 +9,67 @@ lives in:
 - [`docs/release/release-state.json`](./docs/release/release-state.json)
 - [`docs/release/public-interface-snapshot.json`](./docs/release/public-interface-snapshot.json)
 
+## 1.0.0-alpha.15
+
+**The alpha.15 line: vocabulary finalization, defect closure, and the release
+evidence the 1.0 line rides on.** Authored vocabulary converges on one set of
+names, the compiled class lane gets the same security boundary as `__h`, the
+island scheduler learns the strategies it had been dropping, light-root CSS is
+projected with a parser instead of a text scan, and the build/qualification
+gates now see what they claim to see.
+
+- **Layout convention.** `app-shell` becomes `app/layout.tsx` plus the
+  `layout` option; the old inline key fails closed with rename guidance.
+- **Part Program vocabulary.** Regions/claims become blocks/hydration; the
+  wire version moves to 2 and v1 artifacts are refused with a diagnostic,
+  never coerced. `renderDsd` is `renderToString`; the Deferred executor family
+  and its eight codes are `Stream*` (`OE_DEFERRED_*` → `OE_STREAM_*`); the
+  public `./no-regions` subpath is `./no-blocks`.
+- **Dead configuration removed.** `componentsDir`, `mode: 'ssg'` and
+  `renderMode: 'static'` are gone; the compiled-element grammar keeps one
+  documented authoring surface.
+- **Security — the class lane now screens URL values.** Compiled class
+  components route `href`/`src`/`action`/`formaction`/`xlink:href` values
+  through the same protocol predicate `__h` already used; script-bearing
+  schemes (`javascript:`, `vbscript:`, `data:`) throw `OE_UNSAFE_URL_SINK`
+  before they reach markup or the DOM. This also refuses `data:` URLs on
+  resource attributes that previously accepted them — a deliberate tightening,
+  not a compat shim.
+- **Security — request-data head fragments are allowlisted.** Route-resolved
+  `head.dangerouslyHeadFragments` now accept only top-level `<meta>`, `<link>`
+  and `<style>` markup (plus whitespace); comments, closing tags, `<base>`,
+  embedders, event-handler attributes and `<meta http-equiv="refresh">` are
+  rejected. Build-time `headExtras`/`inject.headFragments` keep their existing
+  predicates: they are configuration, not request data.
+- **Security — PRG redirect targets are canonicalized, and generated entry
+  imports are quoted.** A `//`-prefixed pathname can no longer produce a
+  protocol-relative `Location`; route filenames containing quotes can no longer
+  splice syntax into the generated entry (an un-emittable module path fails the
+  build with `OE_DESCRIPTOR_MODULE_IMPORT`).
+- **Correctness — island scheduling, resume and branch sinks.** A morph that
+  delivers `idle` or `media` island hosts now re-arms those strategies instead
+  of leaving the islands permanently inert; a resumed root skips every leading
+  static-style node (not just one); a `when`-branch `innerHTML` sink is owned by
+  the element's identity instead of a colliding relative path; `@property`
+  names consult the shared prototype-pollution deny list.
+- **Build — the CLI build is a production build.** The build pins production
+  semantics for its Vite call, so ambient `NODE_ENV=test/development` can no
+  longer silently emit a development-semantics SSR bundle (KR-15).
+- **Dev/build parity.** A cold `dev` start now links the generated document
+  stylesheet on its first document (the descriptor was baked before the style
+  channel contributed it); light-root `@scope` projection only rewrites real
+  `:host`/`::slotted` selector tokens, case-insensitively, and leaves escaped
+  identifiers, declaration values and at-rule preludes alone.
+- **Gates that see.** The seams registry gains a mechanical reader (row shape,
+  consumer-form guard paths and the missing/unreadable-behavior clause);
+  `check:content` compiles maintained example fences with the real compiler;
+  qualified fixture gates run without retries and fail when their fixture build
+  is missing; accidental `.only` fails; the packed-artifact internal-path guard
+  catches every prefixed spelling; the CLI production pin has a negative proof.
+- **Docs and records.** The user-facing docs, release procedure, ADR statuses,
+  version-bump bookkeeping, public architecture package graph and CHANGELOG are
+  reconciled with the alpha.15 tree.
+
 ## 1.0.0-alpha.14
 
 **The starter ships in the Vite+ form, the router gains the `oe` command, and
