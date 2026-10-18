@@ -17,6 +17,8 @@
  * __clientScriptDescriptors).
  */
 
+import { existsSync, realpathSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import process from 'node:process';
 import type { Plugin } from 'vite';
 
@@ -39,6 +41,79 @@ const VIRTUAL_CLIENT_ENTRY_ID = 'virtual:open-client-entry';
 export const RESOLVED_CLIENT_ENTRY_ID = '\0' + VIRTUAL_CLIENT_ENTRY_ID;
 const CLIENT_ENTRY_PUBLIC_PATH = 'client/islands/client.js';
 
+/**
+ * The packages the dev dep optimizer must pre-bundle for an island page.
+ *
+ * B2 moved the element runtime behind `__loadElementRuntime()`'s dynamic
+ * import, so on an island page Vite first meets `@openelement/element` and
+ * `@openelement/router` while the first island hydrates — not while it scans
+ * the entry. A discovery that late starts a SECOND optimization of the same
+ * session, and until it commits Vite holds the module graph: the element
+ * runtime (and with it the pre-upgrade click capture the runtime installs)
+ * lands after the first real user click, which is then neither handled nor
+ * queued — the click is lost. Naming the packages here puts them in the FIRST
+ * optimization, which is what the page's own module graph asks for anyway.
+ */
+export const DEV_RUNTIME_PREBUNDLE_PACKAGES = [
+  '@openelement/element',
+  '@openelement/router',
+] as const;
+
+/**
+ * The `node_modules/<name>/package.json` that resolves from `root`, or
+ * undefined when the package is not reachable from the project at all.
+ * Resolution walks parents like Node does, so a workspace root's link is
+ * found from a nested fixture too.
+ */
+function packageManifestFor(root: string, name: string): string | undefined {
+  let dir = resolve(root);
+  for (;;) {
+    const candidate = join(dir, 'node_modules', name, 'package.json');
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return undefined;
+    dir = parent;
+  }
+}
+
+/**
+ * True when `<name>` resolves to a copy INSTALLED under the project's own
+ * node_modules (a packed consumer), false when it resolves anywhere else —
+ * above all a linked workspace package (`packages/<name>` in this repo, the
+ * fixture and www development shape).
+ *
+ * The distinction decides whether pre-bundling is legal: forcing a LINKED
+ * package into `optimizeDeps.include` would stop its source edits from
+ * reaching the dev server through HMR and could serve a pre-bundled copy
+ * beside the source one, which is exactly the identity split the linked
+ * shape must not have. A linked package therefore stays excluded, Vite's own
+ * linked-package behavior.
+ */
+function resolvesToInstalledCopy(root: string, name: string): boolean {
+  const manifest = packageManifestFor(root, name);
+  if (manifest === undefined) return false;
+  try {
+    const installedPrefix = join(realpathSync(resolve(root)), 'node_modules') + sep;
+    return realpathSync(manifest).startsWith(installedPrefix);
+  } catch {
+    // An unreadable path proves nothing about the install shape: stay on the
+    // conservative side (no forced pre-bundle) instead of guessing.
+    return false;
+  }
+}
+
+/**
+ * The `optimizeDeps.include` entries for one dev project root: both packages
+ * when both are installed copies, otherwise none. All-or-nothing keeps a
+ * half-installed tree (one linked, one installed) from pre-bundling the
+ * linked half.
+ */
+export function devRuntimePrebundleInclude(root: string): string[] {
+  return DEV_RUNTIME_PREBUNDLE_PACKAGES.every((name) => resolvesToInstalledCopy(root, name))
+    ? [...DEV_RUNTIME_PREBUNDLE_PACKAGES]
+    : [];
+}
+
 // Runtime module paths resolve through the shared runtimeModulePath helper
 // (internal/runtime-module-path.ts).
 
@@ -52,6 +127,18 @@ export function devIslandClientPlugin(
   return {
     name: 'open:dev-island-client',
     apply: 'serve',
+
+    // Dev-only, and only for an installed framework copy: the island page's
+    // runtime import is discovered late otherwise (see
+    // DEV_RUNTIME_PREBUNDLE_PACKAGES). These entries change the dev server's
+    // dependency optimization alone — no shipped bytes, no build graph, and
+    // the zero-island page still never requests the runtime. A linked
+    // workspace package resolves empty here so source HMR stays intact.
+    config(userConfig) {
+      const include = devRuntimePrebundleInclude(userConfig.root ?? process.cwd());
+      if (include.length === 0) return;
+      return { optimizeDeps: { include } };
+    },
 
     configResolved(config) {
       base = config.base || '/';
