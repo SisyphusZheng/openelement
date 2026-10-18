@@ -9,15 +9,15 @@ The source tree is `1.0.0-alpha.15`, a new public baseline for Element and Route
 
 ## Quick Start
 
-Requires **Node.js 24.2+** and a package manager: npm, pnpm, yarn, or bun
-(the scaffolder installs with whichever one it finds on `PATH`, and the
-generated project is package-manager neutral). Create, install, run, and
-build:
+Requires **Node.js 24.2+ (24.18.0 recommended)** and a package manager: npm,
+pnpm, yarn, or bun (the scaffolder installs with whichever one it finds on
+`PATH`, and the generated project is package-manager neutral). Create, run, and
+build — the generator installs the dependencies itself, so there is no separate
+install step:
 
 ```bash
 npm create @openelement my-app
 cd my-app
-npm install
 npm run dev
 npm run build
 ```
@@ -50,7 +50,7 @@ export default definePage(HelloPage, {
 });
 ```
 
-Re-run `pnpm dev`, open the URL Vite prints plus `/hello`, and `pnpm build` emits the static-first `dist/` output. Full walkthrough: <https://openelement.org/guide/getting-started>.
+Re-run `npm run dev`, open the URL Vite prints plus `/hello`, and `npm run build` emits the static-first `dist/` output. Full walkthrough: <https://openelement.org/guide/getting-started>.
 
 **Build-time host:** Framework Mode development and builds run on Node.js
 24.2+ through pnpm scripts (ADR-0161, superseding the Deno-native decision in

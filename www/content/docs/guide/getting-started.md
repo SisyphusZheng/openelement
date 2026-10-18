@@ -1,6 +1,6 @@
 ---
 title: 'Getting Started'
-lede: 'OpenElement is a Web Components-native, static-first application framework. Start with standard Custom Elements, pages, routes, selective upgrades and deployable Vite/Nitro output.'
+lede: 'OpenElement is a Web Components-native, static-first app framework: standard Custom Elements, pages, routes, selective upgrades, Vite/Nitro output.'
 order: 1
 ---
 
@@ -8,12 +8,13 @@ order: 1
 
 ## Install
 
-Four commands to a running app:
+Three commands to a running app — the generator installs the dependencies
+itself (with the first package manager it finds on `PATH`), so there is no
+separate install step:
 
 ```bash
 {{INSTALL_COMMAND}}
 cd my-app
-npm install
 npm run dev
 ```
 

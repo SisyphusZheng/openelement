@@ -1,7 +1,7 @@
 ---
 title: 'Tutorial: Your First App'
 navLabel: 'Tutorial'
-lede: 'Build one small application from an empty directory: create the project, add a page, add an island, add a form action, then build and serve it — with the command and the expected result at every step.'
+lede: 'Build one small app from an empty directory: create the project, add a page, an island and a form action, then build and serve it — result at every step.'
 order: 2
 ---
 
@@ -19,20 +19,19 @@ The tutorial builds one app in five steps, and every step ends with something yo
 4. **Add a form action** — a POST that either validates or saves and redirects.
 5. **Build and serve** — the `dist/` artifact you deploy.
 
-The TypeScript and TSX blocks on this page are not sketches: CI type-checks them against the framework sources on every commit.
+The TypeScript and TSX blocks on this page are not sketches: `www#check:content` compiles them with the real compiler against the framework sources — once in a local `vp run site:verify`, and again in the release gate (`release:check`'s `gate:release`). PR CI does not run it, so a stale block is caught by the release train, not on every commit.
 
 ## Step 1: Create the project
 
 ```bash
 {{INSTALL_COMMAND}}
 cd my-app
-npm install
 npm run dev
 ```
 
-The command runs on plain Node tooling: it fetches the published `@openelement/create` package from npm — a versionless install resolves `latest`, the current 1.0 line — and scaffolds the project with `@openelement/*` caret ranges over that release.
+The command runs on plain Node tooling: it fetches the published `@openelement/create` package from npm — a versionless install resolves `latest`, the current 1.0 line — and scaffolds the project with `@openelement/*` caret ranges over that release. It installs the dependencies too, so there is no separate install command.
 
-The create CLI prints one `created <path>` line per file, then the handoff box naming the generator version and the next step (the box spells the dev command for the package manager it detected; with `--no-install` it prints the universal `npm run dev`):
+The create CLI prints one `created <path>` line per file, then the handoff box naming the generator version and the next step (the box spells both commands for the package manager it detected; with `--no-install` it prints the install command first — for the detected manager, or `npm install` when none is on `PATH` — then the dev command):
 
 ```text
 openElement project created at ./my-app/ (template: showcase)

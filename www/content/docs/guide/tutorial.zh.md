@@ -19,20 +19,19 @@ order: 2
 4. **加一个表单 action**——一个 POST：要么校验失败，要么保存并重定向。
 5. **构建并起服务**——产出可以部署的 `dist/`。
 
-本页的 TypeScript 与 TSX 代码块不是示意片段：CI 会在每次提交时用框架源码对它们做类型检查。
+本页的 TypeScript 与 TSX 代码块不是示意片段：`www#check:content` 会用真实编译器、对着框架源码把它们编译一遍——本地 `vp run site:verify` 与发布门禁（`release:check` 的 `gate:release`）各跑一次；PR CI 不跑这一步，因此过期代码块由发布列车发现，而不是每次提交。
 
 ## 第 1 步：创建项目
 
 ```bash
 {{INSTALL_COMMAND}}
 cd my-app
-npm install
 npm run dev
 ```
 
-这条命令跑在普通 Node 工具链上：从 npm 拉取已发布的 `@openelement/create` 包——无 tag 的安装解析 `latest`，即当前 1.0 线——并以该版本为下限，把 `@openelement/*` 的 caret 范围写进项目。
+这条命令跑在普通 Node 工具链上：从 npm 拉取已发布的 `@openelement/create` 包——无 tag 的安装解析 `latest`，即当前 1.0 线——并以该版本为下限，把 `@openelement/*` 的 caret 范围写进项目；依赖也由它自己安装，所以没有单独的 install 命令。
 
-create CLI 每个文件打印一行 `created <path>`，随后是交接框：写明生成器版本与下一步（框里的 dev 命令按它检测到的包管理器拼写；加 `--no-install` 时打印通用的 `npm run dev`）：
+create CLI 每个文件打印一行 `created <path>`，随后是交接框：写明生成器版本与下一步（框里两条命令都按它检测到的包管理器拼写；加 `--no-install` 时先打印安装命令——同样按检测到的包管理器，PATH 上一个都没有时退回 `npm install`——再打印 dev）：
 
 ```text
 openElement project created at ./my-app/ (template: showcase)

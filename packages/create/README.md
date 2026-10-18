@@ -27,22 +27,36 @@ the generated project.
 npm create @openelement my-app
 ```
 
-The CLI scaffolds, initializes git (when git is available), detects the first
-package manager on PATH (pnpm, then npm, then yarn, then bun — failing only
-when none of the four exists, with a message naming all four), installs
-dependencies with it, and prints a boxed handoff with the next commands. Flags
-(all optional):
+The CLI scaffolds, detects the first package manager on PATH (pnpm, then npm,
+then yarn, then bun — failing only when none of the four exists, with a message
+naming all four), installs dependencies with it, initializes git (when git is
+available and the target is not already inside a repository), and prints a boxed
+handoff with the next commands. Flags (all optional):
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `-t, --template <name>` | `showcase` | the template to scaffold; skips the interactive confirmation |
-| `--install` / `--no-install` | install | dependency installation after scaffolding |
+| `-t, --template <name>` | `showcase` | the template to scaffold (the only value; names it explicitly) |
+| `--install` / `--no-install` | install | dependency installation after scaffolding; a skipped install is taught in the handoff box (the detected manager's `<pm> install`, or `npm install`) |
 | `--start` | off | start the dev server after a successful install |
-| `--git` / `--no-git` | git init | initialize a git repository (requires the scaffold's `.gitignore`) |
+| `--git` / `--no-git` | git init | initialize a git repository, skipped with a note when the target already lives inside one (requires the scaffold's `.gitignore`) |
 
-On a TTY the CLI asks exactly one question — confirming the template (Enter
-accepts the default). Non-interactive runs (CI, packed consumers) skip the
-prompt and take the defaults; pass `-t` to pin the template explicitly.
+The target is a new directory, an existing EMPTY directory, or `.` for the
+current directory (which the same emptiness rule applies to):
+
+```bash
+npm create @openelement my-app      # new, or already empty, directory
+npm create @openelement .           # the current directory, which must be empty
+```
+
+A non-empty target is refused, and the error names the entries that are in the
+way — the CLI never merges into files it does not own and never advises
+deleting a directory it did not create. An in-place scaffold writes the
+manifest name from the directory's own name (lowercased into the npm
+package-name grammar).
+
+The template is fixed — one template, `showcase`. `-t` names it explicitly, and
+without `-t` the CLI scaffolds it directly: no prompt on a TTY either.
+Non-interactive runs (CI, packed consumers) behave identically.
 
 ```bash
 npx @openelement/create my-app --no-install --no-git -t showcase

@@ -9,12 +9,11 @@ Element 将 JSX 编写的 Custom Element 编译为 Part Program，并统一用�
 
 ## 快速开始
 
-需要 **Node.js 24.2+** 与任一包管理器：npm、pnpm、yarn 或 bun（脚手架会用 PATH 上找到的那个安装依赖，生成的项目不绑定包管理器）。创建、安装、运行、构建：
+需要 **Node.js 24.2+（建议 24.18.0）** 与任一包管理器：npm、pnpm、yarn 或 bun（脚手架会用 PATH 上找到的那个安装依赖，生成的项目不绑定包管理器）。创建、运行、构建——依赖由生成器自己安装，没有单独的 install 步骤：
 
 ```bash
 npm create @openelement my-app
 cd my-app
-npm install
 npm run dev
 npm run build
 ```

@@ -8,12 +8,11 @@ order: 1
 
 ## 安装
 
-四条命令跑起应用：
+三条命令跑起应用——依赖由生成器自己安装（用它在 `PATH` 上找到的第一个包管理器），没有单独的 install 步骤：
 
 ```bash
 {{INSTALL_COMMAND}}
 cd my-app
-npm install
 npm run dev
 ```
 
