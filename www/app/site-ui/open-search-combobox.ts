@@ -171,14 +171,23 @@ export function connectSearchRuntime(host: SearchHost, callbacks: RuntimeCallbac
       // Only real typing drives Pagefind; machine-driven value writes
       // (selection clear, close reset) come back with reason 'script'.
       if (details.reason === 'input-change' || details.reason === undefined) {
+        // Search first, then ensure the index is on its way. Already-loaded
+        // runtimes answer from the cached module (loadIndex no-ops); a cold
+        // runtime gets its skeleton from runSearch's pre-load branch and the
+        // load's completion re-drives the same query (see loadIndex).
         runtime.runSearch(host);
+        runtime.loadIndex(host);
       }
     },
     onOpenChange(details) {
       const target = overlay(host);
       if (details.open) {
         if (target) target.hidden = false;
-        runtime.loadIndex(host);
+        // The index is NOT fetched on open (T10 R3). Opening the dialog is a
+        // look, not a search: pagefind.js + its wasm (+86 KB compressed) used
+        // to ride every open, including opens that were closed without typing
+        // a character. The empty-state message holds until the first real
+        // input, which is what triggers loadIndex above.
       } else if (target && !target.hidden) {
         callbacks.onClose(host);
       }
