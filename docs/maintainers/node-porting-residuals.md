@@ -52,7 +52,8 @@ cost of migration, not something B1b solved.
 
 RESOLVED IN S2 (owner ruling 2026-10-03): every CI-reachable entry is
 node/pnpm. The workflows, the composite setup action, and the candidate-evidence
-chain (`candidate-steps.ts` argv contracts, schema v3) entered through
+chain (retired later by the #1567 CI/Release redesign; `candidate-steps.ts` argv
+contracts, schema v3 at the time) entered through
 `node`/`pnpm` at the B4 cutover; the S2 release-lane port converted the rest —
 the `tools/release` package.json entries (publish/pack, the packaged-consumer
 harnesses, the published-consumer qualification), the fixture/qualify scripts

@@ -9,8 +9,9 @@ the contract in the same commit that changes the behavior it describes, then
 regenerate the derived blocks (`node tools/repo/check-agent-contract.ts
 --write`) and run the conformance check.
 
-Verified against the `1.0.0-alpha.15` tree (#1613). The published consumer
-index is [llms.txt](https://openelement.org/llms.txt).
+Verified against the alpha.15 candidate tree (#1613); the tree's release stamp
+stays `1.0.0-alpha.14` until the release-prep version bump. The published
+consumer index is [llms.txt](https://openelement.org/llms.txt).
 
 ## The canonical task entry
 
@@ -88,7 +89,7 @@ task by design: the repo vitest `tools` project (`vitest.config.ts`) owns
 | Content dates (read-only validation) | `vp run --fail-if-no-match @openelement/www#check:content-dates` |
 | Interface snapshot (check / write) | `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot` / `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot:write` |
 | Doc figures (measured-output gate) | `vp run --fail-if-no-match @openelement/www#check:doc-figures` |
-| Version bump (one knob, ten stamp sites) | `pnpm --dir tools/repo run version-bump <version> [--write]` |
+| Version bump (one knob, twelve release-line points + member stamps) | `pnpm --dir tools/repo run version-bump <version> [--write]` |
 | Workflow lint (after any `.github` touch) | `zizmor --offline .` |
 | This contract's own conformance check | `node tools/repo/check-agent-contract.ts` |
 
@@ -200,7 +201,7 @@ coded failure surface.
 | Content dates | `vp run --fail-if-no-match @openelement/www#check:content-dates` | The manifest `www/lib/content-dates.json` is hand-edited inside the content commit itself; the check is read-only validation. |
 | Doc figures | `vp run --fail-if-no-match @openelement/www#check:doc-figures` | The measured-output numbers in the comparison docs must match a fresh `www/dist` measurement; re-baseline on >1% growth. |
 | e2e outline pins | (www e2e specs) | Adding H2 sections to outline-pinned docs requires updating the pins; prefer not adding H2 sections. |
-| Version bump | `pnpm --dir tools/repo run version-bump <version> [--write]` | One knob, ten stamp sites; see `docs/maintainers/version-bump.md`. |
+| Version bump | `pnpm --dir tools/repo run version-bump <version> [--write]` | One knob: twelve release-line points plus the workspace-member/root stamps (the dry run's `points:` line is authoritative); see `docs/maintainers/version-bump.md`. |
 | Workflow lint | `zizmor --offline .` | Required after touching anything under `.github` — workflows AND composite actions. |
 | Cross-system seams | (register + test) | A seam change registers in `docs/architecture/seams.md` AND ships a consumer-form test (constitution P8, ADR-0163); a seam missing either does not pass the gate. |
 | Publish dispatch | (GitHub Actions) | Requires main push CI green FIRST — the exact-SHA contract. |

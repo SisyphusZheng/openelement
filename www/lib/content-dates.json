@@ -2,8 +2,8 @@
   "generatedFrom": "hand-maintained: last meaningful update per article and locale, validated against www/content/docs by check:content-dates",
   "articles": {
     "architecture/architecture": {
-      "en": "2026-10-05",
-      "zh": "2026-10-09"
+      "en": "2026-10-18",
+      "zh": "2026-10-18"
     },
     "architecture/comparison": {
       "en": "2026-10-10",
@@ -34,8 +34,8 @@
       "zh": "2026-10-18"
     },
     "guide/core-concepts": {
-      "en": "2026-10-11",
-      "zh": "2026-10-11"
+      "en": "2026-10-18",
+      "zh": "2026-10-18"
     },
     "guide/deploy-cloudflare": {
       "en": "2026-10-18",
@@ -62,16 +62,16 @@
       "zh": "2026-10-18"
     },
     "guide/islands-and-ssr": {
-      "en": "2026-10-11",
-      "zh": "2026-10-10"
+      "en": "2026-10-18",
+      "zh": "2026-10-18"
     },
     "guide/mdx": {
       "en": "2026-10-18",
       "zh": "2026-10-18"
     },
     "guide/recipe-form-actions": {
-      "en": "2026-09-19",
-      "zh": "2026-09-19"
+      "en": "2026-10-18",
+      "zh": "2026-10-18"
     },
     "guide/recipe-island-strategies": {
       "en": "2026-10-05",
@@ -98,8 +98,8 @@
       "zh": "2026-10-11"
     },
     "guide/styling": {
-      "en": "2026-09-19",
-      "zh": "2026-09-19"
+      "en": "2026-10-18",
+      "zh": "2026-10-18"
     },
     "guide/testing": {
       "en": "2026-10-18",

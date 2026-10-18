@@ -4,10 +4,10 @@ Read [SECURITY.md](./SECURITY.md) and [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
 
 ## Normal changes
 
-1. Start from `dev` and link a focused issue when one exists.
+1. Start from `main` and link a focused issue when one exists.
 2. Change the product code or canonical documentation and add the smallest useful behavioral test.
 3. Run the relevant package scripts and the complete applicable matrix before review.
-4. Open a pull request to `dev`; the pull request and exact-SHA Actions checks are the operational record.
+4. Open a pull request to `main`; the pull request and exact-SHA Actions checks are the operational record.
 
 Do not commit agent prompts, dispatch transcripts, copied CI logs, temporary evidence, or per-attempt journals.
 
@@ -55,7 +55,7 @@ package name:
 | `check`                                       | `fmt:check` + `lint` + `typecheck` + markdown lint, run serially through `gate.ts`                        |
 | `test`                                        | Full vitest suite across every workspace project (see the Architecture review permission note)            |
 | `test:e2e`                                    | Site build plus browser end-to-end suites (www, router fixtures)                                          |
-| `build`                                       | Build the four public packages (element, router, create, ui)                                              |
+| `build`                                       | Build the six public packages (protocol, element, compiler, router, create, ui)                           |
 | `vp run @openelement/tools-release#pack`      | Pack release tarballs through `tools/release`                                                             |
 | `verify`                                      | Full repository verification, including SaaS                                                              |
 | `verify:core`                                 | Element/Router Alpha candidate verification (no SaaS steps)                                               |
@@ -69,7 +69,8 @@ package name:
 
 The gates are split in two layers. CI's fast PR layer is the `lint`, `test`,
 `e2e`, and `pack` jobs in `.github/workflows/autoflow-ci.yml`, and it runs on
-every pull request and on pushes to `main`. `tools/repo#gate:source` (12
+every pull request targeting `main` and on pushes to `main` and
+`alpha15-consolidation`. `tools/repo#gate:source` (12
 steps) is the LOCAL source gate: no workflow invokes it, and `pnpm run verify`
 and `pnpm run verify:core` are its entry points. Ten of its twelve steps also
 run in CI through those jobs — `@openelement/tools-repo#typecheck` (the
@@ -120,7 +121,7 @@ Package test tasks run vitest on the node host; a single file runs through the s
 
 ## Locating CI failures
 
-`autoflow-ci.yml` has four producers — `fast-checks`, `source-matrix`, `packed-consumers`, `fresh-clone` — plus the aggregation job `autoflow-ci`. The aggregation runs with `if: always()` and asserts each producer result, so a failed or cancelled producer fails the required check explicitly: read the aggregation conclusion first, then open only the failing producer. `saas-optional` is `continue-on-error` by design and never gates the framework candidate.
+`autoflow-ci.yml` runs a `sha-guard` job first, then the fast PR layer (`lint`, `test`, `e2e`, `pack`); the heavy qualification jobs — `e2e-full` (two instances: the three-engine site E2E suite and the fixture gates), `bfcache`, `node-serve-smoke` (Node 24 and 26), `packed-consumer-matrix` (Linux and macOS), and `fresh-install` — run on a `main` push and on a `full_qualification` dispatch. There is no aggregation job: each required check is the job itself, so read the failing job's log directly. The Release workflow's `ci-evidence` job separately requires every one of the nine qualification job IDs (twelve instances) of the exact-SHA `main` push run to be `success`; `apps/saas` is never part of the candidate.
 
 ## Commits
 

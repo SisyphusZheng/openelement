@@ -4,19 +4,19 @@
  * procedure lives in docs/maintainers/version-bump.md; #1524 extends the
  * stamp to every pnpm-workspace member).
  *
- * A version bump is the TEN release-line text points, the workspace-member
+ * A version bump is the TWELVE release-line text points, the workspace-member
  * version stamps, and the tracked generated outputs — not one file — and
  * hand-editing them burned two release rounds in alpha.2 and the alpha.8
  * stamp (#1515 missed the tracked generated manifest):
  *
- *   1-4.  packages/{element,router,create,ui}/package.json `version`
- *   5.    packages/create/src/version.ts `CREATE_VERSION`
- *   6.    docs/release/release-state.json `sourceVersion` and `activeTarget`
+ *   1-6.  packages/{protocol,element,compiler,router,create,ui}/package.json `version`
+ *   7.    packages/create/src/version.ts `CREATE_VERSION`
+ *   8.    docs/release/release-state.json `sourceVersion` and `activeTarget`
  *         (the activeTarget carries the `v` prefix)
- *   7.    tools/repo/check-release-state-machine.ts `ADMITTED_ACTIVE_TARGET`
- *   8.    its twin fixture tools/repo/check-release-state-machine.test.ts
+ *   9.    tools/repo/check-release-state-machine.ts `ADMITTED_ACTIVE_TARGET`
+ *   10.   its twin fixture tools/repo/check-release-state-machine.test.ts
  *         (`sourceVersion`, `activeTarget`, and the workspace-versions map)
- *   9-10. the root README.md / README.zh.md source-tree lines
+ *   11-12. the root README.md / README.zh.md source-tree lines
  *   +     every OTHER pnpm-workspace member whose `version` sits on the
  *         release line's shape (same major.minor.patch base, prerelease
  *         train) is stamped to the target from wherever it lags — the private
@@ -363,7 +363,7 @@ export interface VersionBumpPlan {
   /** Version the tree carries now (from the release-line anchor, PACKAGE_CONFIGS[0]). */
   currentVersion: string;
   targetVersion: string;
-  /** Text-point edits (the ten release-line points + lagging member stamps). */
+  /** Text-point edits (the twelve release-line points + lagging member stamps). */
   edits: VersionEdit[];
   /**
    * Every non-release-line workspace member's disposition, stamped or not —

@@ -69,7 +69,7 @@ import { defineIslandConfig } from '@openelement/router';
 export const openElement = defineIslandConfig({ hydrate: 'idle', ssr: true, dsd: true });
 ```
 
-`hydrate` selects when the browser imports the module — `'load'` for first-screen controls such as navigation and theme, imported and upgraded as early as possible, `'idle'` for everything else that can wait, `'visible'` for components that only matter as they scroll into view, `'media'` for capability-gated weight (the chunk loads only while the query declared in the island's `media` field matches), and `'only'` for browser-only components that skip SSR. The build records which islands belong to which page, so a page references only the chunks it can use and an island that is never reached is never fetched.
+`hydrate` selects when the browser imports the module — `'load'` for first-screen controls such as navigation and theme, imported and upgraded as early as possible, `'idle'` for everything else that can wait, `'visible'` for components that only matter as they scroll into view, `'media'` for capability-gated weight (the chunk loads only while the query declared in the island's `media` field matches), and `'only'` for browser-only components that skip SSR. The build records which islands belong to which page, so a page executes only the islands it activates; a page's manifest also decides whether its shared element runtime is `modulepreload`-fetched early, while a never-reached island's own chunk stays deferred.
 
 ## Conditional blocks and the grammar bound
 

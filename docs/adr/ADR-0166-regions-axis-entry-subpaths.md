@@ -1,6 +1,9 @@
 # ADR-0166: The regions axis of runtime-shape specialization — the `no-regions` and `base` entry subpaths
 
-- Status: ACCEPTED (2026-10-07, alpha.11 train — the minimal #1548 lane)
+- Status: ACCEPTED (2026-10-07, alpha.11 train — the minimal #1548 lane);
+  **AMENDED** (2026-10-18 — `./no-regions` was retired in the alpha.15 line and
+  the axis is now the blocks axis, `./no-blocks` / `./base`; see
+  [Amended status](#amended-status-2026-10-18))
 - Amends: extends [ADR-0155](./ADR-0155-client-only-entry-subpath.md) from one
   runtime axis (the claim executor) to two (the when/each Region builders);
   same P2/P5 regime, same seam shape.
@@ -143,6 +146,31 @@ either of these holds:
    condition): if `when`/`each` lowering is replaced by static or
    platform-native constructs, no graph needs the builders and the default
    entry becomes what `./no-regions` is today.
+
+## Amended status (2026-10-18)
+
+**The `./no-regions` entry no longer exists; the axis is now the blocks axis.**
+Alpha15's batch 4 (`277a732b6`, 2026-10-11) demolished the Regions mirror and
+removed the subpath — its own breaking-change list says "`./no-regions` subpath
+removed (use `./no-blocks`)". What replaced it:
+
+- The emitted client entry selects between `./base`, `./client-only`,
+  `./no-blocks`, and the full entry through the three
+  `ssg/element-services-{full,client-only,base}.ts` re-export shims
+  (`entry-client-codegen.ts`): the claim axis (#1416) and the blocks axis
+  (#1548) choose among them.
+- `./no-blocks` drops the `when`/`each` Block builders; `./base` drops both
+  axes. Wire-level values (`owner.kind: 'region'`, block ids `rN`) are frozen
+  and unchanged — the rename is at the runtime-shape/entry layer only.
+- The public-interface snapshot and the packed tarball contain no
+  `no-regions` entry; `@openelement/element` exports `client-only`, `no-blocks`,
+  and `base`.
+
+The P5 retirement condition above still applies to the surviving entries: they
+are deletable as one unit when bundlers select per-graph entry bodies natively
+or the grammar retires dynamic Blocks/Regions. The decision record below is
+kept for the rationale (P2/P5 trade, seam shape, fail-closed guards); a future
+axis must start from a new decision record rather than reviving this subpath.
 
 ## See also
 

@@ -188,7 +188,7 @@ test('version-bump: dry run reports every point against the live tree', async ()
     readConfigVersion(await readFile(join(repoRoot, PACKAGE_CONFIGS[0]), 'utf8')),
   );
   expect(plan.currentVersion !== target).toBeTruthy();
-  // The ten release-line points: four configs + anchor + release-state +
+  // The twelve release-line points: six configs + anchor + release-state +
   // admitted constant + twin fixture + two README lines.
   expect(
     plan.edits.filter((edit) => edit.point !== 'workspace-member').map((edit) => edit.path),

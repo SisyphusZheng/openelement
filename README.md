@@ -9,14 +9,17 @@ The source tree is `1.0.0-alpha.14`, a new public baseline for Element and Route
 
 ## Quick Start
 
-Requires **Node.js 24.2+** and pnpm. Create, install, run, and build:
+Requires **Node.js 24.2+** and a package manager: npm, pnpm, yarn, or bun
+(the scaffolder installs with whichever one it finds on `PATH`, and the
+generated project is package-manager neutral). Create, install, run, and
+build:
 
 ```bash
 npm create @openelement my-app
 cd my-app
-pnpm install
-pnpm dev
-pnpm build
+npm install
+npm run dev
+npm run build
 ```
 
 Add a page — one compiled element plus one route record:

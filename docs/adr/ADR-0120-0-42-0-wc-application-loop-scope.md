@@ -19,10 +19,11 @@ Two questions had to be answered before implementation:
    the revalidation default, and the rendering-continuity strategy?
 
 The evidence base is a commissioned six-framework study of mainstream
-application loops, archived at
-[`docs/audit/2026-07-27-application-loop-framework-research/`](../audit/2026-07-27-application-loop-framework-research/README.md)
-(Remix/React Router, SvelteKit, Astro, Fresh, Enhance, Hotwire/htmx; every API
-claim carries an official-documentation URL). The study shows strong
+application loops (Remix/React Router, SvelteKit, Astro, Fresh, Enhance,
+Hotwire/htmx; every API claim carries an official-documentation URL). It was
+retired into Git history in `3b5c7a9a` and remains recoverable with
+`git show 3b5c7a9a^:docs/audit/2026-07-27-application-loop-framework-research/README.md`.
+The study shows strong
 cross-framework convergence on the protocol layer and confirms that the
 WC + DSD-default + static-first fullstack slot is unoccupied: the closest
 incumbent (Enhance) is light-DOM by doctrine and slowed feature development

@@ -52,31 +52,36 @@ publish; a missing environment fails the job closed instead of publishing:
 - `publish:npm` runs only after `release:check` (the release train
   `@openelement/tools-repo#gate:release`, packed qualification,
   `publish:npm:dry-run`, and
-  the read-only registry-state check) on the exact
-  `candidate_sha`, and re-verifies `git rev-parse HEAD == candidate_sha` after
+  the read-only registry-state check) on the exact dispatched `main`
+  SHA, and re-verifies `git rev-parse HEAD` equals that dispatched SHA after
   checkout.
-- `publish:npm` publishes each package, then verifies every published package's exact version and dist-tag against the registry (continuity is checked per package, not just the first), and writes `.artifacts/release-receipt.json` bound to the exact SHA, tree, and tarball hashes. A partial publish is recorded as `partial` and fails the job instead of reporting success; a re-run safely resumes because already-published versions are skipped. (For the tag each line publishes under, see "Public 1.0 prerelease baseline" — the 1.0 line publishes onto `latest`.) The workflow uploads `.artifacts/release-receipt.json` with `if: always()` as a recovery record (successful/partial/failed), bound to the candidate SHA and run id/attempt; the receipt is a recovery aid, not proof of a successful publish, and post-publish consumers run only after a complete publish plus registry verification.
+- `publish:npm` publishes each package, then verifies every published package's exact version and dist-tag against the registry (continuity is checked per package, not just the first), and writes `.artifacts/release-receipt.json` bound to the exact SHA, tree, and tarball hashes. That receipt is a **local** recovery aid, not proof of a successful publish: the workflow does not upload it — the only artifact the release job uploads is the `registry-release-state` bundle described above. A partial publish is recorded as `partial` and fails the job instead of reporting success; a re-run safely resumes because already-published versions are skipped. (For the tag each line publishes under, see "Public 1.0 prerelease baseline" — the 1.0 line publishes onto `latest`.) Post-publish consumers run only after a complete publish plus registry verification.
 - After a successful publish the same workflow chains the published-consumer qualification workflow automatically; it is no longer a manual-only proof.
-- The release job refuses to proceed without a successful, non-expired
-  `autoflow-ci` artifact for the same SHA: it finds the CI run for that
-  commit, downloads the `candidate-evidence-*` artifact, recomputes every log
-  and manifest hash, and rejects evidence older than the 14-day retention
-  window. Copied or hand-written evidence is never accepted.
+- The release job (`ci-evidence`) discovers the official AutoFlow CI push run
+  for the exact dispatched `main` SHA over the GitHub API — no run id, artifact,
+  or log is supplied by the dispatcher. It requires the run conclusion
+  `success` **and** every instance of the nine required qualification job IDs
+  to be `success`: `lint`, `test`, `e2e`, `pack`, `e2e-full` (two instances),
+  `bfcache`, `node-serve-smoke` (two), `packed-consumer-matrix` (two), and
+  `fresh-install` — twelve job instances in total, with `sha-guard` binding the
+  run to the dispatched SHA. A missing, skipped, cancelled or non-successful
+  required job refuses the publish; there is no artifact to copy or hand-write.
 - Prereleases publish under `--tag alpha|beta|rc` for pre-1.0 lines; the 1.0
   line publishes onto `latest` and rides the channel tag as a re-pointed alias
   (`npmPublishTag`, tested — see "Public 1.0 prerelease baseline"). A pre-1.0
   prerelease still never moves `latest` onto itself.
-- Required checks for `dev` and `main` (repository ruleset `24288967`):
+- Required checks for `main` (repository ruleset `24288967`):
   `lint`, `test`, `e2e`, and `pack` from AutoFlow CI, plus `CodeQL` and the
-  strict required status-check policy. These producer checks are individually required; the
-  `autoflow-ci` aggregate still validates the complete evidence bundle and
-  does not re-run the suite. Compatibility probes and the independently
-  governed `apps/saas` application are not part of every PR run; use their
-  explicit local tasks or dedicated qualification runs when changing those
-  surfaces. The SaaS application remains decoupled from the candidate:
+  strict required status-check policy. These checks are individually required
+  and each is a job in its own right — there is no aggregation job to read; the
+  Release workflow's `ci-evidence` job performs the full-run verification
+  described above before anything publishes. Compatibility probes and the
+  independently governed `apps/saas` application are not part of every PR run;
+  use their explicit local tasks or dedicated qualification runs when changing
+  those surfaces. The SaaS application remains decoupled from the candidate:
   neither `@openelement/tools-repo#gate:source` nor
-  `@openelement/tools-repo#gate:release` nor candidate
-  evidence contains a SaaS step. Scope is explicit at the task level:
+  `@openelement/tools-repo#gate:release` nor the CI evidence contains a SaaS
+  step. Scope is explicit at the task level:
   `pnpm run verify:core` is the
   Element/Router Alpha candidate verification, `pnpm run verify` is the full
   repository verification (including SaaS). Post-publish
@@ -101,9 +106,9 @@ without giving up any release-time proof.
   job runs; the request-time and base-path fixture gates run only in the
   `e2e-full` full-qualification layer (main pushes and `full_qualification`
   dispatches) — so a PR can be green while they are unexercised. The separate
-  packed producer owns
-  `@openelement/tools-release#gate:packed`; the independent fresh-clone lane
-  runs source and packed once each with cold pnpm/npm caches. A green
+  `pack` job owns `@openelement/tools-release#gate:packed`; the
+  `fresh-install` job runs the cold-cache install/typecheck proof only on the
+  `main` push and full-qualification layer. A green
   `pnpm run verify:core` runs source plus packed locally.
 - `@openelement/tools-repo#gate:release` — the release train: Site build and every `www`
   check, coverage, all deploy/framework fixture gates, the boundary and
@@ -113,47 +118,37 @@ without giving up any release-time proof.
   truth, the packed gate, and the publish dry-run) before anything is
   published, so every trimmed step is still a precondition of release.
 
-The candidate's Site E2E proof is produced by the PR-layer `fresh-clone`
-lane, which stages its sidecar and raw Playwright report into the candidate
-evidence; the release job still refuses to proceed unless that evidence
-validates against the exact candidate SHA. Trimming the PR layer therefore
-changes **when** the heavier proofs run, never whether they are required to
-ship.
+The candidate's Site E2E proof is the `e2e` job on every PR (Chromium only)
+and the three-engine `e2e-full` site instance on a `main` push, where the full
+suite runs through `www#e2e:browsers` (`--retries 1`). The release job requires
+every required job instance of the exact-SHA `main` push run to be `success`
+(see "Release authorization contract"), so trimming the PR layer changes
+**when** the heavier proofs run, never whether they are required to ship.
 
 The top-level task count is not a work count. Before the alpha5 de-duplication,
-`gate:source` called `gate:packed` internally, so the source producer, the
-independent packed producer, and fresh-clone's source plus explicit packed step
-could run the complete packed gate four times on one non-reused PR. Removing
-that nested call leaves two complete packed runs (packed producer and isolated
-fresh-clone). Node 24/26 serving and Linux/macOS starter jobs still pack their
-own current-SHA tarballs; no unmeasured wall-time saving is asserted.
+`gate:source` called `gate:packed` internally, so the source gate, the
+independent `pack` job, and other packed invocations could run the complete
+packed gate several times on one PR. Removing that nested call leaves the
+`pack` job's packed proof as the producer and `fresh-install`'s own cold
+install/typecheck run. Node 24/26 serving and Linux/macOS starter jobs still
+pack their own current-SHA tarballs; no unmeasured wall-time saving is
+asserted.
 
-## Tree-identical evidence reuse
+## Evidence reuse was retired
 
-The reuse job may select one successful AutoFlow CI evidence package for the
-same Git tree within the artifact-retention window. Every producer needs
-`actions: read` to download its source-run artifact. Its claim verifies the
-producer commit's tree in the checkout before stamping the job record with
-`reused: { runId, sha }`; `sha` names the commit that actually ran the gate,
-not a later commit that forwarded its evidence. The aggregate independently
-checks the tree, stamps, log hashes, tarball hashes, and the Site E2E report.
-A failed resolution or claim runs the real gate after discarding an
-unclaimable download. Nothing accepts a partial mix of source runs.
+Tree-identical evidence reuse (ADR-0156) let a producer replay a previous
+run's evidence for the same Git tree. The #1567 CI redesign removed the reuse
+resolver, the evidence aggregator, and the `claim-reused-evidence` action: the
+release gate now reads the exact-SHA CI run's job conclusions from the GitHub
+API (see "Release authorization contract"), and a run's evidence cannot be
+forwarded across SHAs or trees. ADR-0156 keeps the decision history and
+records the retirement; no workflow emits or consumes `candidate-evidence-*`
+artifacts.
 
-To distinguish a replay from fresh execution, inspect each producer's
-`result.json` in the `candidate-evidence-*` artifact: a replay has the
-`reused` stamp and its `sha` is the original producer. Fresh execution has
-no stamp and its command logs show the gate running for the candidate SHA.
-The run summary reports the resolver decision, but the per-job records and
-aggregate audit are the authority. Reuse never grants publication by itself:
-the Release workflow still requires a green, non-expired AutoFlow CI bundle
-for the exact candidate SHA.
-
-The suite runs with `--retries 1`, and a retry is part of the contract: a test
-that timed out and passed on the retry is Playwright's `flaky` (kept out of
-`stats.expected`, never out of `stats.unexpected`), so the proof counts it as a
-pass and records it in the sidecar's `flaky` rather than discarding it. The
-suite-size identity is therefore `expected + flaky == executed tests`, and
-`failed` still means the final attempt failed. A sidecar cannot under- or
-over-report retries: the recompute binds `flaky` to the raw report's own
-`stats.flaky`, so the fact has to be in the bytes.
+The site E2E suite runs with `--retries 1`, and a retry is part of the
+contract: a test that timed out and passed on the retry is Playwright's
+`flaky`, so the run's audit counts it as a pass while keeping it
+distinguishable from `expected`; a test that fails its final attempt is still
+`unexpected` and fails the run. The suite-size identity is therefore
+`expected + flaky == executed tests`, and `failed` still means the final
+attempt failed.

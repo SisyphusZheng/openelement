@@ -9,14 +9,14 @@ Element 将 JSX 编写的 Custom Element 编译为 Part Program，并统一用�
 
 ## 快速开始
 
-需要 **Node.js 24.2+** 与 pnpm。创建、安装、运行、构建：
+需要 **Node.js 24.2+** 与任一包管理器：npm、pnpm、yarn 或 bun（脚手架会用 PATH 上找到的那个安装依赖，生成的项目不绑定包管理器）。创建、安装、运行、构建：
 
 ```bash
 npm create @openelement my-app
 cd my-app
-pnpm install
-pnpm dev
-pnpm build
+npm install
+npm run dev
+npm run build
 ```
 
 加一个页面——一个编译后的 element，加一条路由记录：

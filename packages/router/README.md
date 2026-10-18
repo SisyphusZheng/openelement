@@ -34,8 +34,10 @@ deployment subpath instead expects the deploying application to install
 
 The `./vite` and `./cli/*` tooling subpaths run under Node at **build
 time** — `openElement()` is invoked from the project's `vite.config.ts` and
-the CLI subpaths run through `node`. The
-request-time output is WinterCG-pure and deploys to any target.
+the CLI subpaths run through `node`. The request-time output is
+WinterCG-pure; deployment support is limited to the runtimes and Nitro
+targets actually covered by the release qualification matrix (the Node and
+Workers fixtures), not every runtime that can load ESM.
 
 > The 1.0 baseline uses compiled element classes for page authoring. Route Mode
 > stays independently consumable without Element; Framework Mode installs

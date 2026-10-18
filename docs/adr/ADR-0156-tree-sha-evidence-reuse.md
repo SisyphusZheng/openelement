@@ -1,11 +1,13 @@
 # ADR-0156: Tree-SHA evidence reuse for the candidate gate
 
-- Status: ACCEPTED (2026-09-22, alpha4 lane W — implements the owner-approved
-  plan 1); AMENDED (2026-09-23, hotfix — see [Amendment](#amendment-2026-09-23):
+- Status: **RETIRED** (2026-10-18 — the mechanism was removed by the #1567
+  CI/Release redesign; see [Current status](#current-status-2026-10-18)).
+  Originally ACCEPTED (2026-09-22, alpha4 lane W — implements the owner-approved
+  plan 1); AMENDED (2026-09-23, hotfix — see [Amendment](#amendment-2026-09-23-chained-reuse-and-a-refusal-that-falls-back):
   a reuse **chain** is judged by the producer's tree, and a refused claim falls
   back to the real gate instead of failing the lane)
-- Amends: none. Constrains the candidate evidence contract documented in
-  `docs/maintainers/releasing.md`, which the aggregate and validator enforce.
+- Amends: none. Constrained the candidate evidence contract documented in
+  `docs/maintainers/releasing.md` until #1567 removed that contract.
 - Tracking: [#1425](https://github.com/open-element/openelement/issues/1425)
   (the tree-identity observation this rests on),
   [#1436](https://github.com/open-element/openelement/pull/1436) (the lane that
@@ -262,3 +264,19 @@ producer commit, is the relaxation this amendment explicitly does not make.
   resolver's fail-closed direction (`reused=false` → run the gate).
 - The lane's evidence is either a claimed no-op or a fresh run; there is no
   third state, because the download is discarded on the fallback path.
+
+## Current status (2026-10-18)
+
+**This mechanism no longer exists.** The #1567 CI/Release redesign
+(`1e1bcd759`, "complete CI/Release redesign — 4 jobs, auto-release") deleted
+the reuse resolver, the evidence aggregator, the fresh-clone lane, and the
+`claim-reused-evidence` action, and removed the `candidate-evidence-*`
+artifacts. The Release workflow's `ci-evidence` job now discovers the exact-SHA
+AutoFlow CI run over the GitHub API and requires the run conclusion plus every
+required job instance to be `success`; job conclusions, not forwarded
+artifacts, are the evidence. The tree-SHA insight this ADR recorded is still
+true (identical trees are identical inputs) but nothing in the release path
+exploits it today. The ADR is kept as the decision history for why the
+candidate gate treated evidence that way between alpha.3 and alpha.10; a future
+reuse mechanism must start from a new decision record. `releasing.md` now
+documents the API-based contract.

@@ -6,9 +6,10 @@ a static-first openElement app that shows its own costs. The landing page
 carries two islands (`my-counter`, an interactive counter, and `live-timer`,
 a client-only elapsed-time readout); every other page, including `/about`,
 is prerendered HTML and CSS with no islands of its own — no island chunk is
-fetched there; the only script such a page carries is the app-wide claim
-bootstrap (about 2 KB gzipped) that runs while the app has any island. The
-badge on each section names what it costs the client.
+executed there (a linked page's chunks can still be prefetched); the only
+script such a page executes is the app-wide claim bootstrap (about 2 KB
+gzipped) that runs while the app has any island. The badge on each section
+names what it costs the client.
 
 Docs and guides: https://openelement.org
 
@@ -34,7 +35,7 @@ runs first writes its lockfile, and every command below works the same.
 | `/` hero + architecture sections     | no                    | prerendered markup, styled with CSS      |
 | `/` counter island (`my-counter`)    | yes, hydrates on idle | the one interactive piece                |
 | `/` live timer island (`live-timer`) | yes, client-only      | a live clock has nothing to prerender    |
-| `/about`                             | no islands of its own | fully static SSG output, no island chunk |
+| `/about`                             | no islands of its own | fully static SSG output, no island chunk executes |
 | `/api/ping`                          | no (server)           | a plain `Request → Response` handler     |
 | `/404` (unmatched paths)             | no (server)           | dynamic 404 from the styled 404 page     |
 
@@ -42,13 +43,14 @@ The badge on each section is a Tailwind utility string on the span itself
 (`bg-ok/8 text-ok` for a static section, `bg-brand-soft text-brand` for an
 interactive one) — copy the span onto new sections and keep the map honest.
 
-> Cost honesty: the island client is emitted app-wide today. A page without
-> islands (like `/about`) carries no island hosts and renders nothing
-> interactive, but the shared loader — and with the current app-wide
-> hydration manifest, the island chunks themselves — still ride along in its
-> network panel. Per-page pruning is framework work, not something a template
-> can opt into; the page is authored so it becomes fully silent the moment
-> the framework ships it.
+> Cost honesty: the island client is emitted app-wide today, so a page
+> without islands (like `/about`) still carries the ~2 KB gzipped app-wide
+> claim bootstrap — but no island chunk executes and no element-runtime
+> preload is added for it: the build records islands per page and the client
+> only activates tags the page hosts. Fetches can still be broader than
+> execution when the reader follows a link, because the target page's chunks
+> may be prefetched; what a page executes is always limited to its own
+> registered islands.
 
 ## Where things live
 

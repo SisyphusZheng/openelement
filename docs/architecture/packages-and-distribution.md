@@ -20,4 +20,12 @@ The source repository is a pnpm workspace: one root `package.json` is the worksp
 
 TypeScript is layered deliberately. The workspace typechecks through the classic `tsc` CLI (`typecheck` scripts run `tsc --noEmit`, TypeScript pinned at 6.0.3 across the workspace), and the Element compiler and every other AST consumer use the classic TypeScript compiler API from that same pinned dependency, imported directly. The TypeScript 7 `tsc` CLI remains an explicit shadow qualification (`tools/repo#gate:ts7:shadow`) over the packed Node/npm consumer matrix; it is not part of every pull-request run while the disposable consumer's TS7 result is compared with the packed Element dependency's pinned TS6 baseline. It becomes a required gate only after a complete matching matrix. (In the retired Deno toolchain the split ran through Deno's own checker and an import-map `typescript` name; that mapping is retired with the toolchain.)
 
-Supporting packages may release in lockstep while required by tooling, but package count does not change the two-product model. npm alpha candidates use `alpha`; `latest` remains stable until a separately admitted stable release.
+The six packages publish on one version line — the package graph refuses mixed
+versions — while release tooling may publish a selected subset of that line
+(`publish:npm --packages`). "Per-package" therefore means selection inside the
+shared version line, never independent SemVer, and package count does not
+change the two-product model. From the 1.0 line onward the prerelease is the
+shipping line: it publishes onto npm `latest`, and the `alpha` channel tag is
+kept as a re-pointed alias ([releasing.md](../maintainers/releasing.md), "Public
+1.0 prerelease baseline"). Pre-1.0 candidates use `alpha` only and never move
+`latest` onto a prerelease.
