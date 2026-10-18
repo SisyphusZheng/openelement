@@ -335,6 +335,62 @@ test('gate: the client entry and browser runtime graphs never import the server 
   }
 });
 
+test('gate: the generated client entry never CALLS a __ binding it does not define', () => {
+  // 88bda88bf regression class (not a symbol pin): the B2 zero-island change
+  // added `__loadElementRuntime();` to a block shared by both renderers while
+  // the definition (`var __loadElementRuntime = ...`) stayed in the native
+  // branch only. The lit entry then threw
+  // `ReferenceError: __loadElementRuntime is not defined` at module
+  // evaluation — island scheduling and the enhance layer never ran, and
+  // fixture-router-lit-framework#e2e:browsers burned the 45-minute job cap
+  // with 27 failed on 3 engines.
+  //
+  // The check is shape-based on purpose: it fails for ANY `__`-prefixed call
+  // without a matching definition (var/function declaration or `as __x`
+  // import alias), so the next shared-block edit that reaches into a
+  // renderer-only helper is caught by the same gate.
+  const islands = [
+    {
+      tagName: 'x-probe',
+      modulePath: '/app/islands/x.ts',
+      strategy: 'load',
+      ssr: true,
+      dsd: true,
+    },
+  ] as const;
+  const shapes: { renderer: 'native' | 'lit'; enhancedForms: boolean }[] = [
+    { renderer: 'native', enhancedForms: true },
+    { renderer: 'native', enhancedForms: false },
+    { renderer: 'lit', enhancedForms: true },
+    { renderer: 'lit', enhancedForms: false },
+  ];
+  const report: string[] = [];
+  for (const shape of shapes) {
+    const client = generateClientEntry([...islands], shape);
+    const defined = new Set<string>();
+    for (const pattern of [/\bvar\s+(__\w+)/g, /\bfunction\s+(__\w+)/g, /\bas\s+(__\w+)/g]) {
+      for (const match of client.matchAll(pattern)) defined.add(match[1]);
+    }
+    const called = new Set<string>();
+    for (const match of client.matchAll(/\b(__\w+)\s*\(/g)) called.add(match[1]);
+    for (const name of [...called].filter((candidate) => !defined.has(candidate)).sort()) {
+      report.push(`${shape.renderer}/enhancedForms=${shape.enhancedForms}: ${name}`);
+    }
+  }
+  expect(report, 'generated client entry calls an undefined binding').toEqual([]);
+});
+
+test('gate: negative control — the shape check sees a call with no definition', () => {
+  const broken = 'var __defined = 1;\n__defined();\n__undefined();\n';
+  const defined = new Set<string>();
+  for (const pattern of [/\bvar\s+(__\w+)/g, /\bfunction\s+(__\w+)/g, /\bas\s+(__\w+)/g]) {
+    for (const match of broken.matchAll(pattern)) defined.add(match[1]);
+  }
+  const called = new Set<string>();
+  for (const match of broken.matchAll(/\b(__\w+)\s*\(/g)) called.add(match[1]);
+  expect([...called].filter((candidate) => !defined.has(candidate))).toEqual(['__undefined']);
+});
+
 test('gate: negative control — the server entry graph DOES reach the server runtime', () => {
   const serverEntry = renderEntry(buildEntryDescriptor(basicRoutes));
   const roots: string[] = [];

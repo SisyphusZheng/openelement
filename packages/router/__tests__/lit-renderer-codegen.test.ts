@@ -109,6 +109,19 @@ test('lit renderer: client entry installs hydrate-support first and stays elemen
   expect(client.includes('ensurePreHydrationClickCapture();')).toEqual(false);
   expect(client.includes('ensurePreHydrationClickCapture(document, __tags);')).toEqual(false);
   expect(client.includes('ensureDeepFragmentNavigation();')).toEqual(false);
+  // B2 regression guard (88bda88bf): `__loadElementRuntime();` was emitted for
+  // BOTH renderers while only the native branch emitted its definition, so the
+  // lit entry threw `ReferenceError: __loadElementRuntime is not defined` at
+  // module evaluation — island scheduling and the enhance layer never ran, and
+  // fixture-router-lit-framework#e2e:browsers went 27 failed on 3 engines. The
+  // lit entry has no definition for that symbol by contract (asserted above),
+  // so pin its absence on both enhancedForms shapes.
+  expect(client.includes('__loadElementRuntime')).toEqual(false);
+  const litWithoutEnhance = generateClientEntry(
+    [{ tagName: 'note-counter', modulePath: '/app/islands/note-counter.ts', strategy: 'load' }],
+    { enhancedForms: false, renderer: 'lit' },
+  );
+  expect(litWithoutEnhance.includes('__loadElementRuntime')).toEqual(false);
 
   const nativeClient = generateClientEntry(
     [{ tagName: 'note-counter', modulePath: '/app/islands/note-counter.ts', strategy: 'load' }],
@@ -125,6 +138,11 @@ test('lit renderer: client entry installs hydrate-support first and stays elemen
   expect(nativeClient).toContain("import('");
   expect(nativeClient).toContain('element-services');
   expect(nativeClient.includes('lit-element-hydrate-support')).toEqual(false);
+  // ...and the native entry is the ONLY one that defines and calls the lazy
+  // runtime trigger: the lit assertions above must not be satisfiable by
+  // deleting the native trigger instead of guarding the lit branch.
+  expect(nativeClient).toContain('var __loadElementRuntime');
+  expect(nativeClient).toContain('__loadElementRuntime();');
 });
 
 test('lit renderer: route scanner semantics accept defineLitPage from @openelement/router/lit', () => {

@@ -631,7 +631,15 @@ ${islandMap}
 };
 var __tags = [${tags}];
 ${
-  options.enhancedForms === true
+  // The call below only exists in the NATIVE entry: `runtimeLoader` — the
+  // definition of `__loadElementRuntime` — is emitted for the native branch
+  // alone (see importsBlock above). The lit entry stays element-free by
+  // contract (#1339) and installs `__liftDeferHydration` in its place, so an
+  // unguarded call here made the lit entry reference an undefined symbol and
+  // throw at module evaluation: island scheduling and the enhance layer never
+  // ran at all (88bda88bf, fixture-router-lit-framework#e2e:browsers, 27
+  // failed / 3 engines).
+  options.enhancedForms === true && !lit
     ? `// B2: the form-enhancement layer is a document-level enhancement that uses
 // the element runtime's services (pre-upgrade capture, deep fragment
 // navigation), so its presence is a genuine trigger for the lazy runtime
