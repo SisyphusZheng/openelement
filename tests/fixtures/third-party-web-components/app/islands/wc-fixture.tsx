@@ -43,6 +43,12 @@ export default class ThirdPartyWcFixture extends OpenElement {
   activateForeignWidgets(): void {
     if (typeof window !== 'undefined') {
       void import('../client/wc-client.ts');
+      // The late-host corpus rides its OWN dynamically imported module: every
+      // host it creates must land after the scheduler's ready-time read, which
+      // is the whole shape under qualification.
+      void import('../client/wc-late-hosts.ts').then((module) =>
+        module.installLateLightHosts(this.shadowRoot),
+      );
     }
     const root = this.shadowRoot;
     if (!root) return;
@@ -125,6 +131,23 @@ export default class ThirdPartyWcFixture extends OpenElement {
         <section id='native-section'>
           <h2>Bare native</h2>
           <wc-native-badge id='native-badge'></wc-native-badge>
+        </section>
+        {/*
+          The late-host corpus. None of these hosts exists in the SSR markup:
+          each wc-*-host upgrades only once the dynamically imported module
+          defines it, and only then does it attach a shadow root (or append to
+          its light DOM) and create the island tag inside. That is the exact
+          sequence the ready-time page-scope read cannot see.
+        */}
+        <section id='late-host-section'>
+          <h2>Late hosts (created after activation)</h2>
+          <div class='row'>
+            <wc-fast-host id='fast-host'></wc-fast-host>
+            <wc-native-late-host id='native-host'></wc-native-late-host>
+            <wc-nested-outer id='nested-host'></wc-nested-outer>
+            <wc-stencil-host id='stencil-host'></wc-stencil-host>
+            <wc-closed-host id='closed-host'></wc-closed-host>
+          </div>
         </section>
       </div>
     );

@@ -45,6 +45,7 @@ import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 import { formatJson } from '@openelement/element/build-utils';
 import { escapeRegExp } from '../../../tools/lib/text.ts';
+import { runStep } from '../../lib/qualify-harness/command-run.ts';
 import { extractSsrAdmissionPlan } from '../../lib/qualify-harness/admission-plan.ts';
 import { runRouterBuild } from '../../lib/qualify-harness/build-router.ts';
 import { launchQualifyBrowser } from '../../lib/qualify-harness/drive-chromium.ts';
@@ -67,6 +68,10 @@ const THIRD_PARTY_IMPORTS = {
   '@material/web': '2.4.1',
   '@microsoft/fast-element': '3.0.2',
   '@ionic/core': '8.8.18',
+  // The A3 authoring path. Already a direct dependency of @ionic/core at this
+  // exact version, so this pins the copy the app already installs rather than
+  // adding one: 0 extra bytes, local and in CI.
+  '@stencil/core': '4.43.5',
 };
 
 async function readEventCount(page: Page): Promise<number> {
@@ -169,10 +174,24 @@ interface SlotFirstEvidence {
   identityPreserved: boolean;
 }
 
+export interface LateHostEvidence {
+  /** Per-creator: the island tag was found AND had upgraded in place. */
+  upgraded: Record<string, boolean>;
+  /** The closed-root gap, recorded as an observation (never a pass). */
+  closedRoot: { hostPresent: boolean; notRegistered: boolean; notUpgraded: boolean };
+  /** A declared island this page never hosts: registered, and fetched how often. */
+  unused: { registered: boolean; chunkRequests: number };
+  /** What the runtime said it gave up on, and under which budget. */
+  hostTimeouts: { pending: string[]; attempts: number; elapsedMs: number }[];
+  /** Island chunks this page actually requested — the 0-fetch control's floor. */
+  islandChunkRequests: number;
+}
+
 export async function verifyBrowser(distDir: string): Promise<{
   capabilities: Record<string, BrowserCapabilityEvidence>;
   slotFirst: Record<string, SlotFirstEvidence>;
   browserVersion: string;
+  lateHosts: LateHostEvidence;
 }> {
   const session = await launchQualifyBrowser({ distDir });
   try {
@@ -207,6 +226,24 @@ export async function verifyBrowser(distDir: string): Promise<{
     const page = await session.browser.newPage();
     session.watchPageErrors(page);
     const browserErrors = session.pageErrors;
+    // The probe's give-up signal: registered before load so nothing is missed,
+    // and read back after the readiness poll. It is informational — an app may
+    // legitimately declare islands a page never hosts — so the fixture uses it
+    // as evidence about WHICH tags the runtime could not reach, not as a
+    // failure trigger of its own.
+    await page.addInitScript(() => {
+      const seen: unknown[] = [];
+      (globalThis as typeof globalThis & { __oeHostTimeouts?: unknown[] }).__oeHostTimeouts = seen;
+      document.addEventListener('open:island-host-timeout', (event) => {
+        seen.push((event as CustomEvent).detail);
+      });
+    });
+    // C4 negative control: which island chunks this page actually fetched. The
+    // island that is declared but never hosted must not appear here, and a tag
+    // that DID activate must — the second half is the positive control that
+    // keeps the naming-based assertion honest.
+    const requestedUrls: string[] = [];
+    page.on('request', (request) => requestedUrls.push(request.url()));
     await page.addInitScript(() => {
       const captured = new Map<string, { host: Element; child: Node }>();
       const tags = ['wc-lit-counter', 'sl-button', 'md-filled-button'];
@@ -266,6 +303,15 @@ export async function verifyBrowser(distDir: string): Promise<{
       'md-switch',
       'wc-fast-counter',
       'ion-button',
+      // Late-host corpus (A2/A4/B/C1). Registration is the contract-level
+      // assertion: each of these tags has no host at page ready, so it can
+      // only appear here if the runtime rediscovered a late host. The two
+      // deliberate exceptions are asserted the other way round below.
+      'wc-open-fast',
+      'wc-open-native',
+      'wc-open-light',
+      'wc-open-nested',
+      'wc-open-stencil',
     ];
     try {
       await page.waitForFunction(
@@ -313,6 +359,28 @@ export async function verifyBrowser(distDir: string): Promise<{
         litOpenChild: !!litHost?.shadowRoot?.querySelector('wc-open-child'),
         fastShadow: !!fixture?.shadowRoot?.querySelector('wc-fast-counter')?.shadowRoot,
         ionicShadow: !!fixture?.shadowRoot?.querySelector('ion-button')?.shadowRoot,
+        // Late-host corpus: the host exists only after the dynamically
+        // imported module defined its creator, so these clauses can only be
+        // true if the runtime found a host that appeared after page ready.
+        // Each is read through the creator's OWN open shadow root (or, for the
+        // light-DOM case, as a light child of the third-party host).
+        fastLateHost: !!fixture?.shadowRoot
+          ?.querySelector('wc-fast-host')
+          ?.shadowRoot?.querySelector('wc-open-fast'),
+        nativeLateHost: !!fixture?.shadowRoot
+          ?.querySelector('wc-native-late-host')
+          ?.shadowRoot?.querySelector('wc-open-native'),
+        stencilLateHost: !!fixture?.shadowRoot
+          ?.querySelector('wc-stencil-host')
+          ?.shadowRoot?.querySelector('wc-open-stencil'),
+        nestedLateHost: !!fixture?.shadowRoot
+          ?.querySelector('wc-nested-outer')
+          ?.shadowRoot?.querySelector('wc-lit-nested-host')
+          ?.shadowRoot?.querySelector('wc-open-nested'),
+        lightLateHosts: ['sl-button', 'md-filled-button', 'ion-button'].every(
+          (selector) =>
+            !!fixture?.shadowRoot?.querySelector(selector)?.querySelector('wc-open-light'),
+        ),
       };
       return diagnostic ? readiness : Object.values(readiness).every(Boolean);
     };
@@ -325,6 +393,37 @@ export async function verifyBrowser(distDir: string): Promise<{
           `browserErrors=${browserErrors.join(' | ')}`,
       );
     }
+
+    // Read back the probe's give-up signal now that the page has settled: on
+    // this page the closed-root island is expected to appear here (that is the
+    // diagnosable substitute for a silent drop), while the unused island's
+    // absence from the request log is the negative control on fetching.
+    //
+    // The wait is real and bounded: the probe spends its whole budget before it
+    // gives up, so at readiness time the event has not fired yet. A miss here
+    // is not thrown — the assertion below reports it with the event payloads,
+    // which is a far better message than a raw poll timeout.
+    await page
+      .waitForFunction(
+        () =>
+          (globalThis as typeof globalThis & { __oeHostTimeouts?: unknown[] }).__oeHostTimeouts
+            ?.length !== 0,
+        undefined,
+        { timeout: 15_000 },
+      )
+      .catch(() => undefined);
+    const hostTimeouts = (await page.evaluate(
+      () =>
+        (
+          globalThis as typeof globalThis & {
+            __oeHostTimeouts?: { pending: string[]; attempts: number; elapsedMs: number }[];
+          }
+        ).__oeHostTimeouts ?? [],
+    )) as { pending: string[]; attempts: number; elapsedMs: number }[];
+    const strandedTags = new Set(hostTimeouts.flatMap((entry) => entry.pending));
+    const fetchedIslandChunks = requestedUrls.filter(
+      (url) => url.includes('/islands/') || url.includes('island'),
+    );
 
     const summary = await page.evaluate(() => {
       // The page element composes through the starter's layout shadow root.
@@ -354,6 +453,30 @@ export async function verifyBrowser(distDir: string): Promise<{
       const eventText = root.querySelector('#event-count')?.textContent ?? '';
       const eventCount = Number(eventText.replace(/\D+/g, ''));
 
+      // Late-host corpus: the island tag has to be there AND have upgraded —
+      // registration alone would prove the chunk loaded, not that it landed on
+      // a host that arrived after page ready.
+      //
+      // Shadow-interior islands are NOT reachable from this root with a plain
+      // querySelector: they live inside the creator's own shadow root, which is
+      // the entire point of the corpus. Each one is resolved through its
+      // creator's chain instead, and `upgraded` is only the last step.
+      const upgraded = (el: Element | null | undefined, marker: string): boolean => {
+        const host = el as (HTMLElement & { shadowRoot?: ShadowRoot }) | null | undefined;
+        return !!host?.shadowRoot?.textContent?.includes(marker);
+      };
+      /** Descend a chain of shadow hosts, one open root per selector. */
+      const pierceRoot = (selectors: readonly string[]): Element | null => {
+        let scope: ParentNode | null = root;
+        let found: Element | null = null;
+        for (const selector of selectors) {
+          found = scope?.querySelector(selector) ?? null;
+          if (!found) return null;
+          scope = (found as HTMLElement & { shadowRoot?: ShadowRoot }).shadowRoot ?? null;
+        }
+        return found;
+      };
+
       return {
         eventCount,
         litSlot: lit.textContent?.includes('Lit slot label') ?? false,
@@ -372,6 +495,35 @@ export async function verifyBrowser(distDir: string): Promise<{
           root.querySelector('wc-fast-counter') as HTMLElement
         )?.shadowRoot?.querySelector('#fast-button'),
         ionicReady: !!(root.querySelector('ion-button') as HTMLElement)?.shadowRoot,
+        lateFast: upgraded(
+          pierceRoot(['wc-fast-host', 'wc-open-fast']),
+          'openElement child inside FAST',
+        ),
+        lateNative: upgraded(
+          pierceRoot(['wc-native-late-host', 'wc-open-native']),
+          'openElement child inside a native element',
+        ),
+        lateNested: upgraded(
+          pierceRoot(['wc-nested-outer', 'wc-lit-nested-host', 'wc-open-nested']),
+          'openElement child inside nested shadow roots',
+        ),
+        lateStencil: upgraded(
+          pierceRoot(['wc-stencil-host', 'wc-open-stencil']),
+          'openElement child inside Stencil',
+        ),
+        lateLight: upgraded(root.querySelector('wc-open-light'), 'openElement child appended late'),
+        // The closed-root gap, stated as an observation rather than a failure:
+        // `wc-open-closed` is created inside a closed root, so it can never be
+        // reached and must NOT be registered. Recorded as a documented gap.
+        closedRootProbe: {
+          closedHostPresent: !!root.querySelector('wc-closed-host'),
+          unreachableNotRegistered: !customElements.get('wc-open-closed'),
+          unreachableNotUpgraded: !(
+            root.querySelector('wc-closed-host') as HTMLElement & { shadowRoot?: ShadowRoot }
+          )?.shadowRoot,
+        },
+        // The negative control: a declared island this page never hosts.
+        unusedNotRegistered: !customElements.get('wc-unused-late'),
       };
     });
 
@@ -385,6 +537,60 @@ export async function verifyBrowser(distDir: string): Promise<{
     if (!summary.nativeBadgeShadow) throw new Error('Native badge shadow root did not render');
     if (!summary.fastReady) throw new Error('FAST fixture did not upgrade');
     if (!summary.ionicReady) throw new Error('Stencil/Ionic fixture did not upgrade');
+
+    // ── Late-host contract (the assertions the probe exists to satisfy) ──
+    const lateHostFailures: string[] = [];
+    if (!summary.lateFast) lateHostFailures.push('FAST open shadow root late host did not upgrade');
+    if (!summary.lateNative) {
+      lateHostFailures.push('bare-native open shadow root late host did not upgrade');
+    }
+    if (!summary.lateNested) {
+      lateHostFailures.push('nested open shadow root late host did not upgrade');
+    }
+    if (!summary.lateStencil) {
+      lateHostFailures.push('Stencil open shadow root late host did not upgrade');
+    }
+    if (!summary.lateLight) {
+      lateHostFailures.push('light-DOM appended late host did not upgrade');
+    }
+    if (!summary.closedRootProbe.closedHostPresent) {
+      lateHostFailures.push('closed-root host was not created (fixture wiring broken)');
+    }
+    if (!summary.closedRootProbe.unreachableNotRegistered) {
+      // If this ever fires, something reached into a closed root — a contract
+      // violation, not a missing feature.
+      lateHostFailures.push('a host inside a CLOSED shadow root was activated');
+    }
+    if (!summary.unusedNotRegistered) {
+      lateHostFailures.push('an island this page never hosts was registered (B2 violation)');
+    }
+    // C5: the unreachable tag must be NAMED, not silently dropped. The probe's
+    // event is informational, so the fixture reads it as evidence that the
+    // runtime knew it had given up and said which tag it gave up on.
+    if (!strandedTags.has('wc-open-closed')) {
+      lateHostFailures.push(
+        'the closed-root island was never named by open:island-host-timeout ' +
+          `(a silent drop); events=${JSON.stringify(hostTimeouts)}`,
+      );
+    }
+    // C4 negative: an island this page never hosts must cost zero fetches. The
+    // positive half keeps the assertion honest — a chunk that DID activate has
+    // to show up in the same log, otherwise the check proves nothing.
+    const unusedFetched = fetchedIslandChunks.filter((url) => url.includes('wc-unused-late'));
+    if (unusedFetched.length > 0) {
+      lateHostFailures.push(`unused island chunk was fetched: ${unusedFetched.join(', ')}`);
+    }
+    if (fetchedIslandChunks.length === 0) {
+      lateHostFailures.push(
+        'no island chunk URLs were observed at all: the 0-fetch control cannot be trusted',
+      );
+    }
+    if (lateHostFailures.length > 0) {
+      throw new Error(
+        `late-host contract failed: ${lateHostFailures.join('; ')}; ` +
+          `hostTimeouts=${JSON.stringify(hostTimeouts)}`,
+      );
+    }
 
     // Interaction event propagation checks for #221.
     await interactAndVerifyEventCount(page, summary.eventCount);
@@ -527,7 +733,32 @@ export async function verifyBrowser(distDir: string): Promise<{
         ? identity.identityPreserved
         : null;
     }
-    return { capabilities: evidence, slotFirst, browserVersion: session.browser.version() };
+    return {
+      capabilities: evidence,
+      slotFirst,
+      browserVersion: session.browser.version(),
+      lateHosts: {
+        upgraded: {
+          lit: summary.litHostContainsOpenElement,
+          fast: summary.lateFast,
+          native: summary.lateNative,
+          nested: summary.lateNested,
+          stencil: summary.lateStencil,
+          lightDom: summary.lateLight,
+        },
+        closedRoot: {
+          hostPresent: summary.closedRootProbe.closedHostPresent,
+          notRegistered: summary.closedRootProbe.unreachableNotRegistered,
+          notUpgraded: summary.closedRootProbe.unreachableNotUpgraded,
+        },
+        unused: {
+          registered: !summary.unusedNotRegistered,
+          chunkRequests: requestedUrls.filter((url) => url.includes('wc-unused-late')).length,
+        },
+        hostTimeouts,
+        islandChunkRequests: fetchedIslandChunks.length,
+      },
+    };
   } finally {
     await session.close();
   }
@@ -569,6 +800,20 @@ const FIXTURE_SOURCE_FILES = [
   'app/islands/wc-fixture.css',
   'app/islands/wc-open-child.tsx',
   'app/client/wc-client.ts',
+  // The late-host corpus: each of these islands has no host in the SSR markup,
+  // and each wc-*-host that creates one lives in wc-late-hosts.ts.
+  'app/islands/wc-open-fast.tsx',
+  'app/islands/wc-open-native.tsx',
+  'app/islands/wc-open-stencil.tsx',
+  'app/islands/wc-open-light.tsx',
+  'app/islands/wc-open-nested.tsx',
+  'app/islands/wc-open-closed.tsx',
+  'app/islands/wc-unused-late.tsx',
+  'app/client/wc-late-hosts.ts',
+  // A3: the Stencil source and its build config, compiled in the temp app.
+  'app/stencil/wc-stencil-host.tsx',
+  'app/stencil/tsconfig.json',
+  'stencil.config.ts',
 ] as const;
 
 /**
@@ -604,6 +849,14 @@ export async function prepareFixtureApp(tmpRoot: string): Promise<string> {
   // (same mechanism as the web-component-interop qualify harness), so
   // vite.config.ts resolves when the build loads it.
   await installAppDependencies(appDir);
+  // A3: compile the fixture's own Stencil host before the router build, which
+  // imports its dist-custom-elements output. A nonzero exit fails the fixture
+  // loudly — there is no silent fallback to "no Stencil host".
+  await runStep(
+    join(appDir, 'node_modules', '.bin', 'stencil'),
+    ['build', '--config', 'stencil.config.ts'],
+    { cwd: appDir },
+  );
   await runRouterBuild(appDir);
   return appDir;
 }
@@ -897,6 +1150,7 @@ async function main(): Promise<void> {
       capabilities: browser,
       slotFirst,
       browserVersion,
+      lateHosts,
     } = await verifyBrowser(join(appDir, 'dist'));
     const metadataProbes = await Promise.all(
       METADATA_PROBES.map(async (probe) => ({
@@ -1032,6 +1286,11 @@ async function main(): Promise<void> {
       metadataProbes,
       entries,
       slotFirst,
+      // The late-host contract, as durable evidence: which creators' islands
+      // upgraded after page ready, what the closed-root gap looks like from the
+      // outside, that an unhosted island cost zero fetches while island chunks
+      // did load, and exactly what the runtime said it gave up on.
+      lateHosts,
       tierReport,
     };
     const reportPath = process.env.OPEN_ELEMENT_TIER_REPORT;
