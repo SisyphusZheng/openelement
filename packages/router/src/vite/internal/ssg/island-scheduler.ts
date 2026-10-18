@@ -20,10 +20,21 @@
  * `idle`/`load`/`only` bucket imported every declared island chunk on every
  * page, which also dragged the shared element runtime into pages whose island
  * manifest is empty. A tag with no host keeps its factory (nothing is
- * consumed), so a later decision — a media-query change or the post-morph
- * rescan (`observeVisible`) — can still activate it. `open:ready` fires per
- * strategy with the tags this page actually activated, never for a bucket
- * that started no load here.
+ * consumed), so a later decision — a media-query change, the post-morph
+ * rescan (`observeVisible`), or the bounded late-host probe below — can still
+ * activate it. `open:ready` fires per strategy with the tags this page
+ * actually activated, never for a bucket that started no load here.
+ *
+ * LATE HOSTS: the ready-time read is not the last word. A third-party
+ * component may create an island's host later, inside its own open shadow
+ * root, after an async chunk of its own has landed — and on a page with no
+ * enhanced forms and no `visible` island, nothing would ever rescan for it,
+ * so the island stayed dead. The probe re-runs the same rescan on a bounded
+ * schedule while this page still has an unconsumed declared factory, and
+ * dispatches one `open:island-host-timeout` event (informational, never a
+ * drop: the factory stays in the map) when the budget is spent. It adds no
+ * new activation path — `load()`'s host gate stays the only one — so a page
+ * with no host still fetches nothing.
  *
  * The generated client entry imports this module through the
  * virtual:open-client-runtime specifier (resolved by build-client.ts) and the
@@ -112,6 +123,58 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
   const map = deps.map;
   const strategies = deps.strategies;
 
+  // ─── Late-host probe budget and state ───────────────────────────────────
+  //
+  // B2's page-scope gate reads the page ONCE, at module evaluation. A host a
+  // third party creates later — inside its own open shadow root, or appended
+  // to the light DOM after an async chunk lands — is invisible to that one
+  // read, and on a page with no enhanced forms and no `visible` island the
+  // post-morph rescan never runs at all, so the island stays dead forever.
+  //
+  // The probe below is the missing second and third look: a bounded, self
+  // scheduled re-run of the SAME rescan (`observeVisible`). It never calls a
+  // factory itself — `load()`'s host gate stays the only activation
+  // authority — so "a page with no host fetches nothing" survives by
+  // construction. The budget is a contract, not a tuning knob: it bounds how
+  // much DOM work a page can be made to do by declaring islands it never
+  // hosts. See the approved decision record for the rationale and the
+  // per-attempt complexity argument.
+  //
+  // The probe functions live together near the end of this factory; the state
+  // is declared here so `load()`'s resolution hook can never observe a
+  // temporal-dead-zone binding.
+  const LATE_HOST_MAX_ATTEMPTS = 6;
+  const LATE_HOST_DELAYS_MS = [0, 25, 100, 250, 750, 1500];
+  const LATE_HOST_WINDOW_MS = 3000;
+  const LATE_HOST_MAX_WINDOWS = 3;
+  const LATE_HOST_MAX_TOTAL_MS = 9000;
+  let probeWindow = 0;
+  let probeAttempt = 0;
+  let probeStartTs = 0;
+  let probeStartedAt = 0;
+  let probePending = false;
+  let probeTimer = 0;
+  let probeAwaiting = false;
+  let probeDone = false;
+  let probeArmed = false;
+  /**
+   * Tags the probe has already handed to the rescan. A `visible` island whose
+   * host exists is unconsumed until it intersects — a healthy state, not a
+   * missing host — so without this the probe would re-find it every attempt
+   * and eventually name it in a give-up event that says nothing is wrong.
+   */
+  const probeSettled = new Set<string>();
+
+  /**
+   * Wall clock for the probe's two time budgets, read through the injected
+   * window so a DOM-free test can drive them; a real window always carries
+   * the intrinsic.
+   */
+  function probeNow(): number {
+    const source = win.Date as unknown as { now?: () => number } | undefined;
+    return typeof source?.now === 'function' ? source.now() : Date.now();
+  }
+
   /**
    * Start one island's import. Returns whether a load started HERE: false
    * when the tag was already consumed or when this page carries no host for
@@ -124,6 +187,12 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
     if (!hasIslandHost(doc, tag)) return false;
     factory()
       .then(() => {
+        // An island module just landed: client code (often a third party's)
+        // is still running, so a host it creates may still be coming. This
+        // is the only late-host signal the runtime gets for free, and it is
+        // what lets the probe's window cover a slow async chunk instead of
+        // paying for a long unconditional wait.
+        onIslandLoadActivity();
         // #584: late-hydrating islands create their shadow roots after the
         // ready-time scan; let the enhance layer rescan so enhanced forms
         // inside them are heard.
@@ -335,9 +404,253 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
 
   if (idleTags.length > 0) scheduleIdle();
 
+  // ─── The late-host probe ────────────────────────────────────────────────
+  //
+  // A bounded, self-scheduled re-run of the rescan above. It arms only while
+  // this page carries a declared island whose factory is still unconsumed —
+  // i.e. a tag the build delivered here but no host has answered for yet —
+  // and disarms the moment every factory is consumed or the budget is spent.
+
+  /**
+   * The tags this page declared but has not activated yet, in bucket order.
+   * Three exclusions:
+   *
+   * - a non-matching `media` tag is capability-gated, not missing a host, so
+   *   searching for it would burn budget on a host we would refuse anyway;
+   * - `map[tag] === null` is the consumed marker `load()` writes, and is the
+   *   one-shot guard the whole scheduler already trusts;
+   * - an `idle` tag is skipped while its own attempt is still outstanding:
+   *   the browser has not been asked yet, so there is nothing to recover
+   *   from and probing would just duplicate a scheduled attempt. The probe
+   *   arms right after the construction-time schedule, so a page with idle
+   *   islands always lands in this case — idle delivery therefore keeps
+   *   exactly its pre-probe semantics, and its re-arm stays the post-morph
+   *   rescan's job. This is a declared scope boundary, not an oversight: the
+   *   idle chain already owns its own deferred step and re-arming it here
+   *   would schedule a second one.
+   */
+  function pendingTags(): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const add = (tag: string): void => {
+      if (!map[tag] || seen.has(tag) || probeSettled.has(tag)) return;
+      seen.add(tag);
+      out.push(tag);
+    };
+    for (const tag of strategies.load) add(tag);
+    for (const tag of strategies.only) add(tag);
+    for (const tag of strategies.visible) add(tag);
+    if (!idlePending) {
+      for (const tag of idleTags) add(tag);
+    }
+    for (const tag of mediaTags) {
+      if (deps.mediaQueries?.[tag]?.matches !== true) continue;
+      add(tag);
+    }
+    return out;
+  }
+
+  /**
+   * One fused composed-tree walk: which of `tags` has a host right now.
+   *
+   * The ready-time gate asks per tag; a probe repeats the question, so it
+   * asks it for the whole pending set in a single traversal. Each visited
+   * root costs two native queries — the tag selector list answers every
+   * pending tag at once, and the `*` list is reused for the shadow descent —
+   * which keeps one probe at the cost of one ready-time gate call rather than
+   * one per pending tag. Descends through `shadowRoot`, so it sees any depth
+   * of OPEN shadow root and stops silently at a closed one (the platform
+   * exposes no entry point; the factory stays unconsumed, and the give-up
+   * event names the tag). Results come back in `tags` order.
+   */
+  function collectHosts(root: ParentNode, tags: readonly string[]): string[] {
+    const found: string[] = [];
+    if (tags.length === 0) return found;
+    const selector = tags.join(',');
+    const pending = new Set(tags);
+    const visit = (scope: ParentNode): void => {
+      if (pending.size === 0) return;
+      const hits = scope.querySelectorAll(selector);
+      for (let i = 0; i < hits.length; i++) {
+        const name = hits[i].localName;
+        if (pending.delete(name)) found.push(name);
+      }
+      if (pending.size === 0) return;
+      const all = scope.querySelectorAll('*');
+      for (let j = 0; j < all.length; j++) {
+        const shadow = (all[j] as HTMLElement).shadowRoot;
+        if (shadow) visit(shadow);
+      }
+    };
+    visit(root);
+    return tags.filter((tag) => found.indexOf(tag) !== -1);
+  }
+
+  /** Queue one probe step. At most one timer is ever outstanding. */
+  function scheduleProbe(delayMs: number): void {
+    if (probePending || probeDone) return;
+    try {
+      probePending = true;
+      probeTimer = win.setTimeout(() => {
+        probePending = false;
+        probe(probeNow());
+      }, delayMs);
+    } catch {
+      // A host that will not give us a timer cannot run a timed probe; give
+      // up quietly rather than throwing out of island scheduling. Nothing is
+      // consumed, so a later morph rescan still activates the island.
+      probePending = false;
+      probeDone = true;
+    }
+  }
+
+  /**
+   * One probe step. Returns silently once disarmed; on each live step it
+   * asks whether any pending tag has a host and, if so, hands the whole
+   * question back to the one function that owns activation semantics.
+   */
+  function probe(now: number): void {
+    if (probeDone) return;
+    // The previous window ran out and nothing has loaded since: stop, and
+    // say so. Waiting forever for an activity signal would make the give-up
+    // diagnostic unreachable, which is exactly the silent-drop failure the
+    // probe exists to prevent.
+    if (probeAwaiting) {
+      const stranded = pendingTags();
+      probeDone = true;
+      probeAwaiting = false;
+      if (stranded.length > 0) giveUp(stranded, now);
+      return;
+    }
+    const pending = pendingTags();
+    if (pending.length === 0) {
+      probeDone = true;
+      return;
+    }
+    const hits = collectHosts(doc, pending);
+    if (hits.length > 0) {
+      // Settle only what was actually seen, and settle before the rescan: for
+      // `load`/`only`/matching-`media` this is the activation itself, and for
+      // `visible` it is the observer that now owns the tag. Either way the
+      // probe has nothing left to discover for those tags, while a tag still
+      // missing a host keeps its remaining budget.
+      for (const tag of hits) probeSettled.add(tag);
+      observeVisible();
+      // Everything this page was waiting for just activated: stop here rather
+      // than spend a further attempt rediscovering an empty pending set. A
+      // partial hit keeps probing — the island that just landed may itself be
+      // the component that creates the next late host.
+      if (pendingTags().length === 0) {
+        probeDone = true;
+        return;
+      }
+    }
+    probeAttempt++;
+    if (probeAttempt >= LATE_HOST_MAX_ATTEMPTS || now - probeStartTs >= LATE_HOST_WINDOW_MS) {
+      // Recomputed, not the attempt's opening set: a partial hit settled some
+      // tags, and the diagnostic must name only what is genuinely stranded.
+      endWindow(pendingTags(), now);
+      return;
+    }
+    scheduleProbe(LATE_HOST_DELAYS_MS[probeAttempt]);
+  }
+
+  /**
+   * The current window is spent. Spend another only if the page gives a
+   * reason to: island modules still resolving means client code is still
+   * running, which is the honest signal that a late host may still arrive.
+   * The wait for that signal is itself bounded — a page whose islands all
+   * settled before the window closed gets its diagnostic now, not never.
+   */
+  function endWindow(pending: readonly string[], now: number): void {
+    if (probeWindow >= LATE_HOST_MAX_WINDOWS || now - probeStartedAt >= LATE_HOST_MAX_TOTAL_MS) {
+      giveUp(pending, now);
+      return;
+    }
+    probeAwaiting = true;
+    // The wait is bounded on purpose: no activity means the diagnostic fires
+    // from this timer rather than never.
+    scheduleProbe(Math.min(LATE_HOST_WINDOW_MS, probeStartedAt + LATE_HOST_MAX_TOTAL_MS - now));
+  }
+
+  /**
+   * An island factory resolved. Only meaningful while the probe is waiting
+   * out a spent window: it opens a fresh one, which is what keeps a slow
+   * third-party chunk inside the budget without widening the budget itself.
+   */
+  function onIslandLoadActivity(): void {
+    if (probeDone || !probeAwaiting) return;
+    probeAwaiting = false;
+    probeWindow++;
+    probeAttempt = 0;
+    probeStartTs = probeNow();
+    // The spent window's give-up timer is replaced by the new window's first
+    // step, so a fresh window never leaves the old deadline armed behind it.
+    win.clearTimeout(probeTimer);
+    probePending = false;
+    scheduleProbe(0);
+  }
+
+  /**
+   * The budget is spent with factories still unconsumed. This is NOT a drop:
+   * those factories stay in the map, so a media change or a later morph
+   * rescan still activates them. It is also not automatically a failure — an
+   * app may legitimately declare islands a page never hosts — so the signal
+   * is an event a consumer can opt into, never a console warning on every
+   * page. Treat `pending` as a hint to cross-check against the page's own
+   * island manifest, never as an error by itself.
+   */
+  function giveUp(pending: readonly string[], now: number): void {
+    probeDone = true;
+    probeAwaiting = false;
+    doc.dispatchEvent(
+      new win.CustomEvent('open:island-host-timeout', {
+        detail: {
+          pending: pending,
+          attempts: probeAttempt,
+          elapsedMs: now - probeStartedAt,
+        },
+      }),
+    );
+  }
+
+  /**
+   * Start the one probe chain this page gets. Idempotent, and a no-op when
+   * nothing is pending — so it is safe to call from every rescan.
+   */
+  function armProbe(): void {
+    if (probeArmed || probeDone) return;
+    if (pendingTags().length === 0) return;
+    probeArmed = true;
+    probeStartedAt = probeNow();
+    probeStartTs = probeStartedAt;
+    probeWindow = 1;
+    scheduleProbe(0);
+  }
+
+  /**
+   * The scheduler's public rescan, plus the arm. `observeVisible`'s body is
+   * untouched (F01 semantics are frozen); the arm only decides whether the
+   * probe should be running, and arming twice is a no-op, so this adds no
+   * behaviour to a rescan beyond "and keep looking".
+   */
+  function rescanAndArm(): void {
+    observeVisible();
+    armProbe();
+  }
+
   // Register the ready-time scan last: the rescan reads the media/idle state
   // above, and a synchronous `readyState` call must see it initialized.
-  if (visibleTags.length > 0) onReady(observeVisible);
+  if (visibleTags.length > 0) onReady(rescanAndArm);
 
-  return { observeVisible: observeVisible };
+  // Arm last. When the ready-time visible scan is still waiting on
+  // DOMContentLoaded, that scan owns the first look and this must not race it
+  // — pre-empting it would attach observers before the document is ready and
+  // break the deferral the ready scan promises. The arm rides that scan
+  // instead: `rescanAndArm` runs it the moment DOMContentLoaded arrives. A
+  // page with no islands and a page that hosted everything both leave here
+  // with no timer at all.
+  if (visibleTags.length === 0 || doc.readyState !== 'loading') armProbe();
+
+  return { observeVisible: rescanAndArm };
 }

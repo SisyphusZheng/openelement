@@ -22,11 +22,18 @@ class FakeElement {
   constructor(tagName: string) {
     this.tagName = tagName;
   }
+  /** DOM parity for the late-host probe: the lowercased local name. */
+  get localName(): string {
+    return this.tagName.toLowerCase();
+  }
   querySelectorAll(selector: string): FakeElement[] {
+    // A tag selector LIST is one native query in the DOM; the double answers
+    // it the same way so the probe's fused walk is exercised for real.
+    const wanted = selector.split(',').map((part) => part.trim().toLowerCase());
     const out: FakeElement[] = [];
     const walk = (el: FakeElement): void => {
       for (const child of el.children) {
-        if (selector === '*' || child.tagName.toLowerCase() === selector.toLowerCase()) {
+        if (wanted.indexOf('*') !== -1 || wanted.indexOf(child.localName) !== -1) {
           out.push(child);
         }
         walk(child);
@@ -37,16 +44,69 @@ class FakeElement {
   }
 }
 
-function makeDoc(root: FakeElement, readyEvents: ReadyEvent[]) {
+/** The probe's give-up signal, as a document-level consumer would see it. */
+interface HostTimeoutEvent {
+  pending: readonly string[];
+  attempts: number;
+  elapsedMs: number;
+}
+
+function makeDoc(
+  root: FakeElement,
+  readyEvents: ReadyEvent[],
+  hostTimeouts: HostTimeoutEvent[] = [],
+) {
   return {
     readyState: 'complete',
     addEventListener: () => {},
-    dispatchEvent: (event: { type: string; detail: ReadyEvent }) => {
-      if (event.type === 'open:ready') readyEvents.push(event.detail);
+    dispatchEvent: (event: { type: string; detail: ReadyEvent | HostTimeoutEvent }) => {
+      if (event.type === 'open:ready') readyEvents.push(event.detail as ReadyEvent);
+      if (event.type === 'open:island-host-timeout') {
+        hostTimeouts.push(event.detail as HostTimeoutEvent);
+      }
       return true;
     },
     querySelectorAll: (selector: string) => root.querySelectorAll(selector),
   } as unknown as Document;
+}
+
+/**
+ * A controllable timer queue plus clock for the late-host probe. The probe
+ * reads only `win.setTimeout` / `win.clearTimeout` / `win.Date`, so driving it
+ * needs no fake-timer library: `runNext` performs exactly one queued step and
+ * advances the injected clock by the delay it waited.
+ */
+function makeTimers() {
+  const queue: { id: number; fn: () => void; delay: number }[] = [];
+  let nextId = 1;
+  let now = 0;
+  return {
+    win: {
+      setTimeout: (fn: () => void, delay?: number) => {
+        const id = nextId++;
+        queue.push({ id, fn, delay: delay ?? 0 });
+        return id;
+      },
+      clearTimeout: (id: number) => {
+        const at = queue.findIndex((entry) => entry.id === id);
+        if (at >= 0) queue.splice(at, 1);
+      },
+      Date: { now: () => now },
+    },
+    runNext: () => {
+      const next = queue.shift();
+      if (!next) return null;
+      now += next.delay;
+      next.fn();
+      return next.delay;
+    },
+    /** Move the injected wall clock without running anything. */
+    advance: (ms: number) => {
+      now += ms;
+    },
+    pending: () => queue.length,
+    delays: () => queue.map((entry) => entry.delay),
+  };
 }
 
 function makeWin(overrides: Partial<Record<string, unknown>> = {}): Win {
@@ -1179,4 +1239,549 @@ test('#F01 post-morph rescans share one pending idle attempt', () => {
   expect(idleCallbacks.length).toEqual(1);
   idleCallbacks[0]!();
   expect(loaded).toEqual(1);
+});
+
+// ─── The bounded late-host probe ─────────────────────────────────────────
+//
+// B2's page-scope gate reads the page once. A host a third party creates
+// later — inside its own open shadow root, after an async chunk of its own
+// landed — is invisible to that read, and a page with no enhanced forms and
+// no `visible` island has no post-morph rescan to fall back on, so the island
+// stays dead. These pin the probe that gives the page a bounded second look,
+// and the budgets that bound what a page can be made to spend.
+
+/** The page shape the probe exists for: a declared tag with no host yet. */
+function lateHostFixture(options: {
+  tags?: string[];
+  body?: FakeElement;
+  map?: Record<string, () => Promise<unknown>>;
+}) {
+  const readyEvents: ReadyEvent[] = [];
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  const loaded: string[] = [];
+  const body = options.body ?? new FakeElement('body');
+  const tags = options.tags ?? ['x-late'];
+  const map =
+    options.map ??
+    Object.fromEntries(
+      tags.map((tag) => [
+        tag,
+        () => {
+          loaded.push(tag);
+          return Promise.resolve();
+        },
+      ]),
+    );
+  const timers = makeTimers();
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(timers.win),
+    doc: makeDoc(body, readyEvents, hostTimeouts),
+    map,
+    strategies: STRATEGIES({ load: tags }),
+    onIslandLoaded: null,
+  });
+  return { body, timers, scheduler, readyEvents, hostTimeouts, loaded };
+}
+
+test('late-host probe T-1: a page with no declared island schedules nothing', () => {
+  const timers = makeTimers();
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(timers.win),
+    doc: makeDoc(treeWithTags(), [], hostTimeouts),
+    map: {},
+    strategies: STRATEGIES(),
+    onIslandLoaded: null,
+  });
+  expect(timers.pending()).toEqual(0);
+  expect(hostTimeouts).toEqual([]);
+});
+
+test('late-host probe T-2: a page that hosted every declared island schedules nothing', () => {
+  const timers = makeTimers();
+  const loaded: string[] = [];
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(timers.win),
+    doc: makeDoc(treeWithTags('x-load'), []),
+    map: {
+      'x-load': () => {
+        loaded.push('x-load');
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ load: ['x-load'] }),
+    onIslandLoaded: null,
+  });
+  expect(loaded).toEqual(['x-load']);
+  // Nothing is pending, so the budget is never armed.
+  expect(timers.pending()).toEqual(0);
+});
+
+test('late-host probe T-3: a host created later inside an OPEN shadow root activates, exactly once', async () => {
+  const shell = new FakeElement('x-shell');
+  shell.shadowRoot = new FakeElement('sealed-open');
+  const body = new FakeElement('body');
+  body.children.push(shell);
+  const { timers, scheduler, readyEvents, hostTimeouts, loaded } = lateHostFixture({ body });
+
+  // Ready scan: no host anywhere — nothing activates, and the probe arms.
+  expect(loaded).toEqual([]);
+  expect(readyEvents).toEqual([]);
+  expect(timers.pending()).toEqual(1);
+
+  // Attempt 1 still sees nothing (the third-party chunk has not landed).
+  timers.runNext();
+  expect(loaded).toEqual([]);
+
+  // The component renders into its own open shadow root after activation.
+  shell.shadowRoot.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'load', islands: ['x-late'] }]);
+
+  // Disarmed on the hit: no further attempt is queued, and the morph rescan
+  // stays one-event-per-activation.
+  expect(timers.pending()).toEqual(0);
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'load', islands: ['x-late'] }]);
+  expect(hostTimeouts).toEqual([]);
+});
+
+test('late-host probe T-4: a host APPENDED to the light DOM later activates', async () => {
+  const { body, timers, loaded } = lateHostFixture({});
+  expect(loaded).toEqual([]);
+  timers.runNext();
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+});
+
+test('late-host probe T-5: a host nested two open shadow roots deep activates', async () => {
+  const outer = new FakeElement('x-outer');
+  outer.shadowRoot = new FakeElement('outer-open');
+  const inner = new FakeElement('x-inner');
+  inner.shadowRoot = new FakeElement('inner-open');
+  outer.shadowRoot.children.push(inner);
+  const body = new FakeElement('body');
+  body.children.push(outer);
+  const { timers, loaded } = lateHostFixture({ body });
+  timers.runNext();
+  inner.shadowRoot.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+});
+
+test('late-host probe T-6: the budget is exact — six attempts, then one give-up event', () => {
+  const { timers, hostTimeouts, loaded } = lateHostFixture({});
+  // Six scheduled steps at the documented offsets, none of which finds a host.
+  for (let step = 0; step < 6; step++) {
+    expect(timers.pending()).toEqual(1);
+    timers.runNext();
+  }
+  expect(loaded).toEqual([]);
+  // The window is spent; the probe waits for island-load activity instead of
+  // giving up immediately, so its give-up timer is still the only one queued.
+  expect(timers.pending()).toEqual(1);
+  expect(hostTimeouts).toEqual([]);
+  timers.runNext();
+  expect(loaded).toEqual([]);
+  expect(hostTimeouts.length).toEqual(1);
+  expect(hostTimeouts[0]!.pending).toEqual(['x-late']);
+  expect(hostTimeouts[0]!.attempts).toEqual(6);
+  // Bounded, not silent: the tag is still unconsumed and still activatable.
+  expect(timers.pending()).toEqual(0);
+});
+
+test('late-host probe T-6b: the documented schedule is the schedule that runs', () => {
+  const { timers } = lateHostFixture({});
+  const observed: number[] = [];
+  for (let step = 0; step < 6; step++) {
+    observed.push(timers.delays()[0]!);
+    timers.runNext();
+  }
+  expect(observed).toEqual([0, 25, 100, 250, 750, 1500]);
+});
+
+test('late-host probe T-7: a hit disarms the budget early', async () => {
+  const { body, timers, loaded } = lateHostFixture({});
+  timers.runNext(); // attempt 1: nothing yet
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext(); // attempt 2: hit
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(timers.pending()).toEqual(0);
+});
+
+test('late-host probe T-8: island-load activity opens a fresh window after the first is spent', async () => {
+  const body = new FakeElement('body');
+  body.children.push(new FakeElement('x-host'));
+  const loaded: string[] = [];
+  let resolveHost: (() => void) | null = null;
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  const timers = makeTimers();
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(timers.win),
+    doc: makeDoc(body, [], hostTimeouts),
+    map: {
+      'x-host': () =>
+        new Promise<void>((resolve) => {
+          resolveHost = resolve;
+        }),
+      'x-late': () => {
+        loaded.push('x-late');
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ load: ['x-host', 'x-late'] }),
+    onIslandLoaded: null,
+  });
+  // x-host activated at ready; x-late is pending, so the probe arms.
+  expect(timers.pending()).toEqual(1);
+  for (let step = 0; step < 6; step++) timers.runNext();
+  // Window spent, waiting on activity — and the give-up timer is queued.
+  expect(timers.pending()).toEqual(1);
+  expect(hostTimeouts).toEqual([]);
+
+  // The slow third-party chunk lands: the island module resolves.
+  resolveHost!();
+  await Promise.resolve();
+  await Promise.resolve();
+  // A fresh window, starting immediately, and the give-up timer is gone.
+  expect(timers.delays()).toEqual([0]);
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(hostTimeouts).toEqual([]);
+});
+
+test('late-host probe T-9: a closed shadow root is unreachable and does not crash anything', () => {
+  // A closed root is invisible by construction: Element.shadowRoot is null and
+  // no standard API enumerates it, so from the scheduler's side the host
+  // inside simply does not exist in any tree it can walk. The double models
+  // exactly that: the sealed subtree is never attached to the walked tree.
+  const closed = new FakeElement('x-closed-host');
+  const sealed = new FakeElement('sealed');
+  sealed.children.push(new FakeElement('x-sealed'));
+  closed.shadowRoot = null;
+  const open = new FakeElement('x-open-host');
+  open.shadowRoot = new FakeElement('open');
+  const body = new FakeElement('body');
+  body.children.push(closed, open);
+  const { timers, hostTimeouts, loaded } = lateHostFixture({
+    tags: ['x-sealed', 'x-late'],
+    body,
+  });
+
+  expect(() => {
+    for (let step = 0; step < 7; step++) timers.runNext();
+  }).not.toThrow();
+  expect(loaded).toEqual([]);
+  // Not silent: the unreachable tag is named, once.
+  expect(hostTimeouts.length).toEqual(1);
+  expect(hostTimeouts[0]!.pending).toEqual(['x-sealed', 'x-late']);
+  // ...and the SAME page still activates an open-root late host.
+  open.shadowRoot!.children.push(new FakeElement('x-late'));
+  expect(body.children.length).toEqual(2);
+});
+
+test('late-host probe T-9b: an open-root late host still activates on a page that also has a closed root', async () => {
+  const body = new FakeElement('body');
+  const closed = new FakeElement('x-closed-host');
+  closed.shadowRoot = null;
+  const open = new FakeElement('x-open-host');
+  open.shadowRoot = new FakeElement('open');
+  body.children.push(closed, open);
+  const { timers, loaded } = lateHostFixture({ tags: ['x-sealed', 'x-late'], body });
+  timers.runNext();
+  open.shadowRoot.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+});
+
+test('late-host probe T-10: B2 holds — an unhosted tag is never fetched, however many attempts run', () => {
+  const { timers, loaded, hostTimeouts } = lateHostFixture({ tags: ['x-unused', 'x-never'] });
+  for (let step = 0; step < 7; step++) timers.runNext();
+  expect(loaded).toEqual([]);
+  expect(hostTimeouts[0]!.pending).toEqual(['x-unused', 'x-never']);
+});
+
+test('late-host probe T-11: the probe reuses observeVisible, so F01 semantics are unchanged', async () => {
+  const body = new FakeElement('body');
+  const { timers, scheduler, readyEvents, loaded } = lateHostFixture({ body });
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  // Exactly one activation and one event, no matter how many rescans follow.
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'load', islands: ['x-late'] }]);
+});
+
+/** Counts the native queries a probe spends, so the fused walk is pinned. */
+class CountingElement extends FakeElement {
+  queries = 0;
+  override querySelectorAll(selector: string): FakeElement[] {
+    this.queries += 1;
+    return super.querySelectorAll(selector);
+  }
+}
+
+test('late-host probe T-12: one attempt costs two queries regardless of how many tags are pending', () => {
+  const body = new CountingElement('body');
+  body.children.push(new FakeElement('x-shell'));
+  const { timers } = lateHostFixture({ tags: ['x-a', 'x-b', 'x-c'], body });
+  // The ready-time gate asks per tag — two queries (the tag, then '*') each.
+  const readyCost = body.queries;
+  expect(readyCost).toEqual(6);
+  timers.runNext();
+  // The probe's fused walk answers all three pending tags in one pass: the
+  // tag selector list, then the '*' list for the shadow descent.
+  expect(body.queries - readyCost).toEqual(2);
+  timers.runNext();
+  expect(body.queries - readyCost).toEqual(4);
+});
+
+test('late-host probe T-13: a host with no timer, and a timer that throws, both stay contained', () => {
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  const loaded: string[] = [];
+  const map = {
+    'x-late': () => {
+      loaded.push('x-late');
+      return Promise.resolve();
+    },
+  };
+  // A window whose setTimeout never calls back: the probe simply never runs.
+  const silent = makeWin({
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+    Date: { now: () => 0 },
+  });
+  expect(() =>
+    createIslandScheduler({
+      log: { warn: () => {} },
+      idleFallbackTimeoutMs: 25,
+      win: silent,
+      doc: makeDoc(new FakeElement('body'), [], hostTimeouts),
+      map,
+      strategies: STRATEGIES({ load: ['x-late'] }),
+      onIslandLoaded: null,
+    }),
+  ).not.toThrow();
+  expect(loaded).toEqual([]);
+  expect(hostTimeouts).toEqual([]);
+
+  // A window that refuses to schedule at all: contained, nothing consumed.
+  const refused = makeWin({
+    setTimeout: () => {
+      throw new Error('no timers here');
+    },
+    clearTimeout: () => {},
+    Date: { now: () => 0 },
+  });
+  expect(() =>
+    createIslandScheduler({
+      log: { warn: () => {} },
+      idleFallbackTimeoutMs: 25,
+      win: refused,
+      doc: makeDoc(new FakeElement('body'), [], hostTimeouts),
+      map: {
+        'x-late': () => {
+          loaded.push('x-late');
+          return Promise.resolve();
+        },
+      },
+      strategies: STRATEGIES({ load: ['x-late'] }),
+      onIslandLoaded: null,
+    }),
+  ).not.toThrow();
+  expect(loaded).toEqual([]);
+});
+
+test('late-host probe T-14: after the budget is spent the probe never restarts', () => {
+  const { timers, scheduler, hostTimeouts } = lateHostFixture({});
+  for (let step = 0; step < 7; step++) timers.runNext();
+  expect(hostTimeouts.length).toEqual(1);
+  expect(timers.pending()).toEqual(0);
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  expect(timers.pending()).toEqual(0);
+  expect(hostTimeouts.length).toEqual(1);
+});
+
+test('late-host probe T-15: idle keeps its own deferred chain and is not probed twice', () => {
+  const readyEvents: ReadyEvent[] = [];
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  const idleCallbacks: (() => void)[] = [];
+  const body = new FakeElement('body');
+  createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    // No idle primitive: the idle chain falls back to the injected timeout.
+    win: makeWin({
+      setTimeout: (fn: () => void) => {
+        idleCallbacks.push(fn);
+        return 0;
+      },
+    }),
+    doc: makeDoc(body, readyEvents, hostTimeouts),
+    map: { 'x-idle': () => Promise.resolve() },
+    strategies: STRATEGIES({ idle: ['x-idle'] }),
+    onIslandLoaded: null,
+  });
+  // The idle attempt is outstanding, so the probe does not arm a second
+  // deferred step for the same tag.
+  expect(idleCallbacks.length).toEqual(1);
+  expect(hostTimeouts).toEqual([]);
+  idleCallbacks[0]!();
+  expect(hostTimeouts).toEqual([]);
+});
+
+/**
+ * A page that can renew the probe's window on demand: two hosted islands whose
+ * factories are held open (so their resolution — the activity signal — can be
+ * delivered whenever a test wants) plus one island with no host at all.
+ */
+function renewingFixture() {
+  const body = new FakeElement('body');
+  body.children.push(new FakeElement('x-host-a'), new FakeElement('x-host-b'));
+  const resolvers: Record<string, () => void> = {};
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  const timers = makeTimers();
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(timers.win),
+    doc: makeDoc(body, [], hostTimeouts),
+    map: {
+      'x-host-a': () =>
+        new Promise<void>((resolve) => {
+          resolvers['x-host-a'] = resolve;
+        }),
+      'x-host-b': () =>
+        new Promise<void>((resolve) => {
+          resolvers['x-host-b'] = resolve;
+        }),
+      'x-late': () => Promise.resolve(),
+    },
+    strategies: STRATEGIES({ load: ['x-host-a', 'x-host-b', 'x-late'] }),
+    onIslandLoaded: null,
+  });
+  return { body, timers, scheduler, hostTimeouts, resume: (tag: string) => resolvers[tag]!() };
+}
+
+/** Spend one whole window: six attempts, then the give-up timer is queued. */
+function spendWindow(timers: ReturnType<typeof makeTimers>) {
+  for (let step = 0; step < 6; step++) timers.runNext();
+}
+
+test('late-host probe T-16: a duplicated host in a second root is not re-counted, and a spent root is skipped', async () => {
+  const body = new FakeElement('body');
+  const first = new FakeElement('x-a');
+  first.shadowRoot = new FakeElement('a-open');
+  const second = new FakeElement('x-b');
+  second.shadowRoot = new FakeElement('b-open');
+  body.children.push(first, second);
+  // The same island tag is instantiated inside both third-party shadow roots.
+  first.shadowRoot.children.push(new FakeElement('x-late'));
+  second.shadowRoot.children.push(new FakeElement('x-late'));
+  const { timers, loaded } = lateHostFixture({ tags: ['x-late', 'x-absent'], body });
+
+  timers.runNext();
+  await Promise.resolve();
+  // Two hosts, one definition: the second sighting is not a second activation.
+  expect(loaded).toEqual(['x-late']);
+});
+
+test('late-host probe T-17: a morph that activates the last pending tag ends the probe with no spent attempt', async () => {
+  const body = new FakeElement('body');
+  const { timers, scheduler, loaded, hostTimeouts } = lateHostFixture({ body });
+  timers.runNext(); // attempt 1 finds nothing and queues attempt 2
+  expect(timers.pending()).toEqual(1);
+  // The host arrives through a morph instead, and that rescan activates it.
+  body.children.push(new FakeElement('x-late'));
+  scheduler.observeVisible();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  // Attempt 2 now finds nothing pending and retires without spending a step.
+  timers.runNext();
+  expect(timers.pending()).toEqual(0);
+  expect(hostTimeouts).toEqual([]);
+});
+
+test('late-host probe T-18: three windows is the cap, and the absolute clock ends it too', async () => {
+  const capped = renewingFixture();
+  spendWindow(capped.timers);
+  expect(capped.timers.pending()).toEqual(1);
+  for (const host of ['x-host-a', 'x-host-b']) {
+    capped.resume(host);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(capped.timers.delays()).toEqual([0]);
+    spendWindow(capped.timers);
+  }
+  // Third window spent: the window count is the binding cap.
+  expect(capped.hostTimeouts.length).toEqual(1);
+  expect(capped.hostTimeouts[0]!.pending).toEqual(['x-late']);
+  expect(capped.timers.pending()).toEqual(0);
+
+  // A slow page can also reach the absolute wall-clock cap with windows left:
+  // the clock is the second, independent bound.
+  const clocked = renewingFixture();
+  spendWindow(clocked.timers);
+  clocked.timers.advance(9000);
+  clocked.resume('x-host-a');
+  await Promise.resolve();
+  await Promise.resolve();
+  spendWindow(clocked.timers);
+  expect(clocked.hostTimeouts.length).toEqual(1);
+  expect(clocked.hostTimeouts[0]!.elapsedMs >= 9000).toEqual(true);
+});
+
+test('late-host probe T-19: a morph during the wait leaves nothing stranded, so nothing is reported', async () => {
+  const fixture = renewingFixture();
+  spendWindow(fixture.timers);
+  expect(fixture.timers.pending()).toEqual(1); // the give-up timer
+  // The host arrives through a morph while the probe waits out the window.
+  fixture.body.children.push(new FakeElement('x-late'));
+  fixture.scheduler.observeVisible();
+  await Promise.resolve();
+  // The give-up timer fires with an empty pending set: no diagnostic.
+  fixture.timers.runNext();
+  expect(fixture.hostTimeouts).toEqual([]);
+});
+
+test('late-host probe T-20: the walk stops descending once every pending tag is found', () => {
+  // The early exit is what bounds a probe's cost on a page full of shadow
+  // hosts: a root reached after the last tag was found must cost nothing.
+  const body = new FakeElement('body');
+  const withTag = new FakeElement('x-first');
+  withTag.shadowRoot = new CountingElement('first-open');
+  const after = new FakeElement('x-second');
+  after.shadowRoot = new CountingElement('second-open');
+  body.children.push(withTag, after);
+  withTag.shadowRoot.children.push(new FakeElement('x-late'));
+  const { timers, loaded } = lateHostFixture({ tags: ['x-late'], body });
+  timers.runNext();
+  // The second root is never queried: nothing was left to look for.
+  expect((after.shadowRoot as CountingElement).queries).toEqual(0);
+  expect(loaded).toEqual(['x-late']);
 });
