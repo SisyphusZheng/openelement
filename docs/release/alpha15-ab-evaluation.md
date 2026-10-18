@@ -226,8 +226,9 @@ both sides and all seven groups and reported **0 disagreements**.
 ## Delta note
 
 The measurement was taken on `0bc1099282e1a69ec0c3e551e6d923bc21d2fe18`.
-The only tree delta to the submitted final SHA is this evaluation document
-itself (the release-note body lives in the PR description, not in the tree).
-This document is not an input to any measured build, so it cannot move a byte
-or timing in the tables; the exact-SHA full qualification is nevertheless
+The delta to the submitted final SHA is (a) this evaluation document and (b)
+test files added afterwards to lift the production-source branch-coverage gate
+back over its floor (the coverage gate is release-train evidence; tests are not
+build inputs). Neither delta is an input to any measured build, so neither can
+move a byte or timing in the tables; the exact-SHA full qualification is
 re-run on the final SHA.
