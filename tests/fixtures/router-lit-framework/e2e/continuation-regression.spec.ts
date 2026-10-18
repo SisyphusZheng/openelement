@@ -1,5 +1,32 @@
 /** Adversarial continuation contracts for the shared enhance client and Lit hydration. */
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
+
+/**
+ * Arm the readiness recorder before the first navigation.
+ *
+ * The client entry's enhance layer announces itself with
+ * `open:enhance-ready` once its ready-time scan has run (form-enhance.ts).
+ * `open:ready` is NOT a substitute: it fires per island strategy bucket that
+ * has a HOST on the page (#1544/B2), and the page under test (/notes/new)
+ * carries no island host, so it stays silent. The previous barrier
+ * (`customElements.get('note-counter')`) asserted the pre-B2 side effect of the
+ * entry statically importing the island chunk — an app-wide define that B2
+ * deliberately removed and that never happens on a page without a host.
+ */
+async function armEnhanceReady(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    document.addEventListener('open:enhance-ready', () => {
+      (window as unknown as { __enhanceReady?: boolean }).__enhanceReady = true;
+    });
+  });
+}
+
+/** Resolve only after that announcement: the submit interceptor is attached. */
+async function waitForEnhanceReady(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => (window as never as { __enhanceReady?: boolean }).__enhanceReady === true,
+  );
+}
 
 for (const target of [undefined, '', '_self'] as const) {
   test(`base target fallback preserves explicit target ${String(target)}`, async ({ page }) => {
@@ -32,8 +59,9 @@ for (const target of [undefined, '', '_self'] as const) {
 for (const outcome of ['html', 'network-error'] as const) {
   test(`a disposed form cannot apply its late ${outcome}`, async ({ page, request }) => {
     const html = await (await request.get('/notes')).text();
+    await armEnhanceReady(page);
     await page.goto('/notes/new');
-    await page.waitForFunction(() => !!customElements.get('note-counter'));
+    await waitForEnhanceReady(page);
     let release!: () => void;
     const held = new Promise<void>((resolve) => (release = resolve));
     let received!: () => void;
@@ -68,8 +96,9 @@ test('Lit islands introduced by repeated enhanced responses hydrate and handle c
     '</main>',
     '<form method="post" action="/notes/new" data-open-enhance><button id="again">again</button></form></main>',
   );
+  await armEnhanceReady(page);
   await page.goto('/notes/new');
-  await page.waitForFunction(() => !!customElements.get('note-counter'));
+  await waitForEnhanceReady(page);
   await page.route('**/notes/new', (route) =>
     route.request().method() === 'POST'
       ? route.fulfill({ contentType: 'text/html', body: html })
