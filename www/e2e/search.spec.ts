@@ -22,6 +22,37 @@ function deferred(): Deferred {
 }
 
 test.describe('Search', () => {
+  test('opening the dialog does not fetch the pagefind runtime (T10 R3)', async ({ page }) => {
+    const pagefindRequests: string[] = [];
+    page.on('request', (request) => {
+      if (request.url().includes('/pagefind/pagefind.js')) pagefindRequests.push(request.url());
+    });
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await page.waitForFunction(() => customElements.get('open-search'));
+
+    await page.getByRole('button', { name: 'Search' }).click();
+    const results = page.getByRole('listbox', { name: 'Search results' });
+    await expect(results).toBeVisible();
+    // The hint is written on open, synchronously, and it is NOT a side effect of
+    // loading pagefind — that is the point of the change: opening the dialog to
+    // look, then closing it, must not download the index runtime.
+    await expect(results).toContainText('Type at least 2 characters to search');
+    expect(pagefindRequests, 'pagefind.js must not be requested until the reader types').toEqual(
+      [],
+    );
+
+    // First real input is what pays the runtime, and only once.
+    const searchField = page.getByRole('combobox', { name: 'Search documentation' });
+    await searchField.pressSequentially('routing');
+    const firstResult = page
+      .getByRole('listbox', { name: 'Search results' })
+      .getByRole('option')
+      .first();
+    await expect(firstResult).toBeVisible({ timeout: 30_000 });
+    expect(pagefindRequests.length).toBe(1);
+  });
+
   test('pagefind index is generated and non-empty', async ({ request }) => {
     const res = await request.get('/pagefind/pagefind-entry.json');
     expect(res.ok()).toBe(true);

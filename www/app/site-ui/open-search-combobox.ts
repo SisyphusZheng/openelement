@@ -183,11 +183,13 @@ export function connectSearchRuntime(host: SearchHost, callbacks: RuntimeCallbac
       const target = overlay(host);
       if (details.open) {
         if (target) target.hidden = false;
-        // The index is NOT fetched on open (T10 R3). Opening the dialog is a
-        // look, not a search: pagefind.js + its wasm (+86 KB compressed) used
-        // to ride every open, including opens that were closed without typing
-        // a character. The empty-state message holds until the first real
-        // input, which is what triggers loadIndex above.
+        // The empty-state hint ("type at least 2 characters") is written on
+        // open — synchronously now, where it used to wait for the index load
+        // to finish. The index itself is NOT fetched here (T10 R3): opening the
+        // dialog is a look, not a search, and pagefind.js + its wasm (~86 KB
+        // compressed) used to ride every open, including opens closed without
+        // typing a character. The first real input change triggers the load.
+        runtime.runSearch(host);
       } else if (target && !target.hidden) {
         callbacks.onClose(host);
       }
