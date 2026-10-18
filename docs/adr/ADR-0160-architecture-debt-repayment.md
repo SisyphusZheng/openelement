@@ -36,7 +36,9 @@ their own serializer.
 
 c) **The compiler semantic core does not know Router.** The ADR-0148
 layering holds: the bundler-neutral semantic core
-(`packages/element/src/internal/compiler/semantic-core/`) must not import
+(`packages/element/src/internal/compiler/semantic-core/` at the time; the
+executed ADR-0162 split moved it to
+`packages/compiler/src/internal/compiler/semantic-core/`) must not import
 Router types, route tables, or SSG admission policy. Where the core needs
 an admission decision, the caller injects a generalized admission
 descriptor — plain data with a versioned shape — and the core consumes it
@@ -268,7 +270,8 @@ All seven #1473 items landed; the boundary the lane leaves behind:
    plugin-config / plugin-scanners / plugin-hmr / plugin-watch /
    plugin-virtual-modules carry the hook families. Plugin names, hook sets,
    and returned plugin order unchanged (S6c).
-4. `tools/repo/candidate-evidence.ts` (2,049 lines): S6c split the four
+4. `tools/repo/candidate-evidence.ts` (2,049 lines; removed 2026-10-18 when
+   #1567 retired ADR-0156's evidence-reuse mechanism): S6c split the four
    spawn-free duties (aggregate / validate / tarballs / site-e2e) and kept
    the job-record and fresh-clone duties in the shell per the S6c owner
    ruling (a write-hook false positive on the verbatim argument-list
@@ -570,7 +573,8 @@ oracle evidence.
   gate, Set-Cookie merge, protocol-header precedence, and the CSP nonce are
   server runtime semantics and must live in typecheckable, unit-testable TS
   modules, not inside template strings.
-- Impact: the new subpath is a declared export (`packages/router/deno.json`),
+- Impact: the new subpath is a declared export (`packages/router/deno.json` in
+  the Deno era; `packages/router/package.json` today),
   so the derived generated artifacts regenerate by ritual:
   `generated-export-files.ts` and
   `docs/release/public-interface-snapshot.json` gain the `./server-runtime`

@@ -67,7 +67,8 @@ choice forced an `npm:@jsr/*` bridge into shipped Router tooling and the packed
 tarball, which the Alpha dependency rule (Web Standards, then Deno/`@std`,
 then mature third party; no bridge in shipped output) does not justify. The
 config reader now uses the mature zero-dependency `jsonc-parser` npm package
-(`packages/router/src/vite/internal/jsonc.ts`) and static serving uses `mime`
+(`packages/router/src/vite/internal/jsonc.ts`, since removed with the
+config-reader rework) and static serving uses `mime`
 (`packages/router/src/vite/internal/static-serve.ts`). The contracts those
 items fixed (null on invalid JSONC; `charset=UTF-8` casing,
 `image/vnd.microsoft.icon`, bare `application/xml`) are preserved and pinned

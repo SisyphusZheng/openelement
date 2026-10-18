@@ -190,8 +190,8 @@ product decision for #1548, not for the protocol. The #1543 island-CSS
 minification transform likely retires or shrinks once extraction lands:
 there is no JS-embedded CSS left to collapse, and the asset emit point is a
 plain CSS pipeline (the contract in
-`packages/router/src/vite/internal/island-css.ts` documents the admission it
-would no longer see).
+`packages/router/src/vite/internal/island-css.ts`, removed in #1558 with the
+JS-embedded CSS lane, documented the admission it would no longer see).
 
 ### 7. Consequences and retirement conditions (P5)
 

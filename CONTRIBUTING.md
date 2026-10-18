@@ -13,7 +13,22 @@ Do not commit agent prompts, dispatch transcripts, copied CI logs, temporary evi
 
 ## Architecture review
 
-Review every change against [docs/architecture/design-principles.md](./docs/architecture/design-principles.md): the four-question gate (P7) applies to ordinary pull requests, and deviations follow the comply-or-explain rule. Use an ADR only for a hard-to-reverse public API, package topology, architecture, security/trust, or explicit compatibility decision. Ordinary fixes do not need an ADR. Current architecture belongs in `docs/architecture`; retired decisions belong in Git history and the compact history index.
+Review every change against [docs/architecture/design-principles.md](./docs/architecture/design-principles.md): the four-question gate (P7) applies to ordinary pull requests — the fields are in the pull request template — and deviations follow the comply-or-explain rule. Current architecture belongs in `docs/architecture`; retired decisions are retained in `docs/adr` and annotated there.
+
+## When an ADR is required
+
+An ADR is required when a change decides something the codebase cannot reverse cheaply, or when a future maintainer would otherwise have to re-derive the decision from the diff. The triggers are decidable, one by one:
+
+- a public API, package export map, entry subpath or `bin` change consumers can observe — adding one, removing one, or renaming one;
+- package topology: adding, removing or splitting a published package, or reversing the dependency direction between packages;
+- an architecture boundary a gate enforces: compile/build-time versus runtime split, who may import what, seam ownership, a renderer or style-provider port;
+- a security or trust boundary: escaping, sink admission, CSP, auth/session, provenance or supply-chain policy;
+- a compatibility decision: a platform or dependency floor, a compatibility layer kept or removed, a named deviation from a platform behavior;
+- a governance rule itself: the design principles, a review gate, or a registry a gate reads.
+
+An ADR is NOT required for an ordinary fix, a refactor that leaves the decisions above intact, a test-only change, or documentation that restates an existing decision. When unsure, answer the four questions in the pull request first: if the fourth answer is "our difference is deliberate" and the difference is hard to reverse, write the ADR.
+
+Mechanics: the file is `docs/adr/ADR-NNNN-<slug>.md` with NNNN = the highest existing number + 1, and its entry in `docs/adr/README.md` lands in the same change. `@openelement/tools-repo#adr-index:check` (in `gate:source`) fails when a record is unlisted, a link dangles, or an entry's status annotation disagrees with the record; a record that no longer governs is retained and annotated `SUPERSEDED` / `RETIRED` / `EXECUTED`, and `AMENDED` marks a partial change.
 
 Permission note (deliberate): the test suites run on the node host under vitest (B3), and the whole toolchain is Node/pnpm end to end after the S2 release-lane port, so there is no Deno permission surface to scope. Supply-chain hygiene (minimum dependency age, lockfiles, provenance checks) remains load-bearing.
 

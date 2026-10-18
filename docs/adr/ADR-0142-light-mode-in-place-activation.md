@@ -15,10 +15,12 @@ nor who owns host children during that transition.
 
 As a result, the client runtime routes every light-mode connection through
 `renderIntoLightDom()`, which calls `clearChildren(host)` and mounts fresh DOM
-(`packages/element/src/open-element-render.ts`). `pre-hydration-click.ts`
-skips light-mode hosts (#1067) because the recorded click target is detached
-by that replacement, so a pre-upgrade click inside a light island is silently
-lost.
+(`packages/element/src/open-element-render.ts`, removed since by the
+compiled-model rewrite; the pre-upgrade click path is now
+`packages/element/src/internal/compiled/runtime/pre-upgrade-events.ts`, and
+`pre-hydration-click.ts` went with it). That path skipped light-mode hosts
+(#1067) because the recorded click target is detached by that replacement, so
+a pre-upgrade click inside a light island was silently lost.
 
 Two facts make a narrow correction possible:
 

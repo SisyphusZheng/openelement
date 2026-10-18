@@ -127,7 +127,9 @@ optimization, and both are why this needs an ADR rather than a changelog line:
    _dropping_ one from the subpath is always a failure.
 
 6. **The subpath ships as a first-class entry, not a convenience alias.** It is
-   in `packages/element/deno.json` `exports`, in the generated
+   in the Deno-era `packages/element/deno.json` `exports` (that file was
+   removed with the Node/pnpm port; the export now lives in
+   `packages/element/package.json`), in the generated
    `OPENELEMENT_EXPORT_FILES` map, in the packed tarball's `package.json`
    `exports`, and in the public interface snapshot. It carries the same
    type surface as `.` (the packed tarball ships `src/client-only.d.ts`).
@@ -140,7 +142,9 @@ optimization, and both are why this needs an ADR rather than a changelog line:
   subpath adds one module of indirection (the seam) to the full graph.
 - **A new failure mode is possible and is fail-closed**: reaching the subpath
   on a page that does hydrate server markup throws instead of half-rendering.
-  Pinned by `packages/element/__tests__/claim-entry-split.test.ts` (fresh
+  Pinned at the time by `packages/element/__tests__/claim-entry-split.test.ts`
+  (since removed; the entry-split fail-closed cases now live in
+  `packages/element/__tests__/resume-entry-split.test.ts` — fresh
   connect through the subpath; fail-closed on unclaimable content; the default
   entry claiming that same content; identical export names) and by the
   reverse-direction codegen case in

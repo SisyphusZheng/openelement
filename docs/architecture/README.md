@@ -10,7 +10,11 @@ adapt, scaffold, build, and distribute those products.
 - [Router and server runtime](./router-and-server-runtime.md)
 - [Packages and distribution](./packages-and-distribution.md)
 - [Seams registry](./seams.md)
+- [Shim inventory (P5 registry)](../maintainers/shim-inventory.md) — the compatibility layers each seam's guard protects, with owner, retirement condition and disposition (machine-read by `shims:check`)
 - [Security and release engineering](./security-and-release-engineering.md)
 
-Active ADRs retain decisions that still constrain the implementation. Retired
-decisions remain recoverable from Git history.
+Decision records live in the [ADR index](../adr/README.md). Every record is
+listed there exactly once, with a status annotation for a record that no longer
+governs (`SUPERSEDED` / `RETIRED` / `EXECUTED`) or that carries an amendment
+(`AMENDED`); `@openelement/tools-repo#adr-index:check` enforces that policy.
+Older retired records remain recoverable from Git history.

@@ -126,13 +126,15 @@ T, and the candidate's tree is T, the obligation for that tree is discharged.
 - **Reuse does not lengthen the trust window.** The resolver's window is the
   artifact retention (14 days) and the validator's age check is unchanged: a
   stale package is still rejected on its own terms.
-- **Ownership.** `tools/repo/evidence-reuse.ts` owns the resolver, the claim,
-  and the stamp audit; `.github/actions/claim-reused-evidence` is the single
-  wiring all four lanes share. The contract tests in
+- **Ownership (historical — every path below was removed by #1567 together
+  with the mechanism; see [Current status](#current-status-2026-10-18)).**
+  `tools/repo/evidence-reuse.ts` owned the resolver, the claim,
+  and the stamp audit; `.github/actions/claim-reused-evidence` was the single
+  wiring all four lanes shared. The contract tests in
   `tools/repo/evidence-reuse.test.ts`, `tools/repo/candidate-evidence.test.ts`,
-  and `tools/repo/check-ci-contracts.test.ts` pin the fail-closed branches, the
+  and `tools/repo/check-ci-contracts.test.ts` pinned the fail-closed branches, the
   aggregate's acceptance, the splice rejection, and the workflow structure, so
-  a loosening fails a test instead of shipping.
+  a loosening failed a test instead of shipping.
 
 ## P7 four-question review
 
