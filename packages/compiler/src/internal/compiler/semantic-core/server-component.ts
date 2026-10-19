@@ -555,6 +555,17 @@ export function compileServerComponentIfAdmitted(
  * tree that turns admitted nodes into `__h`/`__t`/`__ssr`/direct-call code.
  * Static attribute values are compile-time literals; every dynamic value
  * enters through a helper boundary.
+ *
+ * Code-construction boundary (CodeQL js/bad-code-sanitization #4238, FRM-05):
+ * every value this class splices into the generated module is either an
+ * `JSON.stringify`-quoted string literal (the ECMAScript QuoteJSONString
+ * escaping for a TS string literal) or a name validated by `identifier()`
+ * below; ordering-comparison operands are finite numeric literals only
+ * (protocol `conditionLiteralAllowed`). The artifact is a standalone TS module
+ * returned to the host build's transform — never inlined into HTML — so the
+ * query's script-embedding model does not apply. Evidence and the hostile-input
+ * regression live in this batch's REL-02 CodeQL disposition record and in the
+ * server-component-codegen-boundary regression test.
  */
 export class ConstructorEmitter {
   // Plain field declarations, not parameter properties: the compiler's
@@ -723,12 +734,17 @@ export class ConstructorEmitter {
         continue;
       }
       if (part.k === 'class') {
-        const synthesized = this.lowering.synthesizedFields.find(
-          (field) => field.name === part.signal,
-        );
+        // The class sink takes the same identifier boundary as every other
+        // name splice: the IR validator and the lowering both guarantee a
+        // plain identifier today, but the emitter's contract is that a name
+        // it writes into an identifier position is validated HERE (the one
+        // boundary every emitted name passes), so a future producer cannot
+        // widen the splice silently.
+        const signal = this.identifier(part.signal, 'the class sink');
+        const synthesized = this.lowering.synthesizedFields.find((field) => field.name === signal);
         const value = synthesized
           ? `(${synthesized.computed!.body.getText(this.sf)})`
-          : `${this.parameter}.${part.signal}`;
+          : `${this.parameter}.${signal}`;
         attrEntries.push(`${JSON.stringify('class')}: ${value}`);
         continue;
       }

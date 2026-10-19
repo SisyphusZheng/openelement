@@ -146,7 +146,8 @@ export const contributingSetupCodeHtml: string = ${JSON.stringify(
 // Release-line truth, derived from docs/release/release-state.json (the
 // registry-verified source of truth) so site copy about the source line
 // flips automatically when the release train publishes — no manual wording
-// sweep. Consumed by www/app/data/version.ts.
+// sweep. Consumed by www/app/data/version.ts and, for the changelog
+// register's decided presentation, by www/app/routes/changelog.tsx.
 const releaseState = JSON.parse(
   await readFile(join(siteRoot, '../docs/release/release-state.json'), 'utf8'),
 ) as {
@@ -157,6 +158,7 @@ const releaseState = JSON.parse(
     registry?: Record<string, string | undefined>;
   }>;
   latestPrerelease?: { version?: string };
+  commonCompleteVersion?: string | null;
 };
 const sourceVersion = releaseState.sourceVersion;
 // Schema v4 (#1557): only published packages carry dist-tags; an unpublished
@@ -216,6 +218,62 @@ if (sharedLatest.length !== 1 || sharedLatest[0] !== latestPrereleaseVersion) {
   );
 }
 
+// The changelog register's presentation is DECIDED here from the tracked
+// truth (FRM-06 / CodeQL #4241). The route must not branch on the
+// hand-maintained COMMON_PUBLISHED_VERSION mirror in www/app/data/version.ts:
+// that constant is a literal null in the checked-in source, so a future-state
+// branch on it is statically dead and the analyzer correctly reports a trivial
+// conditional. Deciding the label and copy at generation time removes the
+// branch while keeping the page's semantics identical: a common stable version
+// wins when release:registry-check admits one, otherwise the register names the
+// shared prerelease line. The former no-shared-line copy ("none" / "values
+// differ") was already unreachable: the per-package `latest` guard above fails
+// generation unless every published package serves the one
+// latestPrerelease.version, so a divergent or empty registry block never
+// reaches a page. `commonCompleteVersion` is the typed string|null contract;
+// a non-null value must be present in every published package's tracked
+// registry block, so generation fails closed rather than naming a version the
+// record cannot prove.
+const commonCompleteVersion = releaseState.commonCompleteVersion ?? null;
+if (commonCompleteVersion !== null) {
+  if (
+    typeof commonCompleteVersion !== 'string' ||
+    !/^\d+\.\d+\.\d+$/u.test(commonCompleteVersion)
+  ) {
+    throw new Error(
+      'generate-site-content-data: docs/release/release-state.json ' +
+        `commonCompleteVersion must be a stable x.y.z or null (got ${JSON.stringify(commonCompleteVersion)}).`,
+    );
+  }
+  for (const pkg of publishedPackages) {
+    const versions = Object.values(pkg.registry ?? {}).filter(
+      (value): value is string => typeof value === 'string',
+    );
+    if (!versions.includes(commonCompleteVersion)) {
+      throw new Error(
+        `generate-site-content-data: commonCompleteVersion ${commonCompleteVersion} is absent ` +
+          `from ${pkg.name}'s registry block — the register cannot name it.`,
+      );
+    }
+  }
+}
+const sharedLatestBare = (sharedLatest[0] ?? '').replace(/^v/u, '');
+const registerVersionLabel = commonCompleteVersion ?? sharedLatestBare;
+const registerCurrentStamp =
+  commonCompleteVersion === null
+    ? { en: 'Per-package latest', zh: '各包 latest' }
+    : { en: 'Current', zh: '当前' };
+const registerCurrentSummary =
+  commonCompleteVersion === null
+    ? {
+        en: `1.0 alpha line: every published package’s npm latest is the same prerelease, ${sharedLatestBare}. No common stable version is published.`,
+        zh: `1.0 alpha 线：各发布包的 npm latest 同为预发布版本 ${sharedLatestBare}；不存在共同 stable 版本。`,
+      }
+    : {
+        en: `Every published package serves the common stable version ${commonCompleteVersion}.`,
+        zh: `全部发布包都已提供共同稳定版本 ${commonCompleteVersion}。`,
+      };
+
 // Roadmap publish-state drift guard: app/routes/roadmap.tsx must not
 // hand-write an alpha-train publish claim beside
 // docs/release/release-state.json — that status is derived in
@@ -253,6 +311,14 @@ export const STABLE_LINE_VERSION = '${stableLineVersion}';
 export const STABLE_LINE_SERIES = '${stableLineSeries}';
 /** The prerelease every published package serves on \`latest\` (registry truth). */
 export const LATEST_PRERELEASE_VERSION = '${latestPrereleaseVersion}';
+/** release-state commonCompleteVersion: newest STABLE version published for every package, or null. */
+export const COMMON_COMPLETE_VERSION: string | null = ${JSON.stringify(commonCompleteVersion)};
+/** The changelog register's headline label, decided at generation time (FRM-06 / #4241). */
+export const REGISTER_VERSION_LABEL = '${registerVersionLabel}';
+/** The register's current-state stamp, per page locale, decided at generation time. */
+export const REGISTER_CURRENT_STAMP: Readonly<Record<'en' | 'zh', string>> = ${JSON.stringify(registerCurrentStamp)};
+/** The register's current-state summary, per page locale, decided at generation time. */
+export const REGISTER_CURRENT_SUMMARY: Readonly<Record<'en' | 'zh', string>> = ${JSON.stringify(registerCurrentSummary)};
 `,
 );
 

@@ -10,11 +10,11 @@ import '#site-ui/open-reading-shell.tsx';
 import '../islands/open-page-rail.tsx';
 import '#site-ui/open-artifact-panel.tsx';
 import {
-  COMMON_PUBLISHED_LABEL,
-  COMMON_PUBLISHED_VERSION,
-  PUBLISHED_LATEST_SHARED,
-  REGISTRY_NOTE,
-} from '../data/version.ts';
+  REGISTER_CURRENT_STAMP,
+  REGISTER_CURRENT_SUMMARY,
+  REGISTER_VERSION_LABEL,
+} from '../data/_generated-release-line.ts';
+import { REGISTRY_NOTE } from '../data/version.ts';
 
 export const meta = { section: '', label: 'Changelog', order: 20 };
 
@@ -26,18 +26,19 @@ export const meta = { section: '', label: 'Changelog', order: 20 };
 // `latest` — so it claimed a stable 1.0 line that does not exist. Stable-line
 // history now stays where it is recorded (the archive and release-state.json),
 // and the live register speaks only of the dist-tags it carries.
-const sharedLatestBare = (PUBLISHED_LATEST_SHARED ?? '').replace(/^v/, '');
-
-/**
- * The register's headline value. A bare "none" beside a "Current" badge read as
- * "the project has no current release" — true only of the (absent) COMMON
- * STABLE version, and silent about the line every package actually serves. The
- * label now names that line: the shared prerelease version when one exists (the
- * 1.0 alpha line today), the stable version when a complete stable release
- * exists, and only then the no-value spelling.
- */
-const registerVersionLabel =
-  COMMON_PUBLISHED_VERSION ?? (sharedLatestBare === '' ? COMMON_PUBLISHED_LABEL : sharedLatestBare);
+// The register's presentation is decided by the content generator from
+// release-state.json (FRM-06 / CodeQL js/trivial-conditional #4241): the
+// headline label and the current-state stamp/summary arrive as generated
+// constants. A route-level branch over the hand-maintained
+// `COMMON_PUBLISHED_VERSION` mirror was statically dead (the mirror is a
+// literal null in version.ts); deciding at generation keeps the copy true when
+// a future common stable release flips the register, without a dead branch.
+// A bare "none" beside a "Current" badge would read as "the project has no
+// current release" — the label names the line every package actually serves:
+// the shared prerelease version when no common stable version exists, the
+// stable version when one does. The generated module carries the typed
+// `string | null` contract (`COMMON_COMPLETE_VERSION`) beside the decided copy;
+// regenerate with `pnpm --dir www run generate:content`.
 
 const content = {
   en: {
@@ -52,16 +53,11 @@ const content = {
     railLabels: ['Published', 'Stable line', 'Withdrawn', 'Historical archive'],
     publishedIntro:
       'The project follows Keep a Changelog and SemVer. Historical entries preserve older names where they describe older releases; current docs use the openElement contract.',
-    stampCurrent: COMMON_PUBLISHED_VERSION === null ? 'Per-package latest' : 'Current',
+    stampCurrent: REGISTER_CURRENT_STAMP.en,
     // Accessible name of the register block: authored per locale (T10 R2) —
     // the zh page announced the English 'Release register' before.
     registryAria: 'Release register',
-    regCurrentSummary:
-      COMMON_PUBLISHED_VERSION === null
-        ? sharedLatestBare === ''
-          ? 'There is no common complete version: the published packages\u2019 npm latest values differ — see the per-package register above.'
-          : `1.0 alpha line: every published package\u2019s npm latest is the same prerelease, ${sharedLatestBare}. No common stable version is published.`
-        : `Every published package serves the common stable version ${COMMON_PUBLISHED_VERSION}.`,
+    regCurrentSummary: REGISTER_CURRENT_SUMMARY.en,
     stableHeading: 'Stable line',
     stableBody: `No stable release covers every published package. The stable lines and the packages each one covered are recorded in the archive below and machine-checked in docs/release/release-state.json. The static, request-time, and Universal WC SSR contracts remain frozen under ADR-0119, ADR-0122, and ADR-0135; ADR-0140 admits compatible patches without scheduling a 0.44 feature train.`,
     withdrawnHeading: 'Withdrawn partial artifacts',
@@ -87,14 +83,9 @@ const content = {
     railLabels: ['已发布', '稳定线', '已撤回', '历史归档'],
     publishedIntro:
       '本项目遵循 Keep a Changelog 与 SemVer。历史条目在描述旧版本时保留旧名称；当前文档使用 openElement 契约。',
-    stampCurrent: COMMON_PUBLISHED_VERSION === null ? '各包 latest' : '当前',
+    stampCurrent: REGISTER_CURRENT_STAMP.zh,
     registryAria: '发布登记表',
-    regCurrentSummary:
-      COMMON_PUBLISHED_VERSION === null
-        ? sharedLatestBare === ''
-          ? '不存在共同完整版本：各发布包的 npm latest 互不相同——见上方逐包登记表。'
-          : `1.0 alpha 线：各发布包的 npm latest 同为预发布版本 ${sharedLatestBare}；不存在共同 stable 版本。`
-        : `全部发布包都已提供共同稳定版本 ${COMMON_PUBLISHED_VERSION}。`,
+    regCurrentSummary: REGISTER_CURRENT_SUMMARY.zh,
     stableHeading: '稳定线',
     stableBody: `没有任何 stable 版本覆盖全部发布包。各条稳定线及其覆盖范围记录在下方归档中，并由 docs/release/release-state.json 机器校验。静态、请求时与 Universal WC SSR 契约继续受 ADR-0119、ADR-0122 和 ADR-0135 冻结；ADR-0140 允许兼容 patch，但不预排 0.44 功能列车。`,
     withdrawnHeading: '已撤回的残缺产物',
@@ -285,7 +276,7 @@ export default definePage(PageChangelog, {
       withdrawnBody: text.withdrawnBody,
       footnote: text.footnote,
       registryNote: REGISTRY_NOTE,
-      commonVersionLabel: registerVersionLabel,
+      commonVersionLabel: REGISTER_VERSION_LABEL,
       railItems: ids.map((id, index) => ({
         id,
         href: `#${id}`,
