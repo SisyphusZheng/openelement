@@ -159,3 +159,43 @@ distinguishable from `expected`; a test that fails its final attempt is still
 `unexpected` and fails the run. The suite-size identity is therefore
 `expected + flaky == executed tests`, and `failed` still means the final
 attempt failed.
+
+## Release-evidence automation (alpha15)
+
+Four local entry points own the pre-approval evidence work; none of them is a CI
+gate, so the pinned workflow step counts are unchanged:
+
+- `node tools/release/evidence-bind.ts --sha <sha> [--pr <n>] [--repo <owner/name>]
+  [--codeql-repo <owner/name>] [--require-main-push]` — the exact-SHA evidence
+  binder: CI run/attempt/conclusion with per-job-instance conclusions, artifacts,
+  the authoritative CodeQL alert list for the PR merge ref, the six npm
+  dist-tags, and tag/Release presence. It fails closed on a SHA mismatch, on a
+  cancelled or failed run cited as qualification, on a missing/non-success
+  required instance, and on an unqueried dimension; a run qualifies only when
+  its own instances satisfy the nine-job/twelve-instance contract. `--check`
+  re-evaluates a recorded document offline. Its output is the PR/release
+  checklist snippet — do not hand-write that table.
+- `node tools/release/verify-evidence-archive.ts [--archive <path> | --url <url>]`
+  — verifies the raw A/B + JFB measurement package before approval: the pinned
+  sha256 and byte size, every member hash, the 86/22 assertion reproducers, and
+  the JFB numbers recomputed from the raw per-invocation JSON against both
+  `jfb/metrics.json` and the evaluation document. The tracked fetch path is in
+  `docs/release/evidence/alpha15/README.md` (evidence-only prerelease on the
+  release fork; obtainable before the publication Release exists).
+- `node tools/release/check-toolchain-pins.ts` — the fixed-toolchain audit:
+  Node (`.node-version`), pnpm (`packageManager`), Playwright
+  (`devDependencies` + lockfile) and the `tools/release/toolchain/Dockerfile` recipe
+  must agree, together with the CI workflows and the toolchain README.
+- `node tools/release/release-preflight.ts [--run-local] [--execute
+  --authorize-destructive --confirm-sha <sha>]` — one-command preflight that
+  composes the read-only verifiers, the existing gate entry points (read from
+  `package.json` script names), the evidence binding and the owner-gated
+  tag/publish/Release/asset/dist-tag sequence with read-backs. Dry run by
+  default; destructive steps are refused unless explicitly authorized, and even
+  then the tool only prints them — the `Release` workflow owns publication
+  through the `openelement-release` environment.
+
+The reproducible toolchain image recipe is `tools/release/toolchain/Dockerfile` +
+`tools/release/toolchain/README.md` (build it, record the resolved image digests, then
+run the gates with the repository bind-mounted). The retrospective for the batch
+that introduced these entry points is `docs/release/alpha15-retrospective.md`.

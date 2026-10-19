@@ -27,10 +27,79 @@ Release asset (not committed — committed temporary evidence is forbidden by
 CONTRIBUTING): **`alpha15-ab-jfb-evidence.tar.zst`**, 223,543 bytes,
 sha256 `53d974907cb851b6b2d906465e46ac93f577f51552041c8a82195df7338e8451`,
 524 members. The archive is **staged for the GitHub Release** and must be
-attached at publication time (a Release asset cannot exist before the Release
-does). Until then, its digest above is the verification anchor; the staged copy
-is `.artifacts/release-evidence/alpha15-ab-jfb-evidence.tar.zst` in the release
+attached at publication time at the same digest. The digest above is the
+verification anchor; the staged copy is
+`.artifacts/release-evidence/alpha15-ab-jfb-evidence.tar.zst` in the release
 workspace (gitignored).
+
+## Obtaining and verifying the raw package before approval
+
+Reviewers must be able to obtain and verify these bytes *before* the publication
+Release exists (review FR-06/REL-03). Three handoff options were evaluated:
+
+- **(a) tracked `docs/release/evidence/alpha15/`** — rejected. The
+  asset-provenance policy (`tools/repo/check-assets-provenance.ts`) governs
+  `www/public/assets` only and neither authorizes nor forbids this directory;
+  the governing rule is CONTRIBUTING.md:12 ("Do not commit … temporary
+  evidence"), and the archive is a per-measurement binary whose publication form
+  is a Release asset. Tracking it would put the raw bytes in every clone and
+  every future diff while changing the provenance question from "do these bytes
+  match the pinned digest?" to "did the commit that carried them modify them?".
+- **(b) a CI artifact uploaded by a workflow job** — rejected as the primary
+  path: the archive is produced on the measurement machine, so CI can only
+  upload it if it is checked in or fetched first; CI artifacts also expire and
+  require GitHub authentication, so they cannot be a reviewer's anonymous first
+  verification.
+- **(c) evidence-only prerelease on the release fork — chosen.** The owner
+  creates one prerelease per candidate (tag `evidence-<sha7>`, marked
+  `--prerelease`, explicitly *not* a product release). It is fetchable before
+  approval, its bytes are anchored by the digest above, and the same bytes are
+  re-attached to `v1.0.0-alpha.15` at publication — the handoff copy never
+  replaces the publication asset.
+
+Fetch and verify (either command downloads identical bytes; the verifier fails
+closed on any digest, hash, assertion or documented-number mismatch):
+
+```sh
+# Anonymous fetch from the public fork (no repository access needed):
+gh release download evidence-ef5da43 -R SisyphusZheng/openelement \
+  -p alpha15-ab-jfb-evidence.tar.zst -D /tmp/rel03
+# or, without gh:
+curl -fsSL -o /tmp/rel03/alpha15-ab-jfb-evidence.tar.zst \
+  https://github.com/SisyphusZheng/openelement/releases/download/evidence-ef5da43/alpha15-ab-jfb-evidence.tar.zst
+
+# Verify: pinned sha256 + byte size + 503 member hashes + 86/22 assertions
+# + the JFB numbers recomputed from the raw package against metrics.json and
+# the JFB document. Exit 1 on any failed check.
+node tools/release/verify-evidence-archive.ts --archive /tmp/rel03/alpha15-ab-jfb-evidence.tar.zst
+# or let the verifier fetch it (same checks, digest comes from this README):
+node tools/release/verify-evidence-archive.ts \
+  --url https://github.com/SisyphusZheng/openelement/releases/download/evidence-ef5da43/alpha15-ab-jfb-evidence.tar.zst
+```
+
+Owner-gated creation of the handoff prerelease (one per candidate; REL-08
+creates the real Release later with the same asset):
+
+```sh
+gh release create evidence-ef5da43 --repo SisyphusZheng/openelement \
+  --target alpha15 --prerelease \
+  --title "alpha15 raw measurement evidence (evidence-only)" \
+  --notes "Evidence-only handoff for PR #1611 review. Not a product release." \
+  .artifacts/release-evidence/alpha15-ab-jfb-evidence.tar.zst
+```
+
+**Created 2026-10-19** as the pre-approval handoff (REL-03):
+<https://github.com/SisyphusZheng/openelement/releases/tag/evidence-ef5da43> —
+the fetch-from-URL verification was run against it and printed
+`VERDICT: verified` (14/14 checks). It is an evidence-only prerelease, never a
+product release; the real `v1.0.0-alpha.15` Release may re-attach the same
+asset at publication (REL-08).
+
+Before approval, the checklist line for the PR body is the verifier's
+`VERDICT: verified` line plus the `sha256` it printed — never a hand-written
+table. If the digest or any documented number changes, the verifier fails and
+the new bytes must not be cited as verifying the old measurement (QUAL-05
+invalidation rule).
 
 Archive layout:
 
@@ -41,6 +110,12 @@ Archive layout:
 | `jfb/` | JFB bundle: `metrics.json`, `json/` (8 runner invocations × 15 ids), `logs/`, `aggregate.py`, environment and shasum files | 150 |
 | `harness/` | collector, sweep driver, starter legs, timing wrapper (historical scripts; paths inside them are the measurement machine's) | 12 |
 | `reproducers/` | the two table reproducers as originally run, plus the walk benchmark | 3 |
+
+## Verify the whole package (preferred)
+
+`node tools/release/verify-evidence-archive.ts --archive <path-or-fetch>` runs
+every check below in one command (digest, 503 member hashes, 86/22 assertions,
+JFB recomputation); the raw commands are kept here for manual reproduction.
 
 ## Reproduce the table assertions
 
