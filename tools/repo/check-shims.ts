@@ -1,7 +1,7 @@
 /**
  * check-shims.ts — the mechanical reader for the P5 shim registry.
  *
- * `docs/maintainers/shim-inventory.md` is the registry P5 requires: every
+ * `docs/architecture/shim-inventory.md` is the registry P5 requires: every
  * compatibility layer, adapter and polyfill in the tree names an owner, a
  * retirement condition and a disposition, and the "platform catch-up review"
  * re-reads it every release cycle. A hand-maintained registry with no reader
@@ -46,7 +46,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { gitTrackedPaths, isTrackedPath } from './check-seams.ts';
 
-export const SHIM_INVENTORY_PATH = 'docs/maintainers/shim-inventory.md';
+export const SHIM_INVENTORY_PATH = 'docs/architecture/shim-inventory.md';
 
 /** The registry's one supported table shape. */
 export const EXPECTED_HEADER = ['#', '垫片 / 适配层', '位置', '处置'];
@@ -486,7 +486,7 @@ export function checkShimsMarkdown(
   };
 }
 
-/** Read and check the inventory at `<root>/docs/maintainers/shim-inventory.md`. */
+/** Read and check the inventory at `<root>/docs/architecture/shim-inventory.md`. */
 export function checkShims(root: string, options: ShimCheckOptions = {}): ShimReport {
   const file = join(root, SHIM_INVENTORY_PATH);
   if (!existsSync(file)) {

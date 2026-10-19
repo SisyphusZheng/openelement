@@ -10,7 +10,7 @@ adapt, scaffold, build, and distribute those products.
 - [Router and server runtime](./router-and-server-runtime.md)
 - [Packages and distribution](./packages-and-distribution.md)
 - [Seams registry](./seams.md)
-- [Shim inventory (P5 registry)](../maintainers/shim-inventory.md) — the compatibility layers each seam's guard protects, with owner, retirement condition and disposition (machine-read by `shims:check`)
+- [Shim inventory (P5 registry)](./shim-inventory.md) — the compatibility layers each seam's guard protects, with owner, retirement condition and disposition (machine-read by `shims:check`)
 - [Security and release engineering](./security-and-release-engineering.md)
 
 Decision records live in the [ADR index](../adr/README.md). Every record is

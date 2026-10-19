@@ -7,7 +7,7 @@
   a reuse **chain** is judged by the producer's tree, and a refused claim falls
   back to the real gate instead of failing the lane)
 - Amends: none. Constrained the candidate evidence contract documented in
-  `docs/maintainers/releasing.md` until #1567 removed that contract.
+  the internal release procedure (not published) until #1567 removed that contract.
 - Tracking: [#1425](https://github.com/open-element/openelement/issues/1425)
   (the tree-identity observation this rests on),
   [#1436](https://github.com/open-element/openelement/pull/1436) (the lane that
@@ -280,5 +280,5 @@ artifacts, are the evidence. The tree-SHA insight this ADR recorded is still
 true (identical trees are identical inputs) but nothing in the release path
 exploits it today. The ADR is kept as the decision history for why the
 candidate gate treated evidence that way between alpha.3 and alpha.10; a future
-reuse mechanism must start from a new decision record. `releasing.md` now
-documents the API-based contract.
+reuse mechanism must start from a new decision record. The internal release
+procedure (not published) documents the API-based contract.

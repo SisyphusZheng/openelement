@@ -28,8 +28,9 @@ Why a step:
   every PR, not only on a main-push/full-qualification dispatch.
 - **Zero qualification-contract churn.** The contract's evidence is the
   individual conclusions of the workflow's job IDs and their matrix instances
-  (release workflow `ci-evidence` required list, `CONTRIBUTING`, `releasing.md`,
-  the known-reds ledger claim cross-checked by `check-doc-claims`). A new job ID
+  (release workflow `ci-evidence` required list, `CONTRIBUTING`, the internal
+  release procedure (not published), the known-reds ledger claim cross-checked by
+  `check-doc-claims`). A new job ID
   would force those out-of-lane files to change together; extending `pack`
   leaves every job ID and instance count as it was and only adds a step to a job
   that was already required.
@@ -176,8 +177,8 @@ real lint error while typecheck stays green.
 
 - No job ID, matrix leg or instance count changed: the release workflow's
   `ci-evidence` required list, `CONTRIBUTING`'s qualification paragraph,
-  `docs/maintainers/releasing.md` and the known-reds ledger's instance claim are
-  untouched and remain true.
+  the internal release procedure (not published) and the known-reds ledger's
+  instance claim are untouched and remain true.
 - No new `gate:source` step: the gate lives in the packed-consumer harness
   (`@openelement/e2e-starter-smoke`), whose `gate` task is already the pack
   job's entry point; `quality` is a sibling task invoked by its own named step.

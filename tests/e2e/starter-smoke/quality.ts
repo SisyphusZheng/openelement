@@ -26,7 +26,8 @@
  * second job would re-pay the packed install to prove the same artifact, and a
  * new job ID would churn the qualification contract (job IDs and instance
  * counts pinned by the release workflow's ci-evidence list, CONTRIBUTING,
- * releasing.md and the known-reds ledger) for no additional evidence. The step
+ * the internal release procedure (not published) and the known-reds ledger) for
+ * no additional evidence. The step
  * fails closed: any nonzero lifecycle command or failed HTTP probe exits 1.
  *
  * Prerequisite: `pnpm --dir tests/e2e/starter-smoke run setup` (the CI step

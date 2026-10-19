@@ -19,7 +19,7 @@ in `gate:source`): every row must carry the literal
 `Missing/unreadable behavior:` clause, every guard path must be Git-tracked, and
 the run prints `N rows / M explicit`. The P5 complement — why each compatibility
 layer exists and when it is deleted — is the
-[shim inventory](../maintainers/shim-inventory.md) (machine-read by
+[shim inventory](./shim-inventory.md) (machine-read by
 `@openelement/tools-repo#shims:check`): this table owns "who writes, who reads,
 where the guard is"; that one owns "why it lives, when it can be deleted".
 

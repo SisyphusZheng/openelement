@@ -212,7 +212,7 @@ export const PACKAGE_BINS: Record<string, Record<string, string> | undefined> = 
  * The only `package.json` fields the coordinator may change after the pack.
  * Everything else (name, version, exports, ...) must be byte-identical; the
  * proof is enforced by assertOnlyApprovedManifestChanges at pack time and
- * documented in docs/maintainers/pack-post-processing.md.
+ * documented in the internal pack post-processing notes (not published).
  */
 export const APPROVED_MANIFEST_MUTATIONS: ReadonlySet<string> = new Set([
   'type',

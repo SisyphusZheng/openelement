@@ -105,7 +105,6 @@ pnpm run build
 
 - [Current architecture](./docs/architecture/README.md)
 - [Active decisions](./docs/adr/README.md)
-- [Release operation](./docs/maintainers/releasing.md)
 - [Security policy](./SECURITY.md)
 - [Contributing](./CONTRIBUTING.md)
 

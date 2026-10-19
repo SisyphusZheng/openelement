@@ -2,7 +2,7 @@
  * check-agent-contract.ts — the agent development contract's drift guard
  * (#1613).
  *
- * docs/maintainers/agent-contract.md states what a coding agent may rely on:
+ * docs/agent-contract.md states what a coding agent may rely on:
  * the canonical task entry, the generated-file map, the gate semantics, the
  * machine-readable diagnostics consumption (#1612), and the ritual commands.
  * Every claim in it is checked here against the same facts the runtime uses —
@@ -43,7 +43,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { readWorkspaces, type WorkspaceTasks } from './workspace-tasks.ts';
 
-export const CONTRACT_PATH = 'docs/maintainers/agent-contract.md';
+export const CONTRACT_PATH = 'docs/agent-contract.md';
 export const LLMS_TXT_PATH = 'www/public/llms.txt';
 
 /** The generated-block markers. Keep `--` out of the comment text (HTML comments may not contain a double hyphen). */

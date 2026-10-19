@@ -166,7 +166,7 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   // alpha15 cleanup batch): a scaffold user's agents get a local AGENTS.md that
   // names the public consumer index, lifecycle commands, layout and the
   // server/client boundary rules. The repository's own root AGENTS.md is
-  // environment-local by owner ruling (see docs/maintainers/agent-contract.md).
+  // environment-local by owner ruling (see docs/agent-contract.md).
   ['AGENTS.md.tmpl', 'AGENTS.md'],
   ['public/openelement-mark.svg', 'public/openelement-mark.svg'],
   // B5 (ADR-0161): the starter is a plain Node project. Framework

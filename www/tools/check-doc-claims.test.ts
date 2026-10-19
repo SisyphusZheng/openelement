@@ -67,14 +67,9 @@ function pick(findings: ReturnType<typeof run>, ...rules: string[]) {
   return findings.filter((finding) => rules.includes(finding.rule));
 }
 
-/** The same headers with both numbers wrong, for the seeded-drift test. */
-const WRONG_RELEASING =
-  'gate:source` — the local source gate (four\nsteps: three `@`-qualified tasks plus `check:dep-age`';
+/** The same CONTRIBUTING header with both numbers wrong, for the seeded-drift test. */
 const WRONG_CONTRIBUTING =
   '`tools/repo#gate:source` (13\nsteps: twelve `@`-qualified tasks plus `check:dep-age`';
-
-/** The releasing page text every gate-count test needs: header + local-only note. */
-const RELEASING_LOCAL_ONLY = '\n`seams:check` is local-only';
 
 function run(files: Record<string, string>, overrides: Partial<Authorities> = {}) {
   return checkDocClaims({
@@ -86,8 +81,6 @@ function run(files: Record<string, string>, overrides: Partial<Authorities> = {}
   });
 }
 
-const RELEASING_HEADER =
-  'gate:source` — the local source gate (three\nsteps: two `@`-qualified tasks plus `check:dep-age`';
 const CONTRIBUTING_HEADER =
   '`tools/repo#gate:source` (three\nsteps: two `@`-qualified tasks plus `check:dep-age`';
 
@@ -221,33 +214,17 @@ describe('commands', () => {
 });
 
 describe('gate counts and CI claims', () => {
-  test('a wrong step count is a finding on both pages', () => {
-    const findings = run({
-      'docs/maintainers/releasing.md': `${WRONG_RELEASING}${RELEASING_LOCAL_ONLY}\nTwo of those steps also run in AutoFlow CI\n`,
-      'CONTRIBUTING.md': WRONG_CONTRIBUTING,
-    });
-    // Two numbers per page (the total and the `@`-task split), two pages.
-    expect(findings.filter((finding) => finding.rule === 'gate-count')).toHaveLength(4);
+  test('a wrong step count is a finding', () => {
+    const findings = run({ 'CONTRIBUTING.md': WRONG_CONTRIBUTING });
+    // Two numbers in the claim: the total and the `@`-task split.
+    expect(findings.filter((finding) => finding.rule === 'gate-count')).toHaveLength(2);
   });
 
   test('the authoritative counts pass', () => {
-    const findings = run(
-      {
-        'docs/maintainers/releasing.md': `${RELEASING_HEADER}${RELEASING_LOCAL_ONLY}\nTwo of those steps also run in AutoFlow CI`,
-        'CONTRIBUTING.md': `${CONTRIBUTING_HEADER}\nTwo of those steps also\nrun in CI through the fast jobs`,
-      },
-      {},
-    );
-    expect(findings.filter((finding) => finding.rule.startsWith('gate-count'))).toEqual([]);
-  });
-
-  test('a gate step with no CI path must be named as local-only', () => {
     const findings = run({
-      'docs/maintainers/releasing.md': `${RELEASING_HEADER}\nEleven of those steps also run in AutoFlow CI\n`,
+      'CONTRIBUTING.md': `${CONTRIBUTING_HEADER}\nTwo of those steps also\nrun in CI through the fast jobs`,
     });
-    expect(
-      findings.some((finding) => finding.message.includes('never names it as local-only')),
-    ).toBe(true);
+    expect(findings.filter((finding) => finding.rule.startsWith('gate-count'))).toEqual([]);
   });
 
   test('a job name no workflow declares is a finding', () => {
@@ -260,12 +237,10 @@ describe('gate counts and CI claims', () => {
 
   test('a qualification instance count must match the workflow', () => {
     const findings = pick(
-      run({ 'docs/maintainers/releasing.md': '— two job instances in total' }),
-      'ci-instances',
+      run({ 'CONTRIBUTING.md': 'every one of the three qualification job IDs (nine instances)' }),
+      'ci-job',
     );
-    expect(
-      findings.some((finding) => finding.message.includes('qualification job instances')),
-    ).toBe(true);
+    expect(findings.some((finding) => finding.message.includes('nine'))).toBe(true);
   });
 });
 

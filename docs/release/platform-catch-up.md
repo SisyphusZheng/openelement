@@ -6,7 +6,7 @@ the maintained toolchain) has newly made redundant, delete it, and re-measure
 renderer forks and optional modes against the same ruler so the backlog shrinks
 toward primitives. This file is the per-release ledger for the `1.0.0-alpha.8`
 … `1.0.0-alpha.15` line. The cycle before it is recorded as a nil-return in
-[alpha7-design-review.md § 4](../maintainers/alpha7-design-review.md#4-platform-catch-up-review-nil-return);
+the alpha7 design review (internal, not published);
 this file continues that record from alpha.8 onward.
 
 ## Method and sources
@@ -57,8 +57,8 @@ line rides one Node/pnpm/Vite/TypeScript set from the alpha.8 host port onward.
   manifests; 7 `deno.lock` files; the vendor/`nodeModulesDir` machinery; the
   JSR publish config. `tools/repo/node-command.ts` is added as the one spawn
   helper for the `node:*` world (later reshaped by #12 of the shim inventory).
-- **Residues tracked, not hidden.** `docs/maintainers/node-porting-residuals.md`
-  records what the port left behind and each residue's expiry path.
+- **Residues tracked, not hidden.** The internal node-porting residuals record
+  (not published) records what the port left behind and each residue's expiry path.
 - **Status: recorded.**
 
 ### 1.0.0-alpha.9 — 2026-10-05, `7816f3937` (#1519), styling train `b7cdb578d` (#1518)
@@ -109,7 +109,7 @@ line rides one Node/pnpm/Vite/TypeScript set from the alpha.8 host port onward.
   machinery and the monolithic element package (three-package split, #1557);
   the island-CSS string-template authoring form (#1558); the Speculation Rules
   emission.
-- **Shim registry created here.** #1559 lands `shim-inventory.md` (17 items,
+- **Shim registry created here.** #1559 lands `docs/architecture/shim-inventory.md` (17 items,
   each with a retirement condition) — the P5 registry this file's reviews feed.
 - **Status: 当时未记录，补录.**
 

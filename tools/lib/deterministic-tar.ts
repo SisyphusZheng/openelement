@@ -3,7 +3,7 @@
  *
  * `vp pack` is the sole code/declaration generator, but the release
  * coordinator re-wraps the package after applying manifest-only mutations
- * (see docs/maintainers/pack-post-processing.md). System `tar` writes
+ * (see the internal pack post-processing notes, not published). System `tar` writes
  * platform-dependent headers (mtime, owner, order, gzip metadata), so the
  * final archive is assembled here instead:
  *   - entries sorted by path (stable across platforms)

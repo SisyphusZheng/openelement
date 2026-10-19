@@ -9,8 +9,8 @@
  * release coordinator after metadata, dependency, peer-dependency, and Create
  * bin assembly. The deterministic archive writer and the manifest-only delta
  * proof live in tools/lib/deterministic-tar.ts; every retained step is
- * contracted in docs/maintainers/pack-post-processing.md — read it before
- * touching this file.
+ * contracted in the internal pack post-processing notes (not published) — read
+ * them before touching this file.
  */
 
 import { join } from 'node:path';

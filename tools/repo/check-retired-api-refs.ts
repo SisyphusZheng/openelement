@@ -1,6 +1,6 @@
 /**
  * Current-doc retired-API scan (1.0.0-alpha.1): fail when current guides,
- * architecture pages, maintainer docs, package READMEs, starter templates,
+ * architecture pages, the agent development contract, package READMEs, starter templates,
  * or site chrome teach a retired package, subpath, or public symbol.
  * History is kept out of scope rather than allowlisted: docs/adr is
  * deliberately unscanned (the historical record may name retired decisions),
@@ -13,6 +13,7 @@
  * stays only for packages/subpaths and for symbols that never reached a
  * release tag (e.g. toRootCss, added and removed inside this PR).
  */
+import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { readFile } from 'node:fs/promises';
 import process from 'node:process';
@@ -27,7 +28,6 @@ const SCAN_DIRS = [
   'packages/ui',
   'docs/architecture',
   'docs/integrations',
-  'docs/maintainers',
   // Starter template sources ship as .tmpl; the extension list covers them.
   'packages/create/templates',
 ];
@@ -45,6 +45,10 @@ for (const dir of SCAN_DIRS) {
     if (entry.isDirectory() || !WALK_EXTS.some((ext) => entry.name.endsWith(ext))) continue;
     collect(`${entry.parentPath}/${entry.name}`);
   }
+}
+// The agent contract moved out of the retired maintainer tree; keep it scanned.
+for (const file of ['docs/agent-contract.md']) {
+  if (existsSync(file)) collect(file);
 }
 // Every package README teaches the current public surface; packages/ui is
 // already walked above and deduped. Two-level cap mirrors the former walk's

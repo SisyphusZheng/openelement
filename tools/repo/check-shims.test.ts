@@ -2,7 +2,7 @@
  * check-shims.test.ts — positive and negative proof for the shim-registry
  * reader (P5).
  *
- * The registry (`docs/maintainers/shim-inventory.md`) was hand-maintained with
+ * The registry (`docs/architecture/shim-inventory.md`) was hand-maintained with
  * no reader, and it had already drifted: two location paths and three line
  * citations pointed at files or positions that no longer existed, and one row
  * carried no owner at all. A check that only reports "0 violations on today's
@@ -89,7 +89,7 @@ test('a location that exists but is not tracked is reported', () => {
   const report = checkShimsMarkdown(
     inventory([`| 1 | live shim | \`${REAL_FILE}\` | 保留为平台边缘 |`], [section(1)]),
     repoRoot,
-    { tracked: new Set(['docs/maintainers/shim-inventory.md']) },
+    { tracked: new Set(['docs/architecture/shim-inventory.md']) },
   );
   expect(kinds(report.violations)).toContain('location-not-tracked');
 });
