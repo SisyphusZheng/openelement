@@ -98,7 +98,7 @@ collector (`collect.mjs`, sha256 `561968e8…`), the same
 | --- | --- | --- |
 | A14 | tag `v1.0.0-alpha.14` = `e9af510deb1cc84e3d29fe0e3b3de0b0220dc626` | detached worktree, `git status --porcelain` empty before and after |
 | mid | `3613d841c38c8fe7dbb94ae528e4dfc2eb6139ee` | the release baseline the previous edition used |
-| final | `6ae4416442e1300b8eb49b64a541a2bbee4accea` | candidate C of this edition (tree-hash-verified snapshot) |
+| final | `6ae4416442e1300b8eb49b64a541a2bbee4accea` | the submitted final SHA's candidate tree (tree-hash-verified snapshot); it differs from candidate C (`d9eb755d3`, the A→C measurement tree) only by documentation commits after the sweep, and its artifacts are byte-identical to C's (asserted by `three-arm-repro.mjs`) |
 
 ### alpha14 → final candidate
 
@@ -302,26 +302,31 @@ sweep; the sweep itself is the load source, and the reporter's own runs overlap
 its clean/build phases). Timing remains advisory only across editions; the
 byte-level tables above are the claim.
 
+The table below is generated from the **re-measured sweep's own**
+`timings.jsonl` (candidate `d9eb755d3`). An earlier edition of this section
+still carried the invalidated `4596a122d` timings; it was corrected on
+2026-10-19 (see the delta note). This table is still advisory only.
+
 | group | mode | A runs (ms) | C runs (ms) | n | A median | C median | Δmedian | A spread | C spread |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| router-static-only | cold | 1532 / 767 / 829 | 1808 / 943 / 948 | 3 / 3 | 829 | 948 | +119 (14.4 %) | 765 | 865 |
-| router-static-only | warm | 793 | 938 | 1 / 1 | 793 | 938 | +145 (18.3 %) | 0 | 0 |
-| router-native-framework | cold | 1024 / 996 / 974 | 1168 / 1224 / 1179 | 3 / 3 | 996 | 1179 | +183 (18.4 %) | 50 | 56 |
-| router-native-framework | warm | 971 | 1170 | 1 / 1 | 971 | 1170 | +199 (20.5 %) | 0 | 0 |
-| router-lit-framework | cold | 817 / 833 / 847 | 1024 / 1011 / 997 | 3 / 3 | 833 | 1011 | +178 (21.4 %) | 30 | 27 |
-| router-lit-framework | warm | 823 | 1000 | 1 / 1 | 823 | 1000 | +177 (21.5 %) | 0 | 0 |
-| router-ui-dogfood | cold | 3370 / 1162 / 1142 | 2849 / 1331 / 1311 | 3 / 3 | 1162 | 1331 | +169 (14.5 %) | 2228 | 1538 |
-| router-ui-dogfood | warm | 1144 | 1323 | 1 / 1 | 1144 | 1323 | +179 (15.6 %) | 0 | 0 |
-| router-unocss-probe | cold | 1738 / 1228 / 1210 | 1926 / 1419 / 1438 | 3 / 3 | 1228 | 1438 | +210 (17.1 %) | 528 | 507 |
-| router-unocss-probe | warm | 1228 | 1460 | 1 / 1 | 1228 | 1460 | +232 (18.9 %) | 0 | 0 |
-| www | cold | 21302 / 20877 / 35387 | 23434 / 25087 / 26825 | 3 / 3 | 21302 | 25087 | +3785 (17.8 %) | 14510 | 3391 |
-| www | warm | 22372 | 23930 | 1 / 1 | 22372 | 23930 | +1558 (7.0 %) | 0 | 0 |
+| router-static-only | cold | 945 / 736 / 727 | 1122 / 959 / 919 | 3 / 3 | 736 | 959 | +223 (30.3 %) | 218 | 203 |
+| router-static-only | warm | 750 | 915 | 1 / 1 | 750 | 915 | +165 (22.0 %) | 0 | 0 |
+| router-native-framework | cold | 1016 / 1025 / 1038 | 1196 / 1273 / 1193 | 3 / 3 | 1025 | 1196 | +171 (16.7 %) | 22 | 80 |
+| router-native-framework | warm | 1010 | 1169 | 1 / 1 | 1010 | 1169 | +159 (15.7 %) | 0 | 0 |
+| router-lit-framework | cold | 929 / 860 / 837 | 1094 / 1056 / 1092 | 3 / 3 | 860 | 1092 | +232 (27.0 %) | 92 | 38 |
+| router-lit-framework | warm | 915 | 1018 | 1 / 1 | 915 | 1018 | +103 (11.3 %) | 0 | 0 |
+| router-ui-dogfood | cold | 1289 / 1204 / 1221 | 1545 / 1432 / 1396 | 3 / 3 | 1221 | 1432 | +211 (17.3 %) | 85 | 149 |
+| router-ui-dogfood | warm | 1255 | 1403 | 1 / 1 | 1255 | 1403 | +148 (11.8 %) | 0 | 0 |
+| router-unocss-probe | cold | 1449 / 1283 / 1222 | 1662 / 1499 / 1482 | 3 / 3 | 1283 | 1499 | +216 (16.8 %) | 227 | 180 |
+| router-unocss-probe | warm | 1251 | 1428 | 1 / 1 | 1251 | 1428 | +177 (14.1 %) | 0 | 0 |
+| www | cold | 20274 / 21338 / 21925 | 22385 / 21243 / 22070 | 3 / 3 | 21338 | 22070 | +732 (3.4 %) | 1651 | 1142 |
+| www | warm | 20520 | 22471 | 1 / 1 | 20520 | 22471 | +1951 (9.5 %) | 0 | 0 |
 
 | starter rebuild | A runs (ms) | C runs (ms) |
 | --- | --- | --- |
-| rep 1 | 1244 | 1143 |
-| rep 2 | 1027 | 1149 |
-| rep 3 | 1063 | 1155 |
+| rep 1 | 1224 | 1155 |
+| rep 2 | 1054 | 1152 |
+| rep 3 | 1022 | 1146 |
 
 The direction matches the previous edition's advisory table (candidate builds
 are slower while the machine is busy in both rounds); the absolute spreads on
@@ -353,10 +358,13 @@ made here.
 
 ## Reproduce
 
-The measurement harness (collector, sweep driver, starter leg, report
-regression script and the canonical cross-check wrapper) is attached to this
-evaluation's release evidence rather than shipped in the published tree. The
-protocol it implements is:
+The measurement harness is archived in two places, neither of which is an input
+to the measured build: the table-regression scripts are tracked under
+[`evidence/alpha15/`](./evidence/alpha15/README.md) together with the sha256
+manifest of the raw artifacts, and the collector, sweep driver and raw artifacts
+are bundled in the release-evidence archive to be attached to the GitHub Release
+at publication (the manifest names the archive and its digest). The protocol it
+implements is:
 
 1. **Baseline.** Keep a detached worktree at `3613d841c` outside the repository
    and verify its `git status --porcelain` is empty before and after the run.
@@ -374,17 +382,20 @@ protocol it implements is:
 4. **Cross-check.** Recompute the class totals with
    `tools/release/css-cost-report.ts` from each side's own tree and compare
    them with the collector's numbers on the same `dist`.
-5. **Regression.** Re-read this document's tables and assert every number
-   against the recorded artifacts.
+5. **Regression.** Re-read this document's byte and delivery-closure tables and
+   assert the selected cells against the recorded artifacts (see "Validation of
+   this document" for the exact scope).
 
 ## Validation of this document
 
-`report-repro-final.mjs` re-reads the tables above and the measurement
-artifacts and asserts every number; it reported **86 assertions, 0 failed**. The
+`report-repro-final.mjs` re-reads the byte and delivery-closure tables above and
+asserts **86 selected cells** against the recorded artifacts (group totals,
+class splits and closure rows; it reported **0 failed**). The Δ% columns are
+derived and not asserted, and the advisory timing table is not asserted. The
 canonical `tools/release/css-cost-report.ts` cross-check compared 98 class
 totals over both sides and all seven groups and reported **0 disagreements**.
 The three-arm tables of this edition are additionally re-asserted against their
-own session artifacts (`three-arm-repro.mjs`: **22 assertions, 0 failed**,
+own session artifacts (`three-arm-repro.mjs`: **22 selected cells, 0 failed**,
 covering the alpha14→final and mid→final totals, the class splits and the
 closure rows; the n/a cell for `router-unocss-probe` is asserted as n/a).
 
@@ -392,11 +403,13 @@ closure rows; the n/a cell for `router-unocss-probe` is asserted as n/a).
 
 The measurement was taken on `d9eb755d39bdc1763e75b7c3875208e8900b051e`.
 The delta to the submitted final SHA is **documentation only**: this evaluation
-document (including its three-arm section) and the companion
-`alpha15-jfb-runtime-evaluation.md`. Neither is an input to any measured build —
-both live under `docs/`, outside `www/content` and outside every package source
-set — so neither can move a byte or a timing in the tables. The exact-SHA full
-qualification is re-run on the final SHA.
+document (including its three-arm section), the companion
+`alpha15-jfb-runtime-evaluation.md`, and the evidence-archival files under
+`docs/release/evidence/` (table-regression scripts, sha256 manifest, provenance
+README). None is an input to any measured build — all live under `docs/`,
+outside `www/content` and outside every package source set — so none can move a
+byte or a timing in the tables. The exact-SHA full qualification is re-run on
+the final SHA.
 
 This is the second sweep of the same candidate line. The first (at
 `4596a122d`) was invalidated by a post-measurement security fix in

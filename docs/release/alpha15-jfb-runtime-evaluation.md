@@ -167,18 +167,26 @@ document; the ratios above are the evidence.
    medians/IQR/geometric means per arm without touching the pre-existing alpha.4
    files.
 4. Environment manifest, entry shasums, build logs, all raw JSON, all runner logs
-   and the aggregation script are archived under `/private/tmp/jfb-evidence/`
-   (see `arm-report.md` §9 for the full index).
+   and the aggregation script are bundled in the release-evidence archive
+   `alpha15-ab-jfb-evidence.tar.zst` (staged for the GitHub Release at
+   publication; digest and the 503-entry sha256 manifest are recorded in
+   [`evidence/alpha15/`](./evidence/alpha15/README.md)). `arm-report.md` §9 is
+   the full inventory inside the archive.
 
 ## Artifact index
 
-| artifact | path |
+Members of the release-evidence archive (`jfb/` subtree; the digest is recorded
+under [`evidence/alpha15/README.md`](./evidence/alpha15/README.md)):
+
+| artifact | archive member |
 | --- | --- |
-| Full report (tables, protocol, deviations, advisory) | `/private/tmp/jfb-evidence/arm-report.md` |
-| Metrics tables | `/private/tmp/jfb-evidence/metrics.md`, `metrics.json` |
-| Per-round run log | `/private/tmp/jfb-evidence/run-log.md` |
-| Raw per-benchmark JSON (8 × 15) | `/private/tmp/jfb-evidence/json/` |
-| Runner logs | `/private/tmp/jfb-evidence/logs/` |
-| Environment manifest | `/private/tmp/jfb-evidence/environment.txt` |
-| Entry source shasums (same-source proof) | `/private/tmp/jfb-evidence/arm-source-shasum.txt` |
-| alpha.4 protection (before/after) | `/private/tmp/jfb-evidence/alpha4-protection-before.txt` |
+| Full report (tables, protocol, deviations, advisory) | `jfb/arm-report.md` |
+| Metrics tables | `jfb/metrics.md`, `jfb/metrics.json` |
+| Raw per-benchmark JSON (8 × 15) | `jfb/json/` |
+| Runner logs | `jfb/logs/` |
+| Runner invocation records | `jfb/run-arms*.sh`, `jfb/run-arms*.out` |
+| Environment manifest | `jfb/environment.txt` |
+| Entry source shasums (same-source proof) | `jfb/arm-source-shasum.txt`, `jfb/arm-vs-original-shasum.txt` |
+| Build/install logs | `jfb/build.log`, `jfb/install.log` |
+| alpha.4 protection (before/after) | `jfb/alpha4-protection-before.txt`, `jfb/alpha4-protection-after.txt` |
+| Aggregation script | `jfb/aggregate.py` |
