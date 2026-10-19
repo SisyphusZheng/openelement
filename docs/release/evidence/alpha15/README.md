@@ -18,9 +18,9 @@ Tracked (small, reviewable):
 
 | file | purpose |
 | --- | --- |
-| `report-repro-final.mjs` | re-reads the A/B byte/closure tables and asserts 86 selected cells against the recorded artifacts |
-| `three-arm-repro.mjs` | re-asserts the two three-arm tables (22 selected cells) against the three-arm session artifacts |
-| `late-host-walk-bench.mjs` | synthetic composed-tree walk benchmark used by ADR-0170's cost evidence |
+| `report-repro-final.js` | re-reads the A/B byte/closure tables and asserts 86 selected cells against the recorded artifacts |
+| `three-arm-repro.js` | re-asserts the two three-arm tables (22 selected cells) against the three-arm session artifacts |
+| `late-host-walk-bench.js` | synthetic composed-tree walk benchmark used by ADR-0170's cost evidence |
 | `sha256-manifest.txt` | sha256 of every file in the release-evidence archive (503 entries) |
 
 Release asset (not committed — committed temporary evidence is forbidden by
@@ -49,11 +49,11 @@ Archive layout:
 shasum -a 256 -c sha256-manifest.txt
 
 AB_OUT=<unpacked>/ab-d9 \
-  node report-repro-final.mjs docs/release/alpha15-ab-evaluation.md
+  node report-repro-final.js docs/release/alpha15-ab-evaluation.md
 # expected: REPORT↔ARTIFACT (final): 86 assertions, 0 failed
 
 OE_AB_3ARM=<unpacked>/ab-3arm OE_AB_FINAL=<unpacked>/ab-d9 \
-  node three-arm-repro.mjs docs/release/alpha15-ab-evaluation.md
+  node three-arm-repro.js docs/release/alpha15-ab-evaluation.md
 # expected: THREE-ARM↔ARTIFACT: 22 assertions, 0 failed
 ```
 
@@ -76,7 +76,7 @@ result.
 
 ```sh
 OE_PLAYWRIGHT_MODULE=<repo>/node_modules/playwright/index.js \
-  node late-host-walk-bench.mjs
+  node late-host-walk-bench.js
 # run 1: {"elements":10100,"singleWalkP50Ms":0.3999…,"singleWalkP95Ms":0.6999…,
 #         "worstMs":1.6999…,"eighteenWalkUpperBoundMs":12.599…}
 # run 2: p50 0.3999…, p95 0.5999…, worst 1.5, eighteenWalkUpperBoundMs 10.799…

@@ -98,7 +98,7 @@ collector (`collect.mjs`, sha256 `561968e8…`), the same
 | --- | --- | --- |
 | A14 | tag `v1.0.0-alpha.14` = `e9af510deb1cc84e3d29fe0e3b3de0b0220dc626` | detached worktree, `git status --porcelain` empty before and after |
 | mid | `3613d841c38c8fe7dbb94ae528e4dfc2eb6139ee` | the release baseline the previous edition used |
-| final | `6ae4416442e1300b8eb49b64a541a2bbee4accea` | the submitted final SHA's candidate tree (tree-hash-verified snapshot); it differs from candidate C (`d9eb755d3`, the A→C measurement tree) only by documentation commits after the sweep, and its artifacts are byte-identical to C's (asserted by `three-arm-repro.mjs`) |
+| final | `6ae4416442e1300b8eb49b64a541a2bbee4accea` | the submitted final SHA's candidate tree (tree-hash-verified snapshot); it differs from candidate C (`d9eb755d3`, the A→C measurement tree) only by documentation commits after the sweep, and its artifacts are byte-identical to C's (asserted by `three-arm-repro.js`) |
 
 ### alpha14 → final candidate
 
@@ -388,14 +388,14 @@ implements is:
 
 ## Validation of this document
 
-`report-repro-final.mjs` re-reads the byte and delivery-closure tables above and
+`report-repro-final.js` re-reads the byte and delivery-closure tables above and
 asserts **86 selected cells** against the recorded artifacts (group totals,
 class splits and closure rows; it reported **0 failed**). The Δ% columns are
 derived and not asserted, and the advisory timing table is not asserted. The
 canonical `tools/release/css-cost-report.ts` cross-check compared 98 class
 totals over both sides and all seven groups and reported **0 disagreements**.
 The three-arm tables of this edition are additionally re-asserted against their
-own session artifacts (`three-arm-repro.mjs`: **22 selected cells, 0 failed**,
+own session artifacts (`three-arm-repro.js`: **22 selected cells, 0 failed**,
 covering the alpha14→final and mid→final totals, the class splits and the
 closure rows; the n/a cell for `router-unocss-probe` is asserted as n/a).
 
