@@ -63,7 +63,7 @@ Seam single ownership**:
 > extend P6 from sources of truth to writers of truth; the third is new
 > institutional surface.
 >
-> In this repository: the seams registry ([seams.md][seams]) lists each
+> In this repository: the seams registry ([seams.md](../architecture/seams.md)) lists each
 > live seam with its owner, direction, crossing artifacts, and guard test.
 > Where a crossing artifact cannot yet be derived, the emergency form is a
 > drift guard over the copy with a written retirement condition (P5); the

@@ -24,6 +24,7 @@
  */
 
 import { SITE_ORIGIN } from '../../app/site-ui/head.ts';
+import { normalizeLocalePath } from '../../app/site-ui/i18n.ts';
 import { escapeXml } from './xml-escape.ts';
 
 export interface SitemapUrlEntry {
@@ -124,30 +125,82 @@ export function enumeratePublicRoutes(options: EnumeratePublicRoutesOptions): {
   return { routes: localized, failures };
 }
 
-/** Render sitemap.xml from enumerated public routes (deterministic order). */
+/**
+ * Render sitemap.xml from enumerated public routes (deterministic order).
+ *
+ * Every URL carries its locale alternates as `xhtml:link rel="alternate"` rows —
+ * the same en/zh/x-default set the document head declares per page
+ * (app/site-ui/head.ts), so a crawler reading the sitemap instead of the markup
+ * still learns the two trees are translations of one route. The alternate set
+ * derives from the enumerated paths through the site's own locale normalizer
+ * (never a hand-kept table), and `x-default` points at the default-locale URL.
+ */
 export function renderSitemapXml(
   routes: readonly string[],
-  options: { lastmod?: ReadonlyMap<string, string>; hostname?: string } = {},
+  options: {
+    lastmod?: ReadonlyMap<string, string>;
+    hostname?: string;
+    locales?: readonly string[];
+    defaultLocale?: string;
+  } = {},
 ): string {
   const hostname = (options.hostname ?? SITE_ORIGIN).replace(/\/$/, '');
+  const locales = options.locales ?? [];
+  const defaultLocale = options.defaultLocale ?? '';
   const urls: SitemapUrlEntry[] = routes.map((path) => ({
     loc: `${hostname}${path}`,
     lastmod: options.lastmod?.get(path),
     changefreq: 'weekly',
     priority: path === '/' ? 1.0 : 0.7,
   }));
+  const alternatesFor = (path: string): Array<{ hreflang: string; href: string }> => {
+    if (locales.length === 0 || defaultLocale === '') return [];
+    const { path: canonical } = normalizeLocalePath(path, {
+      locales: [...locales],
+      defaultLocale,
+    });
+    const alternates = locales.map((locale) => {
+      const localized =
+        locale === defaultLocale
+          ? canonical
+          : canonical === '/'
+            ? `/${locale}`
+            : `/${locale}${canonical}`;
+      return { hreflang: locale, href: `${hostname}${localized}` };
+    });
+    const xDefault = alternates.find((alternate) => alternate.hreflang === defaultLocale);
+    if (xDefault) alternates.push({ hreflang: 'x-default', href: xDefault.href });
+    return alternates;
+  };
   const urlsXml = urls
-    .map(
-      (url) =>
+    .map((url) => {
+      const path = url.loc.slice(hostname.length) || '/';
+      const alternates = alternatesFor(path)
+        .map(
+          (alternate) =>
+            `    <xhtml:link rel="alternate" hreflang="${escapeXml(alternate.hreflang)}" ` +
+            `href="${escapeXml(alternate.href)}"/>\n`,
+        )
+        .join('');
+      return (
         `  <url>\n    <loc>${escapeXml(url.loc)}</loc>\n` +
         (url.lastmod ? `    <lastmod>${escapeXml(url.lastmod)}</lastmod>\n` : '') +
         `    <changefreq>${escapeXml(url.changefreq)}</changefreq>\n` +
-        `    <priority>${url.priority.toFixed(1)}</priority>\n  </url>`,
-    )
+        `    <priority>${url.priority.toFixed(1)}</priority>\n` +
+        // Extension elements go LAST: sitemap-0.9.xsd puts the `##other`
+        // wildcard after priority, so an xhtml:link row above them would be
+        // schema-invalid even though Google's parser tolerates the order its own
+        // examples show.
+        alternates +
+        '  </url>'
+      );
+    })
     .join('\n');
+  const xhtmlNamespace = locales.length > 0 ? ' xmlns:xhtml="http://www.w3.org/1999/xhtml"' : '';
   return (
     `<?xml version="1.0" encoding="UTF-8"?>\n` +
-    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urlsXml}\n</urlset>`
+    `<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"${xhtmlNamespace}>\n` +
+    `${urlsXml}\n</urlset>`
   );
 }
 

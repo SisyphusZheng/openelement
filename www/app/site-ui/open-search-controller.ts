@@ -166,9 +166,13 @@ export function openSearch(host: SearchHost): void {
     .then((runtime) => {
       if (!isCurrentSession(host, state, sequence)) return;
       // The popup IS the results surface: opening the dialog opens the
-      // combobox, so the guidance message shows before the first keystroke.
+      // combobox, so the guidance message shows before the first keystroke
+      // (the machine's OPEN writes it).
       runtime.open();
-      runtime.loadIndex(host);
+      // The index is NOT loaded here (T10 R3): pagefind.js and its wasm
+      // (~86 KB compressed) used to ride every open, including opens that were
+      // closed again without a character typed. The first real input change
+      // triggers loadIndex instead.
       input(host)?.focus();
     })
     .catch(() => {
@@ -207,7 +211,7 @@ export function closeSearchOnBackdrop(host: SearchHost, event: Event): void {
 
 /**
  * Result-click dismissal, delegated from the results container: the compiled
- * list Region cannot carry per-item event handlers, so the view binds one
+ * list Block cannot carry per-item event handlers, so the view binds one
  * onClick on `.results` and this handler closes the search when the click
  * lands on a result link (the machine's Enter-path navigation also lands
  * here — clickIfLink dispatches a real click on the highlighted anchor).

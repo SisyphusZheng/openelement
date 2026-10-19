@@ -22,13 +22,31 @@ import { defineIslandConfig } from '@openelement/router';
 export const openElement = defineIslandConfig({ hydrate: 'visible', ssr: true, dsd: true });
 ```
 
-`hydrate` 决定模块何时被 import——`'load'` 用于首屏关键控件，尽早导入并升级，`'idle'` 用于可以等待的工作，`'visible'` 用于接近视口才重要的组件，`'media'` 用于按能力门控的加载（chunk 只在 island `media` 字段声明的查询匹配期间拉取），`'only'` 用于跳过 SSR 的浏览器专用组件。`'none'` 则彻底退役 island 的客户端：服务端照常序列化该组件，但构建永不发射它的 chunk——组件零客户端 JavaScript，同时保留 manifest 里的 island 记录。`ssr` 与 `dsd` 说明服务端是否序列化该组件。构建会逐页记录结果，因此页面永远到不了的 island 永远不会被拉取。这两个设置在[流式渲染](/zh/guide/streaming)路由上不适用：其壳不接受嵌套渲染器，因此那里的每个 island 与嵌套已编译组件都只输出为不透明的空宿主，并在浏览器中激活。
+`hydrate` 决定模块何时被 import——`'load'` 用于首屏关键控件，尽早导入并升级，`'idle'` 用于可以等待的工作，`'visible'` 用于接近视口才重要的组件，`'media'` 用于按能力门控的加载（chunk 只在 island `media` 字段声明的查询匹配期间拉取），`'only'` 用于跳过 SSR 的浏览器专用组件。`'none'` 则彻底退役 island 的客户端：服务端照常序列化该组件，但构建永不发射它的 chunk——组件零客户端 JavaScript，同时保留 manifest 里的 island 记录。`ssr` 与 `dsd` 说明服务端是否序列化该组件。构建会逐页记录结果，因此页面永远到不了的 island 永远不会被执行。这两个设置在[流式渲染](/zh/guide/streaming)路由上不适用：其壳不接受嵌套渲染器，因此那里的每个 island 与嵌套已编译组件都只输出为不透明的空宿主，并在浏览器中激活。
 
 upgrade 本身是浏览器的 Custom Element 机制。服务端把编译后的 Part Program 序列化为 Declarative Shadow DOM；类被定义后，生成的 claim 产物对已经存在的 DOM 重放同一份程序，绑定模板声明过的处理器，并用宿主 attribute 还原 `@property` 字段。不会重建树，不会用字符串查找绑定，也不会从 attribute 合成事件。[流式渲染](/zh/guide/streaming)路由是这条序列化承诺的例外——见上文。
 
+## 迟到宿主
+
+已声明 island 的宿主不必在页面的 ready 扫描时就已存在。第三方组件、另一个 island 的渲染、或应用在一次异步请求后运行的代码，都可能在之后创建它——在 open shadow root 内，或在 light DOM 里。只要本页仍有「已声明但工厂尚未被消费」的 island，调度器就会按有界预算重跑同一套页面范围扫描：每个 3000 ms 窗口最多 6 次尝试，最多 3 个窗口且只有 island 模块仍在加载时才续期，并在每次探测入口与每个续窗入口检查 9000 ms 绝对上限。因此被挂起或节流的页面无法在上限之后才激活宿主。预算内找到的宿主会沿其声明的策略激活，并触发同样的 `open:ready` 事件；调度器只是重新询问宿主是否存在，真正做出激活决定的仍然只有 `load()` 的宿主门——「页面永远到不了的 island 永远不会被拉取」这条承诺不变。
+
+只有一次机会的两种策略也在覆盖范围内。`'idle'` 页面的空闲尝试在无宿主时执行过后，deferred 步骤会启动同一套有界查找（加载本身仍走浏览器的空闲调度）；`'media'` 页面的查询在宿主仍缺失时翻为匹配，则查询的 change 监听器会启动它。若上限耗尽而仍有已声明 island 未激活，调度器会在 `document` 上派发一次信息性的 `CustomEvent('open:island-host-timeout')`，`detail.pending` 会点名这些 tag。该事件是提示而非错误——页面声明了本页不使用的 island 是合法的——之后的显式 rescan 或媒体变更仍可激活这些 tag。
+
+## Light islands
+
+island 的 root 由其组件决定：`@element(tag, { root: 'light' })` 编译出的程序，其子节点落在文档树中；默认的 shadow 模式则序列化 Declarative Shadow DOM。island 配置可以重申该模块属于哪个家族：
+
+```tsx
+export const openElement = defineIslandConfig({ hydrate: 'visible', root: 'light' });
+```
+
+这份声明是被校验的，不是被服从的。装饰器仍是唯一事实来源，与之矛盾的配置会以 `OEC9030` 中止构建；声明它只是让 island 的 root 与其投递策略并排可读，并不会打开组件。
+
+Light island 是 utility-first 样式的实际路径。shadow root 是一道样式边界——在其外部编写的类选择器到不了组件的子节点——所以 shadow island 需要编译器侧的 utility 提取来跨越它；而 light island 的子节点是普通文档节点，页面已编译的样式表本就覆盖它们。代价是放弃了 shadow root 本会提供的隔离。
+
 ## 小运行时
 
-发出的内容是页面声明的那组 island chunk 加上生成的 claim 代码——不存在每个页面都必须加载的框架运行时。没有任何交互模块的页面完全不加载框架 JavaScript；island 全是 `'visible'` 的页面，在读者滚动到之前不付出任何代价。
+发出的内容是页面声明的那组 island chunk 加上生成的 claim 代码——不存在每个页面都必须加载的框架运行时。没有任何交互模块的页面不执行任何 island chunk；只要应用存在任意 island（或增强表单），一个约 2 KB（gzip）的 claim 引导脚本是这类页面唯一的执行脚本。“被拉取”与“被执行”是两种不同的成本：读者沿着链接跳转前，目标页面的 chunk 可能已被预取；而只要页面的 manifest 里有可客户端激活的 island，构建就会为共享的 element-runtime chunk 加上 `modulepreload`（在 www 构建里约 29 KB gzip），即使该页所有 island 都是 `'visible'`——runtime 会提前拉取并解析，而 island 自己的 chunk 仍推迟到宿主激活时才取。
 
 这个预算正是静态表面重要的原因。凡是能用标记表达的——内容、布局、文档，甚至样式完整、看起来可交互的组件——都应保持静态 DSD；island 只留给状态与浏览器 API。两种情况下的组件代码完全相同，所以这个决定是一次声明而不是一次重写，也可以在组件真实需求明确后再回来调整。
 

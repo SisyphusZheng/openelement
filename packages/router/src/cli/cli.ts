@@ -2,9 +2,12 @@
 /**
  * @openelement/router - the `openelement` lifecycle CLI.
  *
- * One entry, two bin names, two subcommands (plus version/help), and each
- * subcommand is exactly the packaged subpath entry it dispatches to:
+ * One entry, two bin names, three subcommands (plus version/help). `build` and
+ * `start` are also packaged subpath entries (`./cli/build`, `./cli/start`);
+ * `dev` is bin-only (no app imports a dev server) but rides the same
+ * dispatcher. Each subcommand body is exactly the module it dispatches to:
  *
+ *   openelement dev              -> ./dev.ts (Vite dev server: SSR + HMR)
  *   openelement build            -> ./build.ts (buildApp: SSG + client phases)
  *   openelement start            -> ./start.ts (serve dist/ over node:http)
  *   openelement start --mode=preview
@@ -25,14 +28,15 @@
  *
  * The dispatcher body runs only as the process's main module, so importing
  * this file (should a caller ever do that) has no effect. Each subcommand is
- * loaded lazily: `build` pulls the Vite tooling graph, `start` does not, so
- * the serve command keeps resolving without a Vite install in the consumer's
- * tree (the same resolution the `./cli/start` subpath entry has), and the
- * version/usage paths load neither.
+ * loaded lazily: `dev` and `build` pull the Vite tooling graph, `start` does
+ * not, so the serve command keeps resolving without a Vite install in the
+ * consumer's tree (the same resolution the `./cli/start` subpath entry has),
+ * and the version/usage paths load none of them.
  */
 
 import process from 'node:process';
 import { readFileSync } from 'node:fs';
+import { enforceNodeFloor } from './node-version.ts';
 
 /**
  * The one usage text both the no-argument and the unknown-command paths
@@ -45,7 +49,12 @@ const USAGE = [
   'Alias: oe <command> [options] (same entry, same behavior)',
   '',
   'Commands:',
-  '  build                  production build (SSG + client) into dist/',
+  '  dev [--port <n> | --host [h] | --strictPort | --open [path]]',
+  '                         start the Vite dev server (SSR + HMR) for the',
+  '                         app in the current directory',
+  '  build [--diagnostics=json | --diagnostics-file=<path>]',
+  '                         production build (SSG + client) into dist/; the',
+  '                         diagnostics flags add a machine-readable report',
   '  start [--mode=preview] serve the built output; preview is static-only',
   '  version                print the router package version',
   '',
@@ -72,9 +81,18 @@ function packageVersion(): string {
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
+  if (command === 'dev') {
+    const { runDevCli } = await import('./dev.ts');
+    // The subcommand's own flags ride along (`--port`, `--host`,
+    // `--strictPort`, `--open`, `--debug`).
+    await runDevCli(rest);
+    return;
+  }
   if (command === 'build') {
     const { runBuildCli } = await import('./build.ts');
-    await runBuildCli();
+    // The subcommand's own flags ride along (`--diagnostics=json` and
+    // `--diagnostics-file=<path>` open the machine-readable exit, #1612).
+    await runBuildCli(rest);
     return;
   }
   if (command === 'start') {
@@ -93,6 +111,11 @@ async function main(): Promise<void> {
   console.error(command === undefined ? USAGE : `Unknown command "${command}".\n\n${USAGE}`);
   process.exit(1);
 }
+
+// The Node floor is checked before the `import.meta.main` dispatch below: on
+// Node < 24.2 that flag is `undefined`, so an ungated packed entry would exit 0
+// having done nothing at all.
+enforceNodeFloor();
 
 if (import.meta.main) {
   await main();

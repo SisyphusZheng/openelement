@@ -4,16 +4,31 @@ Read [SECURITY.md](./SECURITY.md) and [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
 
 ## Normal changes
 
-1. Start from `dev` and link a focused issue when one exists.
+1. Start from `main` and link a focused issue when one exists.
 2. Change the product code or canonical documentation and add the smallest useful behavioral test.
 3. Run the relevant package scripts and the complete applicable matrix before review.
-4. Open a pull request to `dev`; the pull request and exact-SHA Actions checks are the operational record.
+4. Open a pull request to `main`; the pull request and exact-SHA Actions checks are the operational record.
 
 Do not commit agent prompts, dispatch transcripts, copied CI logs, temporary evidence, or per-attempt journals.
 
 ## Architecture review
 
-Review every change against [docs/architecture/design-principles.md](./docs/architecture/design-principles.md): the four-question gate (P7) applies to ordinary pull requests, and deviations follow the comply-or-explain rule. Use an ADR only for a hard-to-reverse public API, package topology, architecture, security/trust, or explicit compatibility decision. Ordinary fixes do not need an ADR. Current architecture belongs in `docs/architecture`; retired decisions belong in Git history and the compact history index.
+Review every change against [docs/architecture/design-principles.md](./docs/architecture/design-principles.md): the four-question gate (P7) applies to ordinary pull requests — the fields are in the pull request template — and deviations follow the comply-or-explain rule. Current architecture belongs in `docs/architecture`; retired decisions are retained in `docs/adr` and annotated there.
+
+## When an ADR is required
+
+An ADR is required when a change decides something the codebase cannot reverse cheaply, or when a future maintainer would otherwise have to re-derive the decision from the diff. The triggers are decidable, one by one:
+
+- a public API, package export map, entry subpath or `bin` change consumers can observe — adding one, removing one, or renaming one;
+- package topology: adding, removing or splitting a published package, or reversing the dependency direction between packages;
+- an architecture boundary a gate enforces: compile/build-time versus runtime split, who may import what, seam ownership, a renderer or style-provider port;
+- a security or trust boundary: escaping, sink admission, CSP, auth/session, provenance or supply-chain policy;
+- a compatibility decision: a platform or dependency floor, a compatibility layer kept or removed, a named deviation from a platform behavior;
+- a governance rule itself: the design principles, a review gate, or a registry a gate reads.
+
+An ADR is NOT required for an ordinary fix, a refactor that leaves the decisions above intact, a test-only change, or documentation that restates an existing decision. When unsure, answer the four questions in the pull request first: if the fourth answer is "our difference is deliberate" and the difference is hard to reverse, write the ADR.
+
+Mechanics: the file is `docs/adr/ADR-NNNN-<slug>.md` with NNNN = the highest existing number + 1, and its entry in `docs/adr/README.md` lands in the same change. `@openelement/tools-repo#adr-index:check` (in `gate:source`) fails when a record is unlisted, a link dangles, or an entry's status annotation disagrees with the record; a record that no longer governs is retained and annotated `SUPERSEDED` / `RETIRED` / `EXECUTED`, and `AMENDED` marks a partial change.
 
 Permission note (deliberate): the test suites run on the node host under vitest (B3), and the whole toolchain is Node/pnpm end to end after the S2 release-lane port, so there is no Deno permission surface to scope. Supply-chain hygiene (minimum dependency age, lockfiles, provenance checks) remains load-bearing.
 
@@ -55,7 +70,7 @@ package name:
 | `check`                                       | `fmt:check` + `lint` + `typecheck` + markdown lint, run serially through `gate.ts`                        |
 | `test`                                        | Full vitest suite across every workspace project (see the Architecture review permission note)            |
 | `test:e2e`                                    | Site build plus browser end-to-end suites (www, router fixtures)                                          |
-| `build`                                       | Build the four public packages (element, router, create, ui)                                              |
+| `build`                                       | Build the six public packages (protocol, element, compiler, router, create, ui)                           |
 | `vp run @openelement/tools-release#pack`      | Pack release tarballs through `tools/release`                                                             |
 | `verify`                                      | Full repository verification, including SaaS                                                              |
 | `verify:core`                                 | Element/Router Alpha candidate verification (no SaaS steps)                                               |
@@ -67,12 +82,26 @@ package name:
 | `fmt` / `fmt:check` / `lint` / `typecheck`    | Format, lint, and type-check the workspace                                                                |
 | `gate:release`                                | Source gate's trimmed-out steps plus packed gate (the release train)                                      |
 
-The CI gate is split in two layers. `tools/repo#gate:source` (10 steps) is the
-fast PR layer and runs on every pull request; the steps that need a built
-Site, coverage, deploy fixtures, or three-engine browser matrices live in
-`tools/repo#gate:release` and run on the release train via `release:check`
-before anything is published. Nothing is dropped — a step is either in the
-PR layer or in the release train.
+The gates are split in two layers. CI's fast PR layer is the `lint`, `test`,
+`e2e`, and `pack` jobs in `.github/workflows/autoflow-ci.yml`, and it runs on
+every pull request targeting `main` and on pushes to `main` and
+`alpha15-consolidation`. `tools/repo#gate:source` (16
+steps: fifteen `@`-qualified tasks plus `check:dep-age`) is the LOCAL source
+gate: no workflow invokes the aggregate task, and `pnpm run verify`
+and `pnpm run verify:core` are its entry points. Eleven of those steps also
+run in CI through the fast jobs — `@openelement/tools-repo#typecheck` (the
+`tools/` project), the dependency-age quarantine, markdown lint (inside
+`vp run check`), the vp-selector flags check, the seams registry, the
+content-date manifest, the interface snapshot, `generate:all`, and the
+Element/Router unit suites plus the Chromium browser gate. The request-time and
+base-path fixture gates stay outside the fast layer, in the `e2e-full`
+full-qualification layer (main pushes and `full_qualification` dispatches), and
+`shims:check`, `adr-index:check` and `www#check:doc-claims` are local-only
+until a workflow adopts them —
+so run `pnpm run verify:core` before relying on those. The steps that need
+a built Site, coverage, deploy
+fixtures, or three-engine browser matrices live in `tools/repo#gate:release`
+and run on the release train via `release:check` before anything is published.
 
 ```bash
 pnpm run check                                    # fmt + lint + typecheck + markdown
@@ -113,7 +142,7 @@ Package test tasks run vitest on the node host; a single file runs through the s
 
 ## Locating CI failures
 
-`autoflow-ci.yml` has four producers — `fast-checks`, `source-matrix`, `packed-consumers`, `fresh-clone` — plus the aggregation job `autoflow-ci`. The aggregation runs with `if: always()` and asserts each producer result, so a failed or cancelled producer fails the required check explicitly: read the aggregation conclusion first, then open only the failing producer. `saas-optional` is `continue-on-error` by design and never gates the framework candidate.
+`autoflow-ci.yml` runs a `sha-guard` job first, then the fast PR layer (`lint`, `test`, `e2e`, `pack`); the heavy qualification jobs — `e2e-full` (two instances: the three-engine site E2E suite and the fixture gates), `bfcache`, `node-serve-smoke` (Node 24 and 26), `packed-consumer-matrix` (Linux and macOS), and `fresh-install` — run on a `main` push and on a `full_qualification` dispatch. There is no aggregation job: each required check is the job itself, so read the failing job's log directly. The Release workflow's `ci-evidence` job separately requires every one of the nine qualification job IDs (twelve instances) of the exact-SHA `main` push run to be `success`; `apps/saas` is never part of the candidate.
 
 ## Commits
 

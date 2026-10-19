@@ -7,9 +7,12 @@
 // directly: publish is a gated human authorization, not an automatic step.
 import type { SiteLocale } from '../../site-config.ts';
 import {
+  LATEST_PRERELEASE_VERSION,
   PACKAGE_COUNT,
   SOURCE_LINE_PUBLISHED,
   SOURCE_VERSION,
+  STABLE_LINE_SERIES,
+  STABLE_LINE_VERSION,
 } from './_generated-release-line.ts';
 
 type ReleaseLocale = SiteLocale;
@@ -25,6 +28,30 @@ export const OPENELEMENT_VERSION = `v${SOURCE_VERSION}`;
  * protocol and compiler, and every pre-split count sentence became false).
  */
 export const PUBLISHED_PACKAGE_COUNT = PACKAGE_COUNT;
+
+/**
+ * Stable-line truth: the newest STABLE version the repository CHANGELOG.md
+ * records, and the maintenance series that version closes. release-state.json
+ * tracks registry dist-tags and carries no 0.x entry, so the changelog is the
+ * record that owns stable-line history; www/tools/generate-site-content-data.ts
+ * projects both facts out of it and fails the build when no stable heading
+ * exists. Site copy reads the number HERE — never as a literal, which is how
+ * the roadmap came to call a prerelease the "published stable maintenance
+ * line" while the stable line had already closed.
+ */
+export const STABLE_LINE: Readonly<{ version: string; series: string }> = Object.freeze({
+  version: STABLE_LINE_VERSION,
+  series: STABLE_LINE_SERIES,
+});
+
+/**
+ * The prerelease version every published package serves on npm `latest`
+ * (release-state `latestPrerelease`, cross-checked against the per-package
+ * `latest` blocks by the generator). It is registry truth, not a publish
+ * promise: a stale record fails the generation step rather than printing a
+ * version npm does not serve.
+ */
+export const CURRENT_ALPHA_VERSION = LATEST_PRERELEASE_VERSION;
 
 /**
  * Copy spelling for a small count. Site chrome uses words, never digits or
@@ -200,8 +227,46 @@ export function prereleasePublishStatus(locale: ReleaseLocale): string {
     : `repository baseline — verify the live dist-tags with ${verify}`;
 }
 
-/** Getting-started lead-in note ({{SOURCE_LINE_NOTE}} placeholder). */
-export function sourceLineNote(locale: ReleaseLocale): string {
+/**
+ * Roadmap "now" band, title half (routes/roadmap.tsx): the two release lines
+ * the release record can prove — the stable maintenance series that closed,
+ * and the current 1.0 alpha line. Both come from generated truth
+ * (STABLE_LINE / CURRENT_ALPHA_VERSION / SOURCE_VERSION), so the sentence
+ * cannot drift back into calling a prerelease the stable line.
+ */
+export function stableLineTitle(locale: ReleaseLocale): string {
+  return locale === 'zh'
+    ? `${STABLE_LINE.series} 仍是稳定维护线，1.0 alpha 线是当前线。`
+    : `${STABLE_LINE.series} is the stable maintenance line; the 1.0 alpha line is current.`;
+}
+
+/**
+ * Roadmap "now" band, body half: the stable line closed at
+ * {@linkcode STABLE_LINE.version}; npm serves {@linkcode CURRENT_ALPHA_VERSION}
+ * on the per-package `latest` dist-tag; the source line is
+ * {@linkcode SOURCE_VERSION}. The unpublished branch deliberately does not
+ * claim "not yet on npm" — the tracked registry block is a snapshot, so the
+ * alpha-line version is the one the record proves and the source version is
+ * named as the repository baseline (see prereleasePublishStatus for the live
+ * dist-tag pointer).
+ */
+export function stableLineNote(locale: ReleaseLocale): string {
+  if (locale === 'zh') {
+    return (
+      `稳定维护线止于 ${STABLE_LINE.version}；1.0 alpha 当前线在各包的 npm latest dist-tag 上是 ` +
+      `${CURRENT_ALPHA_VERSION}，当前源码基线是 ${SOURCE_VERSION}。1.0 Alpha 是新基线：` +
+      `Element 与 Router 为公共核心，Create 为正式入口，UI 为实验性能力，不提供从 0.x 的受支持迁移。`
+    );
+  }
+  return (
+    `The stable maintenance line closed at ${STABLE_LINE.version}. The current 1.0 alpha line serves ` +
+    `${CURRENT_ALPHA_VERSION} on npm's per-package latest dist-tag, with ${SOURCE_VERSION} as the ` +
+    `repository baseline. 1.0 Alpha is the new baseline: Element and Router as the public core, ` +
+    `Create as the supported entry, UI as experimental — with no supported migration from 0.x.`
+  );
+}
+
+/** Getting-started lead-in note ({{SOURCE_LINE_NOTE}} placeholder). */export function sourceLineNote(locale: ReleaseLocale): string {
   if (SOURCE_LINE_PUBLISHED) {
     return locale === 'en'
       ? `${SOURCE_VERSION} is the current baseline for Element and Router, published to npm under the @alpha dist-tag.`

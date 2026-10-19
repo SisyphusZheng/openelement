@@ -95,6 +95,13 @@ export default defineConfig({
   test: {
     globals: false,
     environment: 'node',
+    // N5: an accidental `.only` must never silently narrow a suite. Vitest 5
+    // removed the old `forbidOnly` switch; `allowOnly` is its exact
+    // replacement, and its default is `!process.env.CI` — i.e. local runs
+    // would allow `.only` and quietly run a subset. Pin it false so both the
+    // local gate and CI fail on an `.only` (projects inherit this root test
+    // config unless they override the option).
+    allowOnly: false,
     // The deno test runner executed every file in one sequential process; the
     // suites share fixture dists and spawn port-bound servers, so parallel
     // file execution reintroduces races that never existed pre-migration.
@@ -113,10 +120,10 @@ export default defineConfig({
         test: {
           name: 'element',
           include: ['packages/element/__tests__/**/*.test.ts'],
-          // #1548: the Region builders reach the runtime through the regions
+          // #1548: the Block builders reach the runtime through the blocks
           // seam; tests driving the runtime internals install them exactly
-          // like the entries do (see install-regions-runtime.ts).
-          setupFiles: ['packages/element/__tests__/install-regions-runtime.ts'],
+          // like the entries do (see install-blocks-runtime.ts).
+          setupFiles: ['packages/element/__tests__/install-blocks-runtime.ts'],
           testTimeout: 20_000,
         },
       },
@@ -179,7 +186,7 @@ export default defineConfig({
         test: {
           name: 'benchmarks',
           include: ['benchmarks/micro/**/*.test.ts'],
-          // the self-checks drive real compiles and 1k-row Region ops
+          // the self-checks drive real compiles and 1k-row Block ops
           // (deterministic counts, but not free); the deno runner had no
           // per-test budget either
           testTimeout: 60_000,

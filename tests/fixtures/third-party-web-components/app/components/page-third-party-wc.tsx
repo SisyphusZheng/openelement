@@ -5,10 +5,19 @@
  */
 import { element, OpenElement } from '@openelement/element';
 import wcPageStyles from './wc-page.css';
-// The Lit fixture creates this compiled child inside its own shadow root at
-// runtime, so the page imports the capability explicitly to keep it reachable
-// from the generated client delivery graph.
+// A foreign component creates each of these compiled children inside its own
+// shadow root (or appends it to its own light DOM) at runtime, so the page
+// imports every capability explicitly to keep it reachable from the generated
+// client delivery graph. They are the late-host corpus: none of them has a
+// host in the SSR markup.
 import '../islands/wc-open-child.tsx';
+import '../islands/wc-open-fast.tsx';
+import '../islands/wc-open-stencil.tsx';
+import '../islands/wc-open-native.tsx';
+import '../islands/wc-open-light.tsx';
+import '../islands/wc-open-nested.tsx';
+import '../islands/wc-open-closed.tsx';
+import '../islands/wc-unused-late.tsx';
 
 @element('third-party-wc', { root: 'shadow-open' })
 export default class ThirdPartyWcPage extends OpenElement {

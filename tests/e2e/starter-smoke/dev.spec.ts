@@ -25,12 +25,14 @@
  */
 import { expect, test } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { starterSmokeAppDir } from './paths.ts';
 
 // v0.44: the route module is a thin definePage wrapper; the page markup lives
 // in the compiled page element it imports, so the edit target is the page
 // component (the #952 invalidation chain is the same: watcher → module
 // re-evaluation → next request renders the edited module).
-const PAGE_FILE = new URL('./work/my-blog/app/components/page-home.tsx', import.meta.url).pathname;
+const PAGE_FILE = join(starterSmokeAppDir(), 'app/components/page-home.tsx');
 const H1_ORIGINAL = 'Rendered before JavaScript arrives';
 const H1_EDITED = 'Edited in dev mode';
 
@@ -57,26 +59,28 @@ test('dev island hydrates and handles clicks (#951)', async ({ page }) => {
 test('dev delivers the compiled theme tokens (#1582)', async ({ page }) => {
   // The acceptance criteria of #1582, on the packed starter surface: the
   // document must link the compiled theme sheet, and the computed tokens must
-  // resolve — `pnpm dev` used to serve every var(--paper/--brand/…) empty.
+  // resolve — `pnpm dev` used to serve every theme variable empty.
   await page.goto('/');
 
   // The theme sheet is served before the page's own @scope styles: the link
   // rides the document head while the page static styles sit in the body.
   const linkHref = await page.locator('head link[rel="stylesheet"]').first().getAttribute('href');
   expect(linkHref, 'the dev document head links the compiled theme sheet').toContain(
-    'tailwind-preset/entry.css',
+    '.openElement/tailwind.css',
   );
 
-  // --brand is the alias the starter's component sheets consume; it resolves
-  // only when the authored @theme block passed through the Tailwind compile.
+  // --color-brand is the palette entry the markup's utilities consume; it
+  // resolves only when the authored @theme block passed through the Tailwind
+  // compile.
   const brand = await page.evaluate(() =>
-    getComputedStyle(document.documentElement).getPropertyValue('--brand').trim(),
+    getComputedStyle(document.documentElement).getPropertyValue('--color-brand').trim(),
   );
-  expect(brand, '--brand must resolve to a compiled value').not.toBe('');
+  expect(brand, '--color-brand must resolve to a compiled value').not.toBe('');
 
-  // The panel's border/radius read var(--line)/var(--radius-l): zero values
-  // are the "token layer missing" signature the issue recorded.
-  const panel = page.locator('.panel').first();
+  // The island panel's border/radius read --color-line/--radius-l through its
+  // utility classes: zero values are the "token layer missing" signature the
+  // issue recorded.
+  const panel = page.locator('main section:has(my-counter)').first();
   const panelStyle = await panel.evaluate((element) => {
     const style = getComputedStyle(element);
     return { borderWidth: style.borderTopWidth, borderRadius: style.borderTopLeftRadius };

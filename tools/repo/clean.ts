@@ -52,6 +52,9 @@ export const DEFAULT_TARGETS: readonly string[] = [
   '.coverage-*',
   '.coverage-check',
   '.openElement',
+  // Legacy location: the starter-smoke harness now scaffolds OUTSIDE the repo
+  // ($RUNNER_TEMP|os.tmpdir()/openelement-starter-smoke), so this entry only
+  // clears leftovers from checkouts that ran the pre-batch harness.
   'tests/e2e/starter-smoke/work',
   'tests/fixtures/*/dist',
   'tests/fixtures/*/test-results',
@@ -63,9 +66,6 @@ export const DEFAULT_TARGETS: readonly string[] = [
 
 /** Opt-in extras: reinstallable dependency trees, never touched by default. */
 export const DEEP_TARGETS: readonly string[] = [
-  // Removes the .deno cache directory left over from the old Deno toolchain;
-  // no current tool reads its contents.
-  '.deno',
   'node_modules',
   'apps/saas/node_modules',
   'packages/element/__wtr__/node_modules',

@@ -67,6 +67,38 @@ export interface ActionExecution {
   actionResult?: ActionOutcome;
 }
 
+/** Drop C0 controls and DEL from a Location component. */
+function stripControlCharacters(value: string): string {
+  let cleaned = '';
+  for (const char of value) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x1f || code === 0x7f) continue;
+    cleaned += char;
+  }
+  return cleaned;
+}
+
+/**
+ * The one canonical PRG `Location` target: an absolute path on THIS origin.
+ *
+ * The pathname is request-shaped input — any route with a catch-all segment
+ * matches `POST //evil.example/x` — and once emitted as `Location` a pathname
+ * beginning with `//` is a PROTOCOL-RELATIVE URL, so the browser navigates off
+ * this origin. The canonical target therefore starts with exactly one `/`
+ * (a raw backslash is a path separator to the WHATWG parser, so it
+ * canonicalizes too), carries no CR/LF/TAB or other control characters, and
+ * keeps the search verbatim (`URLSearchParams.toString()` is percent-encoded,
+ * so it can never introduce a line break). Both PRG channels — the native 303
+ * header and the fetch-channel `redirect` ActionResult — use this one value.
+ */
+export function safeRedirectLocation(pathname: string, search: string): string {
+  let path = stripControlCharacters(pathname).replace(/\\/g, '/');
+  path = path.replace(/^\/+/, '/');
+  if (!path.startsWith('/')) path = '/' + path;
+  const query = stripControlCharacters(search);
+  return query ? `${path}?${query}` : path;
+}
+
 /**
  * Runs the action POST protocol for one request: resolve the action
  * (named `?/name` map or bare `action` export), enforce the same-origin CSRF
@@ -211,7 +243,9 @@ export async function runActionProtocol(
   const prgParams = new URLSearchParams(url.search);
   for (const key of [...prgParams.keys()]) if (key.startsWith('/')) prgParams.delete(key);
   const search = prgParams.toString();
-  const prgTarget = url.pathname + (search ? '?' + search : '');
+  // One canonical same-origin target for BOTH channels: a pathname beginning
+  // with `//` would be protocol-relative in `Location` (open redirect).
+  const prgTarget = safeRedirectLocation(url.pathname, search);
 
   if (state.isFetch) {
     if (actionOutcome.kind === 'failure') {

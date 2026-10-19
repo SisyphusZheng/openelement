@@ -11,8 +11,16 @@
  * surface with pnpm, then builds it. The built dist/ + dist/server/ are
  * served by the starter's own `start` script during the Playwright run.
  *
+ * The scaffold is created under a scratch root OUTSIDE the repository
+ * (./paths.ts — the repository's .gitignore used to make the starter's own
+ * `oxlint` walk find zero files, so the quality gate could not exercise the
+ * real lifecycle; TPL-03 CI fix for run 39262312202). The root is created with
+ * `mkdtemp` (unique, never a fixed temp name — CodeQL js/insecure-temporary-file
+ * alerts 4242-4245) and recorded in the harness's pointer file so quality.ts
+ * and the Playwright lanes resolve the SAME tree from their own processes.
+ *
  * Usage:
- *   pnpm --dir tests/e2e/starter-smoke run setup   (build everything into work/)
+ *   pnpm --dir tests/e2e/starter-smoke run setup   (pack + scaffold + install + build)
  */
 
 import { readFile, writeFile } from 'node:fs/promises';
@@ -20,10 +28,11 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
 import { runStep } from '../../lib/qualify-harness/command-run.ts';
+import { createStarterSmokeWorkDir } from './paths.ts';
 
 const repoRoot = resolve(import.meta.dirname!, '..', '..', '..');
-const suiteDir = join(repoRoot, 'tests', 'e2e', 'starter-smoke');
-const workDir = join(suiteDir, 'work');
+/** This run's mkdtemp root (or the caller's STARTER_SMOKE_WORK_DIR verbatim). */
+const workDir = createStarterSmokeWorkDir();
 const appDir = join(workDir, 'my-blog');
 const depsDir = join(workDir, 'deps');
 
@@ -97,6 +106,37 @@ async function assertPackedCliPrintsCanonicalCommand(createCli: string): Promise
 }
 
 /**
+ * Pre-publish coverage of the documented bootstrap's npm initializer alias
+ * (T3). `npm create @openelement <name>` resolves `@openelement/create` from
+ * the REGISTRY, so before the release only the alias mapping is provable
+ * offline; the probe in tools/release/published-consumer-qualification.ts
+ * asserts that mapping against a cold npm cache, runs the packed candidate
+ * through the equivalent `npm exec --yes --package=<tarball> -- <bin>` form,
+ * and re-checks the packed CLI's printed usage. It lives in the release tool
+ * so the release workflow runs the SAME function through
+ * `--prepublish-alias` immediately before npm receives anything. The real
+ * `npm create @openelement@<version>` call runs post-publish in the same
+ * tool's consumer smoke.
+ */
+async function assertCreateInitializerAliasCoverage(createTarball: string): Promise<void> {
+  const probeUrl = pathToFileURL(
+    join(repoRoot, 'tools', 'release', 'published-consumer-qualification.ts'),
+  ).href;
+  const { probeCreateInitializerAlias } = (await import(probeUrl)) as {
+    probeCreateInitializerAlias: (options: { tarball: string; repoRoot?: string }) => Promise<{
+      aliasPackage: string;
+      usageLine: string;
+      version: string;
+    }>;
+  };
+  const evidence = await probeCreateInitializerAlias({ tarball: createTarball, repoRoot });
+  console.log(
+    `[starter-smoke setup] create initializer alias coverage passed: npm create @openelement -> ` +
+      `${evidence.aliasPackage} (offline mapping), packed usage "${evidence.usageLine}"`,
+  );
+}
+
+/**
  * Rewire the scaffolded starter's @openelement/* dependencies to the packed
  * current-SHA tarballs (B5, ADR-0161: dependency pins in package.json replace
  * the retired import-map rewrite). The starter's direct deps are element and
@@ -109,42 +149,82 @@ const STARTER_FRAMEWORK_PACKAGES = ['protocol', 'element', 'compiler', 'router']
 
 /**
  * The scaffold default is the ONE showcase template (#1530): no Tailwind
- * variant pair anymore — the starter ships platform CSS (tokens + recipes)
- * and the two showcase islands. The Vite+ toolchain form (alpha.14) replaces
- * the Vite devDependency with the catalog-managed tree: the manifest carries
- * `vite-plus: catalog:` and the workspace file points the whole vite tree at
- * the Vite+ core through the catalog + override pair. The Tailwind pins are
- * imported in-process from the create package's own source module (the same
- * pattern as the canonical-command check above).
+ * variant pair anymore — the starter ships the @theme token sheet, one `:host`
+ * box rule per component, and utility classes authored directly in the
+ * markup, plus the two showcase islands. The toolchain is the
+ * package-manager-neutral form (alpha15): the manifest PINS `vite` directly at
+ * the version the router itself resolves, carries no pnpm-only `catalog:` or
+ * `vite-plus` entry, and the scaffold ships no workspace file. The Tailwind
+ * pins are imported in-process from the create package's own source module
+ * (the same pattern as the canonical-command check above).
  */
 async function assertShowcaseStarter(manifestPath: string, starterDir: string): Promise<void> {
   const versionUrl = pathToFileURL(join(repoRoot, 'packages', 'create', 'src', 'version.ts')).href;
   const { TAILWIND_STARTER_PIN } = (await import(versionUrl)) as {
     TAILWIND_STARTER_PIN: string;
   };
-  const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
+  const manifestText = await readFile(manifestPath, 'utf8');
+  const manifest = JSON.parse(manifestText) as {
+    packageManager?: string;
     devDependencies: Record<string, string>;
     scripts: Record<string, string>;
   };
-  const vitePin = manifest.devDependencies.vite;
-  if (vitePin !== undefined) {
+  // The router manifest is the pin's authority: the generated project builds
+  // through the router's own Vite plugin, so both must resolve one vite. A
+  // range, a drift, or a missing entry is a second vite tree in the consumer.
+  const routerManifest = JSON.parse(
+    await readFile(join(repoRoot, 'packages', 'router', 'package.json'), 'utf8'),
+  ) as { dependencies: Record<string, string> };
+  const expectedVitePin = routerManifest.dependencies.vite;
+  // Fail closed on the authority itself: without an exact router pin the
+  // comparison below would silently accept a scaffold that dropped vite.
+  if (typeof expectedVitePin !== 'string' || !/^\d+\.\d+\.\d+/.test(expectedVitePin)) {
     throw new Error(
-      `[starter-smoke setup] the generated starter is not the Vite+ form: ` +
-        `devDependency vite=${vitePin} must be gone (the vite tree is catalog-managed)`,
+      `[starter-smoke setup] packages/router/package.json dependencies.vite is not an exact ` +
+        `pin (${expectedVitePin ?? '<missing>'}); the scaffold's vite contract has no authority ` +
+        'to compare against',
     );
   }
-  if (manifest.devDependencies['vite-plus'] !== 'catalog:') {
+  if (manifest.devDependencies.vite !== expectedVitePin) {
     throw new Error(
-      `[starter-smoke setup] the generated starter is not the Vite+ form: ` +
-        `devDependency vite-plus=${manifest.devDependencies['vite-plus'] ?? '<missing>'}, ` +
-        `expected catalog:`,
+      `[starter-smoke setup] the generated starter does not pin the router's vite: ` +
+        `devDependency vite=${manifest.devDependencies.vite ?? '<missing>'}, ` +
+        `expected ${expectedVitePin}`,
     );
   }
-  if (manifest.scripts.build !== 'oe build' || manifest.scripts.dev !== 'vp dev') {
+  // The Vite+ form is retired: a pnpm-only protocol in the shipped manifest
+  // would make the scaffold uninstallable under the other three managers.
+  if (manifest.devDependencies['vite-plus'] !== undefined) {
     throw new Error(
-      `[starter-smoke setup] the generated starter scripts are not the Vite+ form: ` +
-        `dev=${manifest.scripts.dev}, build=${manifest.scripts.build}`,
+      `[starter-smoke setup] the generated starter still declares the retired Vite+ ` +
+        `dependency: vite-plus=${manifest.devDependencies['vite-plus']}`,
     );
+  }
+  if (manifestText.includes('catalog:')) {
+    throw new Error(
+      '[starter-smoke setup] the generated starter manifest still carries a pnpm-only ' +
+        '`catalog:` specifier; the scaffold is package-manager neutral',
+    );
+  }
+  if (manifest.packageManager !== undefined) {
+    throw new Error(
+      `[starter-smoke setup] the generated starter pins a package manager ` +
+        `(packageManager=${manifest.packageManager}); the neutral scaffold declares none so the ` +
+        `user's first install decides`,
+    );
+  }
+  for (const [script, expected] of [
+    ['dev', 'oe dev'],
+    ['build', 'oe build'],
+    ['start', 'oe start'],
+  ] as const) {
+    if (manifest.scripts[script] !== expected) {
+      throw new Error(
+        `[starter-smoke setup] the generated starter script '${script}' is not the ` +
+          `package-manager-neutral form: ${manifest.scripts[script] ?? '<missing>'}, ` +
+          `expected ${expected}`,
+      );
+    }
   }
   // Tailwind-ON is the single scaffold default (owner ruling 2026-10-08 — one
   // default, no variant, no flag): both build-time pins must ride the packed
@@ -158,40 +238,42 @@ async function assertShowcaseStarter(manifestPath: string, starterDir: string): 
       );
     }
   }
-  const workspacePath = join(starterDir, 'pnpm-workspace.yaml');
-  if (!existsSync(workspacePath)) {
+  // The neutral scaffold ships NO pnpm-specific file. The overrides carrier
+  // the install below needs is written by THIS harness into its own scratch
+  // tree (writeHarnessOverrides) — a file here means the template regressed to
+  // the retired Vite+ catalog form.
+  if (existsSync(join(starterDir, 'pnpm-workspace.yaml'))) {
     throw new Error(
-      '[starter-smoke setup] the generated starter is missing pnpm-workspace.yaml ' +
-        '(the Vite+ catalog/override form ships it)',
+      '[starter-smoke setup] the generated starter ships a pnpm-workspace.yaml; the ' +
+        'package-manager-neutral scaffold must carry no pnpm-specific file (the harness ' +
+        'writes its own overrides carrier into the scratch tree instead)',
     );
   }
-  const workspace = await readFile(workspacePath, 'utf8');
-  for (const fragment of [
-    'npm:@voidzero-dev/vite-plus-core@1.1.0',
-    'vite-plus: 1.1.0',
-    'vite@*: "catalog:"',
-  ]) {
-    if (!workspace.includes(fragment)) {
-      throw new Error(
-        `[starter-smoke setup] the shipped pnpm-workspace.yaml is not the Vite+ form: ` +
-          `missing ${fragment}`,
-      );
-    }
-  }
-  for (const sheet of ['theme.css', 'recipes.css']) {
+  for (const sheet of ['theme.css']) {
     if (!existsSync(join(starterDir, 'app', 'styles', sheet))) {
       throw new Error(`[starter-smoke setup] the generated starter is missing app/styles/${sheet}`);
     }
   }
-  for (const island of ['my-counter.tsx', 'live-timer.tsx', 'app-shell.tsx']) {
+  for (const island of ['my-counter.tsx', 'live-timer.tsx']) {
     if (!existsSync(join(starterDir, 'app', 'islands', island))) {
       throw new Error(
         `[starter-smoke setup] the generated starter is missing the island module ` +
-          `app/islands/${island} (#1530; app-shell is the alpha.14 chrome convention)`,
+          `app/islands/${island} (#1530)`,
       );
     }
   }
-  console.log('[starter-smoke setup] starter is the showcase form, Vite+ toolchain, Tailwind-ON');
+  // The layout convention lives outside the islands directory: the module at
+  // app/layout.tsx registers under the app-layout tag.
+  if (!existsSync(join(starterDir, 'app', 'layout.tsx'))) {
+    throw new Error(
+      '[starter-smoke setup] the generated starter is missing the layout module ' +
+        'app/layout.tsx (the auto-registered layout convention)',
+    );
+  }
+  console.log(
+    `[starter-smoke setup] starter is the showcase form, package-manager neutral ` +
+      `(vite ${expectedVitePin}), Tailwind-ON`,
+  );
 }
 
 async function rewireToPackedTarballs(
@@ -218,37 +300,44 @@ async function rewireToPackedTarballs(
 }
 
 /**
- * pnpm 12 reads overrides from the workspace file, not package.json: the
- * starter's SHIPPED pnpm-workspace.yaml carries the Vite+ catalog/override
- * pair and the release-day exemptions — this step folds the file:// pins for
- * every framework package INTO that file (under its existing `overrides:`
- * key) so the TRANSITIVE workspace deps inside the element and router
- * tarballs (protocol, compiler — #1557) resolve to this checkout. The
- * shipped blocks stay verbatim: the smoke exercises the scaffold's own
- * workspace form, not a rebuilt one.
+ * The packed pinning lives HERE, in the harness's own scratch tree (owner
+ * decision, alpha15 option B): the shipped scaffold is package-manager
+ * neutral and carries no pnpm-workspace.yaml, so this step WRITES the
+ * overrides carrier it needs instead of folding pins into a shipped file.
+ *
+ * pnpm 12 reads overrides from the workspace file, not package.json, and the
+ * packed element/router tarballs carry TRANSITIVE workspace pins (protocol,
+ * compiler at the exact current version — #1557) that only this checkout's
+ * tarballs satisfy before release day. The file written here is the
+ * harness's own scratch state: it never ships, the scaffold's bytes stay
+ * untouched, and the app directory becomes its own workspace root exactly as
+ * the retired shipped file made it.
  */
-async function writeStarterOverrides(
-  workspacePath: string,
+async function writeHarnessOverrides(
+  appDir: string,
   tarballs: Record<(typeof PACKAGES)[number], string>,
 ): Promise<void> {
-  const yaml = await readFile(workspacePath, 'utf8');
   const pins = STARTER_FRAMEWORK_PACKAGES.map(
     (pkg) => `  "@openelement/${pkg}": ${pathToFileURL(tarballs[pkg]).href}`,
   );
-  const overridesKey = /^overrides:\n/m;
-  if (!overridesKey.test(yaml)) {
-    throw new Error(
-      '[starter-smoke setup] the shipped pnpm-workspace.yaml has no overrides block to ' +
-        'extend; the Vite+ scaffold form changed under this harness',
-    );
-  }
-  const merged = yaml.replace(overridesKey, `overrides:\n${pins.join('\n')}\n`);
-  await writeFile(workspacePath, merged);
+  const yaml = [
+    '# Written by tests/e2e/starter-smoke/setup.ts — harness-side pinning.',
+    '# NOT part of the scaffold: the generated starter ships no workspace file.',
+    'overrides:',
+    ...pins,
+    '',
+  ].join('\n');
+  await writeFile(join(appDir, 'pnpm-workspace.yaml'), yaml);
 }
 
 async function main(): Promise<void> {
+  // Re-initialize the harness-owned subdirectories: a stale `deps/` extraction
+  // or scaffold from an earlier run must never be qualified. With the env
+  // override the caller's root may already exist, so only the two directories
+  // this harness owns are removed — never the root itself.
+  rmSync(appDir, { recursive: true, force: true });
+  rmSync(depsDir, { recursive: true, force: true });
   mkdirSync(depsDir, { recursive: true });
-  if (existsSync(appDir)) rmSync(appDir, { recursive: true });
   // Pack fresh on every setup run: a stale tarball would silently qualify
   // yesterday's sources (one pack produces every retained tarball).
   await runStep('pnpm', ['--dir', 'tools/release', 'run', 'pack:dry-run'], { cwd: repoRoot });
@@ -257,6 +346,7 @@ async function main(): Promise<void> {
 
   const createCli = join(depsDir, 'create', 'src', 'cli.js');
   await assertPackedCliPrintsCanonicalCommand(createCli);
+  await assertCreateInitializerAliasCoverage(tarballs.create);
   // The packed CLI is node-hosted and prompt-free: a bare node spawn is the
   // whole contract (no host permission flags on the Node consumer surface).
   // --no-install: this harness rewires every framework dependency to this
@@ -277,8 +367,9 @@ async function main(): Promise<void> {
   // minimumReleaseAge policy, allowBuilds allowlist, root lockfile) governs
   // THIS checkout, not a consumer project that merely sits inside it. Its
   // overrides pin every framework package — transitive workspace deps of the
-  // packed tarballs included — to this checkout's tarballs.
-  await writeStarterOverrides(join(appDir, 'pnpm-workspace.yaml'), tarballs);
+  // packed tarballs included — to this checkout's tarballs. The carrier is
+  // the harness's own file: the scaffold ships none (asserted above).
+  await writeHarnessOverrides(appDir, tarballs);
 
   // --no-frozen-lockfile: CI runners imply frozen installs; the smoke's
   // file:// rewiring is exactly the manifest change a frozen install refuses.

@@ -20,11 +20,16 @@ const baseURL = `http://127.0.0.1:${PORT}`;
 export default defineConfig({
   testDir: '.',
   testMatch: '*.spec.ts',
+  // The dev-server acceptance has its own config + server (playwright.dev.config.ts).
+  testIgnore: 'shadow-tailwind-dev.spec.ts',
   // Serial by design (#1232): one fixture server owns one port, so
   // fullyParallel and workers agree on sequential execution.
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // N3: a qualified fixture gate must not absorb a flake. Retries turn a
+  // real regression into a green run with no record, and these gates have no
+  // flaky sidecar (site-E2E does); run once and report the failure.
+  retries: 0,
   workers: 1,
   // CI-visible reporting (#1232): 'github' annotates failures on the run.
   reporter: process.env.CI ? [['list'], ['github']] : 'list',

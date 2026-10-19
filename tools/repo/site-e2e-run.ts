@@ -31,13 +31,14 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import process from 'node:process';
-import { commandOutput } from './node-command.ts';
+import { spawnCommand } from './node-command.ts';
 import {
   auditSiteE2e,
   type PlaywrightReport,
   sha256Hex,
   SITE_E2E_PROJECTS,
   type SiteE2eResult,
+  classifyPlaywrightFailures,
   summarizePlaywrightReport,
 } from './site-e2e-result.ts';
 
@@ -92,7 +93,7 @@ export function checkRunnerArgs(args: readonly string[]): string | null {
 }
 
 async function gitHead(): Promise<string> {
-  const output = await commandOutput('git', {
+  const output = await spawnCommand('git', {
     args: ['rev-parse', 'HEAD'],
     cwd: repoRoot,
     stdout: 'piped',
@@ -121,7 +122,7 @@ async function main(): Promise<void> {
   await mkdir(artifactsDir, { recursive: true });
   await rm(reportPath).catch(() => undefined);
   // The Playwright CLI comes from the workspace install (www devDependencies).
-  const status = await commandOutput(join(repoRoot, 'node_modules', '.bin', 'playwright'), {
+  const status = await spawnCommand(join(repoRoot, 'node_modules', '.bin', 'playwright'), {
     args: [
       'test',
       '--config',
@@ -137,10 +138,12 @@ async function main(): Promise<void> {
   });
 
   let result: SiteE2eResult;
+  let failedTestClasses: string[] = [];
   const candidateSha = await gitHead();
   try {
     const reportBytes = await readFile(reportPath);
     const report = JSON.parse(new TextDecoder().decode(reportBytes)) as PlaywrightReport;
+    failedTestClasses = classifyPlaywrightFailures(report);
     const projects = summarizePlaywrightReport(report);
     const totals = { passed: 0, failed: 0, skipped: 0, flaky: 0 };
     for (const summary of Object.values(projects)) {
@@ -195,6 +198,13 @@ async function main(): Promise<void> {
 
   const failures = auditSiteE2e(result);
   if (!status.success) failures.unshift(`site-e2e: Playwright exited ${status.code}`);
+  // Read the failure kind from the report itself before the generic verdict:
+  // a test-ceiling timeout is an engine/probe timeout with a project and test
+  // name, not an assertion-shaped failure (review FR-05C, run 39216159302).
+  if (failedTestClasses.length > 0) {
+    console.error('site-e2e: failed test classification:');
+    for (const line of failedTestClasses) console.error(`- ${line}`);
+  }
   if (failures.length > 0) {
     console.error('site-e2e: candidate proof is not valid:');
     for (const failure of failures) console.error(`- ${failure}`);

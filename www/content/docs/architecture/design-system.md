@@ -1,6 +1,6 @@
 ---
 title: 'Design System'
-lede: 'The active site dogfood contract: audited Open Props tokens, retained UI primitives, product-art diagrams and full dark-mode parity. It is not a framework requirement.'
+lede: 'The site dogfood contract: audited Open Props tokens, retained UI primitives, product-art diagrams and full dark-mode parity. Not a framework requirement.'
 order: 15
 section: 'Reference'
 ---
@@ -26,13 +26,13 @@ Raw Open Props values stop at the audited token boundary; pages and primitives c
 
 ## The site dogfoods optional UI primitives
 
-Button, input, badge and card behavior stays reusable; brand and cinematic objects remain private to the website.
+Button, input, dialog, dropdown and code-block behavior stays reusable; brand and cinematic objects remain private to the website.
 
 ### Ownership chain
 
 - **Token** — surface, text, brand, focus, motion and elevation roles.
 - **Recipe** — interactive state, typography and material composition.
-- **Primitive** — ten reusable Web Components with tested semantics.
+- **Primitive** — {{UI_COMPONENT_COUNT}} reusable Web Components with tested semantics.
 
 ### Buttons
 

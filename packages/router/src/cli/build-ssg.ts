@@ -7,7 +7,7 @@
  * island paths.
  *
  * Library module: exports buildSSG(), invoked from closeBundle() in the
- * open:build plugin (the `pnpm build` task of a generated project runs the
+ * open:build plugin (the `oe build` task of a generated project runs the
  * unified multi-phase build). ctx parameter is required (no globalThis
  * fallback).
  */
@@ -27,6 +27,7 @@ import type {
 } from '../vite/framework.ts';
 import type { EntryDescriptor, IslandDecl, StaticComponentDecl } from '@openelement/protocol/ssg';
 import type { OpenElementBuildContext } from '../vite/build-context.ts';
+import { elementStyleLinksPlugin } from '../vite/internal/element-style-links.ts';
 import { findBuildWorkspaceRoot } from '../vite/workspace-alias.ts';
 import {
   buildEntryDescriptor,
@@ -50,6 +51,10 @@ import {
 import { clearStyleRequests, compiledElementPlugin } from '@openelement/compiler';
 import { ISLAND_ADMISSION } from '@openelement/protocol/island-admission';
 import { serverStyleAssetPlugin } from '../vite/internal/style-assets.ts';
+import {
+  createServerComponentSourceResolver,
+  serverComponentAdmissionTags,
+} from '../vite/internal/server-component-host.ts';
 import { normalizeViteAliases } from '../vite/alias-utils.ts';
 import {
   CHUNK_SIZE_WARNING_LIMIT_KB,
@@ -94,6 +99,60 @@ export function ssrBundleImportUrl(ssrBundlePath: string): string {
   return pathToFileURL(ssrBundlePath).href;
 }
 
+/**
+ * Finalize a pure-static build's output (#953). The build-time SSR bundle in
+ * \`dist/server\` must not survive a build that produced no request-time server
+ * entry (no \`renderIntent 'dynamic'\` route and no action): the directory is
+ * server code, and static hosting must never serve it. The removal therefore
+ * has to be verifiable, not assumed:
+ *
+ *   - the request-time entry (\`dist/server/index.js\`) keeps the directory as
+ *     deployable contract output and nothing is removed;
+ *   - an absent directory is reported as nothing-to-remove, never as a removal;
+ *   - a removal that raises, or that leaves the directory behind, fails the
+ *     build with the underlying error — a stale bundle the build claims to have
+ *     removed is exactly the state this boundary exists to prevent.
+ *
+ * @returns \`true\` only when the directory was present and is gone afterwards.
+ */
+export async function finalizePureStaticOutput(
+  ssrOutDir: string,
+  io: {
+    exists?: (path: string) => boolean;
+    remove?: (path: string) => Promise<void>;
+    info?: (message: string) => void;
+  } = {},
+): Promise<boolean> {
+  const exists = io.exists ?? existsSync;
+  const remove = io.remove ?? ((path: string) => rm(path, { recursive: true, force: true }));
+  const info = io.info ?? ((message: string) => log.info(message));
+  if (exists(join(ssrOutDir, 'index.js'))) return false;
+  if (!exists(ssrOutDir)) return false;
+  let removalError: unknown = null;
+  try {
+    await remove(ssrOutDir);
+  } catch (error) {
+    removalError = error;
+  }
+  if (exists(ssrOutDir)) {
+    const cause =
+      removalError instanceof Error
+        ? removalError
+        : new Error(
+            removalError === null
+              ? 'the directory still exists after fs.rm(recursive, force)'
+              : String(removalError),
+          );
+    throw new SsrRenderError(
+      'pure-static build: the build-time SSR bundle (dist/server) could not be removed; ' +
+        'server code must never ship to static hosting',
+      cause,
+    );
+  }
+  info('Pure-static build: removed build-time SSR bundle (dist/server)');
+  return true;
+}
+
 const VIRTUAL_SSG_ENTRY_ID = 'virtual:open-ssg-entry';
 const RESOLVED_SSG_ENTRY_ID = '\0' + VIRTUAL_SSG_ENTRY_ID;
 interface BuildSSGOptions {
@@ -108,6 +167,14 @@ interface BuildSSGOptions {
   islandFiles?: string[];
   islandMeta?: Record<string, Partial<import('@openelement/protocol/ssg').IslandDecl>>;
   staticComponents?: StaticComponentDecl[];
+  /**
+   * The build's own module resolver (`this.resolve`), used only when
+   * `staticComponents` was not supplied by Phase 1: the discovery walk needs the
+   * bundler's reachability (relative, `package.json` imports, alias), and
+   * without it the scan fails closed rather than falling back to a narrower
+   * walk of its own.
+   */
+  resolve?: import('../vite/internal/module-graph-walk.ts').ModuleWalkResolver;
   packageManifests?: OpenElementPackageManifest[];
   /** CEM-derived compatibility classifications from Phase 1 auto-detection. */
   cemClassifications?: CompatibilityClassification[];
@@ -117,7 +184,7 @@ interface BuildSSGOptions {
   headExtras?: string;
   allowHeadExtrasScripts?: boolean;
   html?: { lang?: string; title?: string };
-  appShell?: FrameworkOptions['appShell'];
+  layout?: FrameworkOptions['layout'];
   layouts?: FrameworkOptions['layouts'];
   upgradeStrategy?: HydrationStrategy;
   /** Page renderer (#1339). Defaults to ctx.options.renderer. */
@@ -164,7 +231,7 @@ interface SsgEntryDescriptorInputs {
   allowHeadExtrasScripts?: boolean;
   html?: { lang?: string; title?: string };
   upgradeStrategy: HydrationStrategy;
-  appShell?: FrameworkOptions['appShell'];
+  layout?: FrameworkOptions['layout'];
   layouts?: FrameworkOptions['layouts'];
   /** Page renderer (#1339) — threaded from FrameworkOptions. */
   renderer?: 'native' | 'lit';
@@ -206,7 +273,7 @@ export function buildSsgEntryDescriptor(
     allowHeadExtrasScripts: inputs.allowHeadExtrasScripts,
     html: inputs.html,
     upgradeStrategy: inputs.upgradeStrategy,
-    appShell: inputs.appShell,
+    layout: inputs.layout,
     layouts: inputs.layouts,
     renderer: inputs.renderer,
     i18n: inputs.i18n,
@@ -223,7 +290,7 @@ async function buildSSG(
   const outDir = options.outDir || ctx.phase3.outDir || DEFAULT_OUT_DIR;
   const routesDir = options.routesDir || ctx.phase3.routesDir || DEFAULT_ROUTES_DIR;
   const islandsDir = options.islandsDir || ctx.phase3.islandsDir || DEFAULT_ISLANDS_DIR;
-  const appShell = options.appShell ?? ctx.phase3.appShell;
+  const layout = options.layout ?? ctx.phase3.layout;
   const layouts = options.layouts ?? ctx.phase3.layouts;
   const renderer = options.renderer ?? ctx.options.renderer ?? 'native';
 
@@ -247,6 +314,19 @@ async function buildSSG(
   if (options.viewTransition === undefined) options.viewTransition = ctx.phase3.viewTransition;
   if (!options.speculation) options.speculation = ctx.phase3.speculation || undefined;
 
+  // The component stylesheet URL (alpha15 S lane): Phase 2 emitted one shared,
+  // content-addressed asset for the compiler's shadow-root class candidates,
+  // and its public address is base-joined exactly like the client asset
+  // manifest's URLs — the DSD `<link>` and the client fetch adapter therefore
+  // name one resource. Empty when the app declares no Tailwind entry or no
+  // shadow candidates (the element seam then folds to no link).
+  const componentStyleSheetUrls = ctx.componentStyleSheet
+    ? [`${options.base}client/${ctx.componentStyleSheet.fileName}`]
+    : [];
+  if (componentStyleSheetUrls.length > 0) {
+    log.info(`Component stylesheet linked into DSD: ${componentStyleSheetUrls.join(', ')}`);
+  }
+
   // Generate SSG entry code (all statically imported — no cycle with the
   // internal/ssg barrel, #847).
   const routes =
@@ -257,12 +337,22 @@ async function buildSSG(
     }));
   const staticComponents =
     options.staticComponents ??
-    (await scanStaticComponents({
-      root,
-      routesDir,
-      islandsDir,
-      routes,
-    }));
+    (await (async () => {
+      if (options.resolve === undefined) {
+        // Reachability must be the BUNDLER's; see BuildSSGOptions.resolve.
+        throw new Error(
+          '[openElement] buildSSG needs staticComponents (Phase 1) or a resolver to ' +
+            'discover them with the bundler’s own reachability',
+        );
+      }
+      return await scanStaticComponents({
+        root,
+        routesDir,
+        islandsDir,
+        routes,
+        resolve: options.resolve,
+      });
+    })());
 
   const islandsRoot = join(root, islandsDir);
   const ssgIslandFiles = options.islandFiles ?? (await scanIslands(islandsRoot));
@@ -294,7 +384,7 @@ async function buildSSG(
       allowHeadExtrasScripts: options.allowHeadExtrasScripts,
       html: options.html,
       upgradeStrategy: options.upgradeStrategy || 'idle',
-      appShell,
+      layout,
       layouts,
       renderer,
       i18n: ctx.plugins.i18nOptions ?? undefined,
@@ -381,7 +471,7 @@ async function buildSSG(
           output: {
             format: 'esm',
             // customElements polyfill must run before ESM imports.
-            // Uses Map-backed define()/get(); renderDsdByName() looks up
+            // Uses Map-backed define()/get(); renderToStringByName() looks up
             // components via customElements.get(tagName) during SSG rendering.
             // The HTMLElement stub is self-contained in @openelement/element.
             // #1339: the lit renderer installs the @lit-labs/ssr DOM shim as
@@ -412,6 +502,11 @@ async function buildSSG(
         },
       },
       plugins: [
+        // The component stylesheet URLs (alpha15 S lane): the generated entry
+        // imports this module, which hands the emitted asset addresses to the
+        // element runtime before the render pass (and at request-time startup,
+        // because the module is bundled into dist/server/index.js).
+        elementStyleLinksPlugin(componentStyleSheetUrls),
         // MDX route support must mirror the outer plugin list (plugin.ts),
         // otherwise .mdx routes fail Phase 3 parse (the oxc transform treats
         // them as JS).
@@ -424,7 +519,10 @@ async function buildSSG(
         // Keep SSR lowering identical to the outer Vite and client builds;
         // this inline build has its own plugin list. The compiled modules
         // here register the same `.css` style edges the client build
-        // intercepted — the SSR half of the protocol.
+        // intercepted — the SSR half of the protocol. The server function
+        // component lane (alpha15) rides the same transform: nested
+        // composition resolves through the host source resolver and admitted
+        // component tags route nested hosts through `__ssr`.
         compiledElementPlugin({
           // Linked workspace packages sit outside the project root; without the
           // workspace anchor their absolute ids would land in the source maps.
@@ -432,12 +530,28 @@ async function buildSSG(
           // Route/island sources carry the island delivery policy statement;
           // the compiler admits it only through the injected descriptor.
           staticSidecars: [ISLAND_ADMISSION],
+          resolveServerComponentModule: createServerComponentSourceResolver({
+            root,
+            workspaceRoot: findBuildWorkspaceRoot(root) ?? undefined,
+          }),
+          // The union the entry's SSR registry carries — renderable islands
+          // plus static compiled components (the same union
+          // entry-orchestrator binds as the render's ssrRenderableTags), so a
+          // function page's nested host rides the expansion a class page's
+          // does.
+          compiledTags: serverComponentAdmissionTags(
+            staticComponents,
+            ssgDescriptor.ssrAdmissionPlan.renderableTags,
+          ),
         }),
         // serves the server half of the style edge protocol — the
         // sheet adapter embeds the authored .css file's bytes, the same bytes
         // the client build emitted content-hashed, so the DSD text and the
         // client sheet cannot drift.
-        serverStyleAssetPlugin(),
+        serverStyleAssetPlugin({
+          files: ctx.clientStyleAssetFiles,
+          base: options.base ?? '/',
+        }),
         // Virtual SSG entry module
         {
           name: 'open:virtual-ssg-entry',
@@ -533,10 +647,9 @@ async function buildSSG(
     // action (hybrid static-GET pages still need the server for POST); for a
     // pure-static project nothing under dist/server is deployable, so remove
     // the directory instead of shipping the server bundle to static hosting.
-    if (!existsSync(join(ssrOutDir, 'index.js'))) {
-      await rm(ssrOutDir, { recursive: true, force: true }).catch(() => {});
-      log.info('Pure-static build: removed build-time SSR bundle (dist/server)');
-    }
+    // finalizePureStaticOutput() is fail-closed: it logs the removal only when
+    // the directory is verifiably gone and fails the build otherwise.
+    await finalizePureStaticOutput(ssrOutDir);
 
     log.info('Static site generated -> ' + join(root, outDir));
   } catch (err) {

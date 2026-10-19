@@ -2,7 +2,7 @@ import type { PartProgram } from '@openelement/protocol/part-program';
 
 export const STREAM_STATE_KEY = Symbol.for('openelement.stream-state.v1');
 
-export interface StreamPropertySeed {
+interface StreamPropertySeed {
   state: 'resolved' | 'pending' | 'missing';
   type: string;
   value?: unknown;

@@ -38,7 +38,10 @@ test('localeSwitchPath degrades unresolved route params to the static ancestor',
   expect(localeSwitchPath('/zh/blog/:slug', 'zh', ['en', 'zh'], 'en')).toEqual('/blog');
   // A leading param collapses to the locale home.
   expect(localeSwitchPath('/:slug', 'en', ['en', 'zh'], 'en')).toEqual('/zh');
-  expect(localeSwitchScopeNote('zh')).toEqual('Switch to English');
+  // The sr-only note completes the target-locale label in the READER's language
+  // (the branches were swapped: a zh page carried an English sentence).
+  expect(localeSwitchScopeNote('zh')).toContain('英文版本为全站原文');
+  expect(localeSwitchScopeNote('en')).toContain('The Chinese edition covers');
 });
 
 test('open-layout navigation filters only the active section family', () => {
@@ -109,7 +112,7 @@ test('buildSidebarRows flattens the filtered section tree into heading and link 
   // Heading rows carry no link affordance; link rows carry no heading.
   expect(rows[0].href).toEqual(false);
   expect(rows[2].heading).toEqual('');
-  // Row keys are unique and stable for the keyed Region.
+  // Row keys are unique and stable for the keyed Block.
   expect(new Set(rows.map((row) => row.key)).size).toEqual(rows.length);
 });
 

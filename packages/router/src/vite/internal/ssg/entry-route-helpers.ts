@@ -73,9 +73,23 @@ export function renderMatchingRenderersFn(lines: string[], renderers: RendererDe
  * through the setter seam) to the resolver, so the resolved document carries
  * them and `documentWrapOptionsLines` reads only `__doc` (#1471: the SSG
  * render pass embeds the final script tag through the same seam).
+ *
+ * `__documentStyles` is emitted beside it (alpha15 S lane, S-C1.2) because the
+ * two are the same lifespan: both are per-render products of the resolved
+ * document, and every call site that wraps a document with
+ * `documentWrapOptionsLines` already has `__doc` in scope. The page render
+ * reports its light-root components' external sheets into the collection; the
+ * wrap declares them in the head.
  */
-export function documentResolutionSetupLine(pageExpr: string, contextExpr: string): string {
-  return `const __doc = __resolvePageDocument(${pageExpr}.head, ${contextExpr}, __clientScriptDescriptors());`;
+export function documentResolutionSetupLines(
+  pageExpr: string,
+  contextExpr: string,
+  indent: string,
+): string[] {
+  return [
+    `${indent}const __doc = __resolvePageDocument(${pageExpr}.head, ${contextExpr}, __clientScriptDescriptors());`,
+    `${indent}const __documentStyles = createDocumentStyleResources();`,
+  ];
 }
 
 /**
@@ -83,22 +97,42 @@ export function documentResolutionSetupLine(pageExpr: string, contextExpr: strin
  * setup: ONE context object per render feeds both the props projector and the
  * head resolver, so the Document never sees a divergent view of the render.
  * Shared by the page/action handlers and the styled-404 handler.
+ *
+ * The locale is derived ONLY for a project that declared i18n: `__locales`
+ * is `openElement({ i18n })`'s declaration, and on a single-locale site
+ * there is no resolved locale to derive. The old unconditional form fell
+ * back to `getDefaultLocale()` ('en' even with no i18n) and fed that into
+ * the resolved Document's `lang`, which then beat the configured
+ * `head.lang` in every generated wrap expression
+ * (`lang: __doc.lang || <configured>`), making `head.lang` a dead fallback
+ * on request-time pages. Leaving the context locale undefined keeps
+ * `ResolvedDocument.lang` undefined unless a locale is actually derived, so
+ * the configured document language wins on single-locale sites and an i18n
+ * locale still overrides it (the document-language decision record).
  */
 export function requestTimePageContextLines(
   lines: string[],
   options: { dataExpr: string; actionDataExpr: string; indent: string },
 ): void {
   lines.push(
-    `${options.indent}const __pageContext = { data: ${options.dataExpr}, actionData: ${options.actionDataExpr}, params: __params, request: c.req.raw, locale: __localeFromPath(__locales, c.req.path, __getDefaultLocale()), route: __routeContext, meta: __routeMetaValue };`,
+    `${options.indent}const __pageContext = { data: ${options.dataExpr}, actionData: ${options.actionDataExpr}, params: __params, request: c.req.raw, locale: __locales.length > 0 ? __localeFromPath(__locales, c.req.path, __getDefaultLocale()) : undefined, route: __routeContext, meta: __routeMetaValue };`,
   );
-  lines.push(`${options.indent}${documentResolutionSetupLine('__page', '__pageContext')}`);
+  lines.push(...documentResolutionSetupLines('__page', '__pageContext', options.indent));
 }
 
 /** wrapInDocument() options object shared by page handlers and the SSG renderRoute. */
 export function documentWrapOptionsLines(options: {
   /** Expression yielding the title, reading the resolved document, e.g. `title || __doc.title || "Default"`. */
   titleExpr: string;
-  /** Expression yielding the document language, reading the resolved document. */
+  /**
+   * Expression yielding the document language, reading the resolved document.
+   * Every call site spells the same three-tier precedence: an explicit render
+   * option (`lang`, used by the SSG dynamic/i18n expansion) → the resolved
+   * locale (`__doc.lang`) → the configured document `head.lang` fallback.
+   * `__doc.lang` is only present when a locale was actually derived (a
+   * declared i18n project), so the configured fallback is real on
+   * single-locale sites (the document-language decision record).
+   */
   langExpr: string;
   headExtrasExpr: string;
   allowHeadExtrasScripts: boolean;
@@ -118,6 +152,10 @@ export function documentWrapOptionsLines(options: {
     // (request-time handlers AND the SSG render pass) serializes the final
     // script tags from the same resolved field.
     `scripts: __doc.clientScripts || [],`,
+    // alpha15 S lane (S-C1.2): the light-root component stylesheets this
+    // render discovered, declared in the document head beside the site's own
+    // document stylesheet.
+    `styleLinks: __documentStyles.links,`,
   ];
   if (options.cspNonce) lines.push(`cspNonce: c.get('cspNonce'),`);
   return lines;

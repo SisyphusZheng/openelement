@@ -11,6 +11,8 @@
  */
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { observeWithTimeoutClassification } from './helpers.ts';
+import { HOME_AXE_EXCLUSIONS } from './axe-home-exclusions.ts';
 
 /** Routes the gate scans: one per page template, plus the zh variant. */
 const SCANNED_ROUTES = ['/', '/guide/getting-started', '/docs', '/reference'] as const;
@@ -19,28 +21,20 @@ const SCANNED_ROUTES = ['/', '/guide/getting-started', '/docs', '/reference'] as
  * Node exclusions per route (selector under the route page), each with the
  * reason the page layer cannot own the finding. Kept minimal by design: an
  * exclusion here is a standing accessibility decision.
+ *
+ * The home list lives in accessibility-coverage.spec.ts (HOME_AXE_EXCLUSIONS)
+ * because the T10 sweep scans `/` AND `/zh` — one list, two consumers, no drift.
+ * What the T10 audit corrected is the reason text, not the list: the suppressed
+ * `color-contrast` nodes come from the entry-opacity snapshot (0.12) AND from
+ * `.flood`'s pseudo-element backdrop, which axe cannot composite — and the
+ * claimed coverage by the WCAG AA pair test in accessibility-performance.spec.ts
+ * was wrong (that test measures the reading shell's code blocks and the mobile
+ * rail summary, not the home scenes). The settled numbers for the scenes whose
+ * backdrop is resolvable are in the T10 register §2.9.2; the pseudo-element
+ * regions still await a pixel-truth check (register R5b).
  */
 const EXCLUSIONS: Partial<Record<(typeof SCANNED_ROUTES)[number], string[]>> = {
-  '/': [
-    // Decorative outlined scene numerals: transparent fill over a text-stroke
-    // outline — a stroke has no contrast semantics — and aria-hidden.
-    '.scene-outlined',
-    // The scroll-reveal targets (page-home-styles, `scene-in` under
-    // `@supports (animation-timeline: view())`). A view() timeline is a
-    // function of scroll position, so any static whole-page snapshot reads
-    // sub-fold copy at its entry opacity (0.12) — the final, reading state is
-    // full opacity, and the reduced-motion media query disables the reveal
-    // entirely. axe's snapshot has no honest measurement of this class; the
-    // settled prose contrast is owned by the WCAG AA pair test in
-    // accessibility-performance.spec.ts.
-    '.scene-copy',
-    '.scene-art',
-    '.scene > h2',
-    '.flood-panel',
-    '.flood-arrow',
-    '.strategy',
-    '.output-row',
-  ],
+  '/': [...HOME_AXE_EXCLUSIONS],
 };
 
 /**
@@ -72,15 +66,22 @@ test.describe('Accessibility gate (axe)', () => {
       test.setTimeout(route === '/reference' ? 420_000 : 120_000);
       await page.goto(route);
       // Let hydration settle: the islands upgrade synchronously after the
-      // module loads, and the scan should see the page a reader sees.
-      await page.waitForLoadState('networkidle');
-      await scrollThroughAndSettle(page);
+      // module loads, and the scan should see the page a reader sees. A
+      // ceiling that expires in the load/settle or the scan is an engine/probe
+      // timeout, never an assertion failure (FR-05C).
+      await observeWithTimeoutClassification({ phase: 'axe-gate', url: route }, async () => {
+        await page.waitForLoadState('networkidle');
+        await scrollThroughAndSettle(page);
+      });
 
       let builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']);
       for (const selector of EXCLUSIONS[route] ?? []) {
         builder = builder.exclude(selector);
       }
-      const { violations } = await builder.analyze();
+      const { violations } = await observeWithTimeoutClassification(
+        { phase: 'axe-gate', url: route },
+        () => builder.analyze(),
+      );
 
       const report = violations.map((violation) => ({
         id: violation.id,

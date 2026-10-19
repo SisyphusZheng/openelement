@@ -16,6 +16,7 @@
 import matter from 'gray-matter';
 import { marked } from 'marked';
 import { createInstallCommand } from '@openelement/create/install-command';
+import { quickstartCommandCount } from './quickstart.ts';
 import { readFile, readdir } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -181,13 +182,19 @@ export function collectionFieldTypeScript(value: CollectionFieldType | Collectio
  * text. Read once per process and fail-closed: a placeholder must never
  * silently render as a stale or empty number.
  *
+ * `{{UI_COMPONENT_COUNT}}` is the `@openelement/ui` component count, read from
+ * the package's own generated manifest (packages/ui/src/generated-manifest.json
+ * `declarations`): the design-system page's "ten reusable Web Components"
+ * outlived the retirement sweep that left six, and a count with a manifest
+ * owner cannot drift again.
+ *
  * Resolution lives in the content loader — the one seam every consumer of
  * authored content goes through (the data generator, nav/sitemap/RSS emitters,
  * and the content tests) — so a placeholder can never reach a generated module,
- * an emitted artifact, or a test. Both strings have exactly one owner
- * (packages/create/src/install-command.ts and the release record), and
- * www/tools/generate-install-command.ts fails the build when a display copy of
- * the command drifts from it.
+ * an emitted artifact, or a test. Each string has exactly one owner
+ * (packages/create/src/install-command.ts, the release record, and the ui
+ * manifest), and www/tools/generate-install-command.ts fails the build when a
+ * display copy of the command drifts from it.
  */
 function releasePackageCount(): number {
   const path = fileURLToPath(new URL('../../docs/release/release-state.json', import.meta.url));
@@ -201,9 +208,47 @@ function releasePackageCount(): number {
   return parsed.packages.length;
 }
 
+/**
+ * The `@openelement/ui` component surface: the declarations the package's own
+ * generated manifest carries. It is the ONE count site copy may print — the
+ * design-system page claimed "ten reusable Web Components" while the manifest
+ * declared six (open-button, open-input, open-theme-toggle, open-code-block,
+ * open-dialog, open-dropdown), and a hand-written number cannot be checked
+ * against anything. Fail closed: a manifest without declarations throws
+ * instead of rendering a zero.
+ */
+function uiComponentCount(): number {
+  const path = fileURLToPath(
+    new URL('../../packages/ui/src/generated-manifest.json', import.meta.url),
+  );
+  const parsed = JSON.parse(readFileSync(path, 'utf8')) as {
+    packageName?: unknown;
+    declarations?: unknown;
+  };
+  if (parsed.packageName !== '@openelement/ui' || !Array.isArray(parsed.declarations)) {
+    throw new Error(
+      `content placeholders: ${path} is not the ui package manifest — ` +
+        'the component count cannot be derived.',
+    );
+  }
+  if (parsed.declarations.length === 0) {
+    throw new Error(
+      `content placeholders: ${path} declares no components — ` +
+        'the component count cannot be derived.',
+    );
+  }
+  return parsed.declarations.length;
+}
+
 export const CONTENT_PLACEHOLDERS: Readonly<Record<string, string>> = {
   '{{INSTALL_COMMAND}}': createInstallCommand('my-app'),
   '{{PACKAGE_COUNT}}': String(releasePackageCount()),
+  '{{UI_COMPONENT_COUNT}}': String(uiComponentCount()),
+  // The quickstart sequence's length, parsed from getting-started's Install
+  // fence (lib/quickstart.ts, whose first step is the canonical install command
+  // above): the guides' count sentences read it instead of restating it, and
+  // check:install-command holds the fence's own prose count to the same number.
+  '{{QUICKSTART_COMMAND_COUNT}}': String(quickstartCommandCount()),
 };
 
 function resolveContentPlaceholders(text: string): string {

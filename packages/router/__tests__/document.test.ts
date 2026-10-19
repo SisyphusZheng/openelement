@@ -91,6 +91,12 @@ test('resolvePageDocument: an undefined head resolves to an empty document carry
   expect(resolvePageDocument(undefined, ctx())).toEqual({ links: [] });
 });
 
+test('resolvePageDocument: an empty locale never becomes the document language', () => {
+  // ADR-0172: the seam stays undefined unless a locale is actually derived;
+  // '' is not a locale, so the configured head.lang fallback keeps working.
+  expect(resolvePageDocument(undefined, ctx({ locale: '' }))).toEqual({ links: [] });
+});
+
 test('resolvePageDocument: malformed heads fail loudly', () => {
   const cases: Array<[string, PageHead | (() => never)]> = [
     ['resolver returning null', (() => null) as never],
@@ -318,4 +324,118 @@ test('resolvePageDocument + wrapInDocument: the resolved JSON-LD reaches <head> 
     '@type': 'BlogPosting',
     headline: 'Notes</script><script>alert(1)</script>',
   });
+});
+
+// ─── Route-resolved raw fragment allowlist (alpha15 security lane S5) ───
+//
+// `dangerouslyHeadFragments` is the only raw-head channel reachable from
+// request data (loader output, params, query), and it is concatenated into
+// `<head>` as authored bytes. The two legacy predicates (script regex + style
+// scan) let `</head>`, `<base>`, comments and an EOF-terminated `<script`
+// through, so the route channel now admits ONLY top-level meta/link/style
+// elements plus inter-element whitespace.
+
+test('resolvePageDocument: dangerouslyHeadFragments rejects markup that can leave the head', () => {
+  const escapes = [
+    '</head><body><h1>pwned</h1>',
+    '<base href="https://evil.example/">',
+    '<!-- <meta charset="utf-8">',
+    '<script',
+    '<iframe src="/x"></iframe>',
+    '<object data="/x"></object>',
+    '<template><meta charset="utf-8"></template>',
+    '<svg><g></g></svg>',
+    '<math><mtext></mtext></math>',
+    '<div>not a head element</div>',
+    'plain text between tags',
+    '<meta charset="utf-8"',
+  ];
+  for (const fragment of escapes) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ dangerouslyHeadFragments: [fragment] }, ctx()),
+      OpenElementError,
+      'head.dangerouslyHeadFragments',
+    );
+  }
+});
+
+test('resolvePageDocument: dangerouslyHeadFragments accepts the meta/link/style allowlist', () => {
+  const document = resolvePageDocument(
+    {
+      dangerouslyHeadFragments: [
+        '  <meta property="og:title" content="Notes">\n',
+        '<link rel="preload" href="/font.woff2" as="font" crossorigin>',
+        '<style media="print">body { color: black; }</style>',
+        ' <meta name="x" content="<not markup>"> ',
+      ],
+    },
+    ctx(),
+  );
+  expect(document.dangerouslyHeadFragments?.length).toEqual(4);
+});
+
+// ── JSON-model normalization and optional-field branches ──────────────────
+//
+// The structured-data copy is fail-closed for values JSON cannot carry, and
+// the optional head fields must round-trip whether present or absent.
+
+test('structured data copies null and finite numbers, and nested documents keep them', () => {
+  const document = resolvePageDocument(
+    {
+      structuredData: [{ '@type': 'Thing', missing: null, count: 0, ok: true }],
+    },
+    ctx(),
+  );
+  expect(document.structuredData).toEqual([
+    { '@type': 'Thing', missing: null, count: 0, ok: true },
+  ]);
+});
+
+test('structured data rejects non-finite numbers', () => {
+  for (const value of [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY]) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ structuredData: [{ value }] }, ctx()),
+      OpenElementError,
+      'must be a finite number',
+    );
+  }
+});
+
+test('structured data rejects non-document entries with a named shape', () => {
+  for (const [entry, shape] of [
+    [null, 'null'],
+    [[], 'an array'],
+    [42, 'number'],
+  ] as const) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ structuredData: [entry] }, ctx()),
+      OpenElementError,
+      `got ${shape}`,
+    );
+  }
+});
+
+test('alternates reject a non-object entry with the index named', () => {
+  for (const alternate of [null, [], 'https://example.test/x']) {
+    assertThrowsIncludes(
+      () => resolvePageDocument({ alternates: [alternate] as never }, ctx()),
+      OpenElementError,
+      'head.alternates[0] must be an object with an href',
+    );
+  }
+});
+
+test('an alternate without hreflang round-trips without the optional field', () => {
+  const document = resolvePageDocument(
+    { alternates: [{ href: 'https://example.test/en' }] },
+    ctx(),
+  );
+  expect(document.alternates).toEqual([{ href: 'https://example.test/en' }]);
+  expect(document.links).toEqual([{ rel: 'alternate', href: 'https://example.test/en' }]);
+});
+
+test('an empty clientScripts list is normalized away', () => {
+  const document = resolvePageDocument({ clientScripts: [] }, ctx());
+  expect(document.clientScripts).toEqual(undefined);
+  expect('clientScripts' in document).toEqual(false);
 });

@@ -1,6 +1,6 @@
 ---
 title: 'Current Architecture'
-lede: 'OpenElement is a Web Components-native, static-first application framework. Custom Elements are the durable component contract; compiled JSX classes (`@element`) are the authoring model; Vite and Nitro are the official build and output path.'
+lede: 'Web Components-native, static-first framework: Custom Elements are the durable contract, compiled JSX the authoring model, Vite and Nitro the build path.'
 navLabel: 'Architecture'
 order: 10
 ---
@@ -13,15 +13,17 @@ Dependency direction — consumers point at what they use.
 
 <figure class="diagram" aria-hidden="true"><svg viewBox="0 0 144 88" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="22" cy="20" r="9"/><circle cx="122" cy="20" r="9"/><circle cx="72" cy="74" r="9"/><path d="M31 26l29 9"/><path d="M113 26l-29 9"/><path d="M72 52v13"/><g style="color:var(--color-primary)"><circle cx="72" cy="40" r="12"/><circle cx="72" cy="40" r="3.5" fill="currentColor" stroke="none"/></g></svg></figure>
 
-| Package                | Role                          | Depends on                  |
-| ---------------------- | ----------------------------- | --------------------------- |
-| `@openelement/element` | runtime · zero framework deps | —                           |
-| `@openelement/router`  | pages · routing · build       | uses `@openelement/element` |
-| `@openelement/ui`      | optional primitives           | optional                    |
-| `@openelement/create`  | starter · build time          | —                           |
+| Package                  | Role                  | Depends on                                                    |
+| ------------------------ | --------------------- | ------------------------------------------------------------- |
+| `@openelement/protocol`  | contracts · zero deps | —                                                             |
+| `@openelement/element`   | runtime               | uses `@openelement/protocol`                                 |
+| `@openelement/compiler`  | build-time compiler   | uses `@openelement/protocol`; TypeScript is its only host dep |
+| `@openelement/router`    | pages · routing · build | uses `@openelement/element`, `@openelement/compiler`        |
+| `@openelement/ui`        | optional primitives   | optional `@openelement/element`                              |
+| `@openelement/create`    | starter · build time  | —                                                             |
 
-> Retired: `core` · `signal` · `protocol` · `content` · `ssg` · `app` ·
-> `adapter-vite` · `app/preact` · `app/spa`.
+> Retired: `core` · `signal` · `content` · `ssg` · `app` · `adapter-vite` ·
+> `app/preact` · `app/spa`.
 
 ## Deep modules hide implementation complexity.
 
@@ -30,9 +32,11 @@ build-phase details stay internal until real variation proves a public seam.
 
 | Layer       | Package                                           | Scope                                                                                            |
 | ----------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| contracts   | `@openelement/protocol`                           | Shared contract types both products build on: Part Program IR, error dialect, diagnostics.        |
 | element     | `@openelement/element`                            | One authoring surface for Custom Elements, JSX, DSD, hydration and signals.                      |
-| application | `@openelement/router`                             | Pages, routes, islands and render semantics for complete applications.                           |
-| build       | `@openelement/router`                             | Vite integration, static generation and deployable Nitro output behind one build boundary.       |
+| build       | `@openelement/compiler`                           | TSX-to-Part-Program compilation behind the compiler's Vite seam; the only TypeScript host dep.    |
+| application | `@openelement/router`                             | Pages, routes, islands, render semantics and build orchestration for complete applications.      |
+| output      | `@openelement/router`                             | Vite integration, static generation and deployable Nitro output behind one build boundary.       |
 | adoption    | `@openelement/create`, optional `@openelement/ui` | Starter-first adoption and optional primitives; neither exposes retired implementation packages. |
 
 ## Web Components are the application architecture.

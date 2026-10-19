@@ -18,11 +18,11 @@ export function attachFormInternals(
   return undefined;
 }
 
-export interface FormAssociatedHost {
+interface FormAssociatedHost {
   attachInternals?: () => ElementInternals;
 }
 
-export interface FormAssociatedConstructor {
+interface FormAssociatedConstructor {
   formAssociated?: boolean;
 }
 
@@ -84,6 +84,3 @@ export class ElementFormController {
     this.#internals = undefined;
   }
 }
-
-/** Short internal name used by the compiled element kernel. */
-export const FormController = ElementFormController;

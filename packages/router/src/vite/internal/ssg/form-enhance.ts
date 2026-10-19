@@ -337,11 +337,23 @@ export function createFormEnhance(deps: FormEnhanceDeps): FormEnhance {
       });
   }
 
+  /**
+   * The ready-time scan is the moment this layer is live for the document:
+   * every shadow root present at load time has its interceptor attached.
+   * Announce it — `open:ready` is NOT this signal: it fires per island
+   * strategy bucket that has a host on the page (#1544/B2), so a page with
+   * enhanced forms and no island host used to have no observable way to know
+   * the layer was up.
+   */
+  const readyScan = (): void => {
+    scanSubmitRoots(doc);
+    doc.dispatchEvent(new win.CustomEvent('open:enhance-ready'));
+  };
   attachSubmit(doc);
   if (doc.readyState === 'loading') {
-    doc.addEventListener('DOMContentLoaded', () => scanSubmitRoots(doc), { once: true });
+    doc.addEventListener('DOMContentLoaded', readyScan, { once: true });
   } else {
-    scanSubmitRoots(doc);
+    readyScan();
   }
 
   // Enhanced navigation is pushState-based; back/forward

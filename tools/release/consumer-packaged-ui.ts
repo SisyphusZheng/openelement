@@ -1,6 +1,10 @@
 /** Packed UI consumer: fresh TypeScript project installs the UI tarball and typechecks. */
 import { tmpdir } from 'node:os';
-import { runProcess, walkPackedDeclarations } from './consumer-packaged-shared.ts';
+import {
+  assertPackedTarballsFresh,
+  runConsumer,
+  walkPackedDeclarations,
+} from './consumer-packaged-shared.ts';
 import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
@@ -12,16 +16,6 @@ const repoRoot = resolve(import.meta.dirname!, '../..');
 const INSTALL_TIMEOUT_MS = 5 * 60_000;
 const TYPES_TIMEOUT_MS = 5 * 60_000;
 
-function run(
-  command: string,
-  args: string[],
-  cwd: string,
-  env: Record<string, string>,
-  timeoutMs: number,
-): Promise<{ success: boolean; output: string }> {
-  return runProcess(command, args, cwd, { timeoutMs, env });
-}
-
 const uiTarball = join(repoRoot, 'packages', 'ui', `openelement-ui-${PACKAGE_VERSION}.tgz`);
 const elementTarball = join(
   repoRoot,
@@ -29,13 +23,20 @@ const elementTarball = join(
   'element',
   `openelement-element-${PACKAGE_VERSION}.tgz`,
 );
-for (const tarball of [uiTarball, elementTarball]) {
+const protocolTarball = join(
+  repoRoot,
+  'packages',
+  'protocol',
+  `openelement-protocol-${PACKAGE_VERSION}.tgz`,
+);
+for (const tarball of [uiTarball, elementTarball, protocolTarball]) {
   if (!existsSync(tarball)) {
     throw new Error(
       `Missing packed release artifact: ${tarball} (run \`pnpm --dir tools/release run pack:dry-run\` first)`,
     );
   }
 }
+await assertPackedTarballsFresh([uiTarball, elementTarball, protocolTarball]);
 
 const tmp = await mkdtemp(join(tmpdir(), 'openelement-packaged-ui-'));
 try {
@@ -49,17 +50,16 @@ try {
         '@openelement/ui': `file:${uiTarball}`,
         '@openelement/element': `file:${elementTarball}`,
         // element's #1557 transitive workspace pin, satisfied locally.
-        '@openelement/protocol': `file:${repoRoot}/packages/protocol/openelement-protocol-${PACKAGE_VERSION}.tgz`,
+        '@openelement/protocol': `file:${protocolTarball}`,
         typescript: '6.0.3',
       },
     }),
   );
-  const install = await run(
+  const install = await runConsumer(
     'npm',
     ['install', '--ignore-scripts', '--no-audit', '--no-fund'],
     tmp,
-    { NPM_CONFIG_CACHE: join(tmp, '.npm-cache') },
-    INSTALL_TIMEOUT_MS,
+    { env: { NPM_CONFIG_CACHE: join(tmp, '.npm-cache') }, timeoutMs: INSTALL_TIMEOUT_MS },
   );
   if (!install.success) throw new Error(`Packed UI installation failed:\n${install.output}`);
   console.log(
@@ -115,12 +115,11 @@ if (manifest.packageName !== '@openelement/ui') throw new Error('unexpected UI m
       include: ['./main.ts'],
     }),
   );
-  const types = await run(
+  const types = await runConsumer(
     'node',
     ['node_modules/typescript/bin/tsc', '-p', 'tsconfig.json'],
     tmp,
-    {},
-    TYPES_TIMEOUT_MS,
+    { timeoutMs: TYPES_TIMEOUT_MS },
   );
   if (!types.success) throw new Error(`Packed UI consumer typecheck failed:\n${types.output}`);
   console.log(

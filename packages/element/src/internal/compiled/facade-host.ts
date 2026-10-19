@@ -41,6 +41,13 @@ export interface CompiledStatics {
   delegatesFocus?: boolean;
   formAssociated?: boolean;
   isErrorBoundary?: boolean;
+  /**
+   * Emitted by the compiler on shadow-root components whose static class
+   * candidates were admitted (alpha15 S lane): the class's SSR/DSD template
+   * declares the framework's component stylesheet as a marked external
+   * `<link>`, so the claim expects (and keeps) that node.
+   */
+  __oeUtilityClasses?: boolean;
 }
 
 /** Facade element surface the property contract touches. */
@@ -103,7 +110,7 @@ export function convertToAttribute(
 }
 
 /** Coerce a JS-side property assignment into the compiled property type. */
-export function coercePropertyValue(record: CompiledPropertyMetadata, value: unknown): unknown {
+function coercePropertyValue(record: CompiledPropertyMetadata, value: unknown): unknown {
   if (value === null || value === undefined) return record.default;
   switch (record.type) {
     case 'boolean':
@@ -127,6 +134,31 @@ function ownDataValue(element: object, name: string): { found: boolean; value?: 
 }
 
 /**
+ * Key-order-insensitive structural serialization: JSON.stringify is
+ * key-order-sensitive, so a pre-upgrade value that merely restates the
+ * compiled default with reordered keys would compare unequal and clobber the
+ * SSR attribute promotion. Object keys sort recursively; every other value
+ * renders exactly as JSON.stringify renders it (including toJSON and the
+ * undefined/function/symbol elisions).
+ */
+function canonicalJson(value: unknown): string | undefined {
+  if (value !== null && typeof value === 'object') {
+    const toJson = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJson === 'function') return canonicalJson((toJson as () => unknown).call(value));
+    if (Array.isArray(value)) {
+      return `[${value.map((item) => canonicalJson(item) ?? 'null').join(',')}]`;
+    }
+    const entries: string[] = [];
+    for (const key of Object.keys(value).sort()) {
+      const rendered = canonicalJson((value as Record<string, unknown>)[key]);
+      if (rendered !== undefined) entries.push(`${JSON.stringify(key)}:${rendered}`);
+    }
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value) as string | undefined;
+}
+
+/**
  * Whether an own data property value merely restates the compiled default
  * (the generated field initializer's contract, see reconcileOwnProperties)
  * rather than carrying a real pre-upgrade assignment. Arrays/objects compare
@@ -137,7 +169,7 @@ function restatesDefault(record: CompiledPropertyMetadata, value: unknown): bool
   const fallback = record.default;
   if (value === fallback) return true;
   if (Array.isArray(fallback) || (typeof fallback === 'object' && fallback !== null)) {
-    return JSON.stringify(value) === JSON.stringify(fallback);
+    return canonicalJson(value) === canonicalJson(fallback);
   }
   return false;
 }
@@ -151,7 +183,7 @@ function restatesDefault(record: CompiledPropertyMetadata, value: unknown): bool
  * Two passes: plain property signals first, then computed fields derive their
  * read-only signals over them (declaration order) via the generated
  * `__computedFields` factories — #723 semantics: dependencies compile into
- * Part/Region subscriptions, and a computed field is just another signal the
+ * Part/Block subscriptions, and a computed field is just another signal the
  * Parts subscribe to.
  */
 export function createFacadePropertyState(
@@ -159,7 +191,10 @@ export function createFacadePropertyState(
   properties: CompiledPropertyMetadata[],
   computedFactories?: CompiledStatics['__computedFields'],
 ): FacadePropertyState {
-  const signals: Record<string, WritableSignal<unknown>> = {};
+  // Null prototype: compiled property names are metadata, and a name like
+  // `__proto__` must become an entry in the host record instead of replacing
+  // the record's prototype.
+  const signals: Record<string, WritableSignal<unknown>> = Object.create(null);
   const pending = new Map<string, unknown>();
   const record = element as unknown as Record<string, unknown>;
   for (const property of properties) {
@@ -173,7 +208,7 @@ export function createFacadePropertyState(
       // runs after syncAttributesToSignals), so a computed field deriving from
       // the property would claim against default-value-derived chrome while
       // the SSR DOM was rendered from the injected props — the
-      // "[compiled-claim] item attribute drift" seen on every non-default
+      // "[compiled-hydration] item attribute drift" seen on every non-default
       // locale page (#1318). Only a value that actually differs from the
       // compiled default is a real pre-upgrade set.
       if (!restatesDefault(property, own.value)) {
@@ -258,7 +293,7 @@ export function installAccessors(
         const next = coercePropertyValue(record, value);
         if (Object.is(sig.value, next)) return;
         // Signal-graph evaluation is synchronous at the write: assigning a
-        // plain property re-evaluates the computeds and Region subscriptions
+        // plain property re-evaluates the computeds and Block subscriptions
         // that depend on it on this stack, so a throwing derivation (e.g.
         // `computed(() => this.payload.nested.deep)` after the handler wrote
         // `{ nested: null }`) would otherwise escape through this setter into
@@ -349,7 +384,7 @@ export function applyPendingOwnValues(state: FacadePropertyState): void {
     // (coercePropertyValue would map it to the compiled default): letting it
     // through would clobber the attribute-promoted value at connect and
     // desync every computed field deriving from that property (#1318 — the
-    // "[compiled-claim] item attribute drift" on non-default locales).
+    // "[compiled-hydration] item attribute drift" on non-default locales).
     if (value === null || value === undefined) continue;
     if (record && sig) sig.value = coercePropertyValue(record, value);
   }
@@ -410,7 +445,10 @@ export function bindProgramHandlers(
   ctor: object,
   program: PartProgram,
 ): Record<string, (event: unknown) => void> {
-  const handlers: Record<string, (event: unknown) => void> = {};
+  // Null prototype, same contract as the property-signal record above: a
+  // compiled handler name can be `__proto__`, which is an entry, not a
+  // prototype replacement.
+  const handlers: Record<string, (event: unknown) => void> = Object.create(null);
   const record = element as unknown as Record<string, unknown>;
   for (const name of programHandlerNames(program)) {
     const method = record[name];

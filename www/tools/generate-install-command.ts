@@ -21,10 +21,8 @@
  */
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  CREATE_PACKAGE_SPECIFIER,
-  createInstallCommand,
-} from '../../packages/create/src/install-command.ts';
+import { createInstallCommand } from '../../packages/create/src/install-command.ts';
+import { QUICKSTART_SOURCE, quickstartCommands } from '../lib/quickstart.ts';
 import { readFile, writeFile } from 'node:fs/promises';
 import process from 'node:process';
 
@@ -54,51 +52,12 @@ const DISPLAY_FILES: readonly string[] = [
   'www/content/docs/guide/tutorial.md',
   'www/content/docs/guide/tutorial.zh.md',
   'www/app/routes/index/index.tsx',
-  'www/app/components/page-home.tsx',
   'www/e2e/cinematic-home.spec.ts',
 ];
 
-/**
- * A documented install command: either the canonical `npm create @openelement`
- * spelling (npm's `@scope` initializer alias resolves it to the create package
- * at the scope's default dist-tag — versionless, so it rides `latest`) or a
- * Node runner (npm exec / npx / pnpm dlx, including the pnpm form's explicit
- * `--package=` + bin — the packed package ships two bins, so a bare
- * `pnpm dlx` cannot resolve one) invoking the create package. The tag slot is
- * optional in both: a copy may pin an exact version or a channel on purpose.
- * The match ends at the specifier — the project name that follows is a free
- * example.
- */
-const DOCUMENTED_COMMAND =
-  /(?:npm exec|npx|pnpm dlx)\b[^`\n]*?@openelement\/create(?:@[^\s`]+)?|npm create\s+@openelement(?:@[^\s`]+)?/g;
-
-const DOCUMENTED_SPECIFIER = /@openelement\/create(?:@[^\s`]+)?/;
-
-/**
- * The comparable shape of an install command: its package specifier with the
- * dist-tag slot normalized, so a deliberately pinned version is compared on the
- * package alone. Runner and flags are the docs' choice among the verified
- * spellings; the package is the CLI's. The canonical
- * `npm create @openelement` spelling normalizes through npm's `@scope` →
- * `@scope/create` initializer alias, so every verified form compares equal on
- * the same package, whether or not it names a tag.
- */
-function commandShape(command: string): string {
-  const direct = command.match(DOCUMENTED_SPECIFIER)?.[0];
-  // Anchor the tag strip on the final `@<tag>` segment (no `@` inside it), so
-  // the package name survives the normalization; a versionless specifier
-  // already carries the default tag (`latest`).
-  if (direct) {
-    return direct.includes('@openelement/create@')
-      ? direct.replace(/@[^@\s`]+$/, '@<tag>')
-      : `${CREATE_PACKAGE_SPECIFIER}@<tag>`;
-  }
-  // `npm create @openelement(@<tag>)`: the alias form carries the scope, not
-  // the package name — normalize it to the package it resolves to.
-  const alias = command.match(/@openelement(?:@[^\s`]+)?/)?.[0];
-  if (alias) return `${CREATE_PACKAGE_SPECIFIER}@<tag>`;
-  return '';
-}
+// The install-command shape predicate lives in one place, shared with the
+// doc-claims gate (which covers the wider prose corpus).
+import { DOCUMENTED_COMMAND, commandShape } from './lib/install-command-shape.ts';
 
 /**
  * Files whose copies must carry the canonical spelling verbatim — only the
@@ -116,6 +75,121 @@ const CANONICAL_ONLY_FILES: ReadonlySet<string> = new Set([
 
 const canonicalCommand = createInstallCommand('my-app');
 const canonicalShape = commandShape(canonicalCommand);
+
+/**
+ * Quickstart consistency: the fence is the ONE authored sequence, and every
+ * count sentence is a claim about it.
+ *
+ * The manual said "three commands" on the hub and in core-concepts while
+ * getting-started's Install fence listed four. The fix is not a frozen number
+ * (the starter lane owns that fence and may legitimately change its length):
+ * the count derives from the parsed fence (www/lib/quickstart.ts), and this gate
+ * checks the things a derivation cannot check by itself —
+ *   1. each locale's fence carries the same steps, starting from the create
+ *      CLI's canonical install command;
+ *   2. each locale's prose count word equals the fence's step count (the word
+ *      is authored text; it cannot be interpolated);
+ *   3. the consumers still derive (placeholder / generated constant) and carry
+ *      no stale spelled-out count.
+ * Nothing here pins "4": before the starter lane's three-command revision the
+ * gate passes at 4, after it passes at 3 — the invariant is agreement, not a
+ * number.
+ */
+const COUNT_WORDS: Readonly<Record<'en' | 'zh', readonly string[]>> = {
+  en: [
+    'zero',
+    'one',
+    'two',
+    'three',
+    'four',
+    'five',
+    'six',
+    'seven',
+    'eight',
+    'nine',
+    'ten',
+    'eleven',
+    'twelve',
+  ],
+  zh: ['零', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'],
+};
+
+const QUICKSTART_DOCS: ReadonlyArray<{
+  file: string;
+  locale: 'en' | 'zh';
+  countPattern: RegExp;
+}> = [
+  {
+    file: QUICKSTART_SOURCE,
+    locale: 'en',
+    countPattern: /^([A-Za-z]+) commands\b/mu,
+  },
+  {
+    file: 'www/content/docs/guide/getting-started.zh.md',
+    locale: 'zh',
+    countPattern: /^([一二三四五六七八九十]+)条命令/mu,
+  },
+];
+
+/** The count sentences that must keep deriving from the sequence. */
+const QUICKSTART_DERIVING_FILES: readonly string[] = [
+  'www/content/docs/guide/core-concepts.md',
+  'www/content/docs/guide/core-concepts.zh.md',
+  'www/app/routes/docs/index.tsx',
+];
+
+/** The stale spellings the manual carried before the count was derived. */
+const STALE_COUNT_CLAIM = /\bthree commands\b|三条命令/u;
+
+async function quickstartFailures(): Promise<string[]> {
+  const failures: string[] = [];
+  const sequences: string[][] = [];
+  for (const doc of QUICKSTART_DOCS) {
+    const text = await readFile(join(repoRoot, doc.file), 'utf8');
+    let commands: string[];
+    try {
+      commands = quickstartCommands(text, doc.file);
+    } catch (cause) {
+      failures.push((cause as Error).message);
+      continue;
+    }
+    sequences.push(commands);
+    const table = COUNT_WORDS[doc.locale];
+    const match = doc.countPattern.exec(text);
+    const spelled = match ? table.findIndex((word) => word === match[1]!.toLowerCase()) : -2;
+    if (spelled !== commands.length) {
+      failures.push(
+        `${doc.file}: the quickstart count sentence says ` +
+          `'${match?.[1] ?? 'nothing'}' but its Install fence carries ` +
+          `${commands.length} commands (${table[commands.length] ?? '?'})`,
+      );
+    }
+  }
+  if (sequences.length === 2 && sequences[0]!.join('\n') !== sequences[1]!.join('\n')) {
+    failures.push(
+      'the two getting-started locales document different quickstart sequences:\n' +
+        `    en: ${sequences[0]!.join(' | ')}\n` +
+        `    zh: ${sequences[1]!.join(' | ')}`,
+    );
+  }
+  for (const file of QUICKSTART_DERIVING_FILES) {
+    const text = await readFile(join(repoRoot, file), 'utf8');
+    if (STALE_COUNT_CLAIM.test(text)) {
+      failures.push(
+        `${file}: spells a stale quickstart count — derive it instead ` +
+          '(《{{QUICKSTART_COMMAND_COUNT}}》 in content, quickstartCommandCountPhrase ' +
+          'in the hub route)',
+      );
+    }
+    const derives = file.endsWith('.tsx')
+      ? text.includes('quickstartCommandCountPhrase')
+      : text.includes('{{QUICKSTART_COMMAND_COUNT}}');
+    if (!derives) {
+      failures.push(`${file}: the quickstart count no longer derives from the Install fence`);
+    }
+  }
+  return failures;
+}
 
 /**
  * The canonical command truncated to the same token count as `command`. The
@@ -163,7 +237,7 @@ export async function buildInstallCommand(): Promise<InstallCommandBuild> {
     }
   }
 
-  return { command: canonicalCommand, failures };
+  return { command: canonicalCommand, failures: [...failures, ...(await quickstartFailures())] };
 }
 
 export function renderInstallCommandModule(build: InstallCommandBuild): string {

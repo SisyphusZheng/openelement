@@ -13,8 +13,17 @@
  * 2. Consumer smoke (`--smoke`): post-publish npm smoke test. Creates
  *    temporary consumer projects and verifies @openelement/element can be
  *    consumed from npm on Node (core imports and the router/vite build
- *    entry). Also checks the exact-version starter, and on request the
- *    jsDelivr CDN browser-safe export and the Nitro build output.
+ *    entry). Also checks the exact-version starter through BOTH documented
+ *    bootstrap surfaces — `npm exec <bin>` and the real
+ *    `npm create @openelement@<version>` initializer alias (registry-only by
+ *    design, so it only runs where the network and the published version
+ *    exist) — and on request the jsDelivr CDN browser-safe export and the
+ *    Nitro build output.
+ *
+ * 3. Pre-publish alias probe (`--prepublish-alias`): offline coverage of the
+ *    documented `npm create @openelement` bootstrap from the local packed
+ *    tarball (see the section below). It proves what CAN be proven before the
+ *    version exists on the registry, and names what cannot.
  *
  * This module also owns the canonical release-gate verdict contract (#1216,
  * A10.8; umbrella #1155; ADR-0151). A release
@@ -30,10 +39,14 @@
  */
 
 import { tmpdir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { formatError } from '@openelement/element';
 import { formatJson } from '@openelement/element/build-utils';
+import { readPackages } from '../lib/package-graph.ts';
+import { tarballPath } from '../lib/npm-tarball.ts';
 import { PACKAGE_VERSION } from '../repo/project-constants.ts';
 import { VITE_DEV_PIN } from '../repo/deps-vite-check.ts';
 import { runWithOutput } from '../lib/process.ts';
@@ -295,33 +308,13 @@ async function qualificationMain(): Promise<void> {
           );
         }
       }
-      // The published starter is the Vite+ toolchain form (alpha.14+): the
-      // manifest asks for `vite-plus: "catalog:"` and the scaffold's own
-      // pnpm-workspace.yaml catalog owns the version (a surviving `vite` pin
-      // is the retired form). Both halves are asserted BEFORE the install so
-      // a scaffold that drops either one fails the gate with the precise
-      // cause instead of dying inside pnpm's resolver.
-      if (manifest.devDependencies.vite !== undefined) {
-        throw new Error(
-          `starter is not the Vite+ form: devDependency vite=${manifest.devDependencies.vite} ` +
-            'must be gone (the vite tree is catalog-managed)',
-        );
-      }
-      if (manifest.devDependencies['vite-plus'] !== 'catalog:') {
-        throw new Error(
-          `starter is not the Vite+ form: devDependency vite-plus=` +
-            `${manifest.devDependencies['vite-plus'] ?? '<missing>'}, expected catalog:`,
-        );
-      }
-      // The catalog travels WITH pnpm-workspace.yaml: the install below runs
-      // in the scaffold's own directory, so the file must be present there
-      // and carry the catalog/override pair. This harness never rewrites it
-      // (the scaffold's bytes install verbatim — the catalog-preserving
-      // contract the packed-consumer gates enforce).
-      await assertStarterCarriesVitePlusWorkspace(starter, 'Published starter');
+      // The published starter is the package-manager-neutral form (alpha15+):
+      // it pins `vite` itself at the router's own version and ships no
+      // pnpm-only specifier or workspace file. Asserted BEFORE the install so
+      // a scaffold that regressed to the retired Vite+ catalog form fails the
+      // gate with the precise cause instead of dying inside pnpm's resolver.
+      await assertStarterIsPackageManagerNeutral(starter, 'Published starter');
       await runStep('install starter dependencies', 'pnpm', ['install'], starter);
-      // The Vite+ lifecycle renames `check` to `typecheck` (`tsc --noEmit`);
-      // the retired `check` spelling never ran lint, so the rename is 1:1.
       for (const task of ['typecheck', 'test', 'build']) {
         await runStep(`starter ${task}`, 'pnpm', ['run', task], starter);
       }
@@ -359,71 +352,337 @@ async function qualificationMain(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Scaffold workspace-form guard (the Vite+ catalog, alpha.14+)
+// Pre-publish create-initializer alias probe (offline; local tarball)
 // ---------------------------------------------------------------------------
+//
+// The documented bootstrap is `npm create @openelement <name>`: npm's
+// initializer alias maps the bare scope to `@openelement/create` and installs
+// and runs that package's bin through npm exec. Two layers of that surface are
+// separable, and only one is coverable before the version is published:
+//
+// - Alias RESOLUTION (`@openelement` -> `@openelement/create@<tag>`): proven
+//   offline against a cold npm cache. The probe runs `npm create
+//   @openelement` with `--offline` and asserts the failed resolution NAMES
+//   `@openelement/create` — that is npm's alias mapping and nothing more.
+// - Alias EXECUTION cannot be covered pre-publish: npm resolves the package
+//   from the registry, so with the candidate version unpublished the only
+//   honest pre-publish outcome is the cold-cache failure the probe records
+//   (see docs/maintainers/known-reds-ledger.md). The post-publish smoke runs
+//   the real alias where the registry exists.
+// - Equivalent EXECUTION: `npm exec --yes --package=<local tarball> -- <bin>`
+//   is the install-and-run mechanism npm's own init uses, fed the packed
+//   candidate instead of a registry specifier. It runs fully offline and
+//   generates a real app from the artifact under qualification.
+// - Packed CLI + printed usage: the tarball is extracted and `node
+//   <tarball>/src/cli.js` runs with no arguments; its usage line must equal
+//   the canonical command string the create package exports (#1414).
+
+const CREATE_ALIAS_SCOPE = '@openelement';
+const CREATE_ALIAS_PACKAGE = '@openelement/create';
+
+export interface CreateAliasProbeOptions {
+  /** The packed @openelement/create tarball under qualification. */
+  tarball: string;
+  /** Repository root; defaults to the current working directory. */
+  repoRoot?: string;
+}
+
+export interface CreateAliasProbeEvidence {
+  version: string;
+  /** `@openelement/create`, the package npm's bare-scope alias resolved to. */
+  aliasPackage: string;
+  /** The offline resolution failure line proving the alias mapping. */
+  aliasResolutionEvidence: string;
+  /** Recorded limitation: the alias itself needs the registry. */
+  aliasExecution: string;
+  /** The equivalent npm-exec spelling that ran the candidate offline. */
+  execCommand: string[];
+  execBin: string;
+  generatedApp: string;
+  /** The packed CLI's printed usage line, equal to the canonical command. */
+  usageLine: string;
+}
 
 /**
- * The fragments every scaffolded starter's pnpm-workspace.yaml must carry in
- * the Vite+ toolchain form: the catalog pair that resolves the manifest's
- * `vite-plus: "catalog:"` and points the whole vite tree at the Vite+ core
- * build, plus the `vite@*` override that routes every peer's vite through the
- * same catalog entry. Same literal fragments the starter-smoke setup and the
- * packed-consumer starter gates anchor.
+ * Qualify the create initializer surface offline from a packed tarball:
+ * alias resolution (cold-cache `npm create`), equivalent exec of the candidate
+ * artifact, packed-CLI invocation and printed usage. Throws on any mismatch;
+ * returns the evidence when the coverable layers hold.
  */
-export const VITE_PLUS_WORKSPACE_FRAGMENTS = [
-  'npm:@voidzero-dev/vite-plus-core@1.1.0',
-  'vite-plus: 1.1.0',
-  'vite@*: "catalog:"',
-] as const;
-
-/**
- * Assert a scaffolded starter's pnpm-workspace.yaml text is the Vite+ form.
- * Pure so both entry surfaces (the qualification matrix and the exact-version
- * smoke) funnel their scaffold reads through one check, and the tests can
- * drive it directly.
- */
-export function assertVitePlusWorkspaceYaml(yaml: string, context: string): void {
-  for (const fragment of VITE_PLUS_WORKSPACE_FRAGMENTS) {
-    if (!yaml.includes(fragment)) {
+export async function probeCreateInitializerAlias(
+  options: CreateAliasProbeOptions,
+): Promise<CreateAliasProbeEvidence> {
+  const repoRoot = resolve(options.repoRoot ?? process.cwd());
+  const tarball = resolve(options.tarball);
+  if (!existsSync(tarball)) {
+    throw new Error(
+      `packed create tarball missing at ${tarball}; run the tools-release pack first`,
+    );
+  }
+  const root = await mkdtemp(join(tmpdir(), 'openelement-create-alias-'));
+  // The cache lives inside the probe tree and starts empty: `--offline` can
+  // then only answer from cache, so a registry resolution must fail as a
+  // cache miss instead of silently qualifying a previously cached copy.
+  const cache = join(root, 'npm-cache');
+  // npm's own flags travel before `--`; everything after it belongs to the
+  // initializer bin.
+  const offlineFlags = ['--cache', cache, '--offline', '--no-audit', '--no-fund'];
+  const npmRun = (args: string[], cwd: string) => runWithOutput('npm', args, { cwd });
+  try {
+    // 1. Alias resolution, offline: the failure must name the package npm's
+    //    bare-scope initializer alias maps to.
+    const aliasCwd = join(root, 'alias-resolution');
+    await mkdir(aliasCwd);
+    const alias = await npmRun(
+      ['create', CREATE_ALIAS_SCOPE, 'alias-resolution-app', '--yes', ...offlineFlags],
+      aliasCwd,
+    );
+    const aliasOutput = `${alias.stdout}\n${alias.stderr}`;
+    if (alias.success) {
       throw new Error(
-        `${context} pnpm-workspace.yaml is not the Vite+ form: missing ${fragment} ` +
-          '(the catalog must travel with the scaffold wherever pnpm install runs; ' +
-          'replacing or regenerating the file leaves vite-plus: "catalog:" unresolvable)',
+        `npm create ${CREATE_ALIAS_SCOPE} succeeded against a cold offline cache; the offline ` +
+          'alias probe proves nothing (a candidate copy was cached?)',
       );
     }
+    // npm reports the packument it tried to fetch; accept the encoded and the
+    // plain spelling of the resolved package.
+    const resolutionLine = aliasOutput
+      .split('\n')
+      .find(
+        (line) =>
+          line.includes(`${CREATE_ALIAS_SCOPE}%2fcreate`) || line.includes(CREATE_ALIAS_PACKAGE),
+      );
+    if (resolutionLine === undefined) {
+      throw new Error(
+        `npm create ${CREATE_ALIAS_SCOPE} did not resolve to ${CREATE_ALIAS_PACKAGE}; the ` +
+          `initializer alias mapping changed:\n${tail(aliasOutput)}`,
+      );
+    }
+    if (existsSync(join(aliasCwd, 'alias-resolution-app'))) {
+      throw new Error(
+        'the offline alias probe generated an app; it cannot stand as a resolution-only proof',
+      );
+    }
+
+    // 2. Equivalent execution of the candidate artifact, through the same
+    //    install-and-run mechanism npm's own init uses.
+    const execBin = Object.keys(CREATE_BIN).sort()[0]!;
+    const execCwd = join(root, 'exec');
+    await mkdir(execCwd);
+    const execCommand = [
+      'exec',
+      '--yes',
+      `--package=${tarball}`,
+      ...offlineFlags,
+      '--',
+      execBin,
+      'alias-exec-app',
+      '--no-install',
+    ];
+    const exec = await npmRun(execCommand, execCwd);
+    const execOutput = `${exec.stdout}\n${exec.stderr}`;
+    if (!exec.success) {
+      throw new Error(
+        'npm exec from the packed create tarball failed; the candidate artifact cannot run ' +
+          `through the initializer exec form:\n${tail(execOutput)}`,
+      );
+    }
+    const generatedApp = join(execCwd, 'alias-exec-app');
+    if (!existsSync(join(generatedApp, 'package.json'))) {
+      throw new Error(`the npm exec form generated no app at ${generatedApp}`);
+    }
+    if (!execOutput.includes(`${CREATE_ALIAS_PACKAGE} ${PACKAGE_VERSION}`)) {
+      throw new Error(
+        `the generated app handoff box does not name ${CREATE_ALIAS_PACKAGE} ${PACKAGE_VERSION}; ` +
+          `a stale or foreign artifact answered the exec:\n${tail(execOutput)}`,
+      );
+    }
+
+    // 3. The packed CLI as a file, plus its printed usage text.
+    const extractDir = join(root, 'extract');
+    await mkdir(extractDir);
+    const untar = await runWithOutput('tar', ['-xzf', tarball, '-C', extractDir]);
+    if (!untar.success) throw new Error(`could not extract ${tarball}: ${tail(untar.stderr)}`);
+    const packedCli = join(extractDir, 'package', 'src', 'cli.js');
+    const usage = await runWithOutput('node', [packedCli], { cwd: root });
+    const usageOutput = `${usage.stdout}\n${usage.stderr}`;
+    if (usage.success) {
+      throw new Error(
+        'the packed CLI no-argument usage path exited 0; exit 1 is its documented code',
+      );
+    }
+    const { createInstallCommand } = (await import(
+      pathToFileURL(join(repoRoot, 'packages', 'create', 'src', 'install-command.ts')).href
+    )) as { createInstallCommand: () => string };
+    const canonical = createInstallCommand().trim();
+    const printed = usageOutput
+      .split('\n')
+      .find((line) => line.includes('@openelement'))
+      ?.replace(/^Usage \(Alpha\): /, '')
+      .trim();
+    if (printed !== canonical) {
+      throw new Error(
+        'the packed CLI does not print the canonical install command:\n' +
+          `    printed:   ${printed ?? '(none)'}\n    canonical: ${canonical}`,
+      );
+    }
+
+    return {
+      aliasExecution:
+        'not offline-coverable: npm resolves the alias from the registry and the candidate version ' +
+        'is unpublished before the release; the post-publish smoke runs the real npm create alias',
+      aliasPackage: CREATE_ALIAS_PACKAGE,
+      aliasResolutionEvidence: resolutionLine.trim(),
+      execBin,
+      execCommand,
+      generatedApp,
+      usageLine: printed,
+      version: PACKAGE_VERSION,
+    };
+  } finally {
+    await rm(root, { recursive: true }).catch(() => undefined);
+  }
+}
+
+/** The packed create tarball this checkout's pack run writes. */
+async function defaultCreateTarball(): Promise<string> {
+  const packages = await readPackages();
+  const create = packages.find((pkg) => pkg.name === CREATE_ALIAS_PACKAGE);
+  if (create === undefined) {
+    throw new Error(`${CREATE_ALIAS_PACKAGE} is not in the workspace package graph`);
+  }
+  const path = tarballPath(create);
+  if (!existsSync(path)) {
+    throw new Error(`packed tarball missing at ${path}; run the tools-release pack dry-run first`);
+  }
+  return path;
+}
+
+async function prepublishAliasMain(args: readonly string[]): Promise<void> {
+  const tarballIndex = args.indexOf('--tarball');
+  const explicit = tarballIndex >= 0 ? args[tarballIndex + 1] : undefined;
+  if (tarballIndex >= 0 && explicit === undefined) {
+    throw new Error('--tarball requires a path argument');
+  }
+  const tarball = explicit ?? (await defaultCreateTarball());
+  const evidence = await probeCreateInitializerAlias({ tarball });
+  console.log(`[create-alias] npm create ${CREATE_ALIAS_SCOPE} -> ${evidence.aliasPackage}`);
+  console.log(`[create-alias]   offline resolution: ${evidence.aliasResolutionEvidence}`);
+  console.log(`[create-alias] alias execution: ${evidence.aliasExecution}`);
+  console.log(`[create-alias] equivalent exec: npm ${evidence.execCommand.join(' ')}`);
+  console.log(`[create-alias] generated app: ${evidence.generatedApp} (scratch tree removed)`);
+  console.log(`[create-alias] packed CLI usage: ${evidence.usageLine}`);
+  console.log(`[create-alias] pre-publish create-initializer qualification passed`);
+}
+
+// ---------------------------------------------------------------------------
+// Scaffold package-manager-neutrality guard (alpha15+)
+// ---------------------------------------------------------------------------
+//
+// The published starter's install runs in the scaffold's own directory, so the
+// harness must know what the shipped form is before it runs anything. The
+// Vite+ catalog form is RETIRED: the scaffold now pins `vite` itself (at the
+// router's own version), declares no `packageManager`, carries no pnpm-only
+// `catalog:`/`vite-plus` specifier, and ships NO pnpm-workspace.yaml. A
+// create-side regression that reintroduces any of those would make the
+// generated project installable only under pnpm — the defect the alpha15
+// neutral-scaffold change fixed — and a harness step that still expected the
+// retired file would fail with pnpm's ERR_PNPM_CATALOG_ENTRY_NOT_FOUND_FOR_SPEC
+// instead of naming the real cause.
+
+/**
+ * Assert a scaffolded starter's package.json is the package-manager-neutral
+ * form. Pure (text in, verdict out) so both entry surfaces — the qualification
+ * matrix and the exact-version smoke — funnel their scaffold reads through one
+ * check, and the tests can drive it directly.
+ */
+export function assertPackageManagerNeutralManifest(manifestText: string, context: string): void {
+  let manifest: { packageManager?: string; devDependencies?: Record<string, string> };
+  try {
+    manifest = JSON.parse(manifestText) as typeof manifest;
+  } catch {
+    throw new Error(`${context} package.json is unparseable`);
+  }
+  const devDependencies = manifest.devDependencies ?? {};
+  // The scaffold's vite is its own devDependency now (no catalog owns it), and
+  // it must be the version the router itself resolves: the generated project
+  // builds through the router's Vite plugin, so a drift or a range is a second
+  // vite tree in the consumer.
+  if (devDependencies.vite !== VITE_DEV_PIN) {
+    throw new Error(
+      `${context} is not the package-manager-neutral form: devDependency vite=` +
+        `${devDependencies.vite ?? '<missing>'}, expected the router's own pin ${VITE_DEV_PIN}`,
+    );
+  }
+  if (devDependencies['vite-plus'] !== undefined) {
+    throw new Error(
+      `${context} still declares the retired Vite+ dependency: vite-plus=` +
+        `${devDependencies['vite-plus']} (the Vite+ catalog form is retired)`,
+    );
+  }
+  if (manifest.packageManager !== undefined) {
+    throw new Error(
+      `${context} pins a package manager (packageManager=${manifest.packageManager}); the ` +
+        'neutral scaffold declares none so the first install decides',
+    );
+  }
+  if (manifestText.includes('catalog:')) {
+    throw new Error(
+      `${context} carries a pnpm-only \`catalog:\` specifier; the neutral scaffold resolves ` +
+        'through ordinary registry specifiers',
+    );
   }
 }
 
 /**
- * Verify the scaffold's own pnpm-workspace.yaml is present in the directory
- * where pnpm install runs and is the Vite+ form. The file is load-bearing:
- * the starter manifest's `vite-plus: "catalog:"` resolves through its catalog
- * block, so a harness step that replaces or drops it strands the spec and
- * pnpm dies with ERR_PNPM_CATALOG_ENTRY_NOT_FOUND_FOR_SPEC (the alpha.14
- * published-consumers failure: a qualify harness rewrote the file to a bare
- * `packages: []` before installing). Asserting here fails the gate with the
- * precise diagnosis instead. The read is itself the existence check
- * (read-and-expect-ENOENT, no shape probe before it), and this harness never
- * writes the file — nothing to fold, the scaffold's bytes install verbatim.
+ * Verify the scaffold ships NO pnpm-specific workspace file, in the directory
+ * where the install below runs. The Vite+ form shipped one (the catalog that
+ * resolved `vite-plus: "catalog:"`); the neutral scaffold ships none, and the
+ * packed-consumer harnesses write their own overrides carrier into their
+ * scratch trees instead (owner decision, alpha15 option B). A file here is the
+ * create-side regression this guard exists to catch, named before pnpm's
+ * resolver can report it as something else. The read is itself the existence
+ * check (read-and-expect-ENOENT, no shape probe before it).
  */
-export async function assertStarterCarriesVitePlusWorkspace(
+export async function assertStarterShipsNoWorkspaceFile(
   starterDir: string,
   context: string,
 ): Promise<void> {
-  let yaml: string;
+  let shipped: string | null = null;
   try {
-    yaml = await readFile(join(starterDir, 'pnpm-workspace.yaml'), 'utf8');
+    shipped = await readFile(join(starterDir, 'pnpm-workspace.yaml'), 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== 'ENOENT') throw error;
+  }
+  if (shipped !== null) {
+    throw new Error(
+      `${context} ships a pnpm-workspace.yaml; the package-manager-neutral scaffold must ` +
+        `carry no pnpm-specific file (the Vite+ catalog form is retired):\n${shipped.slice(0, 200)}`,
+    );
+  }
+}
+
+/**
+ * The whole neutrality contract for one scaffolded starter directory: manifest
+ * form plus the absence of a shipped workspace file. Both entry surfaces call
+ * this single function, so the matrix and the smoke can never disagree about
+ * what the shipped form is.
+ */
+export async function assertStarterIsPackageManagerNeutral(
+  starterDir: string,
+  context: string,
+): Promise<void> {
+  let manifestText: string;
+  try {
+    manifestText = await readFile(join(starterDir, 'package.json'), 'utf8');
   } catch (error) {
     if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') {
-      throw new Error(
-        `${context} is missing pnpm-workspace.yaml ` +
-          '(the Vite+ catalog/override form ships it; it must sit beside package.json ' +
-          'in the directory where pnpm install runs)',
-      );
+      throw new Error(`${context} has no package.json at ${starterDir}`);
     }
     throw error;
   }
-  assertVitePlusWorkspaceYaml(yaml, context);
+  assertPackageManagerNeutralManifest(manifestText, context);
+  await assertStarterShipsNoWorkspaceFile(starterDir, context);
 }
 
 // ---------------------------------------------------------------------------
@@ -468,9 +727,9 @@ async function readJson<T = unknown>(path: string | URL): Promise<T> {
 // build entry imports on the same node host (the packed consumers' build
 // cells drive it in-process, this smoke proves the bare-import path).
 export const NODE_RUNTIME_SMOKE_SOURCE = [
-  "import { HYDRATION_STRATEGIES, OpenElement, renderDsd, signal } from '@openelement/element';",
+  "import { HYDRATION_STRATEGIES, OpenElement, renderToString, signal } from '@openelement/element';",
   "import { defineIslandConfig, definePage } from '@openelement/router';",
-  'for (const value of [OpenElement, renderDsd, signal, defineIslandConfig, definePage]) {',
+  'for (const value of [OpenElement, renderToString, signal, defineIslandConfig, definePage]) {',
   "  if (typeof value !== 'function') throw new Error('expected published public function');",
   '}',
   "if (!Array.isArray(HYDRATION_STRATEGIES)) throw new Error('expected hydration strategy list');",
@@ -625,30 +884,43 @@ async function exactVersionStarterSmoke(version: string): Promise<void> {
         throw new Error(`starter dependency @openelement/${pkg}=${actual}, expected=${expected}`);
       }
     }
-    // The Vite+ toolchain form (alpha.14+): the manifest must ask for
-    // `vite-plus: "catalog:"` — the retired `vite` pin means the pre-alpha.14
-    // scaffold, whose workspace file carries no catalog.
-    if (manifest.devDependencies.vite !== undefined) {
-      throw new Error(
-        `starter is not the Vite+ form: devDependency vite=${manifest.devDependencies.vite} ` +
-          'must be gone (the vite tree is catalog-managed)',
-      );
-    }
-    if (manifest.devDependencies['vite-plus'] !== 'catalog:') {
-      throw new Error(
-        `starter is not the Vite+ form: devDependency vite-plus=` +
-          `${manifest.devDependencies['vite-plus'] ?? '<missing>'}, expected catalog:`,
-      );
-    }
-    // The catalog travels with the scaffold: the install below runs inside
-    // the scaffold's own directory, so its pnpm-workspace.yaml must be there
-    // carrying the catalog/override pair — never rewritten by this harness.
-    await assertStarterCarriesVitePlusWorkspace(`${tmpDir}/starter`, 'Exact-version starter');
+    // The package-manager-neutral form (alpha15+): the manifest pins `vite`
+    // itself at the router's own version and carries no pnpm-only specifier,
+    // and the scaffold ships no workspace file — a scaffold that regressed to
+    // the retired Vite+ catalog form is named here, before the install.
+    await assertStarterIsPackageManagerNeutral(`${tmpDir}/starter`, 'Exact-version starter');
     await run('pnpm', ['install'], `${tmpDir}/starter`);
-    // The Vite+ lifecycle renames `check` to `typecheck` (`tsc --noEmit`).
     const typecheck = await run('pnpm', ['run', 'typecheck'], `${tmpDir}/starter`);
     if (!typecheck.success) throw new Error(`starter typecheck failed:\n${typecheck.output}`);
-    console.log('  ok: generated package graph and typecheck use the released version');
+
+    // The documented bootstrap ITSELF: `npm create @openelement@<version>`
+    // rides npm's initializer alias, which resolves the PUBLISHED package from
+    // the registry — the one layer the pre-publish probe cannot execute (it
+    // proves the offline alias mapping only, probeCreateInitializerAlias).
+    // This post-publish smoke is where the real alias call belongs.
+    const aliasApp = 'create-alias-starter';
+    const alias = await run(
+      'npm',
+      ['create', `@openelement@${version}`, aliasApp, '--yes'],
+      tmpDir,
+    );
+    if (!alias.success) {
+      throw new Error(`npm create @openelement@${version} failed:\n${alias.output}`);
+    }
+    const aliasManifest = (await readJson(`${tmpDir}/${aliasApp}/package.json`)) as {
+      dependencies: Record<string, string>;
+    };
+    for (const pkg of ['router', 'element']) {
+      const actual = aliasManifest.dependencies[`@openelement/${pkg}`];
+      const expected = `^${version}`;
+      if (actual !== expected) {
+        throw new Error(
+          `npm create @openelement@${version} generated starter dependency ` +
+            `@openelement/${pkg}=${actual ?? '<missing>'}, expected=${expected}`,
+        );
+      }
+    }
+    console.log(`  ok: npm create @openelement@${version} generated the published starter`);
   } finally {
     await rm(tmpDir, { recursive: true }).catch(() => undefined);
   }
@@ -840,8 +1112,13 @@ async function consumerSmokeMain(args: readonly string[]): Promise<void> {
 }
 
 async function main(): Promise<void> {
-  if (process.argv.slice(2).includes('--smoke')) {
-    await consumerSmokeMain(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  if (args.includes('--smoke')) {
+    await consumerSmokeMain(args);
+    return;
+  }
+  if (args.includes('--prepublish-alias')) {
+    await prepublishAliasMain(args);
     return;
   }
   await qualificationMain();

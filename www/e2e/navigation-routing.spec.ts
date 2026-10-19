@@ -13,6 +13,7 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { waitForLoadStateClassified } from './helpers.ts';
 
 test.describe('Direct URL Access', () => {
   const routes = [
@@ -32,8 +33,25 @@ test.describe('Direct URL Access', () => {
 
   for (const route of routes) {
     test(`"${route.path}" loads successfully with correct title`, async ({ page }) => {
+      // Environment tolerance, not a weaker assertion: the title/status checks
+      // below are unchanged. The generated /reference page is 2.09 MB of HTML;
+      // Firefox loads it in ~5 s when it runs alone (measured 2026-10-18), but
+      // under a full three-engine run it intermittently stops making progress
+      // and hits the default 120 s limit (release:check, same day). The ceiling
+      // matches the one the resident gate gives its own /reference scan
+      // (accessibility-gate.spec.ts), and the route stays in every engine — the
+      // point is to keep Firefox's navigation coverage of the page, not to
+      // dodge it. Tracked as the local Firefox large-page trap (§1.4/R7) and
+      // the Firefox flake class recorded as KR-18 in
+      // docs/maintainers/known-reds-ledger.md.
+      if (route.path === '/reference') test.setTimeout(420_000);
       const response = await page.goto(route.path);
-      await page.waitForLoadState('networkidle');
+      // A ceiling that expires here is an engine load timeout, not an
+      // assertion failure: say so in the failure output (FR-05C).
+      await waitForLoadStateClassified(page, 'networkidle', {
+        phase: 'direct-url-access',
+        url: route.path,
+      });
 
       expect(response?.status()).toBeLessThan(400);
       const title = await page.title();
@@ -85,9 +103,7 @@ test.describe('Link Navigation', () => {
     expect(url).toContain('/guide/');
   });
 
-  test('home-to-guide navigation loads the compiled route inside the app shell', async ({
-    page,
-  }) => {
+  test('home-to-guide navigation loads the compiled route inside the layout', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
@@ -95,7 +111,7 @@ test.describe('Link Navigation', () => {
 
     await page.waitForURL(/\/guide\/getting-started\/?$/);
     // The route page element is slotted into the compiled light-root shell.
-    await expect(page.locator('open-layout')).toHaveAttribute('data-oe-light', '');
+    await expect(page.locator('app-layout')).toHaveAttribute('data-oe-light', '');
     await expect(page.locator('guide-getting-started')).toHaveCount(1);
     await expect(page.locator('guide-getting-started open-article-view')).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
@@ -109,9 +125,9 @@ test.describe('Link Navigation', () => {
     await page.goto('/guide/islands-and-ssr');
     await page.waitForLoadState('networkidle');
 
-    // The app shell landmarks survive the navigation (nested mains: shell +
+    // The layout landmarks survive the navigation (nested mains: shell +
     // page body — the first is the shell's).
-    await expect(page.locator('open-layout')).toHaveCount(1);
+    await expect(page.locator('app-layout')).toHaveCount(1);
     await expect(page.getByRole('main').first()).toBeVisible();
     await expect(page.locator('guide-islands-and-ssr')).toHaveCount(1);
   });
@@ -148,9 +164,11 @@ test.describe('Blog Pages', () => {
     await page.goto('/blog');
     await page.waitForLoadState('networkidle');
 
-    // Blog index should have links to individual posts.
+    // Blog index should have links to individual posts. The retired
+    // <blog-index> host became the page hook class (page-blog-index) with the
+    // server function page migration (alpha15).
     const blogLinks = await page
-      .locator('blog-index')
+      .locator('.page-blog-index')
       .getByRole('link')
       .evaluateAll((links) =>
         links
@@ -168,7 +186,7 @@ test.describe('Blog Pages', () => {
     // Follow the first post link the index actually renders — never assume a
     // slug pattern.
     const firstPostLink = await page
-      .locator('blog-index')
+      .locator('.page-blog-index')
       .getByRole('link')
       .evaluateAll(
         (links) =>

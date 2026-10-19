@@ -10,8 +10,9 @@
 
 ## Context
 
-The alpha.3 fullstack spike (#981, `tools/fullstack-spike-workers.ts`,
-824b11cf) proved the Workers runtime seam works — CSRF floor and `c.env`
+The alpha.3 fullstack spike (#981, `tools/fullstack-spike-workers.ts` — the
+spike file was removed once its findings landed; recoverable at 824b11cf)
+proved the Workers runtime seam works — CSRF floor and `c.env`
 included — except one thing: **there is no framework channel for writing
 response headers from a loader or action**. Session sign-in needs to write
 `Set-Cookie` exactly when authentication succeeds:

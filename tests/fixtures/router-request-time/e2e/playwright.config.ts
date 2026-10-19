@@ -23,7 +23,10 @@ export default defineConfig({
   // to dist/server, so fullyParallel and workers agree on sequential runs.
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
+  // N3: a qualified fixture gate must not absorb a flake. Retries turn a
+  // real regression into a green run with no record, and these gates have no
+  // flaky sidecar (site-E2E does); run once and report the failure.
+  retries: 0,
   workers: 1,
   // CI-visible reporting (#1232): 'github' annotates failures on the run.
   reporter: process.env.CI ? [['list'], ['github']] : 'list',

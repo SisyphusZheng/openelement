@@ -1,0 +1,39 @@
+# Response headers for the official Site (T10 R1).
+#
+# Cloudflare Pages reads this file from the build output root; `www/public/**`
+# is copied into `dist/` verbatim, so this file ships at `/ _headers` with no
+# build step of its own.
+#
+# Why it exists: every asset under /client/assets/ carries a content hash in
+# its file name (the Vite `-<hash>` form or the style-asset protocol's bare
+# content address), so its bytes can never change under that URL — but the
+# host's default policy is `max-age=14400, must-revalidate` (measured on the
+# deployed site 2026-10-18), which makes returning readers revalidate JS, CSS
+# and every woff2 on every visit. The framework's own static-serve contract
+# already treats these paths as immutable (packages/router/src/vite/internal/
+# static-serve.ts `cacheControlFor`); this file is what makes the deployed host
+# honour it.
+#
+# What is deliberately NOT here:
+#   - no `/*` rule: HTML must keep the host's revalidation (a page is the
+#     deployment boundary and changes on every deploy);
+#   - no rule for the unhashed entry files (`/client/islands/client.js`): their
+#     URL is stable across builds, so a long max-age would pin an old entry;
+#   - pagefind's index files are unhashed and rebuilt on every deploy, so they
+#     are explicitly short-lived rather than immutable.
+
+/client/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# The OG/social image is referenced by absolute URL in every page's head; its
+# name is stable, so it gets a week, not a year.
+/assets/og-image.jpg
+  Cache-Control: public, max-age=604800
+
+# Search index: rebuilt per deploy, unhashed names, so revalidate every time.
+/pagefind/*
+  Cache-Control: public, max-age=0, must-revalidate
+
+# The redirect table is read per-request by the host, never by the browser.
+/_redirects
+  Cache-Control: no-store

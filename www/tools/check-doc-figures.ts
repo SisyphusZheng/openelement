@@ -5,18 +5,22 @@
  * Both sides derive — figure expectations come from regexing the two doc
  * files (never a hand list here), actuals from dist (html count, sitemap
  * locs, manifests, pagefind entry, chunk raw+gzip bytes, per-route
- * payloads). A route payload is the eager download closure: the route's
- * manifest chunk set plus `client.js`, closed over the static-import edges
- * the client build records in dist/client/.vite/manifest.json — so shared
+ * payloads, total byte sum). A route payload is the eager download closure:
+ * the route's manifest chunk set plus `client.js`, closed over the static-import
+ * edges the client build records in dist/client/.vite/manifest.json — so shared
  * chunks that ride along on every page are counted no matter which chunk
  * file hosts them. Byte-size totals from `du` are deliberately NOT gated:
- * platform du accounting differs between macOS and Linux runners.
+ * platform du accounting differs between macOS and Linux runners. The total row
+ * IS gated — as the plain byte sum the doc declares (`find www/dist -type f
+ * -exec wc -c {} +`), with the same ±1% cross-runner band the summed payload
+ * rows carry, because that row drifted unnoticed for exactly as long as it had
+ * no command attached to it.
  */
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import process from 'node:process';
-import { commandOutput } from '../../tools/repo/node-command.ts';
+import { spawnCommand } from '../../tools/repo/node-command.ts';
 
 const repoRoot = fileURLToPath(new URL('../../', import.meta.url));
 const dist = join(repoRoot, 'www/dist');
@@ -45,7 +49,7 @@ function check(name: string, expected: number, actual: number, tolerance = 0): v
 async function gzipSize(file: string): Promise<number> {
   // Must be gzip -9: the doc figures are measured that way and
   // CompressionStream would produce different bytes.
-  const child = await commandOutput('gzip', {
+  const child = await spawnCommand('gzip', {
     args: ['-9', '-c', file],
     stdin: 'null',
     stdout: 'piped',
@@ -65,6 +69,13 @@ for (const entry of await readdir(dist, { recursive: true, withFileTypes: true }
   );
 }
 const distHtml = [...distFiles.keys()].filter((path) => path.endsWith('.html'));
+// The doc's total row is the byte sum of every regular file under www/dist
+// (hidden build metadata such as .openelement/ssg-pages.json included), stated
+// in the doc as a `find … -exec wc -c` command. `du` accounting is deliberately
+// not used: it differs between macOS and Linux runners, while the byte sum of
+// an identical tree does not.
+let distTotalBytes = 0;
+for (const absolute of distFiles.values()) distTotalBytes += (await stat(absolute)).size;
 const sitemap = await readFile(join(dist, 'sitemap.xml'), 'utf8');
 const sitemapLocs = (sitemap.match(/<loc>/g) ?? []).length;
 const manifestPaths = [...distFiles.keys()].filter(
@@ -236,6 +247,26 @@ for (const docPath of docs) {
     check(scope + 'island tags', Number(pair[1]), tagCounts.size);
     check(scope + 'manifest entries', Number(pair[2]), manifestEntries);
   }
+  // Total static output: the byte sum of every regular file under www/dist —
+  // the口径 the doc row declares, measured with
+  // `find www/dist -type f -exec wc -c {} + | tail -1`. It used to be an ungated
+  // "byte sum" with no stated rule, and it silently drifted: the alpha.15
+  // re-baseline recorded 13,561,543 B while a clean build of the same commit
+  // measures 13,563,411 B, and an independent run read 13,562,524 B — three
+  // numbers, no reproducible command, no gate. The row now carries the same
+  // ±1% cross-runner band the summed payload rows use (chunk bytes vary across
+  // runner images, and those bytes are inside this total), which still catches
+  // the class of drift that produced the three numbers.
+  check(
+    scope + 'total static output',
+    num(
+      zh
+        ? /\|\s*静态产物总量\s*\|\s*[\d.]+ MiB（([\d,]+) B）/u
+        : /\|\s*Total static output\s*\|\s*[\d.]+ MiB \(([\d,]+) B\)/u,
+    ),
+    distTotalBytes,
+    0.01,
+  );
   const railOrder = [...text.matchAll(/open-page-rail[`\s]+(?:on|出现在)\s*(\d+)/g)].map((m) =>
     Number(m[1]),
   );

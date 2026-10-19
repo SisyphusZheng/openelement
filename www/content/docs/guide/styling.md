@@ -1,6 +1,6 @@
 ---
 title: 'Styling'
-lede: 'Pages that opt into an explicit shadow root render inside a custom element with declarative shadow DOM — a global stylesheet alone will not reach them. The compiled default is a light root.'
+lede: 'An explicit shadow root renders inside a custom element with declarative shadow DOM, out of a global stylesheet’s reach. The default is a light root.'
 order: 5
 ---
 
@@ -16,9 +16,9 @@ CSS custom properties inherit through shadow boundaries: `--text-primary`, `--br
 
 Class, id, and tag selectors from a document stylesheet never match inside the shadow root. Global resets (`margin: 0` on `*`), typography rules, and utility-class systems therefore apply only to the document shell. This is encapsulation by design — it is also the most common first-day trap, because the instinct is a global stylesheet.
 
-## The two supported patterns
+## The supported styling paths
 
-One: a real `.css` file imported into the component and arrayed in its `static styles` — the one style authoring form (#1558). The build's style-asset pipeline resolves the import: shadow components get the sheet adopted through `adoptedStyleSheets` (a real `.css` asset in island chunks, never JS-embedded bytes), and the server inlines the same bytes into the SSR output for light roots. Two: CSS custom properties defined on `:root`, which inherit through the shadow boundary. Document-level `<link rel="stylesheet">` and `<style>` in the head do not apply to shadow content, and raw-text `<style>` tags are rejected from compiled templates.
+One: authored `.css` files — a real sheet imported into the component and arrayed in its `static styles` (#1558). The build's style-asset pipeline emits each sheet as a content-addressed asset: a shadow component fetches it as a real `.css` asset and adopts it through `adoptedStyleSheets` (never JS-embedded bytes), while the server declares the same asset with a parser-visible `<link rel="stylesheet" data-oe-static-styles>` in the DSD output. A light root's sheet is emitted wrapped in `@scope (<tag>)` with `:host` and `::slotted` projected onto the light tree, and its DSD template carries the same `<link>` rather than an inline `<style>`; only a package sheet outside the project root that no client graph can emit falls back to an inlined memory `StyleSheet`, and the build reports that fallback as a warning. Two: utility classes from the configured CSS provider (the Tailwind preset by default; UnoCSS through the style-provider port) — the compiler admits static class tokens and the build emits them into the document stylesheet for light roots and into the shared component stylesheet for shadow islands, so presentation lives in the markup and no CSS text ships inside JavaScript. Three: CSS custom properties defined on `:root`, which inherit through the shadow boundary. Document-level `<link rel="stylesheet">` and `<style>` in the head do not apply to shadow content, and raw-text `<style>` tags are rejected from compiled templates.
 
 ### A document-level stylesheet (does not apply)
 

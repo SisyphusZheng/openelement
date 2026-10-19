@@ -15,6 +15,12 @@
  *    skipped by WebKit's registry; repairShadowUpgrades() re-inserts it after
  *    adoption.
  *    → Delete when WebKit upgrades such elements on adoption.
+ *    NOTE the repair needs the DEFINITION to be present: the post-morph call
+ *    is a no-op when the island's module only arrives later (#1544/B2 made
+ *    activation page-scope, so a morph-delivered host now defines its element
+ *    after the insertion). repairUpgrades() re-runs the same repair from the
+ *    island-loaded hook, which is the moment the definition exists. Both call
+ *    sites share the one predicate below; neither is a second mechanism.
  */
 
 interface WebkitFixDeps {
@@ -24,6 +30,12 @@ interface WebkitFixDeps {
 export interface MorphWebkitFix {
   instantiateDsd: (node: Node, created?: ShadowRoot[]) => void;
   repairShadowUpgrades: (roots: ShadowRoot[]) => void;
+  /**
+   * Re-run the upgrade repair over a whole document (light DOM and every
+   * nested shadow root). The post-morph call runs when the definition may not
+   * exist yet; this one runs from the island-loaded hook, once it does.
+   */
+  repairUpgrades: (doc: Document) => void;
 }
 
 export function createMorphWebkitFix(deps: WebkitFixDeps): MorphWebkitFix {
@@ -59,33 +71,51 @@ export function createMorphWebkitFix(deps: WebkitFixDeps): MorphWebkitFix {
     }
   }
 
+  /**
+   * #604 (WebKit): an element moved into a shadow root while the subtree still
+   * belonged to the parser-inert document is permanently skipped by WebKit's
+   * registry — it stays a plain HTMLElement and even customElements.upgrade()
+   * cannot reach it. Moving it inside the live tree triggers the natural
+   * upgrade path. Chromium/Firefox upgrade eagerly on adoption and are
+   * filtered out by the instanceof check.
+   */
+  function repairElement(el: Element): void {
+    const ctor =
+      el.localName.indexOf('-') !== -1 ? win.customElements.get(el.localName) : undefined;
+    if (!ctor || el instanceof ctor) return;
+    const parent = el.parentNode;
+    if (!parent) return;
+    const next = el.nextSibling;
+    el.remove();
+    parent.insertBefore(el, next);
+  }
+
   function repairShadowUpgrades(roots: ShadowRoot[]): void {
-    // #604 (WebKit): an element moved into a shadow root while the subtree
-    // still belonged to the parser-inert document is permanently skipped by
-    // WebKit's registry — it stays a plain HTMLElement and even
-    // customElements.upgrade() cannot reach it. Runs AFTER insertion:
-    // re-inserting such an element inside the live tree triggers the
-    // natural upgrade path. Chromium/Firefox upgraded eagerly on adoption
-    // and are filtered out by the instanceof check.
     for (let i = 0; i < roots.length; i++) {
       const all = roots[i].querySelectorAll('*');
-      for (let j = 0; j < all.length; j++) {
-        const el = all[j];
-        const ctor =
-          el.localName.indexOf('-') !== -1 ? win.customElements.get(el.localName) : undefined;
-        if (ctor && !(el instanceof ctor)) {
-          const parent = el.parentNode;
-          if (!parent) continue;
-          const next = el.nextSibling;
-          el.remove();
-          parent.insertBefore(el, next);
-        }
-      }
+      for (let j = 0; j < all.length; j++) repairElement(all[j]);
     }
+  }
+
+  function repairUpgrades(doc: Document): void {
+    // Runs once a definition has landed, which is after the morph that
+    // inserted the host: the post-insertion pass saw no ctor for it and
+    // skipped it (#1544/B2). Walks the live tree again, shadow roots
+    // included, and re-inserts every still-unupgraded custom element.
+    const visit = (scope: ParentNode): void => {
+      const all = scope.querySelectorAll('*');
+      for (let i = 0; i < all.length; i++) {
+        const el = all[i] as HTMLElement;
+        repairElement(el);
+        if (el.shadowRoot) visit(el.shadowRoot);
+      }
+    };
+    visit(doc);
   }
 
   return {
     instantiateDsd: instantiateDsd,
     repairShadowUpgrades: repairShadowUpgrades,
+    repairUpgrades: repairUpgrades,
   };
 }

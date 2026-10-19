@@ -1,6 +1,6 @@
 ---
 title: '当前架构'
-lede: 'openElement 是一个 Web Components 原生、static-first 的应用框架。Custom Elements 是持久的组件契约；编译型 JSX 类（`@element`）是创作模型；Vite 与 Nitro 是官方构建与输出路径。'
+lede: 'Web Components 原生、static-first 的框架：Custom Elements 是持久的契约，编译型 JSX 是创作模型，Vite 与 Nitro 是构建路径。'
 order: 10
 ---
 
@@ -12,27 +12,31 @@ order: 10
 
 <figure class="diagram" aria-hidden="true"><svg viewBox="0 0 144 88" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="22" cy="20" r="9"/><circle cx="122" cy="20" r="9"/><circle cx="72" cy="74" r="9"/><path d="M31 26l29 9"/><path d="M113 26l-29 9"/><path d="M72 52v13"/><g style="color:var(--color-primary)"><circle cx="72" cy="40" r="12"/><circle cx="72" cy="40" r="3.5" fill="currentColor" stroke="none"/></g></svg></figure>
 
-| 包                     | 角色                | 依赖                        |
-| ---------------------- | ------------------- | --------------------------- |
-| `@openelement/element` | 运行时 · 零框架依赖 | —                           |
-| `@openelement/router`  | 页面 · 路由 · 构建  | 使用 `@openelement/element` |
-| `@openelement/ui`      | 可选原语            | 可选                        |
-| `@openelement/create`  | starter · 构建期    | —                           |
+| 包                       | 角色                | 依赖                                                    |
+| ------------------------ | ------------------- | ------------------------------------------------------- |
+| `@openelement/protocol`  | 契约 · 零依赖       | —                                                       |
+| `@openelement/element`   | 运行时              | 使用 `@openelement/protocol`                           |
+| `@openelement/compiler`  | 构建期编译器        | 使用 `@openelement/protocol`；TypeScript 是唯一宿主依赖 |
+| `@openelement/router`    | 页面 · 路由 · 构建  | 使用 `@openelement/element`、`@openelement/compiler`   |
+| `@openelement/ui`        | 可选原语            | 可选 `@openelement/element`                             |
+| `@openelement/create`    | starter · 构建期    | —                                                       |
 
-> 已退役：`core` · `signal` · `protocol` · `content` · `ssg` · `app` ·
-> `adapter-vite` · `app/preact` · `app/spa`。
+> 已退役：`core` · `signal` · `content` · `ssg` · `app` · `adapter-vite` ·
+> `app/preact` · `app/spa`。
 
 ## 深模块隐藏实现复杂度。
 
 作者使用产品接口。renderer、router、signal、content
 与构建期细节保持内部化，直到真实的变体需求证明需要公开接缝。
 
-| 层          | 包                                            | 职责                                                               |
-| ----------- | --------------------------------------------- | ------------------------------------------------------------------ |
-| element     | `@openelement/element`                        | Custom Elements、JSX、DSD、hydration 与 signals 的统一创作界面。   |
-| application | `@openelement/router`                         | 面向完整应用的页面、路由、islands 与渲染语义。                     |
-| build       | `@openelement/router`                         | Vite 集成、静态生成与可部署的 Nitro 输出，收敛在一个构建边界之内。 |
-| adoption    | `@openelement/create`，可选 `@openelement/ui` | 以 starter 为先的采用路径与可选原语；两者都不暴露已退役的实现包。  |
+| 层          | 包                                            | 职责                                                                 |
+| ----------- | --------------------------------------------- | -------------------------------------------------------------------- |
+| contracts   | `@openelement/protocol`                       | 两个产品共同构建其上的共享契约：Part Program IR、错误方言、诊断。     |
+| element     | `@openelement/element`                        | Custom Elements、JSX、DSD、hydration 与 signals 的统一创作界面。     |
+| build       | `@openelement/compiler`                       | 编译器 Vite 接缝之后的 TSX-to-Part-Program 编译；唯一 TypeScript 宿主依赖。 |
+| application | `@openelement/router`                         | 面向完整应用的页面、路由、islands、渲染语义与构建编排。               |
+| output      | `@openelement/router`                         | Vite 集成、静态生成与可部署的 Nitro 输出，收敛在一个构建边界之内。   |
+| adoption    | `@openelement/create`，可选 `@openelement/ui` | 以 starter 为先的采用路径与可选原语；两者都不暴露已退役的实现包。    |
 
 ## Web Components 就是应用架构。
 

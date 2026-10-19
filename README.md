@@ -3,20 +3,23 @@
 English | [简体中文](./README.zh.md)
 
 OpenElement is a Web Platform-first core for two products: **Element** and **Router**.
-Element compiles JSX-authored Custom Elements into a Part Program used by server serialization, fresh DOM, and existing-DOM claim. Router owns route selection, HTTP semantics, navigation, loaders, actions, and the shared Native/Lit Framework Mode application contract.
+Element compiles JSX-authored Custom Elements into a Part Program used by server serialization, fresh DOM, and existing-DOM hydration. Router owns route selection, HTTP semantics, navigation, loaders, actions, and the shared Native/Lit Framework Mode application contract.
 
-The source tree is `1.0.0-alpha.14`, a new public baseline for Element and Router. It is not a compatibility migration from historic 0.x snapshots. From this release the six packages (`protocol`, `element`, `compiler`, `router`, `create`, `ui`) publish as one line, and npm `latest` points at that line — `npm install @openelement/router` resolves to the current 1.0 prerelease. Since #1557 the Element monolith is three packages: `@openelement/protocol` (cross-system contracts, zero dependencies), `@openelement/element` (pure runtime), and `@openelement/compiler` (build-time TSX-to-Part-Program compiler + Vite plugin).
+The source tree is `1.0.0-alpha.15`, a new public baseline for Element and Router. It is not a compatibility migration from historic 0.x snapshots. From this release the six packages (`protocol`, `element`, `compiler`, `router`, `create`, `ui`) publish as one line, and npm `latest` points at that line — `npm install @openelement/router` resolves to the current 1.0 prerelease. Since #1557 the Element monolith is three packages: `@openelement/protocol` (cross-system contracts, zero dependencies), `@openelement/element` (pure runtime), and `@openelement/compiler` (build-time TSX-to-Part-Program compiler + Vite plugin).
 
 ## Quick Start
 
-Requires **Node.js 24.2+** and pnpm. Create, install, run, and build:
+Requires **Node.js 24.2+ (24.18.0 recommended)** and a package manager: npm,
+pnpm, yarn, or bun (the scaffolder installs with whichever one it finds on
+`PATH`, and the generated project is package-manager neutral). Create, run, and
+build — the generator installs the dependencies itself, so there is no separate
+install step:
 
 ```bash
 npm create @openelement my-app
 cd my-app
-pnpm install
-pnpm dev
-pnpm build
+npm run dev
+npm run build
 ```
 
 Add a page — one compiled element plus one route record:
@@ -47,7 +50,7 @@ export default definePage(HelloPage, {
 });
 ```
 
-Re-run `pnpm dev`, open the URL Vite prints plus `/hello`, and `pnpm build` emits the static-first `dist/` output. Full walkthrough: <https://openelement.org/guide/getting-started>.
+Re-run `npm run dev`, open the URL Vite prints plus `/hello`, and `npm run build` emits the static-first `dist/` output. Full walkthrough: <https://openelement.org/guide/getting-started>.
 
 **Build-time host:** Framework Mode development and builds run on Node.js
 24.2+ through pnpm scripts (ADR-0161, superseding the Deno-native decision in
@@ -60,7 +63,7 @@ can load ESM. Element remains independently consumable in npm-only projects.
 
 ## Features
 
-- Declarative Shadow DOM plus SSR, existing-DOM claim, and islands that hydrate only where needed.
+- Declarative Shadow DOM plus SSR, existing-DOM hydration, and islands that hydrate only where needed.
 - Authoring JSX is compiled to a Part Program at build time; there is no runtime virtual-DOM contract.
 - Route Mode for explicit route records and Framework Mode for file routes, loaders, actions, and forms.
 - Native and Lit renderers behind one application contract; renderer integrations stay explicit.

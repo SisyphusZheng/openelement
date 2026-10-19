@@ -1,6 +1,6 @@
 ---
 title: '样式'
-lede: '显式选择 shadow root 的页面渲染在带 declarative shadow DOM 的 custom element 内部——单靠全局样式表无法触及它们。编译默认是 light root。'
+lede: '显式声明的 shadow root 渲染在带 declarative shadow DOM 的 custom element 内部，全局样式表触及不到。默认是 light root。'
 order: 5
 ---
 
@@ -16,9 +16,9 @@ CSS 自定义属性会穿透 shadow 边界继承：在 `:root` 上定义的 `--t
 
 文档样式表中的 class、id 与标签选择器永远无法匹配到 shadow root 内部。全局 reset（`* { margin: 0 }`）、排版规则与工具类体系因此只对文档外壳生效。这是封装的设计意图——也是最常见的第一天陷阱，因为人的第一反应就是全局样式表。
 
-## 两种受支持的写法
+## 受支持的样式路径
 
-其一：真实的 `.css` 文件——import 进组件并数组进它的 `static styles`，这是唯一的样式创作形态（#1558）。构建期的 style-asset 管线负责解析该 import：shadow 组件的样式表经 `adoptedStyleSheets` 采纳（island chunk 里是真实的 `.css` 资产，绝不内嵌 JS 字节），light root 的服务端则把同一份字节内联进 SSR 输出。其二：在 `:root` 上定义 CSS 自定义属性——它们会穿透 shadow 边界继承。文档级 `<link rel="stylesheet">` 与 head 里的 `<style>` 不会作用于 shadow 内容；编译模板中的裸 `<style>` 标签会被拒绝。
+其一：真实的 `.css` 文件——import 进组件并数组进它的 `static styles`（#1558）。构建期的 style-asset 管线把每份样式表发射成按内容寻址的资产：shadow 组件在客户端以真实 `.css` 资产拉取并经 `adoptedStyleSheets` 采纳（绝不内嵌 JS 字节），服务端则在 DSD 输出里用解析器可见的 `<link rel="stylesheet" data-oe-static-styles>` 声明同一份资产。light root 的样式表会包在 `@scope (<tag>)` 中发射，并把 `:host` 与 `::slotted` 投影到 light 树；它的 DSD 模板同样携带这条 `<link>`，而不是内联 `<style>`。只有位于项目根之外、且没有任何客户端图能发射的包内样式表才退回内联的内存 `StyleSheet`，构建会把这种回退报告为 warning。其二：来自所配置 CSS provider 的工具类（默认 Tailwind preset；UnoCSS 经 style-provider 端口接入）——编译器准入静态 class token，构建把它们发射进 light root 的文档样式表与 shadow island 共享的组件样式表，因此表现写在标记里，JavaScript 里不携带任何 CSS 文本。其三：在 `:root` 上定义 CSS 自定义属性——它们会穿透 shadow 边界继承。文档级 `<link rel="stylesheet">` 与 head 里的 `<style>` 不会作用于 shadow 内容；编译模板中的裸 `<style>` 标签会被拒绝。
 
 ### 文档全局样式表（不会生效）
 

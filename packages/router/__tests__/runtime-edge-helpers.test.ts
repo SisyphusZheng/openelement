@@ -210,6 +210,55 @@ test('WebKit morph helpers instantiate nested DSD and repair skipped custom elem
   expect(repaired).toEqual(['removed', [skipped, 'next']]);
 });
 
+test('WebKit repair reaches hosts whose definition landed after the morph (#604, deferred islands)', () => {
+  // The post-morph repair runs while the island chunk may still be in flight,
+  // so it finds no constructor and skips the host. This pass runs from the
+  // island-loaded hook, once the definition exists — the B2 shape, where a
+  // morph-delivered host activates its island only after insertion.
+  const repaired: unknown[] = [];
+  class LateWc {}
+  const parent = { insertBefore: (node: unknown, next: unknown) => repaired.push([node, next]) };
+  const skippedInShadow = {
+    localName: 'late-wc',
+    parentNode: parent,
+    nextSibling: 'next',
+    remove: () => repaired.push('removed-shadow'),
+  };
+  const upgraded = Object.assign(new LateWc(), {
+    localName: 'late-wc',
+    parentNode: parent,
+    nextSibling: null,
+    remove: () => repaired.push('BUG-upgraded-touched'),
+  });
+  const shadowRoot = { querySelectorAll: () => [skippedInShadow, upgraded] };
+  const host = {
+    localName: 'div',
+    parentNode: parent,
+    nextSibling: null,
+    shadowRoot,
+    remove: () => repaired.push('BUG-host-touched'),
+  };
+  const skippedInLightDom = {
+    localName: 'late-wc',
+    parentNode: parent,
+    nextSibling: null,
+    remove: () => repaired.push('removed-light'),
+  };
+  const doc = { querySelectorAll: () => [host, skippedInLightDom] };
+  const win = {
+    customElements: { get: (tag: string) => (tag === 'late-wc' ? LateWc : undefined) },
+  };
+  const webkit = createMorphWebkitFix({ win: win as unknown as Window & typeof globalThis });
+
+  webkit.repairUpgrades(doc as unknown as Document);
+  expect(repaired).toEqual([
+    'removed-shadow',
+    [skippedInShadow, 'next'],
+    'removed-light',
+    [skippedInLightDom, null],
+  ]);
+});
+
 test('SSR artifact cleanup removes server-only chunks and preserves client assets', async () => {
   const root = await mkdtemp(join(tmpdir(), 'oe-clean-ssr-'));
   try {

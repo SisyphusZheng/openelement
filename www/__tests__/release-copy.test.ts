@@ -11,7 +11,14 @@
  * must never turn into a "not yet on npm" claim on the page.
  */
 import { expect, test } from 'vitest';
-import { SOURCE_LINE_PUBLISHED } from '../app/data/_generated-release-line.ts';
+import {
+  COMMON_COMPLETE_VERSION,
+  LATEST_PRERELEASE_VERSION,
+  REGISTER_CURRENT_STAMP,
+  REGISTER_CURRENT_SUMMARY,
+  REGISTER_VERSION_LABEL,
+  SOURCE_LINE_PUBLISHED,
+} from '../app/data/_generated-release-line.ts';
 import {
   alphaLineNote,
   COMMON_PUBLISHED_NOTE,
@@ -149,10 +156,63 @@ test('release copy: the register never derives a stable line from a latest dist-
     !/stable [0-9]+\.[0-9]+ (maintenance )?line covers/iu.test(source),
     'changelog: an attributed stable-line sentence is back in the register copy',
   ).toBeTruthy();
-  // The summary is built from the shared-latest fact, so it stays true as the
-  // registry moves (prerelease when one version is shared, "differ" otherwise).
-  expect(source).toContain('PUBLISHED_LATEST_SHARED');
-  expect(source).toContain('COMMON_PUBLISHED_VERSION');
+  // The presentation is decided by the generator (release-line module) from
+  // the same tracked truth, so the route carries no branch over the nullable
+  // mirror. The former branch was statically dead while the mirror reads null
+  // (CodeQL js/trivial-conditional #4241); a regeneration, not a JSX edit,
+  // flips the copy when a common stable release lands. Prose may name the
+  // retired branch, but no comparison may come back.
+  expect(!/COMMON_PUBLISHED_VERSION\s*(?:\?\?|===|!==)/u.test(source)).toBeTruthy();
+  expect(source).not.toContain('PUBLISHED_LATEST_SHARED');
+  expect(source).toContain('REGISTER_VERSION_LABEL');
+  expect(source).toContain('REGISTER_CURRENT_SUMMARY');
+});
+
+test('release copy: the register presentation is decided at generation time', async () => {
+  // CodeQL js/trivial-conditional #4241: the route branched on a literal-null
+  // mirror of release-state.commonCompleteVersion. The generator now decides the
+  // label/stamp/summary from release-state.json; these assertions pin the
+  // decided values to the tracked truth, so silent copy drift fails here (and
+  // check:content-data fails on generated-module drift).
+  const releaseState = JSON.parse(
+    await readFile(new URL('../../docs/release/release-state.json', import.meta.url), 'utf8'),
+  ) as {
+    commonCompleteVersion: string | null;
+    latestPrerelease: { version: string };
+  };
+  // The typed string|null contract mirrors the tracked truth, and version.ts's
+  // enforced mirror agrees (release:state-machine:check pins the pair).
+  expect(COMMON_COMPLETE_VERSION).toEqual(releaseState.commonCompleteVersion);
+  expect(COMMON_COMPLETE_VERSION).toEqual(COMMON_PUBLISHED_VERSION);
+  expect(LATEST_PRERELEASE_VERSION).toEqual(releaseState.latestPrerelease.version);
+  // Both locales carry a decided sentence: bilingual parity is structural, not
+  // an edit-time convention.
+  for (const locale of ['en', 'zh'] as const) {
+    expect(REGISTER_CURRENT_STAMP[locale].length, `stamp ${locale}`).toBeGreaterThan(0);
+    expect(REGISTER_CURRENT_SUMMARY[locale].length, `summary ${locale}`).toBeGreaterThan(0);
+  }
+  if (releaseState.commonCompleteVersion === null) {
+    // Today: no common stable version, so the register names the shared
+    // prerelease line — exactly the value the route's former fallback computed.
+    expect(REGISTER_VERSION_LABEL).toEqual(LATEST_PRERELEASE_VERSION);
+    expect(REGISTER_CURRENT_STAMP).toEqual({ en: 'Per-package latest', zh: '各包 latest' });
+    // Pin the current emitted copy (a copy change is a deliberate edit here, not
+    // a silent regeneration): the sentence must name the registry-truth version
+    // and state the absent common stable release in both locales.
+    expect(REGISTER_CURRENT_SUMMARY.en).toEqual(
+      `1.0 alpha line: every published package\u2019s npm latest is the same prerelease, ${LATEST_PRERELEASE_VERSION}. No common stable version is published.`,
+    );
+    expect(REGISTER_CURRENT_SUMMARY.zh).toEqual(
+      `1.0 alpha 线：各发布包的 npm latest 同为预发布版本 ${LATEST_PRERELEASE_VERSION}；不存在共同 stable 版本。`,
+    );
+  } else {
+    // Future state: a common stable release flips the decided copy without a
+    // route edit.
+    expect(REGISTER_VERSION_LABEL).toEqual(releaseState.commonCompleteVersion);
+    expect(REGISTER_CURRENT_STAMP).toEqual({ en: 'Current', zh: '当前' });
+    expect(REGISTER_CURRENT_SUMMARY.en).toContain(releaseState.commonCompleteVersion);
+    expect(REGISTER_CURRENT_SUMMARY.zh).toContain(releaseState.commonCompleteVersion);
+  }
 });
 
 test('release copy: Site sources do not claim a four-package version', async () => {
@@ -162,8 +222,10 @@ test('release copy: Site sources do not claim a four-package version', async () 
     'routes/roadmap.tsx',
     'routes/index/index.tsx',
     'routes/docs/index.tsx',
-    'components/page-home.tsx',
-    'components/page-changelog.tsx',
+    // page-home.tsx retired into routes/index/index.tsx (server function page,
+    // alpha15): the page copy lives in the route module now, which is already
+    // listed above — this comment is the visible record of the former
+    // component's removal from the guarded set.
     // The home chrome dictionary carried the old 'four packages' / '四个包'
     // literal (P13: it was missing from this list, so a re-added hand-written
     // count there would have gone unguarded).

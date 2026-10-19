@@ -1,0 +1,59 @@
+{
+  "$comment": "T10 R8 performance baseline. Measured by www/e2e/performance-budget.spec.ts (mobile 4G: 4 Mbps/3 Mbps/150 ms RTT, CPU 4x throttle, 390x844 DPR2, cold cache per run, median of N) on the alpha.15 candidate build in lane/t10-audit. Every field is a real measurement: INP is the worst event-timing duration across the scripted interactions (open search, type, escape, theme toggle, Tab), so a run with no interaction would report 0 and the comparison skips zero baselines.",
+  "note": "Re-baselined from the harness's own first run (2026-10-18, 5 routes x 3 runs, --workers=1). The phase-1 audit numbers it replaced were measured without interactions (INP unmeasured, long-task totals correspondingly lower) and with content-length accounting, so they were not comparable: transferBytes now comes from CDP Network.loadingFinished.encodedDataLength and includes the scripted search round, and the home page's dragon media loads progressively — a run can capture only part of it, which is why / reads ~6.4 MB here against ~10.7 MB when the same page was observed with header accounting for longer.",
+  "measuredAt": "2026-10-18",
+  "profile": "mobile-4g-cpu4x",
+  "runs": 3,
+  "routes": {
+    "/": {
+      "lcpMs": 3140,
+      "cls": 0,
+      "inpMs": 272,
+      "longTasks": 14,
+      "longTaskMs": 1423,
+      "loadMs": 21379,
+      "requests": 89,
+      "transferBytes": 6443837
+    },
+    "/guide/core-concepts": {
+      "lcpMs": 1240,
+      "cls": 0.0061,
+      "inpMs": 120,
+      "longTasks": 5,
+      "longTaskMs": 329,
+      "loadMs": 5267,
+      "requests": 29,
+      "transferBytes": 761199
+    },
+    "/reference": {
+      "lcpMs": 1548,
+      "cls": 0,
+      "inpMs": 944,
+      "longTasks": 47,
+      "longTaskMs": 5603,
+      "loadMs": 10423,
+      "requests": 26,
+      "transferBytes": 2722972
+    },
+    "/changelog": {
+      "lcpMs": 1452,
+      "cls": 0,
+      "inpMs": 224,
+      "longTasks": 6,
+      "longTaskMs": 783,
+      "loadMs": 5610,
+      "requests": 26,
+      "transferBytes": 784329
+    },
+    "/zh/guide/core-concepts": {
+      "lcpMs": 1272,
+      "cls": 0.0093,
+      "inpMs": 112,
+      "longTasks": 5,
+      "longTaskMs": 366,
+      "loadMs": 5234,
+      "requests": 28,
+      "transferBytes": 737901
+    }
+  }
+}

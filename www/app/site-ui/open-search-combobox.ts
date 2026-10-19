@@ -171,14 +171,25 @@ export function connectSearchRuntime(host: SearchHost, callbacks: RuntimeCallbac
       // Only real typing drives Pagefind; machine-driven value writes
       // (selection clear, close reset) come back with reason 'script'.
       if (details.reason === 'input-change' || details.reason === undefined) {
+        // Search first, then ensure the index is on its way. Already-loaded
+        // runtimes answer from the cached module (loadIndex no-ops); a cold
+        // runtime gets its skeleton from runSearch's pre-load branch and the
+        // load's completion re-drives the same query (see loadIndex).
         runtime.runSearch(host);
+        runtime.loadIndex(host);
       }
     },
     onOpenChange(details) {
       const target = overlay(host);
       if (details.open) {
         if (target) target.hidden = false;
-        runtime.loadIndex(host);
+        // The empty-state hint ("type at least 2 characters") is written on
+        // open — synchronously now, where it used to wait for the index load
+        // to finish. The index itself is NOT fetched here (T10 R3): opening the
+        // dialog is a look, not a search, and pagefind.js + its wasm (~86 KB
+        // compressed) used to ride every open, including opens closed without
+        // typing a character. The first real input change triggers the load.
+        runtime.runSearch(host);
       } else if (target && !target.hidden) {
         callbacks.onClose(host);
       }

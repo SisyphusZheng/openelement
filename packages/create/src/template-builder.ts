@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import { CREATE_VERSION, VITE_STARTER_PIN } from './version.ts';
+import { CREATE_VERSION } from './version.ts';
 
 // npm package-name ceiling (validate-npm-package-name); a generated project
 // directory must stay a legal package name so `npm init`-style flows and
@@ -32,6 +32,81 @@ export function validateProjectName(name: string): string | null {
   return null;
 }
 
+/**
+ * The project name for an in-place scaffold (`npm create @openelement .`),
+ * derived from the directory's own name and lowered into the package-name
+ * grammar {@linkcode validateProjectName} enforces: a host directory called
+ * `My App` still generates a legal `my-app` manifest. The result is always a
+ * valid name, so the in-place path never fails on the host's directory name;
+ * a directory with no usable characters at all (a filesystem root) falls back
+ * to `app`.
+ */
+export function inPlaceProjectName(directory: string): string {
+  // Everything below is a linear scan on purpose: the regex spellings this
+  // replaces (`/\/+$/`, `/[-._]+$/`) are quadratic on a long run of the
+  // repeated character, which CodeQL rightly reports as a ReDoS shape, and the
+  // directory name is host input (a directory really can be named `/////…`).
+  // Backslash runs collapse to one '/', then trailing slashes are dropped.
+  let normalized = '';
+  for (const char of directory) {
+    const mapped = char === '\\' ? '/' : char;
+    if (mapped === '/' && normalized.endsWith('/')) continue;
+    normalized += mapped;
+  }
+  let normalizedEnd = normalized.length;
+  while (normalizedEnd > 0 && normalized[normalizedEnd - 1] === '/') normalizedEnd -= 1;
+  const trimmed = normalized.slice(0, normalizedEnd);
+  const base = trimmed.slice(trimmed.lastIndexOf('/') + 1);
+
+  // Runs of characters outside the package-name grammar collapse to one '-'.
+  let slug = '';
+  let inIllegalRun = false;
+  for (const char of base.toLowerCase()) {
+    const legal =
+      (char >= 'a' && char <= 'z') ||
+      (char >= '0' && char <= '9') ||
+      char === '.' ||
+      char === '_' ||
+      char === '-';
+    if (legal) {
+      slug += char;
+      inIllegalRun = false;
+    } else if (!inIllegalRun) {
+      slug += '-';
+      inIllegalRun = true;
+    }
+  }
+
+  // Runs of two or more dots collapse to one dot.
+  let dedotted = '';
+  let dots = 0;
+  for (const char of slug) {
+    if (char === '.') {
+      dots += 1;
+      if (dots > 1) continue;
+    } else {
+      dots = 0;
+    }
+    dedotted += char;
+  }
+
+  // Strip leading non-alphanumerics and the trailing run of `-._`.
+  let start = 0;
+  while (start < dedotted.length) {
+    const char = dedotted[start];
+    if ((char >= 'a' && char <= 'z') || (char >= '0' && char <= '9')) break;
+    start += 1;
+  }
+  let end = dedotted.length;
+  while (end > start) {
+    const char = dedotted[end - 1];
+    if (char === '-' || char === '.' || char === '_') end -= 1;
+    else break;
+  }
+  const cleaned = dedotted.slice(start, end).slice(0, MAX_PROJECT_NAME_LENGTH);
+  return cleaned === '' ? 'app' : cleaned;
+}
+
 interface ProductVersions {
   router: string;
   element: string;
@@ -62,53 +137,73 @@ export function assertUnifiedProductVersions(versions: ProductVersions): Product
   return versions;
 }
 
-// [sourceTemplate, targetRelativePath] pairs. The starter manifest is stored
+// [sourceTemplate, targetRelativePath] pairs — the SINGLE source for the
+// starter file mapping (M-C2). The cli.test.ts toolchain gate consumes this
+// exact list instead of keeping its own hand-maintained copy, so adding a template
+// file cannot pass the scaffold and fail the gate (or vice versa).
+//
+// The starter manifest is stored
 // as package.json.tmpl so the templates/ directory never looks like a nested
 // package root to npm tooling; pnpm scripts and the @openelement/* dependency
-// ranges (caret over the generated-from release — owner ruling 2026-10-09;
-// B5: the former deno.json import map) live in it when written.
+// ranges live in it when written.
 //
 // One template: the showcase starter, Tailwind-ON (the owner's single-default
 // ruling — one default, no variant pair, no flag; the demo pages and islands
 // from #1530 ride on top of the Tailwind role sheet).
-const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
-  // npm tarballs omit dotfiles even when a directory is included. Keep the
-  // template non-hidden and write the expected dotfile into generated apps.
+export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
+  // Dotfiles ship as written: the create tarball is assembled by the release
+  // toolchain (tools/release/publish-npm.ts) from `git ls-files -co
+  // --exclude-standard` plus the `templates` publish glob, NOT by `npm pack`,
+  // so a hidden payload file — `.node-version`, the Node pin the generated
+  // project carries — survives the pack without a `.tmpl` rename. The two
+  // dotfile-shaped targets below are covered by the packed-scaffold test.
+  // (`gitignore.tmpl` predates that toolchain: it keeps the payload visible in
+  // a directory listing while the target stays `.gitignore`.)
   ['gitignore.tmpl', '.gitignore'],
+  ['.node-version', '.node-version'],
   ['README.tmpl', 'README.md'],
+  // The generated project's agent entry pointer (#1613 scope, completed in the
+  // alpha15 cleanup batch): a scaffold user's agents get a local AGENTS.md that
+  // names the public consumer index, lifecycle commands, layout and the
+  // server/client boundary rules. The repository's own root AGENTS.md is
+  // environment-local by owner ruling (see docs/maintainers/agent-contract.md).
+  ['AGENTS.md.tmpl', 'AGENTS.md'],
   ['public/openelement-mark.svg', 'public/openelement-mark.svg'],
-  // B5 (ADR-0161): the starter is a plain Node/pnpm project. Framework
+  // B5 (ADR-0161): the starter is a plain Node project. Framework
   // consumption resolves through package.json dependencies (npm is the only
   // public registry; packed first-party modules carry no bare @std/*
   // specifiers, so no @jsr registry bridge is generated), the lifecycle is
-  // pnpm scripts, and tsconfig.json owns the `check` type-check surface.
+  // package.json scripts, and tsconfig.json owns the `check` type-check
+  // surface. Manager-neutral since alpha.15: the scripts are plain commands
+  // (`oe dev` / `oe build` / `oe start` / `oxfmt` / `oxlint` / `tsc` /
+  // `node --test`), the manifest declares no `packageManager`, and the
+  // scaffold ships NO pnpm-workspace.yaml — the file existed only to host the
+  // Vite+ catalog and its `vite@*` override, and `catalog:` is a pnpm-only
+  // protocol that made npm/yarn/bun installs fail outright
+  // (EUNSUPPORTEDPROTOCOL). With explicit version pins in this manifest there
+  // is nothing left for a workspace file to declare.
   ['package.json.tmpl', 'package.json'],
   ['tsconfig.json.tmpl', 'tsconfig.json'],
   ['vite.config.ts.tmpl', 'vite.config.ts'],
-  // The Vite+ workspace form: the catalog/override pair that points the vite
-  // tree at the Vite+ core, plus the release-day supply-chain exemptions.
-  // pnpm treats the file as its own bookkeeping and rewrites it as needed.
-  ['pnpm-workspace.yaml.tmpl', 'pnpm-workspace.yaml'],
   // #1411: framework options live in openelement.config.ts; the starter ships
   // it near-empty, so every option comes from a file convention until the user
   // overrides one.
   ['openelement.config.ts.tmpl', 'openelement.config.ts'],
   // The @theme role sheet — the ONE styling source (dev serves it directly,
-  // build compiles it through the router's Tailwind preset).
+  // build compiles it through the router's Tailwind entry). Every
+  // presentation value the scaffold renders is a Tailwind utility in markup;
+  // the per-component sheets below hold each root's own box rule, which has
+  // no markup to carry it.
   ['app/styles/theme.css', 'app/styles/theme.css'],
-  // #1557: the retired ui zero-interaction component shapes ship as plain
-  // HTML+CSS recipes the consumer deletes if unused (never an npm dep).
-  ['app/styles/recipes.css', 'app/styles/recipes.css'],
-  // alpha.4: the structural document-head convention. The config file carries
+  // The structural document-head convention. The config file carries
   // the structured `head` channel (title/description/favicon/scripts); this
   // module carries what a URL list cannot express (meta tags, preloads).
   ['app/head.tsx.tmpl', 'app/head.tsx'],
-  // #1558: page CSS is .css files — the one style authoring form. Pages
-  // import and array their sheets in `static styles`.
+  // The one authored rule left per component: the root box. Pages array
+  // their own sheet in `static styles`; the layout arrays the chrome sheet.
   ['app/components/page-home.css', 'app/components/page-home.css'],
   ['app/components/page-about.css', 'app/components/page-about.css'],
   ['app/components/page-404.css', 'app/components/page-404.css'],
-  ['app/components/badges.css', 'app/components/badges.css'],
   ['app/components/site-chrome.css', 'app/components/site-chrome.css'],
   ['app/components/page-home.tsx.tmpl', 'app/components/page-home.tsx'],
   ['app/components/page-about.tsx.tmpl', 'app/components/page-about.tsx'],
@@ -121,9 +216,9 @@ const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   ['app/islands/my-counter.css', 'app/islands/my-counter.css'],
   ['app/islands/live-timer.tsx.tmpl', 'app/islands/live-timer.tsx'],
   ['app/islands/live-timer.css', 'app/islands/live-timer.css'],
-  // The auto-registered application shell (the islands/app-shell.tsx
+  // The auto-registered layout (the app/layout.tsx
   // convention): owns the shared site chrome every page renders inside.
-  ['app/islands/app-shell.tsx.tmpl', 'app/islands/app-shell.tsx'],
+  ['app/layout.tsx.tmpl', 'app/layout.tsx'],
 ];
 
 function versionTokens(v: ProductVersions): Record<string, string> {
@@ -141,11 +236,8 @@ export async function buildTemplates(
   const invalid = validateProjectName(projectName);
   if (invalid) throw new Error(`Invalid project name "${projectName}". ${invalid}`);
   const templatesBase = new URL('../templates/', import.meta.url);
-  // The starter's Vite pin comes from the workspace-anchored VITE_STARTER_PIN
-  // (deps:vite-check), not from the product release version.
   const tokens = {
     ...versionTokens(v),
-    ['$' + '{v.vite}']: VITE_STARTER_PIN,
     ['$' + '{name}']: projectName,
   };
   const entries = await Promise.all(

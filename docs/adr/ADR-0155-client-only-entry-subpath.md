@@ -127,7 +127,9 @@ optimization, and both are why this needs an ADR rather than a changelog line:
    _dropping_ one from the subpath is always a failure.
 
 6. **The subpath ships as a first-class entry, not a convenience alias.** It is
-   in `packages/element/deno.json` `exports`, in the generated
+   in the Deno-era `packages/element/deno.json` `exports` (that file was
+   removed with the Node/pnpm port; the export now lives in
+   `packages/element/package.json`), in the generated
    `OPENELEMENT_EXPORT_FILES` map, in the packed tarball's `package.json`
    `exports`, and in the public interface snapshot. It carries the same
    type surface as `.` (the packed tarball ships `src/client-only.d.ts`).
@@ -140,7 +142,9 @@ optimization, and both are why this needs an ADR rather than a changelog line:
   subpath adds one module of indirection (the seam) to the full graph.
 - **A new failure mode is possible and is fail-closed**: reaching the subpath
   on a page that does hydrate server markup throws instead of half-rendering.
-  Pinned by `packages/element/__tests__/claim-entry-split.test.ts` (fresh
+  Pinned at the time by `packages/element/__tests__/claim-entry-split.test.ts`
+  (since removed; the entry-split fail-closed cases now live in
+  `packages/element/__tests__/resume-entry-split.test.ts` — fresh
   connect through the subpath; fail-closed on unclaimable content; the default
   entry claiming that same content; identical export names) and by the
   reverse-direction codegen case in
@@ -231,3 +235,34 @@ the PR measurement and the re-measurement above are the ones this ADR relies
 on. The comment is left as-is rather than silently rewritten — it is a source
 file outside this ADR's change, and the discrepancy is recorded here so it is
 not lost.
+
+## Amendment (2026-10-12): a reconnect does not consult the claim executor
+
+The K-lane closure exposed the case this ADR's seam did not distinguish: an
+activated instance reconnecting. `kernel.connect()` routed every reconnect of
+an activated instance through `#claim()`, so `./client-only` and `./base` —
+which legitimately install no executor — threw `OE_CLAIM_EXECUTOR_MISSING`
+whenever a component they created fresh was moved in the DOM. A reconnect is
+not a claim: the runtime already owns that DOM.
+
+Design fact now implemented
+(`packages/element/src/internal/compiled/runtime/revive.ts`): materializing the
+DOM records one binding per Part anchor (`MountContext.bindings`); a reconnect
+VERIFIES the program against the owned tree (a root tolerates trailing app
+children, every other parent must hold exactly its program children) and then
+RE-ARMS the retained bindings — fresh scopes, re-subscribed signals, the fixed
+Part/event/ref re-attachment, and the current signal values applied through the
+ordinary update path (`updateWhen`/`updateEach` reconcile Blocks). Nothing is
+mutated before the verification passes, so a damaged activation fails closed
+with the claim walk's diagnostics and stays repairable.
+
+Consequences for this ADR's contract:
+
+- A missing executor still fails closed when a **first** connect meets unknown
+  DOM, naming the entry that can hydrate. Unchanged.
+- The reconnect path never asks for the executor, so every entry resumes its own
+  DOM with one shared semantic.
+- The optional axes keep their value: the reconnect capability is core and costs
+  each entry ~5 KB raw / 1.3 KB gzip (repo-local four-entry harness,
+  2026-10-12), against the ~17 KB raw the claim axis still saves `./client-only`
+  and the ~8 KB raw the blocks axis still saves `./no-blocks` and `./base`.

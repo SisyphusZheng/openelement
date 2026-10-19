@@ -26,13 +26,13 @@ section: 'Reference'
 
 ## 本站 dogfood 可选的 UI 原语
 
-按钮、输入框、徽章与卡片的行为保持可复用；品牌与电影感对象仍是本站私有。
+按钮、输入框、对话框、下拉菜单与代码块的行为保持可复用；品牌与电影感对象仍是本站私有。
 
 ### 所有权链
 
 - **Token** — surface、text、brand、focus、motion 与 elevation 角色。
 - **Recipe** — 交互状态、排版与材质组合。
-- **Primitive** — 十个语义经过测试的可复用 Web Components。
+- **Primitive** — {{UI_COMPONENT_COUNT}} 个语义经过测试的可复用 Web Components。
 
 ### 按钮
 

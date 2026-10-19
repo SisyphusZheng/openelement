@@ -29,6 +29,7 @@ function manifest(
   return {
     name,
     version: '1.0.0-alpha.2',
+    description: metadata.description,
     homepage: metadata.homepage,
     keywords: metadata.keywords,
     engines: metadata.engines,
@@ -45,6 +46,8 @@ test('pack surface: metadata parity with packedMetadata()', () => {
 
 test('pack surface: a missing or divergent facade field fails', () => {
   const fields: Array<[string, unknown]> = [
+    ['description', undefined],
+    ['description', 'some other description'],
     ['homepage', undefined],
     ['homepage', 'https://example.com'],
     ['keywords', ['openelement']],
@@ -62,6 +65,27 @@ test('pack surface: a missing or divergent facade field fails', () => {
     ).map((violation) => violation.message);
     expect(messages.length, `${field}=${JSON.stringify(value)} must fail`).toEqual(1);
     expect(messages[0]).toContain(field);
+  }
+});
+
+test('pack surface: every retained package declares a description (H6)', () => {
+  // The compiler packed without one: PACKAGE_DESCRIPTIONS had five keys and
+  // JSON.stringify drops the undefined, so the tarball carried no
+  // description and nothing asserted it.
+  for (const name of [
+    '@openelement/protocol',
+    '@openelement/element',
+    '@openelement/compiler',
+    '@openelement/router',
+    '@openelement/create',
+    '@openelement/ui',
+  ]) {
+    const metadata = packedMetadata(name);
+    expect(typeof metadata.description, name).toEqual('string');
+    expect(
+      findMetadataViolations(name, manifest(name), metadata),
+      `${name}: packed facade must carry its description`,
+    ).toEqual([]);
   }
 });
 
@@ -98,6 +122,19 @@ test('pack surface: repository-internal paths and ADR citations fail', () => {
     ['task', 'Regenerate with: deno task --cwd packages/ui generate:ui-manifest'],
     ['tools path', 'generator lives in tools/repo/generate-export-files.ts'],
     ['site path', 'wired in www/vite.config.ts'],
+    // N2: every prefixed spelling of the same reference must fail too — the
+    // original pattern only saw the bare form, so `./`/`../`/absolute/
+    // installed-copy/backslash prefixes slipped through.
+    ['dot-relative path', 'see ./packages/router/src/authoring.ts'],
+    ['parent-relative path', 'see ../tools/repo/gate.ts'],
+    ['absolute host path', 'see /Users/dev/openelement/packages/router/src/authoring.ts'],
+    ['absolute CI path', 'see /home/runner/work/openelement/tools/repo/gate.ts'],
+    ['absolute private path', 'see /private/tmp/openelement/tools/repo/gate.ts'],
+    ['windows absolute path', 'see C:\\dev\\openelement\\packages\\router\\src\\authoring.ts'],
+    ['windows relative path', 'see packages\\router\\src\\authoring.ts'],
+    ['installed-copy path', 'node_modules/packages/x/y.ts'],
+    ['installed-copy nested path', '/app/node_modules/tools/lib/process.ts'],
+    ['internal ledger path', 'tracked in .zcode/plans/alpha15-debt-ledger.md'],
     ['adr id', 'compiled authoring (ADR-0143)'],
     ['adr spaced', 'authoring contract (ADR 0143)'],
     ['adr plural', 'historic decision records (ADRs) are maintainer vocabulary'],
@@ -117,6 +154,13 @@ test('pack surface: ordinary prose and package-relative paths pass', () => {
     "import manifestData from './generated-manifest.json' with { type: 'json' };",
     'deno task generate:ui-manifest',
     'docs/ is where the consumer keeps their own files',
+    // N2 guardrails: public URLs keep their path segments without being local
+    // repository references (the absolute-path form only trusts machine roots).
+    '// MDN: https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@view-transition',
+    'https://openelement.org/docs/guide/getting-started',
+    'https://github.com/open-element/openelement/tree/main/docs/adr',
+    // A larger name that merely ends in a guarded directory is not a path.
+    'toolspackages/router',
   ];
   for (const line of accepted) {
     expect(
@@ -265,7 +309,7 @@ test('pack surface: a declared bin whose target is missing from the archive fail
 });
 
 test('pack surface: module-scope seam installs are found, deferred ones are not', () => {
-  const offending = ['installClaimExecutor(claimExistingDom);', 'installSeamThing(other);'];
+  const offending = ['installHydrationExecutor(hydrateExistingDom);', 'installSeamThing(other);'];
   for (const line of offending) {
     const found = findModuleScopeSeamInstalls(line);
     expect(found.length, `must fail: ${line}`).toEqual(1);
@@ -273,14 +317,14 @@ test('pack surface: module-scope seam installs are found, deferred ones are not'
 
   const accepted = [
     // Inside a function or a block: not an import-time install.
-    'function wire() {\n  installClaimExecutor(claimExistingDom);\n}',
-    'if (ready) {\n  installClaimExecutor(claimExistingDom);\n}',
+    'function wire() {\n  installHydrationExecutor(hydrateExistingDom);\n}',
+    'if (ready) {\n  installHydrationExecutor(hydrateExistingDom);\n}',
     // An indented call is not a module-scope statement head.
-    '  installClaimExecutor(claimExistingDom);',
+    '  installHydrationExecutor(hydrateExistingDom);',
     // A factory call is not an install: it has no seam naming convention, and
     // Router's pure reachability imports must stay unflagged (#1425 scope).
     'createIslandScheduler({ log, win, doc });',
-    'export { installClaimExecutor } from "./claim-seam.js";',
+    'export { installHydrationExecutor } from "./hydrate-seam.js";',
   ];
   for (const source of accepted) {
     expect(findModuleScopeSeamInstalls(source), `must pass: ${JSON.stringify(source)}`).toEqual([]);
@@ -291,13 +335,13 @@ test('pack surface: an undeclared seam install fails, a declared one passes', ()
   // The installer path in the fixture is the one the shipped element manifest
   // declares, so "declared" below means the real declaration actually covers
   // the real module — not a coincidental match on a test-only name.
-  const INSTALLER_PATH = 'src/internal/compiled/runtime/claim-install.js';
+  const INSTALLER_PATH = 'src/internal/compiled/runtime/hydrate-install.js';
   const packaged = (sideEffects: unknown): Map<string, string> =>
     new Map<string, string>([
       ['package/package.json', JSON.stringify(manifest('@openelement/element', { sideEffects }))],
       ['package/README.md', ''],
-      ['package/src/index.js', "import './internal/compiled/runtime/claim-install.js';"],
-      [`package/${INSTALLER_PATH}`, 'installClaimExecutor(claimExistingDom);'],
+      ['package/src/index.js', "import './internal/compiled/runtime/hydrate-install.js';"],
+      [`package/${INSTALLER_PATH}`, 'installHydrationExecutor(hydrateExistingDom);'],
     ]);
   // Only the seam rule's findings: a fixture whose sideEffects differs from
   // packedMetadata() also trips the parity rule, which is not under test here.
@@ -334,13 +378,13 @@ test('pack surface: an undeclared seam install fails, a declared one passes', ()
   // And the shipped element manifest must not regress to the flat claim. The
   // flagged set names every install edge's importer and installer (#1425
   // class): the default entry, the entries that import one install
-  // (`./client-only` → regions, `./no-regions` → claim, #1548), and both
+  // (`./client-only` → blocks, `./no-blocks` → claim, #1548), and both
   // installers.
   expect(packedMetadata('@openelement/element').sideEffects).toEqual([
     './src/index.js',
     './src/client-only.js',
-    './src/no-regions.js',
-    './src/internal/compiled/runtime/claim-install.js',
-    './src/internal/compiled/runtime/regions-install.js',
+    './src/no-blocks.js',
+    './src/internal/compiled/runtime/hydrate-install.js',
+    './src/internal/compiled/runtime/blocks-install.js',
   ]);
 });

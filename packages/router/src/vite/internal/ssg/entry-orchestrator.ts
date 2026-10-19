@@ -44,14 +44,46 @@
  */
 
 import type { EntryDescriptor } from '@openelement/protocol/ssg';
+import { STYLE_LINKS_VIRTUAL_ID } from '../element-style-links.ts';
 import { validateIslandModuleSpecifier } from './entry-generators.ts';
 import { renderActionRoute, renderPageRoute } from './entry-codegen.ts';
 import { renderNotFoundRoute } from './entry-not-found-codegen.ts';
 import { pageRouteTagExpr, renderImport } from './entry-route-helpers.ts';
 import { renderApiRoute, renderMiddleware } from './entry-server-codegen.ts';
 import { renderSsgSection } from './entry-render-ssg.ts';
+import { hasControlCharacter } from '../../../internal/control-characters.ts';
+import { buildError, DescriptorErrorCode } from '../../../internal/error-codes.ts';
 import { quoteGeneratedJavaScriptValue } from './codegen-literals.ts';
 import { selectRendererAdapter } from './renderer-adapter.ts';
+
+/**
+ * One module import the generated entry embeds: `import * as $v from <q>`.
+ *
+ * The path comes from a project filename (route/renderer/middleware), so it is
+ * always QUOTED with {@linkcode quoteGeneratedJavaScriptValue}: an apostrophe,
+ * backslash or line terminator in the filename is a character inside the
+ * emitted string, never a quote that ends the specifier and injects code into
+ * the entry the build and SSG phases import. This gate refuses the values a
+ * module graph cannot carry at all — a non-string from a hand-built
+ * descriptor, an empty path, or control characters — with a stable code
+ * instead of emitting a specifier that parses but can never resolve.
+ */
+function assertEmittableModuleImportPath(
+  importPath: unknown,
+  kind: string,
+): asserts importPath is string {
+  if (
+    typeof importPath !== 'string' ||
+    importPath.length === 0 ||
+    hasControlCharacter(importPath)
+  ) {
+    throw buildError(
+      DescriptorErrorCode.MODULE_IMPORT,
+      `A ${kind} module import path cannot be emitted into the generated entry: ` +
+        `${JSON.stringify(importPath)}. Module paths must be non-empty printable strings.`,
+    );
+  }
+}
 
 /**
  * Render an EntryDescriptor into a complete virtual module string.
@@ -79,6 +111,12 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push(
     `import { isOpenElementRedirect as __isOpenElementRedirect, isOpenElementNotFound as __isOpenElementNotFound } from '@openelement/router';`,
   );
+  // alpha15 S lane: the component stylesheet URLs for DSD `<link>` emission.
+  // The module hands the emitted addresses to the element runtime (a setter);
+  // the SSG build provides the real addresses, every other build an empty
+  // list, so the import is always resolvable and the runtime's no-link state
+  // is explicit.
+  lines.push(`import '${STYLE_LINKS_VIRTUAL_ID}';`);
 
   // --- Imports ---
   for (const imp of desc.imports) {
@@ -90,19 +128,19 @@ export function renderEntry(desc: EntryDescriptor): string {
   for (const island of desc.islands) {
     islandLookup[island.tagName] = island.modulePath;
   }
-  // --- App-shell imports + explicit registration ---
-  // Compiled shell modules do not self-register: the entry imports the
+  // --- Layout imports + explicit registration ---
+  // Compiled layout modules do not self-register: the entry imports the
   // module namespace and registers the default-exported compiled class under
-  // the configured shell tag. renderDsd fails closed on a tag mismatch.
+  // the configured layout tag. renderToString fails closed on a tag mismatch.
   // Deduped by importPath — one module maps to one compiled class and tag.
-  const appShellModules = new Map<string, string>();
-  const collectShellModule = (shell: typeof desc.appShell.default) => {
-    if (shell && !appShellModules.has(shell.importPath)) {
-      appShellModules.set(shell.importPath, shell.tagName);
+  const layoutModules = new Map<string, string>();
+  const collectLayoutModule = (shell: typeof desc.layout.default) => {
+    if (shell && !layoutModules.has(shell.importPath)) {
+      layoutModules.set(shell.importPath, shell.tagName);
     }
   };
-  collectShellModule(desc.appShell.default);
-  for (const shell of Object.values(desc.appShell.layouts)) collectShellModule(shell);
+  collectLayoutModule(desc.layout.default);
+  for (const shell of Object.values(desc.layout.layouts)) collectLayoutModule(shell);
 
   lines.push(`// Known islands (determined at build time by scanning islandsDir)`);
   lines.push(`const __islandMap = ${quoteGeneratedJavaScriptValue(islandLookup, 2)}`);
@@ -132,15 +170,15 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push('');
 
   // Element owns document and compiled-render semantics; this entry wires them.
-  const appShellModuleList = [...appShellModules].map(([importPath, tagName], index) => ({
+  const layoutModuleList = [...layoutModules].map(([importPath, tagName], index) => ({
     importPath,
     tagName,
-    varName: `__shell_${index}`,
+    varName: `__layout_${index}`,
   }));
-  for (const shellModule of appShellModuleList) {
+  for (const layoutModule of layoutModuleList) {
     lines.push(
-      `import * as ${shellModule.varName} from ${quoteGeneratedJavaScriptValue(
-        shellModule.importPath,
+      `import * as ${layoutModule.varName} from ${quoteGeneratedJavaScriptValue(
+        layoutModule.importPath,
       )};`,
     );
   }
@@ -158,14 +196,25 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push('');
 
   // --- Route module imports ---
+  // Paths are project filenames: quote them (a filename may contain `'`, `\`
+  // or line terminators) and fail closed on values the emitter cannot carry.
   for (const route of [...desc.apiRoutes, ...desc.pageRoutes]) {
-    lines.push(`import * as ${route.varName} from '${route.importPath}'`);
+    assertEmittableModuleImportPath(route.importPath, 'route');
+    lines.push(
+      `import * as ${route.varName} from ${quoteGeneratedJavaScriptValue(route.importPath)}`,
+    );
   }
   for (const renderer of desc.renderers) {
-    lines.push(`import * as ${renderer.varName} from '${renderer.importPath}'`);
+    assertEmittableModuleImportPath(renderer.importPath, 'renderer');
+    lines.push(
+      `import * as ${renderer.varName} from ${quoteGeneratedJavaScriptValue(renderer.importPath)}`,
+    );
   }
   for (const mwScope of desc.middlewareScopes) {
-    lines.push(`import * as ${mwScope.varName} from '${mwScope.importPath}'`);
+    assertEmittableModuleImportPath(mwScope.importPath, 'middleware');
+    lines.push(
+      `import * as ${mwScope.varName} from ${quoteGeneratedJavaScriptValue(mwScope.importPath)}`,
+    );
   }
   // middleware.use entries are MODULE PATHS — the entry imports each module
   // and hands its default export to the factory, which composes them at the
@@ -213,15 +262,15 @@ export function renderEntry(desc: EntryDescriptor): string {
     // Stream pump runtime (#1470 block d): the pump, the browser bootstrap,
     // and (Amendment 1) the deferred-shell gate are imported runtime; the
     // entry binds the pump to its escapeAttr import and the gate to its
-    // serialized manifests + createDeferredDsdExecutor import.
+    // serialized manifests + createStreamShellExecutor import.
     lines.push("// Stream pump runtime, bound to the entry's escapeAttr import.");
     lines.push('const __streamBody = __createStreamBody({ escapeAttr });');
     lines.push(
       "// The deferred-shell gate (Amendment 1), bound to the entry's",
-      '// serialized stream manifests and its createDeferredDsdExecutor import.',
+      '// serialized stream manifests and its createStreamShellExecutor import.',
     );
     lines.push(
-      'const __createDeferredPageShell = __createDeferredPageShellGate({ streamManifests: __streamManifests, createDeferredDsdExecutor });',
+      'const __createStreamPageShell = __createStreamPageShellGate({ streamManifests: __streamManifests, createStreamShellExecutor });',
     );
     lines.push('');
   }
@@ -239,14 +288,14 @@ export function renderEntry(desc: EntryDescriptor): string {
   lines.push('// the request-scope accessor, the handler exports, the SSR registry');
   lines.push('// guard, and the page-render bindings; the entry keeps the route');
   lines.push('// wiring below.');
-  // Nav data is not part of the 1.0 surface: the app-shell layout props keep
+  // Nav data is not part of the 1.0 surface: the layout props keep
   // their contract with empty defaults. Locales, by contrast, are a project
   // declaration (`openElement({ i18n })`) — the entry carries them so
-  // path-derived locale resolution and shell href localization agree with
+  // path-derived locale resolution and layout href localization agree with
   // the pages the build emits (see expandI18nLocales).
   lines.push('const __app = createGeneratedApp({');
   lines.push('  islands: __islandMap,');
-  lines.push(`  appShellPlan: ${quoteGeneratedJavaScriptValue(desc.appShell, 2)},`);
+  lines.push(`  layoutPlan: ${quoteGeneratedJavaScriptValue(desc.layout, 2)},`);
   lines.push(`  locales: ${quoteGeneratedJavaScriptValue(desc.i18n?.locales ?? [])},`);
   lines.push('  navSections: [],');
   lines.push('  headerNav: [],');
@@ -291,8 +340,8 @@ export function renderEntry(desc: EntryDescriptor): string {
     lines.push('  pageProps: __pageProps,');
     lines.push('  pageErrorProps: __pageErrorProps,');
     lines.push('  statusHtml: __statusHtml,');
-    lines.push('  resolveAppShell: __resolveAppShell,');
-    lines.push('  renderAppShell: __renderAppShell,');
+    lines.push('  resolveLayout: __resolveLayout,');
+    lines.push('  renderLayout: __renderLayout,');
   }
   lines.push('  pageHandlers: __pageHandlers,');
   if (desc.apiRoutes.length > 0) {
@@ -332,18 +381,22 @@ export function renderEntry(desc: EntryDescriptor): string {
     // self-registered class with the entry's page class would recurse when
     // its compiled program emits the same tag. The entry therefore only
     // overwrites registrations it made itself.
+    // alpha15 server lane: a server function page is skipped — its default
+    // export is the compiled component function, and no element class exists
+    // to register.
     for (const route of desc.pageRoutes) {
+      if (route.functionPage !== undefined) continue;
       const tagNameExpr = pageRouteTagExpr(route.varName, route.tagName);
       lines.push(
         `try { __registerSsrComponent(${tagNameExpr}, ${route.varName}.default); } catch (err) { console.error('[ssg] Failed to register route custom element ${tagNameExpr}:', err); throw err; }`,
       );
     }
-    for (const shellModule of appShellModuleList) {
+    for (const layoutModule of layoutModuleList) {
       lines.push(
         `try { __registerSsrComponent(${quoteGeneratedJavaScriptValue(
-          shellModule.tagName,
-        )}, ${shellModule.varName}.default); } catch (err) { console.error('[ssg] Failed to register app shell custom element ${quoteGeneratedJavaScriptValue(
-          shellModule.tagName,
+          layoutModule.tagName,
+        )}, ${layoutModule.varName}.default); } catch (err) { console.error('[ssg] Failed to register layout custom element ${quoteGeneratedJavaScriptValue(
+          layoutModule.tagName,
         )}:', err); throw err; }`,
       );
     }

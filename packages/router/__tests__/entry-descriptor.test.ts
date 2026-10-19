@@ -8,6 +8,13 @@
 
 import { expect, test } from 'vitest';
 import { assertThrowsIncludes } from '../../../tests/lib/vitest-asserts.ts';
+import { createDocumentStyleResources, wrapInDocument } from '@openelement/element';
+import { resolvePageDocument } from '../src/document.ts';
+import { localeFromPath } from '../src/vite/internal/server-runtime/page-render.ts';
+import {
+  documentWrapOptionsLines,
+  requestTimePageContextLines,
+} from '../src/vite/internal/ssg/entry-route-helpers.ts';
 import { buildEntryDescriptor, renderEntry } from '../src/vite/internal/ssg/index.ts';
 import type { RouteEntry } from '@openelement/protocol/framework';
 
@@ -216,12 +223,12 @@ test('renderEntry: produces valid module code', () => {
   expect(code.includes("from 'hono'")).toBeFalsy();
   expect(code.includes('new Hono()')).toBeFalsy();
   expect(code).toContain('const __app = createGeneratedApp({');
-  // v0.44 (ADR-0143): the sync compiled renderDsd is the only serializer
+  // v0.44 (ADR-0143): the sync compiled renderToString is the only serializer
   // import — the legacy VNode tree renderer is gone.
   expect(code).toContain(
-    "import { createDeferredDsdExecutor, renderDsd, trustedHtml, escapeHtml, wrapInDocument } from '@openelement/element'",
+    "import { createDocumentStyleResources, createStreamShellExecutor, renderToString, trustedHtml, escapeHtml, wrapInDocument } from '@openelement/element'",
   );
-  expect(code.includes('renderDsdTree')).toEqual(false);
+  expect(code.includes('renderToStringTree')).toEqual(false);
   expect(code).toContain('export default app');
 });
 
@@ -323,6 +330,118 @@ test('renderEntry: document config renders correctly', () => {
   expect(code).toContain('lang: "zh-CN"');
   expect(code).toContain('title: __doc.title || "Test"');
   expect(code).toContain('cdn.example.com');
+});
+
+// ─── FRM-01 / ADR-0172: the document language priority ────────────────
+//
+// The generated request-time context used to derive a locale
+// unconditionally (`__localeFromPath(..., __getDefaultLocale())` where the
+// default is 'en' even with no i18n). `resolvePageDocument` turned that into
+// `__doc.lang`, which then won over the configured `head.lang` in every
+// generated wrap (`lang: __doc.lang || <configured>`), making the documented
+// config channel a dead fallback. These tests execute the SAME emitted lines
+// the server entry carries and pin both branches of the fixed priority.
+
+/** Execute the emitted request-time page-context + document-wrap lines. */
+function evaluateGeneratedDocumentLanguage(options: {
+  locales: string[];
+  defaultLocale?: string;
+  configLang: string;
+  requestPath: string;
+}): { docLang: string | undefined; html: string } {
+  const lines: string[] = [
+    'const __params = {};',
+    'const __routeMetaValue = {};',
+    'const __routeContext = {};',
+    'const __page = {};',
+    'const __clientScriptDescriptors = () => [];',
+  ];
+  requestTimePageContextLines(lines, {
+    dataExpr: 'undefined',
+    actionDataExpr: 'undefined',
+    indent: '',
+  });
+  lines.push('const __html = wrapInDocument("<p>page</p>", {');
+  for (const optionLine of documentWrapOptionsLines({
+    titleExpr: '__doc.title || "Probe"',
+    langExpr: `__doc.lang || ${JSON.stringify(options.configLang)}`,
+    headExtrasExpr: '""',
+    allowHeadExtrasScripts: false,
+  })) {
+    lines.push(`  ${optionLine}`);
+  }
+  lines.push('});');
+  lines.push('return { docLang: __doc.lang, html: __html };');
+  const run = new Function(
+    'c',
+    '__locales',
+    '__getDefaultLocale',
+    '__localeFromPath',
+    '__resolvePageDocument',
+    'wrapInDocument',
+    'createDocumentStyleResources',
+    lines.join('\n'),
+  ) as (...args: unknown[]) => { docLang: string | undefined; html: string };
+  return run(
+    { req: { path: options.requestPath, raw: undefined } },
+    options.locales,
+    () => options.defaultLocale ?? 'en',
+    localeFromPath,
+    resolvePageDocument,
+    wrapInDocument,
+    createDocumentStyleResources,
+  );
+}
+
+test('renderEntry: the page locale is derived only for a declared i18n project', () => {
+  const singleLocale = renderEntry(buildEntryDescriptor(sampleRoutes, { html: { lang: 'zh-CN' } }));
+  expect(singleLocale).toContain('locales: []');
+  expect(singleLocale).toContain(
+    'locale: __locales.length > 0 ? __localeFromPath(__locales, c.req.path, __getDefaultLocale()) : undefined',
+  );
+  expect(singleLocale).toContain('lang: __doc.lang || "zh-CN"');
+
+  const localized = renderEntry(
+    buildEntryDescriptor(sampleRoutes, {
+      html: { lang: 'zh-CN' },
+      i18n: { locales: ['en', 'zh-CN'], defaultLocale: 'en' },
+    }),
+  );
+  expect(localized).toContain('locales: ["en","zh-CN"]');
+  expect(localized).toContain('defaultLocale: "en"');
+  expect(localized).toContain('lang: __doc.lang || "zh-CN"');
+});
+
+test('generated request-time document: no i18n keeps the resolved lang undefined, so head.lang wins', () => {
+  const { docLang, html } = evaluateGeneratedDocumentLanguage({
+    locales: [],
+    configLang: 'fr',
+    requestPath: '/tasks',
+  });
+  expect(docLang).toEqual(undefined);
+  expect(html).toContain('<html lang="fr">');
+});
+
+test('generated request-time document: an i18n locale overrides head.lang', () => {
+  // Prefixed path: the declared locale is derived and becomes the language.
+  const prefixed = evaluateGeneratedDocumentLanguage({
+    locales: ['en', 'zh'],
+    defaultLocale: 'en',
+    configLang: 'fr',
+    requestPath: '/zh/tasks',
+  });
+  expect(prefixed.docLang).toEqual('zh');
+  expect(prefixed.html).toContain('<html lang="zh">');
+
+  // Unprefixed path: the default locale is derived, so it also overrides.
+  const unprefixed = evaluateGeneratedDocumentLanguage({
+    locales: ['en', 'zh'],
+    defaultLocale: 'en',
+    configLang: 'fr',
+    requestPath: '/tasks',
+  });
+  expect(unprefixed.docLang).toEqual('en');
+  expect(unprefixed.html).toContain('<html lang="en">');
 });
 
 // Integration test: buildEntryDescriptor + renderEntry end-to-end

@@ -21,6 +21,7 @@ import {
   actionRedirectResponse,
   createActionBodyLimit,
   runActionProtocol,
+  safeRedirectLocation,
 } from '../src/vite/internal/server-runtime/action-runtime.ts';
 import {
   boundRequestScope,
@@ -589,4 +590,287 @@ test('createActionBodyLimit swaps the bound request for the buffered twin on str
   );
   expect(await response.text()).toEqual('message=streamed');
   expect(buffered).not.toBeNull();
+});
+
+// ─── PRG Location normalization (alpha15 security lane S4) ────────────
+//
+// The PRG target is derived from the request's own pathname. A pathname that
+// starts with `//` (reachable whenever a catch-all route matches, e.g.
+// `POST //evil.example/x`) is protocol-relative once emitted as `Location`
+// (and in the fetch channel's `redirect` ActionResult), so the browser
+// navigates to another origin. The target is one canonical absolute path on
+// this origin: exactly one leading `/`, no control characters, search kept.
+
+async function successRedirect(
+  path: string,
+  fetchChannel: boolean,
+): Promise<{ status: number; location: string | null }> {
+  const { context, state } = formPost({
+    path,
+    origin: 'https://pages.example.test',
+    fetchHeader: fetchChannel,
+  });
+  const execution = await runActionProtocol(
+    context,
+    { action: () => ({ ok: true }) },
+    { env: {} },
+    statusPage,
+    state,
+  );
+  const response = execution.response!;
+  if (fetchChannel) {
+    const body = (await response.json()) as { type: string; status: number; location: string };
+    return { status: body.status, location: body.location };
+  }
+  return { status: response.status, location: response.headers.get('Location') };
+}
+
+test('PRG Location never emits a protocol-relative target (both channels)', async () => {
+  for (const fetchChannel of [false, true]) {
+    expect(await successRedirect('//evil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/evil.example/x',
+    });
+    expect(await successRedirect('///evil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/evil.example/x',
+    });
+  }
+});
+
+test('PRG Location canonicalizes a backslash target and keeps the same-origin path', async () => {
+  for (const fetchChannel of [false, true]) {
+    // WHATWG URL parsing folds a raw backslash into `/` for special schemes,
+    // so `/\evil.example/x` arrives as `//evil.example/x` and must canonicalize.
+    expect(await successRedirect('/\\evil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/evil.example/x',
+    });
+    // A percent-encoded backslash is a path character, not a separator: the
+    // canonical form keeps it and stays on this origin.
+    expect(await successRedirect('/%5Cevil.example/x', fetchChannel)).toEqual({
+      status: 303,
+      location: '/%5Cevil.example/x',
+    });
+  }
+});
+
+test('PRG Location keeps search params and stays a single absolute path', async () => {
+  for (const fetchChannel of [false, true]) {
+    expect(await successRedirect('/form?keep=1&other=2', fetchChannel)).toEqual({
+      status: 303,
+      location: '/form?keep=1&other=2',
+    });
+    // Percent-encoded CR/LF never become raw bytes in the header.
+    expect(await successRedirect('/form%0D%0Azip', fetchChannel)).toEqual({
+      status: 303,
+      location: '/form%0D%0Azip',
+    });
+  }
+});
+
+test('safeRedirectLocation: one canonical absolute path, whatever the input shape', () => {
+  // Normal targets are unchanged (existing PRG behaviour, search kept).
+  expect(safeRedirectLocation('/form', 'keep=1')).toEqual('/form?keep=1');
+  expect(safeRedirectLocation('/form', '')).toEqual('/form');
+  // Protocol-relative and multi-slash pathnames collapse to exactly one `/`.
+  expect(safeRedirectLocation('//evil.example/x', '')).toEqual('/evil.example/x');
+  expect(safeRedirectLocation('///evil.example/x', '')).toEqual('/evil.example/x');
+  expect(safeRedirectLocation('//', '')).toEqual('/');
+  expect(safeRedirectLocation('', '')).toEqual('/');
+  // Raw backslashes are path separators to the WHATWG parser: canonicalize.
+  expect(safeRedirectLocation('\\\\evil.example/x', '')).toEqual('/evil.example/x');
+  expect(safeRedirectLocation('/a\\b', '')).toEqual('/a/b');
+  // Control characters never reach the header/JSON target.
+  expect(safeRedirectLocation('/a\r\nb\tc\u0000d', '')).toEqual('/abcd');
+  expect(safeRedirectLocation('/form', 'x=1\r\ny=2')).toEqual('/form?x=1y=2');
+  // Percent-encoded bytes are already header-safe path/query characters.
+  expect(safeRedirectLocation('/%5Cevil.example/x', 'q=%0D%0A')).toEqual(
+    '/%5Cevil.example/x?q=%0D%0A',
+  );
+});
+
+// ── CSRF/channel/body-limit runtime branches (coverage lane, test-only) ───
+
+test('a success path with no loadContext env still answers PRG 303', async () => {
+  const { context, state } = formPost({ origin: 'https://pages.example.test' });
+  const execution = await runActionProtocol(context, { action: () => 'ok' }, {}, statusPage, state);
+  expect(execution.response?.status).toEqual(303);
+});
+
+test('the http loopback allowance covers IPv6 loopback and rejects non-loopback http origins', async () => {
+  const ipv6 = new Request('http://[::1]:8000/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      origin: 'http://localhost:3000',
+    },
+    body: 'message=hello',
+  });
+  const ipv6Execution = await runActionProtocol(
+    createRequestScope(ipv6),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(ipv6Execution.response?.status).toEqual(303);
+
+  const plain = new Request('http://example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      origin: 'http://other.test',
+    },
+    body: 'message=hello',
+  });
+  const plainExecution = await runActionProtocol(
+    createRequestScope(plain),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(plainExecution.response?.status).toEqual(403);
+});
+
+test('browser-shaped form bodies without Origin/Fetch Metadata: multipart and non-form bodies', async () => {
+  const multipart = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'multipart/form-data; boundary=x',
+      'upgrade-insecure-requests': '1',
+    },
+    body: '--x--',
+  });
+  const multipartExecution = await runActionProtocol(
+    createRequestScope(multipart),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(multipartExecution.response?.status).toEqual(403);
+
+  // A non-form body without navigation evidence is not browser-shaped: the
+  // CSRF floor admits it and the form parser then rejects it as 400.
+  const json = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', accept: 'application/json' },
+    body: '{"message":"hello"}',
+  });
+  const jsonExecution = await runActionProtocol(
+    createRequestScope(json),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(jsonExecution.response?.status).toEqual(400);
+});
+
+test('the action body limit fails closed on an unbound request and honours declared length', async () => {
+  const limit = createActionBodyLimit(16);
+  const next = () => Promise.resolve(new Response('next', { status: 200 }));
+
+  // No body at all: the middleware skips itself.
+  expect(
+    await (
+      await limit(new Request('https://pages.example.test/form', { method: 'POST' }), {}, next)
+    ).text(),
+  ).toEqual('next');
+
+  // Declared length under the limit: next() runs.
+  const small = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: { 'content-length': '4' },
+    body: 'a=b',
+  });
+  expect(await (await limit(small, {}, next)).text()).toEqual('next');
+
+  // Declared length over the limit and no bound scope: the plain native-form
+  // answer, because there is no negotiation channel to consult.
+  const big = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: { 'content-length': '100' },
+    body: 'x'.repeat(100),
+  });
+  const bigResponse = await limit(big, {}, next);
+  expect(bigResponse.status).toEqual(413);
+  expect(await bigResponse.text()).toEqual('Payload Too Large');
+});
+
+test('the action body limit drains an unbound stream body without swapping a scope', async () => {
+  const limit = createActionBodyLimit(1024);
+  let reached = false;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('message=hello'));
+      controller.close();
+    },
+  });
+  const response = await limit(
+    new Request('https://pages.example.test/form', {
+      method: 'POST',
+      headers: { 'transfer-encoding': 'chunked' },
+      body: stream,
+      duplex: 'half',
+    } as RequestInit),
+    {},
+    () => {
+      reached = true;
+      return Promise.resolve(new Response('next', { status: 200 }));
+    },
+  );
+  expect(reached).toEqual(true);
+  expect(await response.text()).toEqual('next');
+});
+
+test('actionErrorResponse surfaces a thrown scalar or object without a message as the dev detail', async () => {
+  const context = actionContext({ url: 'https://pages.example.test/form' });
+  const fromString = actionErrorResponse(context, '/form', 'plain failure', false);
+  expect(((await fromString.json()) as { detail: string }).detail).toEqual('plain failure');
+  const fromObject = actionErrorResponse(context, '/form', { code: 7 }, false);
+  expect(((await fromObject.json()) as { detail: string }).detail).toEqual('[object Object]');
+});
+
+test('browser-shaped bodies: a same-origin Fetch Metadata verdict admits the action; non-navigation evidence admits it', async () => {
+  // `sec-fetch-site: same-origin` with no Origin: the metadata branch decides
+  // first (not cross-site), then the no-Origin/no-Fetch-Site heuristic is
+  // skipped because Fetch Metadata was present.
+  const sameOrigin = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      'sec-fetch-site': 'same-origin',
+    },
+    body: 'message=hello',
+  });
+  const sameOriginExecution = await runActionProtocol(
+    createRequestScope(sameOrigin),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(sameOriginExecution.response?.status).toEqual(303);
+
+  // A browser form body with neither navigation marker is not browser-shaped:
+  // no text/html Accept, no Upgrade-Insecure-Requests.
+  const nonNavigation = new Request('https://pages.example.test/form', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'application/json',
+    },
+    body: 'message=hello',
+  });
+  const nonNavigationExecution = await runActionProtocol(
+    createRequestScope(nonNavigation),
+    { action: () => 'ok' },
+    { env: {} },
+    statusPage,
+    { isFetch: false },
+  );
+  expect(nonNavigationExecution.response?.status).toEqual(303);
 });

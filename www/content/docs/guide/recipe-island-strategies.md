@@ -25,6 +25,10 @@ export const openElement = defineIslandConfig({ hydrate: 'visible', ssr: true, d
 - `only` — browser-only components that cannot produce reliable DSD (canvas, media, WebGL). The server emits the host tag and serialized props; SSR is skipped.
 - `none` — SSR-only: the server serializes the component but the build never emits its chunk. For chrome whose interactivity was retired — authored as a component, delivered as pure markup.
 
+## Late hosts
+
+The strategy decides when an island's JavaScript loads, not whether a host that appears later is ever found. A third-party component can create the host inside its own open shadow root after the page scan; the scheduler keeps a bounded search running while any declared island on the page is still unactivated — including an `'idle'` page (the search starts after the idle attempt runs) and a `'media'` page (it starts when the query turns matching). The tag still activates through its declared strategy and fires the same `open:ready`. If the 9000 ms budget is spent first, the informational `open:island-host-timeout` event names the tag and an explicit rescan can still activate it. A page that really never hosts the island still fetches nothing.
+
 ## Worked choices
 
 - **Theme toggle** → `load`. It must answer the first click; a late toggle flashes the wrong theme.

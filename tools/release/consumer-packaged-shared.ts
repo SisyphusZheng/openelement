@@ -72,8 +72,8 @@
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { commandOutput } from '../repo/node-command.ts';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { spawnCommand } from '../repo/node-command.ts';
+import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { formatJson } from '@openelement/element/build-utils';
@@ -157,6 +157,15 @@ export function declarationTypeEdges(text: string): string[] {
 export interface ProcessRunResult {
   success: boolean;
   output: string;
+  /**
+   * True when the harness aborted the child because `timeoutMs` elapsed
+   * (the abort is the harness's decision, not the program's exit status).
+   * Optional so existing `{ success, output }` constructors keep working;
+   * consumers that classify failures must check it BEFORE inspecting output,
+   * because a killed Playwright probe's last line is the teardown error
+   * ("Target page, context or browser has been closed"), not the cause.
+   */
+  timedOut?: boolean;
 }
 
 export interface ProcessRunOptions {
@@ -169,7 +178,7 @@ export interface ProcessRunOptions {
 /**
  * The one timeout/AbortSignal subprocess runner for the packed-consumer
  * harnesses (app legs, starter, node-serve, router, ui all delegate here).
- * commandOutput resolves — not rejects — when the abort signal kills the
+ * spawnCommand resolves — not rejects — when the abort signal kills the
  * subprocess, so the timeout is tracked explicitly to report it instead of
  * an empty failure.
  */
@@ -190,7 +199,7 @@ export async function runProcess(
           controller.abort();
         }, timeoutMs);
   try {
-    const result = await commandOutput(command, {
+    const result = await spawnCommand(command, {
       args,
       cwd,
       stdout: 'piped',
@@ -203,18 +212,48 @@ export async function runProcess(
     if (timedOut) {
       return {
         success: false,
+        timedOut: true,
         output: `Timed out after ${timeoutMs}ms: ${command} ${args.join(' ')}\n${output}`,
       };
     }
-    return { success: result.success, output };
+    return { success: result.success, output, timedOut: false };
   } finally {
     clearTimeout(timeoutId);
   }
 }
 
+/**
+ * The consumer harnesses' one convenience runner: `runProcess` with the
+ * timeout/env knobs in a single options object. Every consumer script used to
+ * carry its own pass-through `run(...)` re-spelling this call (and two of them
+ * disagreed on the parameter order).
+ */
+export function runConsumer(
+  command: string,
+  args: string[],
+  cwd: string,
+  options: ProcessRunOptions = {},
+): Promise<ProcessRunResult> {
+  return runProcess(command, args, cwd, options);
+}
+
+/**
+ * Run a consumer command and fail on a non-zero exit, carrying the child's
+ * combined output as the error message (the element authoring proof's
+ * contract).
+ */
+export async function runConsumerOrThrow(
+  command: string,
+  args: string[],
+  cwd: string,
+): Promise<void> {
+  const result = await runProcess(command, args, cwd);
+  if (!result.success) throw new Error(result.output);
+}
+
 // Let the OS choose from its ephemeral range (same rationale as
 // consumer-packaged-starter.ts: fixed ranges collide with parallel CI jobs).
-function reservePort(): Promise<number> {
+export function reservePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = createServer();
     probe.once('listening', () => {
@@ -224,6 +263,156 @@ function reservePort(): Promise<number> {
     probe.once('error', reject);
     probe.listen({ port: 0, host: '127.0.0.1' });
   });
+}
+
+/**
+ * One consumer lifecycle server: reserve a port, boot the packed app's
+ * dev/start command, wait until it answers the first probe over the wire,
+ * assert every `[path, marker]` probe, optionally run the browser matrix while
+ * the server is up, then stop the whole process group.
+ *
+ * A green exit alone is not lifecycle evidence: the packed artifacts must
+ * actually serve the documented routes. The starter and ui-app harnesses each
+ * spelled this server lifecycle out twice (and drifted in the failure path);
+ * this is the one implementation both now call.
+ */
+export interface ConsumerServerExercise {
+  label: string;
+  /**
+   * Command + argv for one launch. The reserved port is passed in so servers
+   * configured by CLI flag (vite dev) and by env (cli/start) share the
+   * lifecycle.
+   */
+  launch: (port: number) => { command: string; args: string[] };
+  cwd: string;
+  /** Extra environment merged over process.env, under the OPEN_ELEMENT_* pins. */
+  env?: Record<string, string>;
+  /** `[path, marker]` probes asserted over the wire once the server answers. */
+  probes: ReadonlyArray<readonly [string, string]>;
+  /** Runs while the server is up, after the HTTP probes (the browser matrix). */
+  afterReady?: (baseUrl: string) => Promise<void>;
+}
+
+export async function exerciseServer(spec: ConsumerServerExercise): Promise<number> {
+  const { label, cwd, env = {}, probes } = spec;
+  const port = await reservePort();
+  const { command, args } = spec.launch(port);
+  const server = spawn(command, args, {
+    cwd,
+    env: {
+      ...process.env,
+      ...env,
+      OPEN_ELEMENT_PORT: String(port),
+      OPEN_ELEMENT_HOST: '127.0.0.1',
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // Own process group: the stop below must signal pnpm's node/sh
+    // grandchildren (vite, cli/start) too, not just pnpm — orphaned
+    // grandchildren keep the inherited stdio pipes open and the piped-output
+    // pumps keep this process from ever exiting the success path (observed on
+    // macOS; the same teardown contract as withServer above).
+    detached: true,
+  });
+  let exited = false;
+  server.addListener('exit', () => {
+    exited = true;
+  });
+  const stdoutChunks: Uint8Array[] = [];
+  const stderrChunks: Uint8Array[] = [];
+  void (async () => {
+    for await (const chunk of server.stdout!) stdoutChunks.push(chunk);
+  })();
+  void (async () => {
+    for await (const chunk of server.stderr!) stderrChunks.push(chunk);
+  })();
+  const stdoutText = () =>
+    new TextDecoder().decode(Buffer.concat(stdoutChunks.map((c) => Buffer.from(c))));
+  const stderrText = () =>
+    new TextDecoder().decode(Buffer.concat(stderrChunks.map((c) => Buffer.from(c))));
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`;
+    let ready = false;
+    const deadline = Date.now() + SERVER_READY_TIMEOUT_MS;
+    while (Date.now() < deadline && !exited) {
+      try {
+        const response = await fetch(`${baseUrl}${probes[0]![0]}`);
+        await response.text();
+        ready = true;
+        break;
+      } catch {
+        await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+      }
+    }
+    if (!ready) {
+      throw new Error(
+        `${label} did not become ready within ${SERVER_READY_TIMEOUT_MS}ms:\n${stdoutText()}\n${stderrText()}`,
+      );
+    }
+    for (const [path, marker] of probes) {
+      const response = await fetch(`${baseUrl}${path}`);
+      const body = await response.text();
+      if (response.status !== 200 || !body.includes(marker)) {
+        throw new Error(
+          `${label} probe ${path} failed: status=${response.status}, missing marker ${marker}`,
+        );
+      }
+    }
+    if (spec.afterReady) await spec.afterReady(baseUrl);
+    console.log(`${label} passed (port ${port}).`);
+  } catch (error) {
+    // Preserve the server-side cause of a failed probe (the dev leg's KR-10
+    // regression surfaces as SSR output, not as an exit code).
+    const failure = error instanceof Error ? error : new Error(String(error));
+    failure.message = `${failure.message}\n${stdoutText().slice(-8000)}\n${stderrText().slice(-8000)}`;
+    throw failure;
+  } finally {
+    if (!exited) {
+      try {
+        // Negative pid: signal the whole process group (see detached above).
+        process.kill(-server.pid!, 'SIGTERM');
+      } catch {
+        // process group already gone
+      }
+    }
+    await new Promise((resolveSettled) => {
+      if (exited) resolveSettled(null);
+      else server.addListener('exit', () => resolveSettled(null));
+    });
+  }
+  return port;
+}
+
+/**
+ * A packed consumer must resolve its dependencies through the scratch
+ * project's node_modules, never back into the repository (a workspace link
+ * would qualify source, not the packed artifact). One implementation, three
+ * consumers: the starter, the UI appliance and the UnoCSS leg each had their
+ * own copy.
+ */
+export async function assertConsumerDoesNotResolveIntoRepository(
+  nodeModules: string,
+  consumer: string,
+): Promise<void> {
+  const candidates: string[] = [];
+  for (const entry of readdirSync(nodeModules, { withFileTypes: true })) {
+    if (entry.name.startsWith('.')) continue;
+    const path = join(nodeModules, entry.name);
+    if (entry.name.startsWith('@') && entry.isDirectory()) {
+      for (const nested of readdirSync(path, { withFileTypes: true })) {
+        candidates.push(join(path, nested.name));
+      }
+    } else {
+      candidates.push(path);
+    }
+  }
+  for (const path of candidates) {
+    const resolved = await realpath(path).catch(() => path);
+    if (resolved === repoRoot || resolved.startsWith(`${repoRoot}/`)) {
+      throw new Error(
+        `${consumer} resolved a dependency into the repository: ${path} -> ${resolved}`,
+      );
+    }
+  }
 }
 
 /**
@@ -615,17 +804,47 @@ try {
   // A forced reload re-runs this loop: the marker set after activation only
   // survives when no further reload arrives within the stability window.
   // Playwright re-installs waitForFunction predicates across navigations.
+  //
+  // The reload can also land in the handoff between the predicate above and
+  // the evaluate below (no context to install it into): the page navigates,
+  // the execution context is destroyed, and the evaluate throws. The loop
+  // exists to absorb exactly that reload, so a destroyed context re-enters
+  // the loop instead of aborting the warm-up. Only that class is absorbed —
+  // every other error propagates — and the iteration stays bounded by the
+  // same deadline, so an app that never settles still fails here.
+  const contextDestroyed = (error: unknown): boolean =>
+    /Execution context was destroyed/.test(String(error));
   for (;;) {
     if (Date.now() > deadline) throw new Error('dev warm-up timed out');
     await page.waitForFunction(islandActive, undefined, { timeout: 120000, polling: 500 });
-    await page.evaluate(() => {
-      (globalThis as { __devWarmup?: string }).__devWarmup = 'stable';
-    });
+    let markerSet = false;
+    try {
+      await page.evaluate(() => {
+        (globalThis as { __devWarmup?: string }).__devWarmup = 'stable';
+      });
+      markerSet = true;
+    } catch (error) {
+      if (!contextDestroyed(error)) throw error;
+    }
+    if (!markerSet) continue;
     await page.waitForTimeout(STABILITY_MS);
-    const survived = await page.evaluate(() =>
-      (globalThis as { __devWarmup?: string }).__devWarmup === 'stable'
-    );
-    if (survived && await page.evaluate(islandActive)) break;
+    let survived = false;
+    try {
+      survived = await page.evaluate(() =>
+        (globalThis as { __devWarmup?: string }).__devWarmup === 'stable'
+      );
+    } catch (error) {
+      if (!contextDestroyed(error)) throw error;
+      continue;
+    }
+    let stillActive = false;
+    try {
+      stillActive = await page.evaluate(islandActive);
+    } catch (error) {
+      if (!contextDestroyed(error)) throw error;
+      continue;
+    }
+    if (survived && stillActive) break;
   }
   console.log('DEV-WARMUP-OK ' + renderer);
 } finally {
@@ -769,6 +988,101 @@ async function postValid(spec: PackedAppLegSpec, baseUrl: string): Promise<strin
 // ─── Browser continuation probe runners ─────────────────────────────────────
 
 /**
+ * What a browser probe invocation was proving, and against which URL —
+ * reported on failure so a harness kill is attributable without the log.
+ */
+export interface BrowserProbeContext {
+  /** Packed-consumer cell / phase the probe belongs to. */
+  phase: string;
+  renderer: PackedAppRenderer;
+  browser: string;
+  /** Page the generated probe loads (always `<baseUrl>/notes`). */
+  url: string;
+}
+
+/**
+ * Classify a failed browser-probe subprocess BY KIND before printing its
+ * output. Run 39216159302 reported the Lit/Firefox continuation probe as a
+ * generic cell failure, but the 300000ms line was the harness abort and the
+ * child's last output was Playwright's teardown error ("Target page, context
+ * or browser has been closed") — the kill, not the cause. The kind decides
+ * the disposition:
+ *
+ *   PROBE-TIMEOUT       the probe process was aborted at BROWSER_TIMEOUT_MS
+ *                       (engine/probe timeout — NOT a product assertion
+ *                       failure);
+ *   PROBE-WAIT-TIMEOUT  a probe-level wait (page.waitForFunction) exceeded
+ *                       its own limit (a readiness observation that never
+ *                       held — not an assertion mismatch either);
+ *   ASSERTION-FAILURE   the probe ran to its own verdict and failed it.
+ */
+export function classifyBrowserProbeFailure(
+  probe: ProcessRunResult,
+  context: BrowserProbeContext,
+): { kind: 'PROBE-TIMEOUT' | 'PROBE-WAIT-TIMEOUT' | 'ASSERTION-FAILURE'; summary: string } {
+  const where =
+    'phase=' +
+    context.phase +
+    ' renderer=' +
+    context.renderer +
+    ' engine=' +
+    context.browser +
+    ' url=' +
+    context.url;
+  if (probe.timedOut === true) {
+    return {
+      kind: 'PROBE-TIMEOUT',
+      summary:
+        '[PROBE-TIMEOUT] ' +
+        where +
+        ' limitMs=' +
+        BROWSER_TIMEOUT_MS +
+        ' — the harness ' +
+        'aborted the browser probe before it finished; this is an engine/probe timeout, ' +
+        'not a product assertion failure (the captured tail is teardown output, not a verdict).',
+    };
+  }
+  const waitTimeout = probe.output.match(/Timeout (\d+)ms exceeded/);
+  if (waitTimeout) {
+    return {
+      kind: 'PROBE-WAIT-TIMEOUT',
+      summary:
+        '[PROBE-WAIT-TIMEOUT] ' +
+        where +
+        ' after=' +
+        waitTimeout[1] +
+        'ms — a probe ' +
+        'ready-wait exceeded its own limit; classified as a probe timeout, not an ' +
+        'assertion mismatch.',
+    };
+  }
+  return {
+    kind: 'ASSERTION-FAILURE',
+    summary: '[ASSERTION-FAILURE] ' + where + ' — the probe ran and its assertion failed.',
+  };
+}
+
+/** The one failure line per renderer x browser probe: kind, then output tail. */
+function describeBrowserProbeFailure(
+  probe: ProcessRunResult,
+  context: BrowserProbeContext,
+): string {
+  const classified = classifyBrowserProbeFailure(probe, context);
+  return (
+    context.renderer +
+    ' / ' +
+    context.browser +
+    ' / ' +
+    classified.kind +
+    ':\n' +
+    classified.summary +
+    '\n' +
+    '--- probe output (tail) ---\n' +
+    probe.output.slice(-2000)
+  );
+}
+
+/**
  * Run the generated Playwright continuation probe against one already-serving
  * base URL (cli/start or the dev server). The probe itself asserts
  * renderer-specific continuation: the native kernel claims the island DSD and
@@ -779,6 +1093,7 @@ async function runBrowserContinuationProbe(
   tmp: string,
   baseUrl: string,
   leg: PackedAppRenderer,
+  phase = 'browser-continuation',
 ): Promise<string> {
   // Packed three-browser matrix: every renderer x browser pair runs as its
   // own probe invocation with its own OK marker; any single browser failure
@@ -792,17 +1107,28 @@ async function runBrowserContinuationProbe(
       tmp,
       { timeoutMs: BROWSER_TIMEOUT_MS },
     );
-    const marker = `BROWSER-CONTINUATION-OK ${leg} ${browserName}`;
+    const marker = 'BROWSER-CONTINUATION-OK ' + leg + ' ' + browserName;
     if (probe.success && probe.output.includes(marker)) {
-      passed.push(`${leg} / ${browserName} / pass`);
+      passed.push(leg + ' / ' + browserName + ' / pass');
     } else {
-      failures.push(`${leg} / ${browserName} / FAIL:\n${probe.output.slice(-2000)}`);
+      failures.push(
+        describeBrowserProbeFailure(probe, {
+          phase,
+          renderer: leg,
+          browser: browserName,
+          url: baseUrl + '/notes',
+        }),
+      );
     }
   }
   for (const line of [...passed, ...failures]) console.log(line);
   if (failures.length > 0) {
     throw new Error(
-      `Browser continuation probe failed (${failures.length}/${PACKED_BROWSERS.length} browsers):\n` +
+      'Browser continuation probe failed (' +
+        failures.length +
+        '/' +
+        PACKED_BROWSERS.length +
+        ' browsers):\n' +
         failures.join('\n'),
     );
   }
@@ -823,7 +1149,17 @@ async function runDevWarmupProbe(tmp: string, baseUrl: string, leg: PackedAppRen
     { timeoutMs: BROWSER_TIMEOUT_MS },
   );
   if (!probe.success || !probe.output.includes(`DEV-WARMUP-OK ${leg}`)) {
-    throw new Error(`Dev warm-up probe failed:\n${probe.output}`);
+    // Same classification as the continuation probe: a harness kill is an
+    // engine/probe timeout, not an assertion failure of the warm-up.
+    throw new Error(
+      'Dev warm-up probe failed:\n' +
+        describeBrowserProbeFailure(probe, {
+          phase: 'dev-warmup',
+          renderer: leg,
+          browser: 'chromium',
+          url: baseUrl + '/notes',
+        }),
+    );
   }
 }
 
@@ -870,7 +1206,7 @@ async function devSession(spec: PackedAppLegSpec, tmp: string): Promise<string> 
     //    first: vite's cold-cache dep optimization forces one full reload,
     //    which must not be attributed to the island lifecycle.
     await runDevWarmupProbe(tmp, baseUrl, leg);
-    await runBrowserContinuationProbe(tmp, baseUrl, leg);
+    await runBrowserContinuationProbe(tmp, baseUrl, leg, 'dev-continuation');
 
     // 3. Dev feedback: a component edit and a route-module edit must both
     //    reach the served document; the previous content must be gone.
@@ -1169,10 +1505,104 @@ interface PackedAppTarball {
   path: string;
 }
 
+/** HEAD identity the packed-artifact freshness guard compares against. */
+interface HeadCommit {
+  sha: string;
+  committedAtMs: number;
+}
+
+/**
+ * Read the current HEAD commit id and committer time (epoch ms).
+ *
+ * Fail-closed: a checkout without readable git history cannot prove the
+ * tarballs correspond to it, so the consumer leg refuses to run.
+ */
+async function readHeadCommit(): Promise<HeadCommit> {
+  let result: Awaited<ReturnType<typeof spawnCommand>>;
+  try {
+    result = await spawnCommand('git', {
+      args: ['-C', repoRoot, 'log', '-1', '--format=%H %ct', 'HEAD'],
+      stdout: 'piped',
+      stderr: 'piped',
+    });
+  } catch (cause) {
+    throw new Error(
+      `cannot read HEAD commit time (git is unavailable): ${(cause as Error).message} — ` +
+        'the packed-consumer freshness guard needs a git checkout to compare against',
+    );
+  }
+  const stdout = new TextDecoder().decode(result.stdout).trim();
+  const stderr = new TextDecoder().decode(result.stderr).trim();
+  const [sha, seconds] = stdout.split(' ');
+  const committedAtMs = Number(seconds) * 1000;
+  if (!result.success || !/^[0-9a-f]{40}$/.test(sha ?? '') || !Number.isFinite(committedAtMs)) {
+    throw new Error(
+      `cannot read HEAD commit time from this checkout (git log exited ${result.code}): ` +
+        `${stderr || stdout || '<no output>'}`,
+    );
+  }
+  return { sha: sha!, committedAtMs };
+}
+
+/**
+ * Fail-closed freshness guard for the pack:dry-run tarballs every consumer leg
+ * installs BY PATH.
+ *
+ * The only existing binding between a tarball and the checkout is its write
+ * time: `pack:dry-run` writes the tarballs after checking out HEAD, so a
+ * tarball older than HEAD's committer time cannot have been built from this
+ * checkout. Without this guard a local consumer leg (which, unlike CI, has no
+ * step ordering behind `pack:dry-run`) would happily install pre-freeze
+ * artifacts and go green attesting an older tree. The check is intentionally
+ * derived from the tarball mtime and the already-available git HEAD metadata —
+ * no second manifest/registry and no new config knob.
+ *
+ * Every stale tarball is named with its write time and HEAD's identity; the
+ * remedy is the one pack step that already exists.
+ */
+export async function assertPackedTarballsFresh(tarballs: readonly string[]): Promise<void> {
+  if (tarballs.length === 0) return;
+  const head = await readHeadCommit();
+  const stale: Array<{ path: string; mtimeMs: number }> = [];
+  for (const path of tarballs) {
+    let mtimeMs: number;
+    try {
+      mtimeMs = (await stat(path)).mtimeMs;
+    } catch (cause) {
+      throw new Error(
+        `Missing packed release artifact: ${path} (run \`pnpm --dir tools/release run pack:dry-run\` in this checkout first)` +
+          `\n  ${(cause as Error).message}`,
+      );
+    }
+    if (mtimeMs < head.committedAtMs) stale.push({ path, mtimeMs });
+  }
+  if (stale.length === 0) {
+    console.log(
+      `Packed tarball freshness: ${tarballs.length} artifact(s) written after HEAD ` +
+        `${head.sha.slice(0, 12)}`,
+    );
+    return;
+  }
+  const headAt = new Date(head.committedAtMs).toISOString();
+  const details = stale
+    .map(
+      ({ path, mtimeMs }) =>
+        `  ${path}\n    written ${new Date(mtimeMs).toISOString()}, before HEAD ` +
+        `${head.sha.slice(0, 12)} (${headAt})`,
+    )
+    .join('\n');
+  throw new Error(
+    `Stale packed release artifact${stale.length === 1 ? '' : 's'} — the consumer leg would ` +
+      `qualify a tree older than the current checkout:\n${details}\n` +
+      'Run `pnpm --dir tools/release run pack:dry-run` in this checkout, then re-run the consumer leg.',
+  );
+}
+
 /**
  * Resolve the pack:dry-run tarballs for the canonical retained package line
  * (#828) through the shared tarball naming helper (#793) so a new package
- * cannot escape the proof. Fails fast when pack:dry-run has not run.
+ * cannot escape the proof. Fails fast when pack:dry-run has not run or when
+ * the tarballs predate HEAD.
  */
 async function resolvePackedAppTarballs(): Promise<PackedAppTarball[]> {
   const workspacePackages = await readPackages();
@@ -1188,6 +1618,7 @@ async function resolvePackedAppTarballs(): Promise<PackedAppTarball[]> {
       );
     }
   }
+  await assertPackedTarballsFresh(tarballs.map((tarball) => tarball.path));
   return tarballs;
 }
 

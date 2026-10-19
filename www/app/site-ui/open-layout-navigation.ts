@@ -129,10 +129,20 @@ export function localeSwitchLabel(currentLocale: string): string {
   return LOCALE_LABELS[currentLocale] || currentLocale;
 }
 
+/**
+ * The sr-only completion of the locale switch's visible label.
+ *
+ * The label names the TARGET locale ("English" on a zh page, "中文" on an en
+ * page), so the note must be written in the language the reader is reading now
+ * — and the two branches were swapped: a zh page announced the English sentence
+ * "Switch to English", which both repeated the label's own word and put an
+ * English string on a Chinese page, while the en page carried the Chinese one.
+ * Each branch now states, in its own language, what the target edition covers.
+ */
 export function localeSwitchScopeNote(currentLocale: string): string {
   return currentLocale === 'zh'
-    ? 'Switch to English'
-    : '中文版本覆盖全站页面；博文与 CHANGELOG 归档以英文原文发布。';
+    ? '英文版本为全站原文；博文与 CHANGELOG 归档仅以英文发布。'
+    : 'The Chinese edition covers every page; blog posts and the CHANGELOG archive stay in the English original.';
 }
 
 export function filterNavSections(items: NavSection[], currentPath: string): NavSection[] {
@@ -178,6 +188,11 @@ export interface SidebarRow {
   label: string;
   current: 'page' | false;
   rel: string | false;
+  /** A section row renders its heading; a link row renders its link. The cell
+   *  the row does not carry is present but `hidden`, so both list sites keep
+   *  one flat row Block and the variant stays a data fact. */
+  headingHidden: boolean;
+  linkHidden: boolean;
 }
 
 export interface FooterLink {
@@ -235,9 +250,9 @@ export function decorateHeaderNav(
 
 /**
  * Flatten the generated navSections tree into a single keyed row list for the
- * compiled each-Region: one heading row per section, one link row per item.
- * The compiler grammar does not admit nested list Regions, so section
- * grouping is carried by row.kind and rendered through one flat Region on
+ * compiled each-Block: one heading row per section, one link row per item.
+ * The compiler grammar does not admit nested list Blocks, so section
+ * grouping is carried by row.kind and rendered through one flat Block on
  * both the desktop sidebar and the mobile disclosure panel.
  */
 export function buildSidebarRows(
@@ -265,6 +280,8 @@ export function buildSidebarRows(
       label: '',
       current: false,
       rel: false,
+      headingHidden: false,
+      linkHidden: true,
     });
     for (const item of section.items) {
       const raw = item.href || item.path || '';
@@ -283,6 +300,8 @@ export function buildSidebarRows(
         label: localizedLabel(item.label, item.labelZh, locale),
         current: !external && href !== false && href === localizedCurrent ? 'page' : false,
         rel: external ? EXTERNAL_REL : false,
+        headingHidden: true,
+        linkHidden: false,
       });
     }
   }

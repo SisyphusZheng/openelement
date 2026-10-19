@@ -13,7 +13,7 @@ One route, one form, three outcomes: empty submissions re-render with the echo a
 ## The component
 
 ```tsx
-import { element, OpenElement, property } from '@openelement/element';
+import { computed, element, OpenElement, property, type ReadonlySignal } from '@openelement/element';
 
 @element('contact-page')
 export default class ContactPage extends OpenElement {
@@ -22,6 +22,12 @@ export default class ContactPage extends OpenElement {
 
   @property({ reflect: false, attribute: false })
   echoed = '';
+
+  @property({ reflect: false, attribute: false })
+  hideError: ReadonlySignal<boolean> = computed(() => this.error === '');
+
+  @property({ reflect: false, attribute: false })
+  hideEcho: ReadonlySignal<boolean> = computed(() => this.echoed === '');
 
   render() {
     return (
@@ -32,13 +38,15 @@ export default class ContactPage extends OpenElement {
           <button type='submit'>Send</button>
           <button type='submit' formaction='?/shout'>Shout</button>
         </form>
-        {this.error ? <p role='alert'>{this.error}</p> : <span></span>}
-        {this.echoed ? <p>echo={this.echoed}</p> : <span></span>}
+        <p role='alert' hidden={this.hideError}>{this.error}</p>
+        <p hidden={this.hideEcho}>echo=<span>{this.echoed}</span></p>
       </main>
     );
   }
 }
 ```
+
+The two message elements sit outside any conditional branch on purpose: a branch element binds attributes but cannot interpolate text (`OEC9012` — branches bind, they don't act). The recipe derives a boolean `computed()` property and toggles the `hidden` attribute instead, so the echoed value stays an ordinary text binding and the build accepts it.
 
 ## The route
 

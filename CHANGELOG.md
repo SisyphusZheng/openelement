@@ -9,6 +9,105 @@ lives in:
 - [`docs/release/release-state.json`](./docs/release/release-state.json)
 - [`docs/release/public-interface-snapshot.json`](./docs/release/public-interface-snapshot.json)
 
+## 1.0.0-alpha.15
+
+**The alpha.15 line: vocabulary finalization, defect closure, and the release
+evidence the 1.0 line rides on.** Authored vocabulary converges on one set of
+names, the compiled class lane gets the same security boundary as `__h`, the
+island scheduler learns the strategies it had been dropping, light-root CSS is
+projected with a parser instead of a text scan, and the build/qualification
+gates now see what they claim to see.
+
+- **Layout convention.** `app-shell` becomes `app/layout.tsx` plus the
+  `layout` option; the old inline key fails closed with rename guidance.
+- **Part Program vocabulary.** Regions/claims become blocks/hydration; the
+  wire version moves to 2 and v1 artifacts are refused with a diagnostic,
+  never coerced. `renderDsd` is `renderToString`; the Deferred executor family
+  and its eight codes are `Stream*` (`OE_DEFERRED_*` → `OE_STREAM_*`); the
+  public `./no-regions` subpath is `./no-blocks`.
+- **Dead configuration removed.** `componentsDir`, `mode: 'ssg'` and
+  `renderMode: 'static'` are gone; the compiled-element grammar keeps one
+  documented authoring surface.
+- **Security — the class lane now screens URL values.** Compiled class
+  components route `href`/`src`/`action`/`formaction`/`xlink:href` values
+  through the same protocol predicate `__h` already used; script-bearing
+  schemes (`javascript:`, `vbscript:`, `data:`) throw `OE_UNSAFE_URL_SINK`
+  before they reach markup or the DOM. This also refuses `data:` URLs on
+  resource attributes that previously accepted them — a deliberate tightening,
+  not a compat shim.
+- **Security — request-data head fragments are allowlisted.** Route-resolved
+  `head.dangerouslyHeadFragments` now accept only top-level `<meta>`, `<link>`
+  and `<style>` markup (plus whitespace); comments, closing tags, `<base>`,
+  embedders, event-handler attributes and `<meta http-equiv="refresh">` are
+  rejected. Build-time `headExtras`/`inject.headFragments` keep their existing
+  predicates: they are configuration, not request data.
+- **Security — PRG redirect targets are canonicalized, and generated entry
+  imports are quoted.** A `//`-prefixed pathname can no longer produce a
+  protocol-relative `Location`; route filenames containing quotes can no longer
+  splice syntax into the generated entry (an un-emittable module path fails the
+  build with `OE_DESCRIPTOR_MODULE_IMPORT`).
+- **Correctness — island scheduling, resume and branch sinks.** A morph that
+  delivers `idle` or `media` island hosts now re-arms those strategies instead
+  of leaving the islands permanently inert; a resumed root skips every leading
+  static-style node (not just one); a `when`-branch `innerHTML` sink is owned by
+  the element's identity instead of a colliding relative path; `@property`
+  names consult the shared prototype-pollution deny list.
+- **Build — the CLI build is a production build.** The build pins production
+  semantics for its Vite call, so ambient `NODE_ENV=test/development` can no
+  longer silently emit a development-semantics SSR bundle (KR-15).
+- **Dev/build parity.** A cold `dev` start now links the generated document
+  stylesheet on its first document (the descriptor was baked before the style
+  channel contributed it); light-root `@scope` projection only rewrites real
+  `:host`/`::slotted` selector tokens, case-insensitively, and leaves escaped
+  identifiers, declaration values and at-rule preludes alone.
+- **Gates that see.** The seams registry gains a mechanical reader (row shape,
+  consumer-form guard paths and the missing/unreadable-behavior clause);
+  `check:content` compiles maintained example fences with the real compiler;
+  qualified fixture gates run without retries and fail when their fixture build
+  is missing; accidental `.only` fails; the packed-artifact internal-path guard
+  catches every prefixed spelling; the CLI production pin has a negative proof.
+- **Breaking — the generated scaffold is package-manager neutral.** `@openelement/create`
+  no longer resolves anything through a pnpm `catalog:`: every `catalog:` specifier is gone
+  from the shipped payloads, `vite-plus` is no longer a template dependency, `vite` is a
+  direct `8.0.16` pin, and the template's `pnpm-workspace.yaml` and the `packageManager`
+  field are deleted. The CLI detects pnpm → npm → yarn → bun and installs with the first one
+  present, failing only when none is (with a message naming all four). The generated `dev`
+  script now runs the router bin (`oe dev`, a new bin-only subcommand that reuses the
+  existing Vite dev server — `dev` deliberately has no `./cli/*` subpath), and `fmt`/`lint`
+  run `oxfmt`/`oxlint`; `build`/`start`/`typecheck`/`test` were already manager-neutral. A
+  scaffold therefore installs and runs under any of the four managers instead of
+  hard-failing without pnpm.
+- **Docs and records.** The user-facing docs, release procedure, ADR statuses,
+  version-bump bookkeeping, public architecture package graph and CHANGELOG are
+  reconciled with the alpha.15 tree.
+
+## 1.0.0-alpha.14
+
+**The starter ships in the Vite+ form, the router gains the `oe` command, and
+the shared site chrome becomes one layout island.**
+
+- **Starter ships the Vite+ form.** Generated scripts are `vp dev` /
+  `oe build` / `oe start` / `vp fmt` / `vp lint` / `typecheck`; `vite` is no
+  longer a direct devDependency (it rides the catalog alias), and the
+  template's `pnpm-workspace.yaml` carries the catalog, the `vite@*` override,
+  and the minimum-release-age excludes for the Vite+ line.
+- **`oe` bin.** `@openelement/router` installs a second, two-letter dispatcher
+  (`oe`) next to `openelement`.
+- **`app/islands/app-shell.tsx` layout island.** The starter's shared chrome
+  lives once in the app-shell island; the three pages keep only their own
+  content.
+- **Per-property og suppression.** A route-declared `head.meta` og entry
+  owns its property: the site-level fragment for the same property is not
+  emitted a second time, on the SSG path and the request-time path alike.
+- **Cloudflare deployment guide.** Static Pages and Nitro/Workers recipes,
+  written from the nitro-mount adapter's contract and from a project that was
+  actually built.
+- **Nested island activation.** A nested island's pending records survive an
+  outer activation, so a deferred chunk graph cannot consume and drop the inner
+  island's replay.
+- **Consumer gates follow the form.** The packed-starter and ui-appliance gates
+  assert the shipped Vite+ form instead of the retired plain-Vite form.
+
 ## 1.0.0-alpha.13
 
 **The lifecycle gets one documented command name, and the scaffold stops
@@ -80,6 +179,86 @@ generated from instead of exact pins.
   reporting missing stylesheet type declarations instead of compiling the
   routes, which hid any real type error behind that noise; the compiler now
   receives the stylesheet declaration and the check passes over every route.
+
+## 1.0.0-alpha.12
+
+**The dev server delivers Tailwind preset tokens to the document stylesheet,
+and the release workflow owns the channel re-point.**
+
+- **Dev token delivery.** A cold `dev` run's SSR document links the compiled
+  Tailwind preset token sheet, and the starter template pair matches it
+  (#1586, fixes #1582).
+- **Channel re-point under OIDC.** The alpha/beta channel-tag re-point folds
+  into the release workflow's OIDC identity and pins npm >= 12.2.0 for the
+  trusted-publishing path (#1584, #1585).
+- **Install commands ride `latest`.** Documented install commands name the
+  shipping line, and a channel-tag re-point tool accompanies the workflow
+  change (#1583).
+- **Alpha.11 post-release follow-ups.** Cross-platform `prepare`, the
+  third-party fixture lockfile, and the registry-truth sync land together
+  (#1581).
+
+## 1.0.0-alpha.11
+
+**The six-package line starts here: Element splits into protocol / runtime /
+compiler, styles become files, and the 1.0 prerelease takes npm `latest`.**
+
+- **Six-package line (#1557).** The Element monolith splits into
+  `@openelement/protocol` (contracts, zero dependencies),
+  `@openelement/element` (runtime), and `@openelement/compiler` (build-time
+  TSX-to-Part-Program compiler). The loader gains a first-publish continuity
+  rule so a package without registry history cannot wedge the publish loop.
+- **File-based style authoring (#1558).** Component sheets are authored as
+  imported `.css` assets and emitted as content-addressed stylesheets; the
+  island style-asset protocol is recorded in ADR-0164.
+- **Platform APIs.** Navigation API adapter with a pushState fallback, View
+  Transitions as an opt-in Router option (recorded named deviation),
+  Speculation Rules prefetch per page, and CSS `@scope` for light-DOM
+  boundaries (#1561).
+- **Hono becomes optional (#1560).** The generated server entry composes on
+  the internal WinterCG layer; `@openelement/router/hono` is the opt-in
+  adapter.
+- **UI styles restored (#1577).** The #1558 migration had replaced six
+  interactive components' sheets with placeholder shells; all nine sheets are
+  ported back from the pre-migration baseline.
+- **Correctness.** WinterCG channels append cookies instead of overwriting the
+  response's earlier `Set-Cookie` entries, and compiler style-edge keys use the
+  resolved sheet path so same-named sheets no longer collapse onto one key
+  (#1576).
+- **`latest` ruling.** From the 1.0 line the prerelease is the shipping line:
+  it publishes onto `latest`, and the `alpha` channel tag is kept as a
+  re-pointed alias.
+- **CI/Release redesign (#1566/#1567).** The candidate-evidence artifact,
+  reuse-resolver, and fresh-clone architecture is replaced by ten CI jobs plus
+  the release workflow's API-discovered exact-SHA CI evidence; the PR test job
+  widens to ui/create/tools. (Governance, not consumer-facing.)
+
+## 1.0.0-alpha.10
+
+**Emergency fixes for the defects found in the alpha.9 post-release audit, plus
+the size / zero-inline lane.**
+
+- **Open-search fixes (#1531, #1532, #1533).** The positioner shell is applied
+  per declaration so Zag's imperative writes survive; dark-mode result titles
+  use role tokens; the global Tab trap engages only after the runtime is
+  wired.
+- **Preset assets ship (#1535, #1536).** `url()`-referenced fonts/SVG
+  backgrounds emitted by the inner build are copied to hashed asset names with
+  their URLs rewritten, behind a drift guard; the bare-layer mis-capture in
+  Tailwind 4.3 output is fixed.
+- **Starter state hygiene (#1537).** The template ignores `.openElement/`
+  (head-convention/build-plan state) and the README names it; the pinned
+  install example refreshes to the tracked release line.
+- **P8 seam ownership (ADR-0163).** The constitution gains P8, the eight
+  audited seams are registered in `docs/architecture/seams.md`, and
+  `check:theme-tokens` starts rejecting bare palette references in site-ui
+  sheets (#1539).
+- **Size / zero-inline lane (#1543–#1547, #1551–#1555).** Island component
+  styles are minified, the shared compiled-element runtime gets its own guarded
+  `element-runtime-<hash>.js` chunk, production builds strip the largest
+  runtime error prose to codes, island stylesheets are extracted as
+  content-addressed `client/assets/*.css` assets, and `esbuild` is retired from
+  the toolchain (13 config blocks migrated to oxc).
 
 ## 1.0.0-alpha.9
 

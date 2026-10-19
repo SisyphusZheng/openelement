@@ -14,7 +14,14 @@ Docs and guides: <https://openelement.org>.
 the showcase starter: a static-first landing page with two islands, a fully
 static About page, an `/api/ping` server route, and a Tailwind-ON design-token
 sheet (the `@theme` role table; one template, no variants). The generated
-project is a plain Node/pnpm project.
+project is a plain Node project with no package-manager pin: every script is a
+plain command, the manifest declares no `packageManager` field, and the
+scaffold ships no `pnpm-workspace.yaml`, so the generated project installs and
+runs its lifecycle scripts under npm, pnpm, yarn, or bun. (The bootstrap itself
+is documented as `npm create` / `npx`; the `pnpm dlx` form names the two-bin
+package explicitly.) The repository's own
+development flow (Vite+ / `vp`) stays in this repository and appears nowhere in
+the generated manifest or scripts.
 
 ## Usage (1.0 Alpha)
 
@@ -22,20 +29,36 @@ project is a plain Node/pnpm project.
 npm create @openelement my-app
 ```
 
-The CLI scaffolds, initializes git (when git is available), detects a package
-manager (pnpm first, then npm), installs dependencies, and prints a boxed
+The CLI scaffolds, detects the first package manager on PATH (pnpm, then npm,
+then yarn, then bun — failing only when none of the four exists, with a message
+naming all four), installs dependencies with it, initializes git (when git is
+available and the target is not already inside a repository), and prints a boxed
 handoff with the next commands. Flags (all optional):
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `-t, --template <name>` | `showcase` | the template to scaffold; skips the interactive confirmation |
-| `--install` / `--no-install` | install | dependency installation after scaffolding |
+| `-t, --template <name>` | `showcase` | the template to scaffold (the only value; names it explicitly) |
+| `--install` / `--no-install` | install | dependency installation after scaffolding; a skipped install is taught in the handoff box (the detected manager's `<pm> install`, or `npm install`) |
 | `--start` | off | start the dev server after a successful install |
-| `--git` / `--no-git` | git init | initialize a git repository (requires the scaffold's `.gitignore`) |
+| `--git` / `--no-git` | git init | initialize a git repository, skipped with a note when the target already lives inside one (requires the scaffold's `.gitignore`) |
 
-On a TTY the CLI asks exactly one question — confirming the template (Enter
-accepts the default). Non-interactive runs (CI, packed consumers) skip the
-prompt and take the defaults; pass `-t` to pin the template explicitly.
+The target is a new directory, an existing EMPTY directory, or `.` for the
+current directory (which the same emptiness rule applies to):
+
+```bash
+npm create @openelement my-app      # new, or already empty, directory
+npm create @openelement .           # the current directory, which must be empty
+```
+
+A non-empty target is refused, and the error names the entries that are in the
+way — the CLI never merges into files it does not own and never advises
+deleting a directory it did not create. An in-place scaffold writes the
+manifest name from the directory's own name (lowercased into the npm
+package-name grammar).
+
+The template is fixed — one template, `showcase`. `-t` names it explicitly, and
+without `-t` the CLI scaffolds it directly: no prompt on a TTY either.
+Non-interactive runs (CI, packed consumers) behave identically.
 
 ```bash
 npx @openelement/create my-app --no-install --no-git -t showcase
@@ -56,7 +79,7 @@ npm create @openelement@1.0.0-alpha.14 my-app
 ```
 
 The generated starter depends on `@openelement/*` through caret ranges over
-the release it was generated from, so `pnpm update` picks up later `1.0.0`
+the release it was generated from, so a dependency update picks up later `1.0.0`
 prereleases without a manifest edit.
 
 The canonical install command is exported from `@openelement/create/install-command` (one builder, every documented copy derives from it).
@@ -75,8 +98,8 @@ npx @openelement/create my-app
 pnpm dlx --package=@openelement/create openelement-create my-app
 ```
 
-The scaffolded project itself is Node-native: Node.js 24.2+ and
-pnpm run its scripts.
+The scaffolded project itself is Node-native: Node.js 24.2+ runs it, and any of
+npm, pnpm, yarn, or bun runs its scripts.
 
 ## Stable 0.43 (maintenance line)
 
@@ -91,10 +114,14 @@ npm create @openelement@0.43 my-app
 ## Requirements
 
 - **Bootstrap:** Node.js 24.2+ with npm (or pnpm for the `pnpm dlx` variant) —
-  the verified floor this repository exercises in CI.
+  the verified floor this repository exercises in CI. The generator checks the
+  host version before it writes anything: an older Node exits 1 with the exact
+  install command instead of scaffolding a project it cannot run.
 - **Generated project:** Node.js 24.2+ (the floor the packed `@openelement/*`
-  engines declare and CI exercises; `.node-version` pins the development
-  line) and pnpm for the lifecycle scripts.
+  engines declare and CI exercises) and any one of npm, pnpm, yarn, or bun for
+  the lifecycle scripts — nothing in the scaffold requires a specific manager.
+  The scaffold ships a `.node-version` pinning 24.18.0, the development line
+  this repository pins at its root.
 - **git (optional):** `git init` runs by default and skips silently when git
   is not on PATH.
 
@@ -102,9 +129,10 @@ npm create @openelement@0.43 my-app
 
 - `package.json` - starter dependencies (`@openelement/*` with caret ranges
   over the generated-from release)
-  and the lifecycle scripts (`dev`/`check`/`test`/`build`/`start`; `build` and
-  `start` run the `openelement` bin from `@openelement/router`)
-- `tsconfig.json` - the type-check surface for `pnpm check`: JSX authoring
+  and the lifecycle scripts
+  (`dev`/`fmt`/`lint`/`typecheck`/`test`/`build`/`start`; `dev`, `build` and
+  `start` run the router's `oe` bin, `fmt`/`lint` run `oxfmt`/`oxlint`)
+- `tsconfig.json` - the type-check surface for `npm run typecheck`: JSX authoring
   through the element import source, whole-`app/` coverage
 - `vite.config.ts` - Vite build configuration only; framework options still
   have exactly one home:
@@ -130,6 +158,8 @@ npm create @openelement@0.43 my-app
     `prefers-color-scheme`)
 - `public/` - static assets
 - `README.md` and `.gitignore` - starter docs and ignore rules
+- `.node-version` - the Node development pin (`24.18.0`; the supported floor
+  stays `24.2`)
 
 The generated dependency set intentionally keeps protocol and build internals
 out of the starter surface. Advanced contracts remain available through the

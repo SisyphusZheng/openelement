@@ -1,32 +1,17 @@
 /**
- * app/head.tsx — the starter's structural document-head content.
+ * app/head.tsx — structural document-head content: the entries a URL list
+ * cannot express (here, the color-scheme declaration).
  *
- * Everything here is DATA: the framework validates attribute names and URL
- * values, escapes every attribute, and serializes the tags into the document
- * <head>. The array is emitted in the order written, so this file is the head
- * order. Delete the file and the starter still builds — it is a convention, not
- * a requirement.
+ * Entries are DATA and are emitted in the order written: `{ meta: {...} }` is
+ * one meta tag, `{ link: { rel, href } }` one link tag, `{ style: 'css' }` one
+ * inline style block. The build compiles this module, so it can import CSS by
+ * URL and pull local constants — but it must not use host APIs: its output is
+ * a build artifact.
  *
- * Entries take one of three shapes:
- *   { meta: { name, content } }   one <meta> tag
- *   { link: { rel, href, ... } }  one <link> tag (rel and href are required)
- *   { style: 'css text' }         one inline <style> block
- *
- * The module is compiled by the build, so it can import CSS by URL
- * (`import css from './site.css?raw'`) and pull constants from local modules.
- * It must not use host APIs (no Deno, no Node): its output is a build artifact,
- * so a runtime read would make the document depend on the build machine.
- *
- * `head` in openelement.config.ts already covers the title, description,
- * favicon and the og:/twitter: pairs; `head.scripts` / `head.stylesheets`
- * cover external scripts and stylesheets. This file is for what neither can
- * express — here, the color-scheme declaration. A route module's `head`
- * resolves at render time: its title and description update only <title> and
- * the meta description. The og:* tags keep the site-wide defaults except
- * where the route's `head.meta` declares the same `property="og:…"` — that
- * property's site default is then not emitted (the route's own tag is the
- * only one, in prerendered and request-rendered HTML alike). `name=` meta
- * entries (e.g. twitter:card) never suppress a site default.
+ * Title, description, favicon and the og:/twitter: pairs come from `head` in
+ * openelement.config.ts. A route's own `head.meta` overrides a site default
+ * with the same property; `name=` entries never suppress one. Delete this file
+ * and the starter still builds — it is a convention, not a requirement.
  */
 export default [
   // Declaring the color scheme the starter supports lets the browser pick the

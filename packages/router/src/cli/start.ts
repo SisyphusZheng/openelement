@@ -7,8 +7,9 @@
  *                      fetch(Request): Response dispatch. When
  *                      dist/server/index.js exists, dynamic routes and
  *                      mutations dispatch to it.
- *                      (`pnpm start` in a generated project — its script
- *                      runs `openelement start`.)
+ *                      (`oe start` in a generated project — its script runs
+ *                      this subcommand through the router's short bin; the
+ *                      long alias `openelement start` is the same dispatcher.)
  *   preview          - static-only serving through the SAME dispatch: the
  *                      mode refuses dist/server/index.js up front (a build
  *                      with request-time routes is a `start` deployment),
@@ -30,6 +31,16 @@
  *                      (`openelement start --mode=preview`; a generated
  *                      project ships no preview script.)
  *
+ * Argument contract (CLI-01): `--help`/`-h` prints the command's usage and
+ * exits 0 BEFORE any filesystem or port work (the missing-dist check, config
+ * load and listen all come after it), and start mode fails closed on any
+ * argument it does not own — exit code 2, one actionable line naming the
+ * environment variables. Start mode takes no `--port`/`--host` flags; the
+ * listen address is the environment only (OPEN_ELEMENT_PORT / PORT,
+ * OPEN_ELEMENT_HOST). Preview keeps its vite-preview flags (--port, --host,
+ * --strictPort) because they are part of that mode's documented local
+ * ergonomics, and `--mode=preview` / `--debug` work in both modes.
+ *
  * Node/Workers/Bun deploys are produced by the Nitro mount from the same
  * standard fetch entry; this CLI serves the local/preview surface only.
  */
@@ -38,7 +49,7 @@ import { existsSync } from 'node:fs';
 import process from 'node:process';
 import { join } from 'pathe';
 import type { Server } from 'node:http';
-import { serveFetch, type FetchHandler } from '../internal/node-http.ts';
+import { serveFetch, type FetchHandler, type RequestOriginPolicy } from '../internal/node-http.ts';
 import { formatError } from '@openelement/element';
 import { DEFAULT_OUT_DIR } from '../vite/internal/paths.ts';
 import { extractServeMode, type ServeMode } from '../internal/serve-mode.ts';
@@ -52,20 +63,50 @@ import {
   importAppConfigModule,
   resolveAppConfig,
 } from '../vite/app-config.ts';
+import { enforceNodeFloor } from './node-version.ts';
 
-const root = process.cwd();
-const distDir = join(root, DEFAULT_OUT_DIR);
-const serverEntry = join(distDir, 'server', 'index.js');
-const hostname = process.env['OPEN_ELEMENT_HOST'] ?? '0.0.0.0';
+// Resolved per-invocation, never snapshotted at module load (M-R5): a
+// module-level `process.cwd()` goes stale when the CLI is reused
+// programmatically (imported and called after chdir). Pure CLI runs are
+// unaffected — main() runs once — but laziness costs nothing here.
+function resolveServePaths(): { root: string; distDir: string; serverEntry: string } {
+  const root = process.cwd();
+  const distDir = join(root, DEFAULT_OUT_DIR);
+  return { root, distDir, serverEntry: join(distDir, 'server', 'index.js') };
+}
+
+function resolveHostname(): string {
+  return process.env['OPEN_ELEMENT_HOST'] ?? '0.0.0.0';
+}
+
+/**
+ * The origin policy for the node bridge (node-http.ts): two explicit operator
+ * declarations, because the request origin decides whether the same-origin
+ * CSRF floor admits a browser's form POST and neither knob may be guessed.
+ *
+ * `OPEN_ELEMENT_PUBLIC_ORIGIN` states the origin the site is reachable at;
+ * `OPEN_ELEMENT_TRUST_PROXY=1` declares that only a proxy the operator
+ * controls can reach this port, which is what makes the `Forwarded` /
+ * `X-Forwarded-*` headers readable. A directly reachable server sets neither,
+ * and keeps the plain `http://<Host>` origin.
+ */
+function resolveOriginPolicy(): RequestOriginPolicy {
+  const publicOrigin = process.env['OPEN_ELEMENT_PUBLIC_ORIGIN'];
+  return {
+    ...(publicOrigin === undefined || publicOrigin === '' ? {} : { publicOrigin }),
+    ...(process.env['OPEN_ELEMENT_TRUST_PROXY'] === '1' ? { trustProxy: true } : {}),
+  };
+}
 
 /**
  * #1411: `cli/start` is the third reader of `openelement.config.ts`. It reads
  * the file through the host runtime (a plain dynamic import) and never through
  * Vite, so serving a built app needs no Vite config bundling. Nothing else in
  * this CLI consumes framework options: `dist/` already carries the built
- * document (head, shells, middleware) from the build-time resolution.
+ * document (head, layouts, middleware) from the build-time resolution.
  */
 async function loadProductionConfig(mode: ServeMode): Promise<void> {
+  const { root } = resolveServePaths();
   const configFile = detectAppConfigFile(root);
   if (configFile === null) return;
   try {
@@ -85,19 +126,103 @@ async function loadProductionConfig(mode: ServeMode): Promise<void> {
   }
 }
 
+/**
+ * The command's own usage text (CLI-01). Help answers from the command, not
+ * the top-level dispatcher: `oe start --help` reaches this module with
+ * `--help` in argv, so the start surface documents itself (modes, the two
+ * environment variables, and the flags each mode owns).
+ */
+const START_USAGE = [
+  'Usage: openelement start [options]',
+  'Alias: oe start [options] (same entry, same behavior)',
+  '',
+  'Serve the built output (dist/) for the app in the current directory.',
+  'start (default) runs the deployment server: dist/server/index.js is',
+  'dispatched for request-time routes when the build emitted it.',
+  '',
+  'Modes:',
+  '  start                  serve the built output (default)',
+  '  --mode=preview         serve a static-only build as a local preview;',
+  '                         refuses a build with request-time routes',
+  '',
+  'Options:',
+  '  --mode=preview         select the preview serve mode',
+  '  --debug                print the raw stack on failure',
+  '  --help, -h             print this usage',
+  '',
+  'Environment (start mode takes NO --port/--host flags):',
+  '  OPEN_ELEMENT_PORT      port to listen on (start default: 4173)',
+  '  OPEN_ELEMENT_HOST      hostname to bind (start default: 0.0.0.0)',
+  '',
+  'preview mode also accepts the vite-preview flags:',
+  '  --port <number>        port to listen on (default: 4173)',
+  '  --host [host]          hostname to bind (default: localhost)',
+  '  --strictPort           exit if the port is already in use',
+].join('\n');
+
+/** Does the argument list ask for the command's usage? */
+function wantsUsage(argv: string[]): boolean {
+  return argv.some((arg) => arg === '--help' || arg === '-h');
+}
+
+/**
+ * One actionable line for an argument start mode does not own (CLI-01: no
+ * silent swallow). The listen address is environment-only, so the refusal
+ * teaches the supported surface instead of naming an unsupported flag.
+ */
+function unexpectedStartArgument(arg: string): string {
+  if (arg === '--port' || arg.startsWith('--port=')) {
+    return (
+      `[openElement start] start mode has no --port flag; set OPEN_ELEMENT_PORT ` +
+      '(OPEN_ELEMENT_HOST for the bind address) — for a local preview, use ' +
+      '`--mode=preview --port` (run `oe start --help`).'
+    );
+  }
+  if (arg === '--host' || arg.startsWith('--host=')) {
+    return (
+      `[openElement start] start mode has no --host flag; set OPEN_ELEMENT_HOST ` +
+      '(OPEN_ELEMENT_PORT for the port) — for a local preview, use ' +
+      '`--mode=preview --host` (run `oe start --help`).'
+    );
+  }
+  return (
+    `[openElement start] unexpected argument "${arg}"; start mode takes only ` +
+    '--mode=preview and --debug — set the listen address with OPEN_ELEMENT_PORT / ' +
+    'OPEN_ELEMENT_HOST (run `oe start --help`).'
+  );
+}
+
 async function main(argv: string[]): Promise<void> {
+  // Help answers before the mode parser, the missing-dist check, the config
+  // import and the listen: `oe start --help` is a documentation request even
+  // when the cwd has no dist/ and even beside otherwise-invalid arguments.
+  if (wantsUsage(argv)) {
+    console.log(START_USAGE);
+    process.exit(0);
+  }
   let parsed: { mode: ServeMode; rest: string[]; debug: boolean };
   try {
     parsed = extractServeMode(argv);
   } catch (error) {
+    // A usage error (unknown --mode value or a missing one) is not a serve
+    // failure: exit 2 keeps it distinguishable from a failed boot.
     console.error(renderCliFailure(error, false));
-    process.exit(1);
+    process.exit(2);
   }
   cliDebug = parsed.debug;
 
+  // Start mode owns no pass-through flags: anything left in `rest` is an
+  // argument this command cannot honor. Refuse it before any filesystem work
+  // rather than booting a server that silently ignored it (CLI-01).
+  if (parsed.mode === 'start' && parsed.rest.length > 0) {
+    console.error(unexpectedStartArgument(parsed.rest[0]!));
+    process.exit(2);
+  }
+
+  const { distDir } = resolveServePaths();
   if (!existsSync(distDir)) {
     console.error(
-      `[openElement ${parsed.mode}] ${DEFAULT_OUT_DIR}/ not found. Run \`pnpm build\` first.`,
+      `[openElement ${parsed.mode}] ${DEFAULT_OUT_DIR}/ not found. Run \`oe build\` first.`,
     );
     process.exit(1);
   }
@@ -251,11 +376,12 @@ function parsePreviewFlags(rest: string[]): PreviewListen {
 }
 
 async function runPreview(rest: string[]): Promise<void> {
+  const { distDir, serverEntry } = resolveServePaths();
   if (existsSync(serverEntry)) {
     console.error(
       `[openElement preview] This project has request-time routes (${DEFAULT_OUT_DIR}/server).\n` +
         '  A static-only preview cannot serve dynamic loader/action routes.\n' +
-        '  Use: pnpm start\n' +
+        '  Use: oe start\n' +
         '  (or: openelement start)',
     );
     process.exit(1);
@@ -281,7 +407,12 @@ async function runPreview(rest: string[]): Promise<void> {
   // vite-preview parity: a busy port probes the next one upward until one
   // binds (strictPort turns the probe into the actionable failure instead).
   for (let port = listen.port; port <= 65535; port++) {
-    const server = serveFetch({ hostname: listen.hostname, port, handler });
+    const server = serveFetch({
+      hostname: listen.hostname,
+      port,
+      handler,
+      ...resolveOriginPolicy(),
+    });
     const failure = await new Promise<NodeJS.ErrnoException | null>((resolve) => {
       server.once('listening', () => resolve(null));
       server.once('error', (error: NodeJS.ErrnoException) => resolve(error));
@@ -308,6 +439,8 @@ async function runPreview(rest: string[]): Promise<void> {
 }
 
 async function runStart(): Promise<void> {
+  const { distDir, serverEntry } = resolveServePaths();
+  const hostname = resolveHostname();
   const rawPort = process.env['OPEN_ELEMENT_PORT'] ?? process.env['PORT'] ?? '4173';
   const port = parsePortValue(rawPort, 'OPEN_ELEMENT_PORT / PORT', 'start');
 
@@ -329,7 +462,7 @@ async function runStart(): Promise<void> {
     env: processEnvRecord(),
   });
 
-  const server: Server = serveFetch({ hostname, port, handler });
+  const server: Server = serveFetch({ hostname, port, handler, ...resolveOriginPolicy() });
   // The bind outcome is asynchronous (serveFetch returns before listen
   // settles), so the success line waits for 'listening' and a failed bind
   // answers with one actionable line (#1413 style, no raw stack) instead of
@@ -364,6 +497,11 @@ export async function runServeCli(argv: string[]): Promise<void> {
     process.exit(1);
   }
 }
+
+// The Node floor is checked before the `import.meta.main` dispatch below: on
+// Node < 24.2 that flag is `undefined`, so an ungated packed entry would exit 0
+// having done nothing at all.
+enforceNodeFloor();
 
 if (import.meta.main) {
   await runServeCli(process.argv.slice(2));
