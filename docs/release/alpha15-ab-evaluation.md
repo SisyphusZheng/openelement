@@ -45,6 +45,12 @@ snapshot, and both sides were swept again from scratch.
    sides, and the A column reproduces the previous edition's A numbers exactly
    (raw, gzip and file counts for every group) — the harness itself is
    unchanged across editions.
+5. **The three-arm session added one harness mapping line and nothing else.**
+   `group-build.sh` gained an `a14` side case (`ROOT=/private/tmp/oe-ab-a14`);
+   the collector, the sweep driver, the timing wrapper and the clean-then-build
+   recipes are untouched. The A14 arm is a detached worktree at the tag with an
+   empty `git status --porcelain`; the final arm is the tree-hash-verified
+   snapshot recorded above.
 
 ## Measurement method
 
@@ -78,6 +84,106 @@ its authored output** (pagefind excluded: −56 748 raw, −17 017 gzip) while i
 search index grows by design (pagefind included: +45 517 raw). The fixture
 groups are unchanged in shape from the previous edition; their growth is the
 shared client runtime (below).
+
+## Three-arm release footprint: alpha14 → mid-line → final candidate
+
+This edition adds a third arm so the release can state the footprint **across the
+alpha14 boundary** (`v1.0.0-alpha.14` → this candidate) as well as this batch's
+own cost. All three arms were built in **one interleaved session** (cold reps
+`A14, mid, final` repeated three times, then one warm run per arm) with the same
+collector (`collect.mjs`, sha256 `561968e8…`), the same
+`NODE_ENV=production` clean-then-build recipe and the same machine:
+
+| arm | tree | provenance |
+| --- | --- | --- |
+| A14 | tag `v1.0.0-alpha.14` = `e9af510deb1cc84e3d29fe0e3b3de0b0220dc626` | detached worktree, `git status --porcelain` empty before and after |
+| mid | `3613d841c38c8fe7dbb94ae528e4dfc2eb6139ee` | the release baseline the previous edition used |
+| final | `6ae4416442e1300b8eb49b64a541a2bbee4accea` | candidate C of this edition (tree-hash-verified snapshot) |
+
+### alpha14 → final candidate
+
+| group | A14 raw | Cfinal raw | Δraw | Δraw % | A14 gzip | Cfinal gzip | Δgzip | Δgz % | A14 files | Cfinal files |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| router-static-only | 1 767 | 2 163 | +396 | 22.4 % | 968 | 1 207 | +239 | 24.7 % | 3 | 4 |
+| router-native-framework | 832 461 | 918 570 | +86 109 | 10.3 % | 192 975 | 217 069 | +24 094 | 12.5 % | 14 | 17 |
+| router-lit-framework | 862 178 | 966 008 | +103 830 | 12.0 % | 199 507 | 226 030 | +26 523 | 13.3 % | 17 | 19 |
+| router-ui-dogfood | 201 504 | 212 722 | +11 218 | 5.6 % | 55 058 | 62 004 | +6 946 | 12.6 % | 30 | 33 |
+| router-unocss-probe | n/a | 148 513 | — | — | n/a | 47 256 | — | — | n/a | 14 |
+| www (pagefind excluded) | 9 919 274 | 11 986 116 | +2 066 842 | 20.8 % | 2 234 531 | 2 084 970 | −149 561 | -6.7 % | 206 | 206 |
+| www (pagefind included) | 11 445 731 | 13 650 796 | +2 205 065 | 19.3 % | 3 665 537 | 3 654 506 | −11 031 | -0.3 % | 306 | 308 |
+| starter (see note 3) | 605 859 | 710 096 | +104 237 | 17.2 % | 159 849 | 187 684 | +27 835 | 17.4 % | 23 | 26 |
+
+### mid-line → final candidate (this batch's cost)
+
+| group | mid raw | Cfinal raw | Δraw | Δraw % | mid gzip | Cfinal gzip | Δgzip | Δgz % |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| router-static-only | 1 767 | 2 163 | +396 | 22.4 % | 968 | 1 207 | +239 | 24.7 % |
+| router-native-framework | 887 015 | 918 570 | +31 555 | 3.6 % | 207 156 | 217 069 | +9 913 | 4.8 % |
+| router-lit-framework | 942 295 | 966 008 | +23 713 | 2.5 % | 218 119 | 226 030 | +7 911 | 3.6 % |
+| router-ui-dogfood | 199 308 | 212 722 | +13 414 | 6.7 % | 56 608 | 62 004 | +5 396 | 9.5 % |
+| router-unocss-probe | 140 160 | 148 513 | +8 353 | 6.0 % | 43 872 | 47 256 | +3 384 | 7.7 % |
+| www (pagefind excluded) | 12 042 864 | 11 986 116 | −56 748 | -0.5 % | 2 101 987 | 2 084 970 | −17 017 | -0.8 % |
+| www (pagefind included) | 13 605 279 | 13 650 796 | +45 517 | 0.3 % | 3 569 065 | 3 654 506 | +85 441 | 2.4 % |
+| starter (see note 3) | 674 382 | 710 096 | +35 714 | 5.3 % | 175 910 | 187 684 | +11 774 | 6.7 % |
+
+### Comparability notes (read before quoting any number)
+
+1. **`router-unocss-probe` is n/a at alpha14** — the fixture does not exist in
+   the alpha14 tree; it was added later in the alpha15 line. The alpha15 arms
+   are reported, the alpha14 arm is not.
+2. **`www` is workload-drift.** Authored content, derived data, the stylesheet
+   split and the island registry all changed across the line. The numbers say
+   "the published site's emitted output changed by this much", not "pages grew
+   by this much per unit of content".
+3. **`starter` mixes workload drift with a recipe difference.** Alpha14's pack
+   tooling cannot run under the shared harness (its temp pack directory spawns
+   `node_modules/.bin/vp`, which the alpha14 packer does not materialise), so the
+   alpha14 starter was measured with a documented alternative recipe — scaffold
+   from source, install from the registry (alpha.14 is published), build — while
+   both alpha15 arms use the packed-tarball consumer harness. The three starter
+   numbers are **not** mutually comparable and are reported for footprint scale
+   only; they must not be used for a like-for-like delta.
+4. **The fixture apps themselves are part of the repository** and changed across
+   the line (route wiring, islands, styles). Fixture deltas are therefore
+   line-wide, not attributable to a single change; only the mid→final column
+   isolates this batch.
+5. Class splits for the docs site (pagefind excluded, cold rep 1):
+
+| arm | client JS raw | server-only raw | HTML raw | CSS raw | files |
+| --- | --- | --- | --- | --- | --- |
+| A14 | 271 203 | 0 | 9 061 571 | 19 766 | 206 |
+| mid | 286 803 | 0 | 10 991 211 | 216 447 | 222 |
+| final | 291 710 | 0 | 10 876 285 | 252 059 | 206 |
+
+6. Delivery closure for the docs site across the three arms:
+
+| arm | stylesheet links | module scripts | modulepreload | client assets | island-manifest files |
+| --- | --- | --- | --- | --- | --- |
+| A14 | 74 | 74 | 0 | 19 | 74 |
+| mid | 698 | 74 | 0 | 29 | 74 |
+| final | 320 | 74 | 74 | 31 | 74 |
+
+### Where the docs-site change comes from
+
+- HTML: A14 `9 061 571` raw / `1 677 532` gzip (ratio 5.40) → final `10 876 285`
+  / `1 486 791` (ratio 7.32). The site's HTML **grew 20 % raw but became 11 %
+  cheaper to transfer**.
+- CSS: `19 766` / `6 738` → `252 059` / `44 921`; client JS `271 203` / `84 165`
+  → `291 710` / `89 890`.
+- **Excluding the two `/reference` pages**, the docs HTML is *smaller* than
+  alpha14: `6 846 326` / `1 304 431` → `6 706 648` / `1 026 817` (−2.0 % raw,
+  **−21.3 % gzip**). The two reference pages alone went `1 110 958` / `185 909`
+  → `2 088 223` / `229 201` (more exports documented; +23 % gzip each).
+- Mechanism (measured, not inferred): alpha14 inlined many style blocks per page
+  and shipped an 8-file, 19.8 KB stylesheet set; the final tree externalises the
+  shared sheets (10 files, 252 KB) and inlines fewer blocks — the home page
+  carries 10 inline `<style>` blocks at alpha14 and 3 at the final candidate.
+  Per-file gzip sums therefore fall on the pages while the shared stylesheet set
+  grows.
+- Caveat: this inventory is a **static byte sum over emitted files**, not a
+  per-visit transfer model. A browser fetches the shared sheets once and reuses
+  them across pages, so the gzip column is a footprint measure, not a page-load
+  budget.
 
 ## What this candidate changed relative to the previously qualified candidate
 
@@ -277,6 +383,10 @@ protocol it implements is:
 artifacts and asserts every number; it reported **86 assertions, 0 failed**. The
 canonical `tools/release/css-cost-report.ts` cross-check compared 98 class
 totals over both sides and all seven groups and reported **0 disagreements**.
+The three-arm tables of this edition are additionally re-asserted against their
+own session artifacts (`three-arm-repro.mjs`: **22 assertions, 0 failed**,
+covering the alpha14→final and mid→final totals, the class splits and the
+closure rows; the n/a cell for `router-unocss-probe` is asserted as n/a).
 
 ## Delta note
 
