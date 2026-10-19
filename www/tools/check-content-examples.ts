@@ -47,7 +47,8 @@
  * type-checked; ```js/```javascript fences that import `@openelement/*` are
  * checked too (compiled as TS — JavaScript snippets must be valid TypeScript
  * syntax), so the alias can no longer smuggle an unchecked framework example
- * past the gate.
+ * past the gate. Fence openers also tolerate trailing whitespace/CRLF after the
+ * language token; spacing never silently removes a fence from the checked set.
  *
  * Blog exclusion (#1307 adjudication): www/content/blog is deliberately NOT
  * type-checked. Dispatches are dated historical records — their snippets
@@ -72,7 +73,7 @@
  * fails the gate.
  */
 import ts from 'typescript';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackages } from '../../tools/lib/package-graph.ts';
 import { apiReference } from '../app/data/_generated-api-reference.ts';
@@ -114,7 +115,10 @@ export interface ContentExample {
   code: string;
 }
 
-const FENCE_PATTERN = /```(ts|tsx|typescript|javascript|js)\n([\s\S]*?)```/g;
+// Trailing whitespace and CRLF after the language token are tolerated: a fence
+// opener must never be skipped silently for spacing, which would turn an
+// unchecked example into an apparent pass.
+const FENCE_PATTERN = /```(ts|tsx|typescript|javascript|js)[^\S\n]*\n([\s\S]*?)```/g;
 
 /** Fence discovery for import validation; language label is optional. */
 const ANY_FENCE = /```(?:ts|tsx|js|javascript|typescript)?[^\S\n]*\n([\s\S]*?)```/g;
@@ -242,9 +246,18 @@ export const COMPILE_EXCLUDED_PAGES: ReadonlyMap<string, string> = new Map([
   ],
 ]);
 
-/** True when this example's page is an explicit documented-rejection page. */
+/**
+ * True when this example's page is an explicit documented-rejection page.
+ *
+ * The content walk hands ABSOLUTE paths (it readdir()s an absolute root), while
+ * the allowlist is written with repo-relative keys. Accept both spellings: a
+ * plain map lookup silently missed every walked page, so the documented
+ * exclusion was unreachable and only the tests — which pass relative fixture
+ * names — saw it work.
+ */
 export function isCompileExcluded(file: string): boolean {
-  return COMPILE_EXCLUDED_PAGES.has(file);
+  if (COMPILE_EXCLUDED_PAGES.has(file)) return true;
+  return COMPILE_EXCLUDED_PAGES.has(relative(repoRoot, file));
 }
 
 /** The compiler options the real build passes: the router's island sidecar. */

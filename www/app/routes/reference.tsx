@@ -400,7 +400,22 @@ const content = {
       `The ${v} surface covers only the ${packageCount} consumer packages. Retired alpha packages and internal subpaths are not authoring surfaces.`,
     s1Index: '01 / interface rule',
     s1Title: 'Authoring starts at product packages.',
-    s1Copy: `Current documentation, starters and dogfood use the ${packageCount} supported interfaces. Loader, action and form semantics are frozen at 0.42.0 (ADR-0122); framework session, active cache and streaming are outside the current contract and have no assigned version.`,
+    s1Copy: `Current documentation, starters and dogfood use the ${packageCount} supported interfaces. Loader, action and form semantics are frozen at 0.42.0 (ADR-0122); framework session and active cache are not part of the contract and have no assigned version. Streaming is supported for compiled class pages as an opt-in mode of the compiled server executor (ADR-0158, ADR-0159; the Streaming guide documents its limits) and is deliberately rejected on server function pages, which have no compiled Part Program to backfill (ADR-0169).`,
+    s1Links: [
+      { label: 'Streaming guide', href: '/guide/streaming' },
+      {
+        label: 'ADR-0158',
+        href: 'https://github.com/open-element/openelement/blob/main/docs/adr/ADR-0158-streaming-server-executor.md',
+      },
+      {
+        label: 'ADR-0159',
+        href: 'https://github.com/open-element/openelement/blob/main/docs/adr/ADR-0159-part-backfill-and-late-claim.md',
+      },
+      {
+        label: 'ADR-0169',
+        href: 'https://github.com/open-element/openelement/blob/main/docs/adr/ADR-0169-request-time-rendering-surface.md',
+      },
+    ],
     s2Index: '02 / supported surface',
     s2Title: `${packageCount} packages, one application path.`,
     s2Copy:
@@ -449,7 +464,22 @@ const content = {
       `${v} 的创作面只覆盖 ${packageCount} 个面向使用者的包。已退役的 alpha 包与内部子路径都不是创作面。`,
     s1Index: '01 / 接口规则',
     s1Title: '创作从产品包开始。',
-    s1Copy: `当前文档、starter 与 dogfood 都使用这 ${packageCount} 个受支持的接口。Loader、action 与表单语义已在 0.42.0 冻结（ADR-0122）；框架 session、active cache 与 streaming 不在当前契约内，且尚未分配版本。`,
+    s1Copy: `当前文档、starter 与 dogfood 都使用这 ${packageCount} 个受支持的接口。Loader、action 与表单语义已在 0.42.0 冻结（ADR-0122）；框架 session 与 active cache 尚未进入契约，也未分配版本。流式渲染则已对编译的 class 页面受支持：它是编译后服务器执行器的一种可选模式（ADR-0158、ADR-0159；其边界见流式渲染指南），并在服务端函数页上被明确拒绝——这类页面没有可供回填的编译 Part Program（ADR-0169）。`,
+    s1Links: [
+      { label: '流式渲染指南', href: '/zh/guide/streaming' },
+      {
+        label: 'ADR-0158',
+        href: 'https://github.com/open-element/openelement/blob/main/docs/adr/ADR-0158-streaming-server-executor.md',
+      },
+      {
+        label: 'ADR-0159',
+        href: 'https://github.com/open-element/openelement/blob/main/docs/adr/ADR-0159-part-backfill-and-late-claim.md',
+      },
+      {
+        label: 'ADR-0169',
+        href: 'https://github.com/open-element/openelement/blob/main/docs/adr/ADR-0169-request-time-rendering-surface.md',
+      },
+    ],
     s2Index: '02 / 受支持的产品面',
     s2Title: `${packageCount} 个包，一条应用路径。`,
     s2Copy: '每个包对应一个明确的使用者决策；被吸收的实现包保持私有。',
@@ -505,6 +535,7 @@ export function ReferencePage(props: {
   s1Index: string;
   s1Title: string;
   s1Copy: string;
+  s1Links: ReadonlyArray<{ label: string; href: string }>;
   s2Index: string;
   s2Title: string;
   s2Copy: string;
@@ -599,7 +630,20 @@ export function ReferencePage(props: {
         <open-section-frame>
           <span slot='index'>{props.s1Index}</span>
           <span slot='title'>{props.s1Title}</span>
-          <span slot='copy'>{props.s1Copy}</span>
+          <span slot='copy'>
+            {props.s1Copy}
+            <span class='mt-2 flex flex-wrap gap-x-3 gap-y-1'>
+              {props.s1Links.map((link) => (
+                <a
+                  class='text-primary no-underline hover:underline'
+                  href={link.href}
+                  key={link.href}
+                >
+                  {link.label}
+                </a>
+              ))}
+            </span>
+          </span>
         </open-section-frame>
         <open-section-frame>
           <span slot='index'>{props.s2Index}</span>
@@ -909,6 +953,7 @@ export default definePage(ReferencePage, {
       s1Index: t.s1Index,
       s1Title: t.s1Title,
       s1Copy: t.s1Copy,
+      s1Links: t.s1Links,
       s2Index: t.s2Index,
       s2Title: t.s2Title,
       s2Copy: t.s2Copy,
