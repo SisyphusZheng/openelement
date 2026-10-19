@@ -11,6 +11,7 @@
  */
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
+import { observeWithTimeoutClassification } from './helpers.ts';
 import { HOME_AXE_EXCLUSIONS } from './axe-home-exclusions.ts';
 
 /** Routes the gate scans: one per page template, plus the zh variant. */
@@ -65,15 +66,22 @@ test.describe('Accessibility gate (axe)', () => {
       test.setTimeout(route === '/reference' ? 420_000 : 120_000);
       await page.goto(route);
       // Let hydration settle: the islands upgrade synchronously after the
-      // module loads, and the scan should see the page a reader sees.
-      await page.waitForLoadState('networkidle');
-      await scrollThroughAndSettle(page);
+      // module loads, and the scan should see the page a reader sees. A
+      // ceiling that expires in the load/settle or the scan is an engine/probe
+      // timeout, never an assertion failure (FR-05C).
+      await observeWithTimeoutClassification({ phase: 'axe-gate', url: route }, async () => {
+        await page.waitForLoadState('networkidle');
+        await scrollThroughAndSettle(page);
+      });
 
       let builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']);
       for (const selector of EXCLUSIONS[route] ?? []) {
         builder = builder.exclude(selector);
       }
-      const { violations } = await builder.analyze();
+      const { violations } = await observeWithTimeoutClassification(
+        { phase: 'axe-gate', url: route },
+        () => builder.analyze(),
+      );
 
       const report = violations.map((violation) => ({
         id: violation.id,

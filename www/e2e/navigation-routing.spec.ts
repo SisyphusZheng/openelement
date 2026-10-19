@@ -13,6 +13,7 @@
  */
 
 import { expect, test } from '@playwright/test';
+import { waitForLoadStateClassified } from './helpers.ts';
 
 test.describe('Direct URL Access', () => {
   const routes = [
@@ -45,7 +46,12 @@ test.describe('Direct URL Access', () => {
       // docs/maintainers/known-reds-ledger.md.
       if (route.path === '/reference') test.setTimeout(420_000);
       const response = await page.goto(route.path);
-      await page.waitForLoadState('networkidle');
+      // A ceiling that expires here is an engine load timeout, not an
+      // assertion failure: say so in the failure output (FR-05C).
+      await waitForLoadStateClassified(page, 'networkidle', {
+        phase: 'direct-url-access',
+        url: route.path,
+      });
 
       expect(response?.status()).toBeLessThan(400);
       const title = await page.title();

@@ -48,8 +48,10 @@
  *   - `flaky` is the retry-cleared SUBSET of `passed`, recorded so the retry
  *     is visible in the evidence instead of laundered away, and bound to the
  *     raw report's own `stats.flaky`;
- *   - the suite-size identity is `expected + flaky === executed`, because
- *     `stats.expected` counts FIRST-ATTEMPT passes only;
+ *   - the suite-size identity is `expected + flaky + failed === executed`,
+ *     because `stats.expected` counts FIRST-ATTEMPT passes only and a failure
+ *     is the third bucket (omitting it mislabelled a real failure as a
+ *     flaky-count divergence in run 39216159302 — review FR-05C);
  *   - `failed` keeps its meaning: the final attempt failed, the test never
  *     started, or Playwright says `unexpected`. `--retries 1` does not make a
  *     real failure disappear, and every other axis (skips, the per-browser
@@ -92,7 +94,8 @@ export interface SiteE2eResult {
   flaky: number;
   /**
    * Playwright `stats.expected` from the raw report — FIRST-ATTEMPT passes
-   * only, so `expected + flaky` is the run's passing total.
+   * only, so `expected + flaky` is the run's passing total and
+   * `expected + flaky + failed` is the executed total.
    */
   expected: number;
   /** Repo-relative POSIX path of the Playwright config that produced the run. */
@@ -113,6 +116,8 @@ export interface PlaywrightTest {
 }
 
 export interface PlaywrightSpec {
+  /** The test title (describe prefixes are carried by the enclosing suites). */
+  title?: string;
   tests?: PlaywrightTest[];
 }
 
@@ -152,6 +157,42 @@ export function isEmptyGrep(grep: unknown): boolean {
 /** Attempt statuses Playwright records for an attempt that did not pass. */
 function attemptFailed(status: string | undefined): boolean {
   return status === 'failed' || status === 'timedOut' || status === 'interrupted';
+}
+
+/**
+ * Classify every FAILED test in the raw Playwright report, so a run reports an
+ * engine/probe timeout as a timeout with project+test, never as a generic
+ * assertion-shaped failure (review FR-05C; run 39216159302 printed the Firefox
+ * /reference ceiling only as "Test timeout of 420000ms exceeded" under a
+ * candidate-proof verdict).
+ *
+ * The distinction is Playwright's own: the final attempt's status is
+ * `'timedOut'` for a timeout and `'failed'` for a failed assertion. A
+ * retry-cleared test is not a failure here (it is the report's `flaky`
+ * bucket); this function reports only the tests that decide the run.
+ */
+export function classifyPlaywrightFailures(report: PlaywrightReport): string[] {
+  const lines: string[] = [];
+  const visit = (suites: PlaywrightSuite[] | undefined): void => {
+    for (const suite of suites ?? []) {
+      for (const spec of suite.specs ?? []) {
+        for (const playwrightTest of spec.tests ?? []) {
+          const results = playwrightTest.results ?? [];
+          const last = results.at(-1)?.status;
+          const failed =
+            results.length === 0 || playwrightTest.status === 'unexpected' || attemptFailed(last);
+          if (!failed) continue;
+          const kind = last === 'timedOut' ? 'TIMEOUT' : 'FAILURE';
+          const project = playwrightTest.projectName ?? 'unknown';
+          const title = spec.title ?? '(untitled test)';
+          lines.push(`[${kind}] project=${project} test="${title}"`);
+        }
+      }
+      visit(suite.suites);
+    }
+  };
+  visit(report.suites);
+  return lines;
 }
 
 /** Pure per-project aggregation over a Playwright JSON report. */
@@ -299,11 +340,17 @@ export function auditSiteE2e(site: Partial<SiteE2eResult> | undefined): string[]
         site.expected,
       )}`,
     );
-  } else if (countsValid && (site.flaky as number) + (site.expected as number) !== executed) {
-    // `stats.expected` counts first-attempt passes, so the suite-size identity
-    // is expected + flaky === executed (see the header's retry note).
+  } else if (
+    countsValid &&
+    (site.flaky as number) + (site.expected as number) + (site.failed as number) !== executed
+  ) {
+    // `stats.expected` counts first-attempt passes and `flaky` is the
+    // retry-cleared subset of passes; `failed` is the third bucket, so the
+    // suite-size identity is expected + flaky + failed === executed. Omitting
+    // `failed` from the identity reported a real failure as a flaky-count
+    // divergence in run 39216159302 (review FR-05C).
     failures.push(
-      `Site E2E flaky=${site.flaky}+expected=${site.expected} != executed tests ${executed}`,
+      `Site E2E flaky=${site.flaky}+expected=${site.expected}+failed=${site.failed} != executed tests ${executed}`,
     );
   }
   if (site.configFile !== SITE_E2E_CONFIG_FILE) {

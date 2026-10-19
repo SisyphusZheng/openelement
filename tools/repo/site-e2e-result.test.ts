@@ -9,6 +9,8 @@
 import { expect, test } from 'vitest';
 import {
   auditSiteE2e,
+  classifyPlaywrightFailures,
+  type PlaywrightReport,
   SITE_E2E_CONFIG_FILE,
   SITE_E2E_MIN_PASSED_PER_PROJECT,
   SITE_E2E_PROJECTS,
@@ -98,6 +100,78 @@ test('site e2e audit accepts a retry-cleared run and records the retries', () =>
   expect(
     auditSiteE2e(hidden).some((f) => f.includes('flaky=2+expected=') && f.includes('executed')),
   ).toBeTruthy();
+});
+
+test('site e2e audit accounts for failures in the executed identity (FR-05C)', () => {
+  // Run 39216159302 shape: one final failure plus retry-cleared tests. The
+  // failure is reported as a failure, and the suite-size identity must not
+  // mislabel it as a flaky-count divergence.
+  const failedRun = healthy();
+  failedRun.projects.webkit = { passed: PASSED_PER_BROWSER - 1, failed: 1, skipped: 0, flaky: 0 };
+  failedRun.passed -= 1;
+  failedRun.failed = 1;
+  failedRun.expected = failedRun.passed;
+  const failures = auditSiteE2e(failedRun);
+  expect(failures.some((f) => f.includes('webkit failed=1'))).toBeTruthy();
+  expect(failures.some((f) => f.includes('!= executed tests'))).toBe(false);
+
+  // With a failure present the identity still binds every bucket.
+  const drifted = { ...failedRun, expected: failedRun.expected - 1 };
+  expect(
+    auditSiteE2e(drifted).some(
+      (f) => f.includes('flaky=0+expected=') && f.includes('failed=1') && f.includes('executed'),
+    ),
+  ).toBeTruthy();
+});
+
+test('site e2e failure classifier names the timeout kind per project and test', () => {
+  const report: PlaywrightReport = {
+    suites: [
+      {
+        suites: [
+          {
+            specs: [
+              {
+                title: '"/reference" loads successfully with correct title',
+                tests: [
+                  // Final attempt timed out: the engine load timeout C2 in
+                  // run 39216159302.
+                  {
+                    projectName: 'firefox',
+                    status: 'unexpected',
+                    results: [{ status: 'timedOut' }],
+                  },
+                  // A retry that also timed out is still a TIMEOUT.
+                  {
+                    projectName: 'webkit',
+                    status: 'unexpected',
+                    results: [{ status: 'failed' }, { status: 'timedOut' }],
+                  },
+                  // Retry-cleared: not a failure, so not classified.
+                  {
+                    projectName: 'chromium',
+                    status: 'expected',
+                    results: [{ status: 'failed' }, { status: 'passed' }],
+                  },
+                  // A plain assertion failure keeps the FAILURE kind.
+                  {
+                    projectName: 'firefox',
+                    status: 'unexpected',
+                    results: [{ status: 'failed' }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  expect(classifyPlaywrightFailures(report)).toEqual([
+    '[TIMEOUT] project=firefox test="\"/reference\" loads successfully with correct title"',
+    '[TIMEOUT] project=webkit test="\"/reference\" loads successfully with correct title"',
+    '[FAILURE] project=firefox test="\"/reference\" loads successfully with correct title"',
+  ]);
 });
 
 test('site e2e audit rejects a fully skipped run', () => {
@@ -200,7 +274,9 @@ test('site e2e audit rejects a forged or shrunk expected count', () => {
   const mismatched = healthy();
   mismatched.expected = TOTAL + 1;
   expect(
-    auditSiteE2e(mismatched).some((f) => f.includes(`expected=${TOTAL + 1} != executed tests`)),
+    auditSiteE2e(mismatched).some((f) =>
+      f.includes(`expected=${TOTAL + 1}+failed=0 != executed tests`),
+    ),
   ).toBeTruthy();
 
   const missing = healthy() as unknown as Record<string, unknown>;

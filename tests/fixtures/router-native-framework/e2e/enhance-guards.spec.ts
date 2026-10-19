@@ -52,6 +52,34 @@ async function markerIntact(page: Page, name: string): Promise<void> {
     ),
   ).toBe(1);
 }
+/**
+ * Arm the enhance-readiness recorder BEFORE the first navigation.
+ *
+ * The enhance client announces `open:enhance-ready` once its ready-time scan
+ * has attached the submit interceptor (form-enhance.ts). A listener
+ * registered after `page.goto` resolves can miss that announcement — the
+ * ready scan runs from DOMContentLoaded, before the navigation is reported
+ * settled — so the recorder is installed as an init script that runs before
+ * any page script.
+ */
+async function armEnhanceReady(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    document.addEventListener(
+      'open:enhance-ready',
+      () => {
+        (window as unknown as { __enhanceReady?: boolean }).__enhanceReady = true;
+      },
+      { once: true },
+    );
+  });
+}
+
+/** Resolve only after that announcement: the submit interceptor is attached. */
+async function waitForEnhanceReady(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => (window as never as { __enhanceReady?: boolean }).__enhanceReady === true,
+  );
+}
 
 test.describe('9. submitter formaction override -> named action', () => {
   test('enhanced path: the override posts to ?/feature with the action header', async ({
@@ -105,7 +133,13 @@ test.describe('9. submitter formaction override -> named action', () => {
 
 test.describe('10. forms the enhancement must NOT intercept', () => {
   test('the enhance layer is live on /playground (control)', async ({ page }) => {
+    // Readiness barrier: the click below may only be observed through the
+    // enhancement once its ready-time scan has run. Without this, a click
+    // delivered early falls back to a native submission and the assertion
+    // would be describing a pre-enhance page.
+    await armEnhanceReady(page);
     await page.goto('/playground');
+    await waitForEnhanceReady(page);
     await markWindow(page, '__prePlain');
     const enhancedPosts: string[] = [];
     page.on('request', (r) => {
@@ -113,12 +147,15 @@ test.describe('10. forms the enhancement must NOT intercept', () => {
         enhancedPosts.push(r.url());
       }
     });
+    // Register the response wait BEFORE the click: a response that finishes
+    // before the listener exists would otherwise wait out the full timeout.
+    const enhancedResponse = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().includes('/playground'),
+    );
     await page.click('#plain-submit');
     // A same-origin POST enhance form IS intercepted: action-header fetch to
     // /playground, whose 404 status page is not morphable -> full navigation.
-    await page.waitForResponse(
-      (r) => r.request().method() === 'POST' && r.url().includes('/playground'),
-    );
+    await enhancedResponse;
     await markerCleared(page, '__prePlain');
     expect(enhancedPosts.length).toBe(1);
     await expect(page.locator('h1')).toHaveText('playground');

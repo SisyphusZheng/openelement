@@ -23,6 +23,7 @@
  */
 import { AxeBuilder } from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
+import { observeWithTimeoutClassification } from './helpers.ts';
 
 /** The generated mega-pages, in both locales. */
 const MEGA_PAGES = ['/reference', '/zh/reference'] as const;
@@ -35,10 +36,15 @@ test.describe('Mega-page accessibility (axe)', () => {
     test(`axe meets WCAG 2.1 A+AA on ${route}`, async ({ page }) => {
       test.setTimeout(MEGA_PAGE_TIMEOUT_MS);
       await page.goto(route);
-      await page.waitForLoadState('networkidle');
-      const { violations } = await new AxeBuilder({ page })
-        .withTags(['wcag2a', 'wcag2aa'])
-        .analyze();
+      // A ceiling that expires during the load or the scan is an engine/probe
+      // timeout for this route, not an assertion failure (FR-05C).
+      const { violations } = await observeWithTimeoutClassification(
+        { phase: 'axe-mega-page', url: route },
+        async () => {
+          await page.waitForLoadState('networkidle');
+          return new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa']).analyze();
+        },
+      );
       const report = violations.map((violation) => ({
         id: violation.id,
         impact: violation.impact,

@@ -157,6 +157,15 @@ export function declarationTypeEdges(text: string): string[] {
 export interface ProcessRunResult {
   success: boolean;
   output: string;
+  /**
+   * True when the harness aborted the child because `timeoutMs` elapsed
+   * (the abort is the harness's decision, not the program's exit status).
+   * Optional so existing `{ success, output }` constructors keep working;
+   * consumers that classify failures must check it BEFORE inspecting output,
+   * because a killed Playwright probe's last line is the teardown error
+   * ("Target page, context or browser has been closed"), not the cause.
+   */
+  timedOut?: boolean;
 }
 
 export interface ProcessRunOptions {
@@ -203,10 +212,11 @@ export async function runProcess(
     if (timedOut) {
       return {
         success: false,
+        timedOut: true,
         output: `Timed out after ${timeoutMs}ms: ${command} ${args.join(' ')}\n${output}`,
       };
     }
-    return { success: result.success, output };
+    return { success: result.success, output, timedOut: false };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -978,6 +988,101 @@ async function postValid(spec: PackedAppLegSpec, baseUrl: string): Promise<strin
 // ─── Browser continuation probe runners ─────────────────────────────────────
 
 /**
+ * What a browser probe invocation was proving, and against which URL —
+ * reported on failure so a harness kill is attributable without the log.
+ */
+export interface BrowserProbeContext {
+  /** Packed-consumer cell / phase the probe belongs to. */
+  phase: string;
+  renderer: PackedAppRenderer;
+  browser: string;
+  /** Page the generated probe loads (always `<baseUrl>/notes`). */
+  url: string;
+}
+
+/**
+ * Classify a failed browser-probe subprocess BY KIND before printing its
+ * output. Run 39216159302 reported the Lit/Firefox continuation probe as a
+ * generic cell failure, but the 300000ms line was the harness abort and the
+ * child's last output was Playwright's teardown error ("Target page, context
+ * or browser has been closed") — the kill, not the cause. The kind decides
+ * the disposition:
+ *
+ *   PROBE-TIMEOUT       the probe process was aborted at BROWSER_TIMEOUT_MS
+ *                       (engine/probe timeout — NOT a product assertion
+ *                       failure);
+ *   PROBE-WAIT-TIMEOUT  a probe-level wait (page.waitForFunction) exceeded
+ *                       its own limit (a readiness observation that never
+ *                       held — not an assertion mismatch either);
+ *   ASSERTION-FAILURE   the probe ran to its own verdict and failed it.
+ */
+export function classifyBrowserProbeFailure(
+  probe: ProcessRunResult,
+  context: BrowserProbeContext,
+): { kind: 'PROBE-TIMEOUT' | 'PROBE-WAIT-TIMEOUT' | 'ASSERTION-FAILURE'; summary: string } {
+  const where =
+    'phase=' +
+    context.phase +
+    ' renderer=' +
+    context.renderer +
+    ' engine=' +
+    context.browser +
+    ' url=' +
+    context.url;
+  if (probe.timedOut === true) {
+    return {
+      kind: 'PROBE-TIMEOUT',
+      summary:
+        '[PROBE-TIMEOUT] ' +
+        where +
+        ' limitMs=' +
+        BROWSER_TIMEOUT_MS +
+        ' — the harness ' +
+        'aborted the browser probe before it finished; this is an engine/probe timeout, ' +
+        'not a product assertion failure (the captured tail is teardown output, not a verdict).',
+    };
+  }
+  const waitTimeout = probe.output.match(/Timeout (\d+)ms exceeded/);
+  if (waitTimeout) {
+    return {
+      kind: 'PROBE-WAIT-TIMEOUT',
+      summary:
+        '[PROBE-WAIT-TIMEOUT] ' +
+        where +
+        ' after=' +
+        waitTimeout[1] +
+        'ms — a probe ' +
+        'ready-wait exceeded its own limit; classified as a probe timeout, not an ' +
+        'assertion mismatch.',
+    };
+  }
+  return {
+    kind: 'ASSERTION-FAILURE',
+    summary: '[ASSERTION-FAILURE] ' + where + ' — the probe ran and its assertion failed.',
+  };
+}
+
+/** The one failure line per renderer x browser probe: kind, then output tail. */
+function describeBrowserProbeFailure(
+  probe: ProcessRunResult,
+  context: BrowserProbeContext,
+): string {
+  const classified = classifyBrowserProbeFailure(probe, context);
+  return (
+    context.renderer +
+    ' / ' +
+    context.browser +
+    ' / ' +
+    classified.kind +
+    ':\n' +
+    classified.summary +
+    '\n' +
+    '--- probe output (tail) ---\n' +
+    probe.output.slice(-2000)
+  );
+}
+
+/**
  * Run the generated Playwright continuation probe against one already-serving
  * base URL (cli/start or the dev server). The probe itself asserts
  * renderer-specific continuation: the native kernel claims the island DSD and
@@ -988,6 +1093,7 @@ async function runBrowserContinuationProbe(
   tmp: string,
   baseUrl: string,
   leg: PackedAppRenderer,
+  phase = 'browser-continuation',
 ): Promise<string> {
   // Packed three-browser matrix: every renderer x browser pair runs as its
   // own probe invocation with its own OK marker; any single browser failure
@@ -1001,17 +1107,28 @@ async function runBrowserContinuationProbe(
       tmp,
       { timeoutMs: BROWSER_TIMEOUT_MS },
     );
-    const marker = `BROWSER-CONTINUATION-OK ${leg} ${browserName}`;
+    const marker = 'BROWSER-CONTINUATION-OK ' + leg + ' ' + browserName;
     if (probe.success && probe.output.includes(marker)) {
-      passed.push(`${leg} / ${browserName} / pass`);
+      passed.push(leg + ' / ' + browserName + ' / pass');
     } else {
-      failures.push(`${leg} / ${browserName} / FAIL:\n${probe.output.slice(-2000)}`);
+      failures.push(
+        describeBrowserProbeFailure(probe, {
+          phase,
+          renderer: leg,
+          browser: browserName,
+          url: baseUrl + '/notes',
+        }),
+      );
     }
   }
   for (const line of [...passed, ...failures]) console.log(line);
   if (failures.length > 0) {
     throw new Error(
-      `Browser continuation probe failed (${failures.length}/${PACKED_BROWSERS.length} browsers):\n` +
+      'Browser continuation probe failed (' +
+        failures.length +
+        '/' +
+        PACKED_BROWSERS.length +
+        ' browsers):\n' +
         failures.join('\n'),
     );
   }
@@ -1032,7 +1149,17 @@ async function runDevWarmupProbe(tmp: string, baseUrl: string, leg: PackedAppRen
     { timeoutMs: BROWSER_TIMEOUT_MS },
   );
   if (!probe.success || !probe.output.includes(`DEV-WARMUP-OK ${leg}`)) {
-    throw new Error(`Dev warm-up probe failed:\n${probe.output}`);
+    // Same classification as the continuation probe: a harness kill is an
+    // engine/probe timeout, not an assertion failure of the warm-up.
+    throw new Error(
+      'Dev warm-up probe failed:\n' +
+        describeBrowserProbeFailure(probe, {
+          phase: 'dev-warmup',
+          renderer: leg,
+          browser: 'chromium',
+          url: baseUrl + '/notes',
+        }),
+    );
   }
 }
 
@@ -1079,7 +1206,7 @@ async function devSession(spec: PackedAppLegSpec, tmp: string): Promise<string> 
     //    first: vite's cold-cache dep optimization forces one full reload,
     //    which must not be attributed to the island lifecycle.
     await runDevWarmupProbe(tmp, baseUrl, leg);
-    await runBrowserContinuationProbe(tmp, baseUrl, leg);
+    await runBrowserContinuationProbe(tmp, baseUrl, leg, 'dev-continuation');
 
     // 3. Dev feedback: a component edit and a route-module edit must both
     //    reach the served document; the previous content must be gone.

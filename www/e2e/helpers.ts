@@ -9,7 +9,7 @@
  * except for important, stable interaction boundaries.
  */
 
-import type { Page } from '@playwright/test';
+import { test, type Page } from '@playwright/test';
 
 /**
  * Collect all custom element tag names found in the page HTML.
@@ -60,4 +60,64 @@ export function getLeakedMarkupText(page: Page, pattern: RegExp): Promise<string
     }
     return leaked;
   }, pattern.source);
+}
+
+/**
+ * The context a classified timeout names: the phase that owns the wait, and
+ * the route the test was driving.
+ */
+export interface TimeoutClassification {
+  phase: string;
+  url: string;
+}
+
+/**
+ * Rethrow a Playwright deadline error as a classified engine timeout.
+ *
+ * A widened per-route ceiling (the 420 s `/reference` ceiling in the site
+ * suite) expires inside whichever await is pending and Playwright reports it
+ * as `page.waitForLoadState: Test timeout of 420000ms exceeded` — an
+ * assertion-shaped stack for what is an engine/probe timeout (review FR-05C,
+ * run 39216159302). The classification names the phase, engine and URL and
+ * preserves the original message as the cause.
+ *
+ * Non-timeout errors are returned untouched: this never weakens an assertion,
+ * never retries and never changes a timeout value.
+ */
+export function classifyTimeoutError(error: unknown, context: TimeoutClassification): unknown {
+  const message = error instanceof Error ? error.message : String(error);
+  if (!/\bTimeout\b[^.]*\b\d+ms exceeded\b/i.test(message)) return error;
+  let engine = 'unknown';
+  try {
+    engine = test.info().project.name;
+  } catch {
+    // Called outside a running test (e.g. an imported unit check): keep it
+    // 'unknown' instead of masking the original error with a new failure.
+  }
+  const classified = `engine timeout: phase=${context.phase} engine=${engine} url=${context.url} — ${message}`;
+  // The runner's own verdict may still say "Test timeout"; the classified
+  // line must be in the failure output regardless (CI log and HTML report).
+  console.error(classified);
+  return new Error(classified, { cause: error });
+}
+
+/** Await one load/observation step, classifying Playwright timeouts. */
+export async function observeWithTimeoutClassification<T>(
+  context: TimeoutClassification,
+  operation: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    throw classifyTimeoutError(error, context);
+  }
+}
+
+/** `page.waitForLoadState(...)` with the classified timeout error. */
+export async function waitForLoadStateClassified(
+  page: Page,
+  state: 'load' | 'domcontentloaded' | 'networkidle',
+  context: TimeoutClassification,
+): Promise<void> {
+  await observeWithTimeoutClassification(context, () => page.waitForLoadState(state));
 }

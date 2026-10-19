@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, type Locator, test, type Page } from '@playwright/test';
 import { installCommand } from '../app/data/_generated-install-command.ts';
 import { REGISTRY_NOTE } from '../app/data/version.ts';
 
@@ -31,6 +31,54 @@ async function parkStripBelowFold(page: Page): Promise<void> {
       { message: 'the scroll island settles --hero-exit' },
     )
     .toBeGreaterThan(0.5);
+}
+
+/**
+ * Loop-aware playback progress for the idle-view video.
+ *
+ * The video carries `loop`, so a legitimate wrap between two samples makes
+ * `currentTime` DECREASE — the CI failure this replaced read 0.81991919 →
+ * 0.541958316 across a 1200 ms sample. A strict `t2 > t1` therefore reports
+ * a playing loop as a stall. The contract is instead: the element is not
+ * paused, and the wrap-aware distance travelled
+ *
+ *     (t2 - t1 + duration) % duration
+ *
+ * is positive. The sample window stays short — this asserts playback
+ * progress, and a stalled decoder still fails at the first comparison rather
+ * than being retried until a timeout elapses.
+ */
+async function expectLoopingPlaybackProgress(page: Page, video: Locator): Promise<void> {
+  const sample = () =>
+    video.evaluate((element) => {
+      const media = element as HTMLVideoElement;
+      return {
+        currentTime: media.currentTime,
+        duration: media.duration,
+        paused: media.paused,
+      };
+    });
+
+  const first = await sample();
+  expect(first.paused, 'idle loop video must be playing at the first sample').toBe(false);
+  expect(
+    Number.isFinite(first.duration) && first.duration > 0,
+    'idle loop video must report a finite duration for the wrap-aware comparison',
+  ).toBe(true);
+
+  await page.waitForTimeout(1200);
+  const second = await sample();
+  expect(second.paused, 'idle loop video must still be playing at the second sample').toBe(false);
+
+  // A loop wrap is progress: the modulo turns a decrease into the forward
+  // distance actually travelled. Zero is a stall (or an exact whole-duration
+  // wrap) and fails.
+  const advanced = (second.currentTime - first.currentTime + first.duration) % first.duration;
+  expect(
+    advanced,
+    `idle loop video must advance: t1=${first.currentTime} t2=${second.currentTime} ` +
+      `duration=${first.duration} wrap-aware-advance=${advanced}`,
+  ).toBeGreaterThan(0);
 }
 
 /**
@@ -480,10 +528,9 @@ test.describe('Cinematic homepage', () => {
         timeout: 60000,
       })
       .toBe(false);
-    const t1 = await video.evaluate((element) => (element as HTMLVideoElement).currentTime);
-    await page.waitForTimeout(1200);
-    const t2 = await video.evaluate((element) => (element as HTMLVideoElement).currentTime);
-    expect(t2).toBeGreaterThan(t1);
+    // The idle video loops; assert wrap-aware progress instead of a
+    // monotonically increasing currentTime (FRM-07B).
+    await expectLoopingPlaybackProgress(page, video);
     // Moving the cursor again takes back control instantly.
     await page.mouse.move(viewport.width * 0.98, viewport.height / 2);
     await expect.poll(readFrame, { timeout: 60000 }).toBeGreaterThanOrEqual(54);
