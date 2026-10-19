@@ -1958,7 +1958,18 @@ test.skipIf(!pnpmAvailable)(
       const tarball = join(packageDir, `openelement-create-${CREATE_VERSION}.tgz`);
       const unpack = spawnSync('tar', ['-xzf', tarball, '-C', tmpRoot]);
       expect(unpack.status, unpack.stderr.toString()).toEqual(0);
-      await runCreate(join(tmpRoot, 'package', 'src', 'cli.js'), tmpRoot, 'sample-app');
+      // --no-install: this test owns the TEMPLATE payload, not dependency
+      // resolution. A default install is registry-dependent — once the candidate
+      // version is freshly published, pnpm writes its own
+      // minimumReleaseAgeExclude bookkeeping into pnpm-workspace.yaml, which is a
+      // project-local install artifact, not a shipped template. The fixtures use
+      // the same --no-install convention for the same reason (KR-16).
+      await runCreate(
+        join(tmpRoot, 'package', 'src', 'cli.js'),
+        tmpRoot,
+        'sample-app',
+        '--no-install',
+      );
       expect(existsSync(join(tmpRoot, 'sample-app', '.gitignore'))).toBeTruthy();
       // The Node pin is a template DOTFILE: the packed payload has to carry it
       // (the tarball is assembled from git ls-files + the templates glob, not
@@ -1975,7 +1986,9 @@ test.skipIf(!pnpmAvailable)(
         existsSync(join(tmpRoot, 'sample-app', 'app', 'components', 'page-home.tsx')),
       ).toBeTruthy();
       // The manager-neutral scaffold survives the pack too: the layout ships,
-      // and no pnpm-only workspace file does.
+      // and no pnpm-only workspace file does. (The scaffold is generated with
+      // --no-install above, so this reads the shipped template surface; an
+      // install-time pnpm bookkeeping file cannot mask a template regression.)
       expect(existsSync(join(tmpRoot, 'sample-app', 'app', 'layout.tsx'))).toBeTruthy();
       expect(existsSync(join(tmpRoot, 'sample-app', 'pnpm-workspace.yaml'))).toBeFalsy();
       // No JSR bridge may ship in packed scaffolds, not just workspace runs.
