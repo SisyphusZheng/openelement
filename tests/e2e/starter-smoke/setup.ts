@@ -14,7 +14,10 @@
  * The scaffold is created under a scratch root OUTSIDE the repository
  * (./paths.ts — the repository's .gitignore used to make the starter's own
  * `oxlint` walk find zero files, so the quality gate could not exercise the
- * real lifecycle; TPL-03 CI fix for run 39262312202).
+ * real lifecycle; TPL-03 CI fix for run 39262312202). The root is created with
+ * `mkdtemp` (unique, never a fixed temp name — CodeQL js/insecure-temporary-file
+ * alerts 4242-4245) and recorded in the harness's pointer file so quality.ts
+ * and the Playwright lanes resolve the SAME tree from their own processes.
  *
  * Usage:
  *   pnpm --dir tests/e2e/starter-smoke run setup   (pack + scaffold + install + build)
@@ -25,12 +28,13 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
 import { runStep } from '../../lib/qualify-harness/command-run.ts';
-import { starterSmokeAppDir, starterSmokeDepsDir, starterSmokeWorkDir } from './paths.ts';
+import { createStarterSmokeWorkDir } from './paths.ts';
 
 const repoRoot = resolve(import.meta.dirname!, '..', '..', '..');
-const workDir = starterSmokeWorkDir;
-const appDir = starterSmokeAppDir;
-const depsDir = starterSmokeDepsDir;
+/** This run's mkdtemp root (or the caller's STARTER_SMOKE_WORK_DIR verbatim). */
+const workDir = createStarterSmokeWorkDir();
+const appDir = join(workDir, 'my-blog');
+const depsDir = join(workDir, 'deps');
 
 const PACKAGES = ['protocol', 'element', 'compiler', 'router', 'create'] as const;
 /**
@@ -327,10 +331,12 @@ async function writeHarnessOverrides(
 }
 
 async function main(): Promise<void> {
-  // Recreate the whole scratch root: a stale `deps/` extraction or scaffold
-  // from an earlier tree must never be qualified (the root lives outside the
-  // repository, so nothing else cleans it).
-  rmSync(workDir, { recursive: true, force: true });
+  // Re-initialize the harness-owned subdirectories: a stale `deps/` extraction
+  // or scaffold from an earlier run must never be qualified. With the env
+  // override the caller's root may already exist, so only the two directories
+  // this harness owns are removed — never the root itself.
+  rmSync(appDir, { recursive: true, force: true });
+  rmSync(depsDir, { recursive: true, force: true });
   mkdirSync(depsDir, { recursive: true });
   // Pack fresh on every setup run: a stale tarball would silently qualify
   // yesterday's sources (one pack produces every retained tarball).

@@ -8,9 +8,10 @@
  * runs the lifecycle the starter's own scripts promise, in the order a user
  * meets it, against that SAME scaffold:
  *
- *   create     the scaffold at ${RUNNER_TEMP ?? os.tmpdir()}/openelement-starter-smoke/my-blog
- *              (setup.ts: packed CLI, no prompts; OUTSIDE the repository so
- *              the starter's own lint walk sees its files — see ./paths.ts)
+ *   create     the scaffold at the root setup.ts recorded in
+ *              node_modules/.starter-smoke-work-dir — a per-run mkdtemp
+ *              directory OUTSIDE the repository, so the starter's own lint
+ *              walk sees its files (see ./paths.ts)
  *   typecheck  pnpm run typecheck   tsc --noEmit — the TPL-01 surface: the
  *                                   @types/node pin and the tsconfig
  *                                   `types: ["@openelement/element/css-modules", "node"]` list
@@ -49,8 +50,21 @@ import { starterSmokeAppDir } from './paths.ts';
  * the repo made `pnpm run lint` (bare `oxlint`) find zero files because
  * oxlint's walker honors the repository's ancestor .gitignore (CI run
  * 39262312202).
+ *
+ * Fail closed with ONE actionable line when no root is recorded: a missing
+ * pointer means setup never ran (or its temp root was cleaned), and inventing
+ * a fallback root would silently test an empty tree.
  */
-const appDir = starterSmokeAppDir;
+function appDirOrFail(): string {
+  try {
+    return starterSmokeAppDir();
+  } catch (error) {
+    console.error(`error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  }
+}
+
+const appDir = appDirOrFail();
 
 /** [path, marker] probes asserted over the wire once the server answers. */
 const PROBES: ReadonlyArray<readonly [string, string]> = [

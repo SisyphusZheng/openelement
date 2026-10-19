@@ -32,7 +32,7 @@ import { starterSmokeAppDir } from './paths.ts';
 // in the compiled page element it imports, so the edit target is the page
 // component (the #952 invalidation chain is the same: watcher → module
 // re-evaluation → next request renders the edited module).
-const PAGE_FILE = join(starterSmokeAppDir, 'app/components/page-home.tsx');
+const PAGE_FILE = join(starterSmokeAppDir(), 'app/components/page-home.tsx');
 const H1_ORIGINAL = 'Rendered before JavaScript arrives';
 const H1_EDITED = 'Edited in dev mode';
 

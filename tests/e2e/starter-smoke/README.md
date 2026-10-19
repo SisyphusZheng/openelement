@@ -7,13 +7,18 @@ release tarballs through the release toolchain (vp pack), runs the packed
 starter's own dependency surface with pnpm, and builds it; the Playwright
 suites then drive that real build (B5/ADR-0161: Node/pnpm consumer surface).
 
-The scaffold is created **outside the repository** at
-`${RUNNER_TEMP ?? os.tmpdir()}/openelement-starter-smoke/my-blog`
-(`paths.ts`, overridable with `STARTER_SMOKE_WORK_DIR`). That location is part
-of the gate: inside the repo, the repository's ancestor `.gitignore` made the
-starter's own bare `oxlint` find zero files (`No files found to lint`, exit 1),
-which is not a user-like environment. `setup` recreates the scratch root on
-every run.
+The scaffold is created **outside the repository** in a per-run `mkdtemp`
+directory (`paths.ts`, `STARTER_SMOKE_WORK_DIR` overrides the root verbatim).
+`setup` records the chosen root in
+`node_modules/.starter-smoke-work-dir` so `quality`, both Playwright configs
+and `dev.spec.ts` — separate processes — resolve the SAME tree; a reader with
+neither the override nor the pointer fails closed with "run setup first"
+instead of inventing a second root. That location is part of the gate: inside
+the repo, the repository's ancestor `.gitignore` made the starter's own bare
+`oxlint` find zero files (`No files found to lint`, exit 1), which is not a
+user-like environment. Never a fixed name under the temp dir (CodeQL
+`js/insecure-temporary-file`), and `setup` removes the previous harness-created
+root so repeated runs do not leak.
 
 ```bash
 pnpm --dir tests/e2e/starter-smoke run setup       # pack + generate + rewire + install + build

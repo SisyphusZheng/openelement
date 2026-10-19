@@ -39,7 +39,7 @@ export default defineConfig({
     // 'localhost' binding is IPv6-first on some platforms while the probe
     // URL is 127.0.0.1.
     command: `exec pnpm run dev --port ${PORT} --host 127.0.0.1 --strictPort`,
-    cwd: starterSmokeAppDir,
+    cwd: starterSmokeAppDir(),
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

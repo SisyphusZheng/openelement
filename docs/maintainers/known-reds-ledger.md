@@ -365,5 +365,11 @@ boundary, not a failure).
   REL-01 binder.
 - **Retirement condition**: after the consolidation push, the merge-ref alert
   list shows 0 open and the check summary reflects it.
-- **Latest observation**: 2026-10-19 (pre-push): merge ref 24 alerts / 1 open
-  (#4241) / #4238 dismissed / #4236 fixed; `main` 325 alerts / 0 open.
+- **Latest observation**: 2026-10-19: pre-push merge ref 24 alerts / 1 open
+  (#4241) / #4238 dismissed / #4236 fixed; `main` 325 alerts / 0 open. After the
+  first batch push (`722fb56ed` then the rebased `91e1aae23`) the merge-ref
+  analysis closed #4241 and raised four new `js/insecure-temporary-file`
+  warnings (#4242–#4245) on the newly relocated starter-smoke harness
+  (predictable scratch root under the temp dir). Those were fixed at the source
+  — the harness now uses `mkdtempSync` plus a non-temp pointer under the
+  harness's own `node_modules/` — and the next pushed head is the confirmation.

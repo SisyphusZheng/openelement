@@ -62,13 +62,15 @@ The step is named for the contract a reader needs:
 | build | `pnpm run build` (`oe build`) | the real SSG + client + server build of a freshly generated project |
 | smoke | `pnpm run start` (`oe start`) on a reserved port, then HTTP probes | `/` carries "Rendered before JavaScript arrives", `/about` carries "Static first, interactive where it counts", `/api/ping` returns `"pong":true`; server stopped by process group in a `finally` |
 
-The scaffold lives OUTSIDE the repository, at
-`${RUNNER_TEMP ?? os.tmpdir()}/openelement-starter-smoke/my-blog`
-(`tests/e2e/starter-smoke/paths.ts`, overridable with
-`STARTER_SMOKE_WORK_DIR`): `setup.ts`, `quality.ts`, both Playwright configs
-and `dev.spec.ts` resolve it through that one helper, and `setup` recreates the
-root on every run. The location is load-bearing — §5 records the CI failure it
-fixes.
+The scaffold lives OUTSIDE the repository, in a per-run `mkdtemp` directory
+(`tests/e2e/starter-smoke/paths.ts`; `STARTER_SMOKE_WORK_DIR` overrides the
+root verbatim). `setup.ts` records the chosen root in
+`tests/e2e/starter-smoke/node_modules/.starter-smoke-work-dir` (gitignored; the
+harness already requires an install), and `quality.ts`, both Playwright configs
+and `dev.spec.ts` resolve it through that one helper and fail closed with one
+actionable line when neither the pointer nor the override exists. The location
+is load-bearing — §5 records the CI failure it fixes, §7 the CodeQL follow-up
+that made the root unpredictable.
 
 ## 3. RED before the change (why the gate is needed)
 
@@ -110,12 +112,12 @@ vp run --no-cache --fail-if-no-match --filter @openelement/e2e-starter-smoke qua
 
 | evidence | command | result |
 | --- | --- | --- |
-| the template's own lint script, user-like context | `cd ${RUNNER_TEMP}/openelement-starter-smoke/my-blog && pnpm run lint` | `Found 0 warnings and 0 errors. Finished … on 13 files with 96 rules`, exit 0 |
+| the template's own lint script, user-like context | `cd <pointer root>/my-blog && pnpm run lint` (root read from the pointer file) | `Found 0 warnings and 0 errors. Finished … on 13 files with 96 rules`, exit 0 |
 | the exact CI invocation | `vp run --no-cache --fail-if-no-match --filter @openelement/e2e-starter-smoke quality` | every leg green incl. smoke on `/`, `/about`, `/api/ping`; final line "the fresh-scaffold lifecycle is green"; exit 0 (`/tmp/templates-ci/quality-final.log`) |
 | fail closed (lint leg, lint-only error) | seed `.oxlintrc.json` `{"rules":{"no-debugger":"error"}}` + `app/components/lint-seed.ts` with `debugger;`, then the same gate invocation | `pnpm run typecheck` exit 0 (the failure really is lint-only); `pnpm run lint` exit 1 ("Found 0 warnings and 1 error"); the gate exits 1 at the lint leg (`/tmp/templates-ci/quality-seeded.log`). Seeds removed, gate green again (exit 0) |
 | Playwright configs resolve the moved scaffold | `playwright test --config tests/e2e/starter-smoke/playwright.config.ts --list` (31 tests) and `…playwright.dev.config.ts --list` (4 tests) | exit 0 for both |
 | real browser smoke from the external scaffold | `playwright test --config tests/e2e/starter-smoke/playwright.config.ts --project=chromium` | 10 passed (9.1s) (`/tmp/templates-ci/pw-chromium.log`) |
-| pack/quality precondition | `pnpm --dir tests/e2e/starter-smoke run setup` | `starter-smoke ready at /var/folders/…/T/openelement-starter-smoke/my-blog`, exit 0 |
+| pack/quality precondition | `pnpm --dir tests/e2e/starter-smoke run setup` | `starter-smoke ready at /var/folders/…/T/openelement-starter-smoke-<random>/my-blog`, exit 0; the pointer file records that root |
 | workflow YAML | `python3 -c "import yaml; ..."` on `.github/workflows/autoflow-ci.yml` | parses; 10 job IDs unchanged; `pack` carries the new named step |
 | workflow linters | `actionlint` (exit 0); `zizmor --offline .github` 1.30.0 | no findings |
 
@@ -163,13 +165,12 @@ local proof missed it because it ran through a script-runner shim against a
 symlinked mirror at `/tmp`, not the real `pnpm run lint` in the scaffold.
 
 **Fix (minimal, no gate weakening).** New `tests/e2e/starter-smoke/paths.ts`
-owns the scaffold location outside the repository
-(`${RUNNER_TEMP ?? os.tmpdir()}/openelement-starter-smoke`, override
-`STARTER_SMOKE_WORK_DIR`); `setup.ts` recreates that root on every run, and
-`quality.ts`, both Playwright configs and `dev.spec.ts` consume the same
-constants. The lint leg still runs the template's own script, unmodified, and
-the §4 seeded-error proof shows the gate goes red on a real lint error while
-typecheck stays green.
+owns the scaffold location outside the repository (per-run `mkdtemp` root +
+pointer file, §7); `setup.ts` recreates the harness-owned subdirectories on
+every run, and `quality.ts`, both Playwright configs and `dev.spec.ts` resolve
+the same root through that helper. The lint leg still runs the template's own
+script, unmodified, and the §4 seeded-error proof shows the gate goes red on a
+real lint error while typecheck stays green.
 
 ## 6. Contract impact
 
@@ -182,7 +183,56 @@ typecheck stays green.
   job's entry point; `quality` is a sibling task invoked by its own named step.
 - Files: `.github/workflows/autoflow-ci.yml` (one step + job comment),
   `tests/e2e/starter-smoke/quality.ts` (new), `tests/e2e/starter-smoke/paths.ts`
-  (new — external scratch root, §5), `tests/e2e/starter-smoke/setup.ts`,
+  (new — external mkdtemp root + pointer, §5/§7), `tests/e2e/starter-smoke/setup.ts`,
   `playwright.config.ts`, `playwright.dev.config.ts`, `dev.spec.ts` (all use the
   shared root), `tests/e2e/starter-smoke/package.json` (`quality` script),
   `tests/e2e/starter-smoke/README.md` (task + scratch root documented).
+
+## 7. CodeQL follow-up: predictable temp path → `mkdtemp` + pointer (alerts 4242–4245)
+
+The merge-ref CodeQL analysis on pushed head `91e1aae23` reported four NEW
+`js/insecure-temporary-file` warnings in this harness — `setup.ts:295`,
+`setup.ts:326`, `dev.spec.ts:106`, `dev.spec.ts:119`. The flow was the one §5
+introduced: `paths.ts` derived the root as a FIXED name
+(`join(tmpdir()/RUNNER_TEMP, 'openelement-starter-smoke')`), and the harness then
+wrote into it (`package.json`, `pnpm-workspace.yaml`, the edited page), which
+the analyzer reads as an insecure temporary file.
+
+**Fix.**
+
+- `setup.ts` creates the root with
+  `mkdtempSync(join(tmpdir(), 'openelement-starter-smoke-'))` — a unique
+  directory per run, never a fixed name. `STARTER_SMOKE_WORK_DIR` is used
+  verbatim when the caller sets it (caller-provided is not a temp-path guess).
+- The chosen root is recorded in
+  `tests/e2e/starter-smoke/node_modules/.starter-smoke-work-dir` (gitignored;
+  the harness already requires an install) so the separate processes —
+  `setup` → `quality` → Playwright configs → `dev.spec.ts` — resolve the SAME
+  tree.
+- Readers fail closed with one actionable line
+  (`[starter-smoke] no scaffold root recorded: run `pnpm --dir
+  tests/e2e/starter-smoke run setup` first …`) instead of inventing a second,
+  different root.
+- Repeated runs do not leak: `setup` removes the recorded previous root ONLY
+  when it is under `tmpdir()` AND its basename starts with the mkdtemp prefix;
+  a caller-provided root is never deleted.
+- No fixed-name path under the temp dir remains, and `RUNNER_TEMP` is gone.
+  Grep proof (`tests/e2e/starter-smoke/**/*.ts`, node_modules excluded):
+
+  ```text
+  $ grep -rn "tmpdir()\|RUNNER_TEMP" tests/e2e/starter-smoke --include='*.ts'
+  paths.ts:90:  const temp = resolve(tmpdir());            # cleanup validation
+  paths.ts:109: const workDir = mkdtempSync(join(tmpdir(), SCRATCH_PREFIX));  # mkdtemp input
+  ```
+
+**Re-verification after the fix (real `pnpm`, logs under `/tmp/templates-ci/`):**
+
+| check | command | result |
+| --- | --- | --- |
+| setup creates an unpredictable root | `pnpm --dir tests/e2e/starter-smoke run setup` | exit 0; pointer `…/openelement-starter-smoke-WOW9Mv` (random suffix, dir mode 0700) (`setup-mkdtemp.log`) |
+| template lint in the new root | `cd <root>/my-blog && pnpm run lint` | 13 files, 0 warnings/0 errors, exit 0 |
+| gate green | `vp run --no-cache --fail-if-no-match --filter @openelement/e2e-starter-smoke quality` | exit 0 (`quality-mkdtemp.log`) |
+| fail closed, lint-only error | seed `.oxlintrc.json` + `app/components/lint-seed.ts` | `pnpm run typecheck` exit 0; `pnpm run lint` exit 1 ("0 warnings and 1 error"); gate exit 1 at the lint leg (`quality-mkdtemp-seeded.log`); seeds removed → gate exit 0 (`quality-mkdtemp-final.log`) |
+| missing pointer fails closed with one line | move the pointer aside, run the gate | exit 1, one line: `error: [starter-smoke] no scaffold root recorded: run … run setup first …` (`quality-no-pointer.log`) |
+| Playwright lanes resolve the root | `playwright … --list` (prod 31 tests, dev 4 tests); `--project=chromium` | exit 0 both; 10 passed (9.3s) (`pw-mkdtemp-*.log`) |
+| repeat setup cleans the previous root | second `setup` run | old root removed, pointer → new `…-YM4PMD` root, only one harness temp dir remains on disk; quality + `--list` + chromium smoke re-run green on the new root |

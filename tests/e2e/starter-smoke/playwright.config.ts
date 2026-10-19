@@ -84,7 +84,7 @@ export default defineConfig({
     // B5 (ADR-0161): the starter's own `start` script IS the documented
     // production surface — serve it exactly as an adopter would.
     command: 'exec pnpm run start',
-    cwd: starterSmokeAppDir,
+    cwd: starterSmokeAppDir(),
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,
