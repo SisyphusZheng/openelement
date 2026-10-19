@@ -46,6 +46,12 @@ npm run dev    # Vite 开发服务器
 
 混合页（静态 GET + action）的 GET 仍由预渲染产物伺服，其 POST 按方法分派到服务器。纯静态构建三者都不产出，该输出契约已冻结。本地预览由 `npm start`（router 的 start CLI）提供，它在 Node 的 `node:http` 上运行同一个处理器——这是部署前在浏览器之外演练请求时路径的唯一方式。
 
+### 私有 `dist/server` 边界
+
+`npm start`（`oe start`）把 `dist/` 作为公开输出伺服，构建的私有产物不在它可能伺服的命名空间内。GET 或 HEAD 的路径经解码、规范化后若以 `server/` 开头——`/server/index.js`、`/Server/index.js`、`/%73erver/index.js`、`//server/index.js`、`/foo/../server/index.js`——一律应答 `404`；请求经 in-root 符号链接、其规范化（realpath）目标落在 `dist/server/` 内时同样被拒。拒绝时不读取 `dist/server/` 下任何内容，只回一个没有响应体的 `404`，也不会把该请求交给请求时服务器。`start` 与 `--mode=preview` 走同一个共享静态边界，因此不存在会发布这些产物的伺服模式。
+
+首个路径段是保留名：作者自己放在 `public/server/` 下的文件同样不会被发布，公开资源请避开这个名称。其余静态产物——页面、`client/` 资源、`island-manifests/`、`public/` 的其他拷贝——不受影响，构建也从不通过静态边界发布 `dist/server`。
+
 ## Nitro 预设
 
 Nitro 是第一方生产部署 adapter，挂载在 fetch 原生接缝上近乎透传：event 的标准 `Request` 进，handler 的 `Response` 出。添加一条把静态层不负责的请求转发下去的路由：
@@ -75,7 +81,7 @@ export default defineNitroConfig({
 部署顺序：
 
 1. `npm run build`
-2. 把 `dist/` 下除 `server/` 之外的一切拷进 `nitro-public/`。`dist/server` 是服务端代码，不是公开资源，绝不能作为公开资源发布。
+2. 把 `dist/` 下除 `server/` 之外的一切拷进 `nitro-public/`。`dist/server` 是服务端代码，不是公开资源，绝不能作为公开资源发布。（`npm start` 在静态边界执行同一规则，见上文；对 Nitro 而言，这一步拷贝才是把该目录挡在宿主静态层之外的操作。）
 3. 构建宿主：`npx nitro@3.0.260610-beta build`——本仓库 Nitro 证明锁定的版本（`NITRO_VERSION`）；`preset` 选择 `node-server` 或 `cloudflare_module`。
 4. 运行产物（`node-server` 为 `.output/server/index.mjs`），并按平台要求设置 `PORT` 与 `HOST`。
 
@@ -92,7 +98,8 @@ export default defineNitroConfig({
 1. `ls dist/server/` 直接告诉你构建是否产出了请求时服务器。纯静态项目应当没有 `dist/server` 目录。
 2. `npm start` 会打印它加载了哪种模式——`request-time server entry loaded (dynamic routes enabled)`，或 `no dist/server — static-only preview`。这一行是产物自己的答案；若它与你的路由不符，要检查的是构建。
 3. `curl -i http://localhost:4173/` 对静态路由必须返回 200 与预渲染 HTML。
-4. `curl -i -X POST -H 'x-openelement-action: true' --data 'message=' http://localhost:4173/你的表单路由` 必须到达 action。该头选择的是 fetch 通道，它的应答是数据而不是导航——以下为本次构建的实测：
+4. `curl -i http://localhost:4173/server/index.js` 必须返回 `404`（而不是生成的入口）：私有产物不属于公开输出。
+5. `curl -i -X POST -H 'x-openelement-action: true' --data 'message=' http://localhost:4173/你的表单路由` 必须到达 action。该头选择的是 fetch 通道，它的应答是数据而不是导航——以下为本次构建的实测：
 
    | 通道 | 提交无效 | 提交有效 |
    | --- | --- | --- |
@@ -100,20 +107,21 @@ export default defineNitroConfig({
    | fetch（`x-openelement-action: true`） | `422`，`application/json`，响应体 `{"type":"failure","status":422,"data":{…}}` | `200`（不是 303），`application/json`，响应体 `{"type":"redirect","status":303,"location":"…"}` |
 
    PRG 状态出现在 fetch 通道的响应体里，因为那条应答是数据、不是一次可跟随的重定向。`application/problem+json` 是这个通道的协议错误形状（被拒的跨站提交、未知 action、无法解析的请求体），不是校验失败用的形状。
-5. 连续请求同一个 `'dynamic'` 路由两次，确认响应体与 `dist/` 中磁盘上的文件不同——那说明请求时路径在工作。
+6. 连续请求同一个 `'dynamic'` 路由两次，确认响应体与 `dist/` 中磁盘上的文件不同——那说明请求时路径在工作。
 
 ### 冒烟脚本
 
-第 3–4 步合为一块可复制的脚本（把表单路由换成你的）。第一个错误状态即失败，可直接做部署门禁：
+第 3–5 步合为一块可复制的脚本（把表单路由换成你的）。第一个错误状态即失败，可直接做部署门禁：
 
 ```bash
 set -e
 BASE=http://localhost:4173
 test "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")" = 200
+test "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/server/index.js")" = 404
 test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   -H 'x-openelement-action: true' --data 'message=' \
   "$BASE/你的表单路由")" = 422
-echo 'artifact answers: static 200, action 422'
+echo 'artifact answers: static 200, private 404, action 422'
 ```
 
 ## 产物兼容性

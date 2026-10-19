@@ -4,15 +4,17 @@
  * Content types come from the mature zero-dependency npm package `mime`
  * (IANA-derived DB); this module only owns the static candidate rules, the
  * cache-control policy, and the generated request-time server module
- * contract. Standard fetch(Request): Response entry; local serving uses the
- * node:http fetch server (`internal/node-http.ts`), Node/Workers/Bun deploys
- * use the Nitro mount.
+ * contract, and the private-artifact boundary that keeps the build's
+ * `dist/server` namespace out of every static dispatch (S-01). Standard
+ * fetch(Request): Response entry; local serving uses the node:http fetch
+ * server (`internal/node-http.ts`), Node/Workers/Bun deploys use the Nitro
+ * mount.
  */
 
 import { readFileSync, realpathSync } from 'node:fs';
 import mime from 'mime';
 import { pathToFileURL } from 'node:url';
-import { basename, extname, join, resolve } from 'pathe';
+import { basename, extname, join, normalize, resolve } from 'pathe';
 
 /** Forward-slash separator: `pathe` normalizes every path to `/`. */
 const SEP = '/';
@@ -25,6 +27,98 @@ const SEP = '/';
  * static miss answers with it when the build shipped one.
  */
 export const ERROR_DOCUMENT = '404.html';
+
+/**
+ * The build's private artifact namespace inside the output tree: `server/`
+ * holds the request-time entry (`index.js`), its SSR bundle (`entry.js`), the
+ * request-time manifest and the ESM marker. The deployment docs already say
+ * `dist/server` is server code that must never be published as a public
+ * asset; the static boundary enforces that by name rather than by sniffing
+ * file contents — a reserved first segment is checkable, a heuristic is not.
+ */
+const PRIVATE_ARTIFACT_DIR = 'server';
+
+/** True when `child` is `parent` itself or lies below it. */
+function isWithin(parent: string, child: string): boolean {
+  return child === parent || child.startsWith(parent + SEP);
+}
+
+/**
+ * The decoded request path: query dropped, percent-encoding resolved exactly
+ * once. Throws URIError on malformed percent-encoding; callers answer 400
+ * ({@linkcode isMalformedUrlError}).
+ */
+function decodeRequestPath(pathname: string): string {
+  return decodeURIComponent(pathname.split('?')[0] || '/');
+}
+
+/** Candidate file paths (relative to the static root) for a DECODED path. */
+function staticFileCandidatesFrom(decoded: string): string[] {
+  const rel = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
+  const trimmed = rel.replace(/\/+$/, '');
+  const candidates = [rel, `${trimmed}/index.html`];
+  if (!rel.endsWith('/') && !rel.endsWith('.html')) candidates.push(`${rel}.html`);
+  return [...new Set(candidates)];
+}
+
+/** The realpath of `<root>/server`, or null when the build shipped none. */
+function privateArtifactRoot(root: string): string | null {
+  try {
+    return realpathSync(join(root, PRIVATE_ARTIFACT_DIR));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The one private-artifact predicate every static dispatch consults (S-01).
+ *
+ * A request names the build's private namespace when, after decoding and
+ * lexical normalization, its first relative segment is `server`
+ * case-insensitively — or when a candidate file's canonical (symlink-resolved)
+ * path lands inside `<distDir>/server`, which catches an in-root symlink whose
+ * name looks public (`/leaked.js` -> `dist/server/index.js`). Both halves
+ * decide on the post-decode, post-normalization, post-realpath path; a
+ * percent-encoded segment (`/%73erver`), a doubled slash, a case variant and
+ * an interior `..` all reduce to the same normalized answer.
+ *
+ * Malformed percent-encoding is deliberately not this predicate's answer: the
+ * candidate rules raise URIError and the caller answers the more specific 400,
+ * and a path that cannot be decoded cannot be shown to name the namespace.
+ */
+export function isPrivateArtifactRequest(distDir: string, pathname: string): boolean {
+  let decoded: string;
+  try {
+    decoded = decodeRequestPath(pathname);
+  } catch (err) {
+    if (isMalformedUrlError(err)) return false;
+    throw err;
+  }
+  const normalized = normalize(`/${decoded.replace(/^\/+/, '')}`);
+  const firstSegment = normalized.replace(/^\/+/, '').split(SEP)[0] ?? '';
+  if (firstSegment.toLowerCase() === PRIVATE_ARTIFACT_DIR) return true;
+
+  let root: string;
+  try {
+    root = realpathSync(resolve(distDir));
+  } catch {
+    return false;
+  }
+  const privateRoot = privateArtifactRoot(root);
+  if (privateRoot === null) return false;
+  for (const candidate of staticFileCandidatesFrom(decoded)) {
+    const filePath = resolve(join(root, candidate));
+    if (!isWithin(root, filePath)) continue;
+    let realPath: string;
+    try {
+      realPath = realpathSync(filePath);
+    } catch {
+      continue;
+    }
+    if (isWithin(privateRoot, realPath)) return true;
+  }
+  return false;
+}
 
 /**
  * Content-Type for a static file, by extension. `text/*` types carry an
@@ -83,12 +177,7 @@ export function cacheControlFor(filePath: string): string | null {
  * Throws URIError on malformed percent-encoding; callers answer 400.
  */
 export function staticFileCandidates(pathname: string): string[] {
-  const decoded = decodeURIComponent(pathname.split('?')[0] || '/');
-  const rel = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
-  const trimmed = rel.replace(/\/+$/, '');
-  const candidates = [rel, `${trimmed}/index.html`];
-  if (!rel.endsWith('/') && !rel.endsWith('.html')) candidates.push(`${rel}.html`);
-  return [...new Set(candidates)];
+  return staticFileCandidatesFrom(decodeRequestPath(pathname));
 }
 
 /** True for URIError thrown by decodeURIComponent on malformed percent-encoding. */
@@ -97,8 +186,21 @@ export function isMalformedUrlError(err: unknown): boolean {
 }
 
 /**
+ * What the static boundary found for one request: a response (a file, the
+ * error-document status, or the malformed-encoding 400), the private-artifact
+ * namespace (never read, never served), or nothing.
+ */
+type StaticOutcome =
+  | { readonly kind: 'response'; readonly response: Response }
+  | { readonly kind: 'private' }
+  | { readonly kind: 'miss' };
+
+/**
  * Serve a static file from `distDir` for `pathname`, or null when no
- * candidate exists. Paths escaping the root are refused.
+ * candidate exists. Paths escaping the root are refused, and so is the build's
+ * private artifact namespace ({@linkcode isPrivateArtifactRequest}): a request
+ * for it reads nothing and reports a miss here, so no consumer of this
+ * function can publish `dist/server`.
  *
  * Status fidelity: when the resolved file is the error document
  * ({@linkcode ERROR_DOCUMENT}) the response carries the 404 status it
@@ -108,35 +210,47 @@ export function isMalformedUrlError(err: unknown): boolean {
  * emits a locale error document as a 200 directory page.
  */
 export function tryStatic(distDir: string, pathname: string): Response | null {
+  const outcome = tryStaticOutcome(distDir, pathname);
+  return outcome.kind === 'response' ? outcome.response : null;
+}
+
+function tryStaticOutcome(distDir: string, pathname: string): StaticOutcome {
   let candidates: string[];
   try {
     candidates = staticFileCandidates(pathname);
   } catch (err) {
     if (isMalformedUrlError(err)) {
-      return new Response('Bad Request', { status: 400 });
+      return { kind: 'response', response: new Response('Bad Request', { status: 400 }) };
     }
     throw err;
   }
+  // The private namespace is decided before any candidate is read. The same
+  // predicate is applied again to each candidate's realpath below: the first
+  // call is the boundary's own answer, the second is the point-of-read check
+  // that a symlink swapped between the two cannot bypass.
+  if (isPrivateArtifactRequest(distDir, pathname)) return { kind: 'private' };
   let root: string;
   try {
     root = realpathSync(resolve(distDir));
   } catch {
-    return null;
+    return { kind: 'miss' };
   }
+  const privateRoot = privateArtifactRoot(root);
   for (const candidate of candidates) {
     const filePath = resolve(join(root, candidate));
     // Lexical containment stays the first layer; it cannot see symlinks, and
     // readFileSync follows them, so the canonical realpath boundary below is
     // the authoritative check. Residual TOCTOU between realpath and read is
     // accepted: exploiting it needs write access to the static tree itself.
-    if (!filePath.startsWith(root + SEP)) continue;
+    if (!isWithin(root, filePath)) continue;
     let realPath: string;
     try {
       realPath = realpathSync(filePath);
     } catch {
       continue;
     }
-    if (!realPath.startsWith(root + SEP)) continue;
+    if (!isWithin(root, realPath)) continue;
+    if (privateRoot !== null && isWithin(privateRoot, realPath)) return { kind: 'private' };
     let body: Uint8Array;
     try {
       body = readFileSync(realPath);
@@ -150,12 +264,15 @@ export function tryStatic(distDir: string, pathname: string): Response | null {
     // name (the realpath check above refused symlinks out of the root, and an
     // in-root symlink's name is the served name).
     const found = basename(filePath);
-    return new Response(body as unknown as BodyInit, {
-      status: found === ERROR_DOCUMENT ? 404 : 200,
-      headers,
-    });
+    return {
+      kind: 'response',
+      response: new Response(body as unknown as BodyInit, {
+        status: found === ERROR_DOCUMENT ? 404 : 200,
+        headers,
+      }),
+    };
   }
-  return null;
+  return { kind: 'miss' };
 }
 
 /**
@@ -215,6 +332,15 @@ export interface DispatchRequestOptions {
  * artifact; a static miss falls through to the server, and a pure-static
  * deployment answers a miss with the build's error document when one shipped
  * ({@linkcode tryErrorDocument}) instead of a bare status line.
+ *
+ * The build's private artifact namespace ({@linkcode isPrivateArtifactRequest})
+ * is the one exception to the miss-falls-through rule: a GET/HEAD for
+ * `dist/server` — by any spelling, or through an in-root symlink that
+ * canonicalizes into it — is answered here with a bare 404 before the
+ * request-time server is consulted, so an application handler can never
+ * resurrect the namespace and no dispatch consumer can serve its bytes.
+ * Request-time routes keep their precedence: an admitted path still reaches
+ * the server, this boundary only owns the static answer.
  */
 export async function dispatchRequest(
   request: Request,
@@ -261,8 +387,9 @@ export async function dispatchRequest(
     });
   }
 
-  const staticResponse = tryStatic(distDir, url.pathname);
-  if (staticResponse) return staticResponse;
+  const outcome = tryStaticOutcome(distDir, url.pathname);
+  if (outcome.kind === 'response') return outcome.response;
+  if (outcome.kind === 'private') return new Response('Not Found', { status: 404 });
   if (serverMod?.default) return await invokeServer();
   // Pure-static miss: the build's own error document when it shipped one.
   // Only reached on the GET/HEAD path (mutating methods left above), so the

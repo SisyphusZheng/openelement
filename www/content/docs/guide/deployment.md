@@ -46,6 +46,12 @@ When any route declares `renderIntent: { mode: 'dynamic' }` or any page exports 
 
 Hybrid pages (static GET + action) keep their prerendered artifact for GET; their POSTs reach the server by method dispatch. Pure-static builds emit none of these, and the output contract is frozen. Local preview is served by `npm start` (the router `start` CLI), which runs the same handler on Node's `node:http` — the only browser-independent way to exercise the request-time path before deploying.
 
+### Private `dist/server` boundary
+
+`npm start` (`oe start`) serves `dist/` as public output, and the build's private artifacts are outside the namespace it will ever serve. A GET or HEAD whose decoded, normalized path starts with `server/` — `/server/index.js`, `/Server/index.js`, `/%73erver/index.js`, `//server/index.js`, `/foo/../server/index.js` — answers `404`, and so does a request through an in-root symlink whose canonical target resolves inside `dist/server/`. The refusal reads nothing under `dist/server/` and answers a bare `404`; the request-time server is not consulted for it. The same shared static boundary answers `start` and `--mode=preview`, so there is no serving mode that publishes these artifacts.
+
+The first path segment is reserved: an author's own `public/server/` files are not published either, so keep public assets out of that name. Ordinary static output — pages, `client/` assets, `island-manifests/`, other `public/` copies — is unaffected, and the build never publishes `dist/server` through the static boundary.
+
 ## Nitro presets
 
 Nitro is the first-party production deployment adapter, and the mount is a near pass-through over the fetch-native seam: the event's standard `Request` goes in, the handler's `Response` comes out. Add a route that forwards everything the static layer does not own:
@@ -75,7 +81,7 @@ export default defineNitroConfig({
 The deploy sequence is:
 
 1. `npm run build`
-2. Copy everything in `dist/` **except** `server/` into `nitro-public/`. `dist/server` is server code, not a public asset, and must never be published as one.
+2. Copy everything in `dist/` **except** `server/` into `nitro-public/`. `dist/server` is server code, not a public asset, and must never be published as one. (`npm start` enforces the same rule at its static boundary, above; for Nitro the copy step is what keeps the directory out of the host's static layer.)
 3. Build the host: `npx nitro@3.0.260610-beta build` — the version this repository's Nitro proofs pin (`NITRO_VERSION`); `preset` selects `node-server` or `cloudflare_module`.
 4. Run the output (`.output/server/index.mjs` for `node-server`) with `PORT` and `HOST` set as your platform requires.
 
@@ -92,7 +98,8 @@ Verify the artifact, not the log. After `npm run build`:
 1. `ls dist/server/` tells you whether the build produced a request-time server at all. A pure-static project should show no `dist/server` directory.
 2. `npm start` prints which mode it loaded — `request-time server entry loaded (dynamic routes enabled)`, or `no dist/server — static-only preview`. That line is the artifact's own answer; if it disagrees with your routes, the build is what to look at.
 3. `curl -i http://localhost:4173/` must answer 200 with the prerendered HTML for a static route.
-4. `curl -i -X POST -H 'x-openelement-action: true' --data 'message=' http://localhost:4173/your-form-route` must reach the action. The header selects the FETCH channel, whose answers are data rather than navigations — measured on this build:
+4. `curl -i http://localhost:4173/server/index.js` must answer `404` (not the generated entry): the private artifacts are not part of the public output.
+5. `curl -i -X POST -H 'x-openelement-action: true' --data 'message=' http://localhost:4173/your-form-route` must reach the action. The header selects the FETCH channel, whose answers are data rather than navigations — measured on this build:
 
    | channel | invalid submission | valid submission |
    | --- | --- | --- |
@@ -100,20 +107,21 @@ Verify the artifact, not the log. After `npm run build`:
    | fetch (`x-openelement-action: true`) | `422`, `application/json`, body `{"type":"failure","status":422,"data":{…}}` | `200` (not 303), `application/json`, body `{"type":"redirect","status":303,"location":"…"}` |
 
    The PRG status rides inside the fetch channel's body because that answer is data, not a redirect to follow. `application/problem+json` is the channel's PROTOCOL-error shape (a rejected cross-site post, an unknown action, an unparseable body), not the shape a validation failure uses.
-5. Request a `'dynamic'` route twice and confirm the response body differs from the file on disk in `dist/` — that is the request-time path working.
+6. Request a `'dynamic'` route twice and confirm the response body differs from the file on disk in `dist/` — that is the request-time path working.
 
 ### Smoke script
 
-Steps 3–4 as one copyable block (substitute your form route). It fails on the first wrong status, so it doubles as a deploy gate:
+Steps 3–5 as one copyable block (substitute your form route). It fails on the first wrong status, so it doubles as a deploy gate:
 
 ```bash
 set -e
 BASE=http://localhost:4173
 test "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/")" = 200
+test "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/server/index.js")" = 404
 test "$(curl -s -o /dev/null -w '%{http_code}' -X POST \
   -H 'x-openelement-action: true' --data 'message=' \
   "$BASE/your-form-route")" = 422
-echo 'artifact answers: static 200, action 422'
+echo 'artifact answers: static 200, private 404, action 422'
 ```
 
 ## Artifact compatibility

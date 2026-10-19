@@ -10,6 +10,10 @@ Generated action POST handlers ship with a fail-closed same-origin floor: a requ
 
 "The request URL origin" is the origin the server derives for the incoming request, which is not the same thing as the scheme and host a browser used when a TLS-terminating proxy sits in front: the server sees plain HTTP. A deployment behind one states its public origin (`OPEN_ELEMENT_PUBLIC_ORIGIN`, or `OPEN_ELEMENT_TRUST_PROXY=1` for a port only a trusted proxy can reach) — see [Behind a proxy](/guide/deployment#behind-a-proxy). Without that, a genuine same-origin POST is rejected rather than admitted; the floor itself never relaxes.
 
+## Private build artifacts
+
+The build's request-time server output — `dist/server/` with the entry, the SSR bundle and the request-time manifest — is server code, never a public asset. `oe start` / `npm start` serves only the public output and answers GET/HEAD for that namespace with a bare `404`, including percent-encoded spellings, case variants, interior `..`, doubled slashes, query strings, and an in-root symlink whose canonical target resolves inside `dist/server/`; the server bundle cannot be read over HTTP. The rule lives in the shared static boundary that `start` and `--mode=preview` both use — it is not a host configuration that can be missed. A request-time route the application itself declares under the reserved segment keeps its precedence and is still handled by the application, but the static namespace is never served. For host static layers (a Nitro `publicAssets` directory) keep copying "everything except `server/`", as the [deployment guide](/guide/deployment) shows.
+
 ## Ambient authentication
 
 Apps authenticated by ambient credentials — HTTP Basic, mTLS, or cookies set with `SameSite=None` — cannot rely on the Lax default: the browser attaches those credentials to cross-site requests. The built-in same-origin floor covers generated action POSTs, but such apps should validate the request origin on every state-changing API route as well.
