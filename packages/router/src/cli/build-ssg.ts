@@ -99,6 +99,60 @@ export function ssrBundleImportUrl(ssrBundlePath: string): string {
   return pathToFileURL(ssrBundlePath).href;
 }
 
+/**
+ * Finalize a pure-static build's output (#953). The build-time SSR bundle in
+ * \`dist/server\` must not survive a build that produced no request-time server
+ * entry (no \`renderIntent 'dynamic'\` route and no action): the directory is
+ * server code, and static hosting must never serve it. The removal therefore
+ * has to be verifiable, not assumed:
+ *
+ *   - the request-time entry (\`dist/server/index.js\`) keeps the directory as
+ *     deployable contract output and nothing is removed;
+ *   - an absent directory is reported as nothing-to-remove, never as a removal;
+ *   - a removal that raises, or that leaves the directory behind, fails the
+ *     build with the underlying error — a stale bundle the build claims to have
+ *     removed is exactly the state this boundary exists to prevent.
+ *
+ * @returns \`true\` only when the directory was present and is gone afterwards.
+ */
+export async function finalizePureStaticOutput(
+  ssrOutDir: string,
+  io: {
+    exists?: (path: string) => boolean;
+    remove?: (path: string) => Promise<void>;
+    info?: (message: string) => void;
+  } = {},
+): Promise<boolean> {
+  const exists = io.exists ?? existsSync;
+  const remove = io.remove ?? ((path: string) => rm(path, { recursive: true, force: true }));
+  const info = io.info ?? ((message: string) => log.info(message));
+  if (exists(join(ssrOutDir, 'index.js'))) return false;
+  if (!exists(ssrOutDir)) return false;
+  let removalError: unknown = null;
+  try {
+    await remove(ssrOutDir);
+  } catch (error) {
+    removalError = error;
+  }
+  if (exists(ssrOutDir)) {
+    const cause =
+      removalError instanceof Error
+        ? removalError
+        : new Error(
+            removalError === null
+              ? 'the directory still exists after fs.rm(recursive, force)'
+              : String(removalError),
+          );
+    throw new SsrRenderError(
+      'pure-static build: the build-time SSR bundle (dist/server) could not be removed; ' +
+        'server code must never ship to static hosting',
+      cause,
+    );
+  }
+  info('Pure-static build: removed build-time SSR bundle (dist/server)');
+  return true;
+}
+
 const VIRTUAL_SSG_ENTRY_ID = 'virtual:open-ssg-entry';
 const RESOLVED_SSG_ENTRY_ID = '\0' + VIRTUAL_SSG_ENTRY_ID;
 interface BuildSSGOptions {
@@ -593,10 +647,9 @@ async function buildSSG(
     // action (hybrid static-GET pages still need the server for POST); for a
     // pure-static project nothing under dist/server is deployable, so remove
     // the directory instead of shipping the server bundle to static hosting.
-    if (!existsSync(join(ssrOutDir, 'index.js'))) {
-      await rm(ssrOutDir, { recursive: true, force: true }).catch(() => {});
-      log.info('Pure-static build: removed build-time SSR bundle (dist/server)');
-    }
+    // finalizePureStaticOutput() is fail-closed: it logs the removal only when
+    // the directory is verifiably gone and fails the build otherwise.
+    await finalizePureStaticOutput(ssrOutDir);
 
     log.info('Static site generated -> ' + join(root, outDir));
   } catch (err) {
