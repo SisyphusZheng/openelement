@@ -391,11 +391,12 @@ closure rows; the n/a cell for `router-unocss-probe` is asserted as n/a).
 ## Delta note
 
 The measurement was taken on `d9eb755d39bdc1763e75b7c3875208e8900b051e`.
-The only delta to the submitted final SHA is **this evaluation document**,
-which is not an input to any measured build (it lives under `docs/`, outside
-`www/content` and outside every package source set), so it cannot move a byte
-or a timing in the tables. The exact-SHA full qualification is re-run on the
-final SHA.
+The delta to the submitted final SHA is **documentation only**: this evaluation
+document (including its three-arm section) and the companion
+`alpha15-jfb-runtime-evaluation.md`. Neither is an input to any measured build —
+both live under `docs/`, outside `www/content` and outside every package source
+set — so neither can move a byte or a timing in the tables. The exact-SHA full
+qualification is re-run on the final SHA.
 
 This is the second sweep of the same candidate line. The first (at
 `4596a122d`) was invalidated by a post-measurement security fix in
