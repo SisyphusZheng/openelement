@@ -60,3 +60,5 @@ there (`git show 3b5c7a9a^:docs/audit/2026-07-27-application-loop-framework-rese
 - [ADR-0168-style-provider-port.md](./ADR-0168-style-provider-port.md)
 - [ADR-0169-request-time-rendering-surface.md](./ADR-0169-request-time-rendering-surface.md)
 - [ADR-0170-late-host-island-activation.md](./ADR-0170-late-host-island-activation.md)
+- [ADR-0171-private-artifact-static-boundary.md](./ADR-0171-private-artifact-static-boundary.md)
+- [ADR-0172-document-lang-resolution.md](./ADR-0172-document-lang-resolution.md)

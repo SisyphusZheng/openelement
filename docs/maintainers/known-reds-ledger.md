@@ -260,3 +260,110 @@ boundary, not a failure).
 - **Latest observation**: 2026-10-18, lane t8-design @ `672847cb7` (chromium,
   base run): `third-party Web Components diagnostic completed: 0/11 T0 proved;
   T1/T2 not run`, smoke exit 0, zero error markers in the log.
+
+## KR-21 · Browser-engine timeouts under full-suite load (Firefox /reference, WebKit focus ring, packed Lit/Firefox continuation probe)
+
+- **Status**: OPEN.
+- **Symptom**: in one full qualification run (39216159302, SHA `ef5da43e4`) three
+  independent browser observations did not complete in time: the packed
+  Lit/Firefox continuation probe hit the 300000 ms harness abort; the Firefox
+  `/reference` direct-load test hit its 420000 ms test ceiling; the WebKit
+  focus-visible ring row failed its offscreen check on attempt 1. The Firefox and
+  WebKit rows passed on retry in the same run, and the same SHA later produced
+  the green run 39219887454 (13/13 instances).
+- **Evidence path**: tracked classification record
+  `docs/release/evidence/alpha15/frm07-timeout-classification.md`; the classifier
+  changes in `tools/release/consumer-packaged-shared.ts`,
+  `tools/repo/site-e2e-result.ts`, `tools/repo/site-e2e-run.ts`,
+  `www/e2e/helpers.ts` and the three wrapped site specs. The archived CI-log
+  excerpt lives at `verification/pr1611/10-ci-evidence/failed-run-39216159302.log`
+  in the parent workspace (outside this repository).
+- **Impact**: no product defect is proven (retry-cleared and not reproduced in
+  the candidate proof); the cost is diagnostic — a timeout must be read as an
+  engine/probe timeout with phase/project/URL, never as a product assertion
+  failure, and a failed test must no longer be counted as a
+  flaky-vs-expected drift (`site-e2e-result.ts` identity is now
+  `expected + flaky + failed === executed`).
+- **Owner**: alpha15 batch (classification landed; the underlying engine hang
+  stays alpha16 — the `/reference` split is candidate X24).
+- **Retirement condition**: three consecutive full qualification runs on the
+  fixed toolchain with no timeout in these rows, or a root cause identified and
+  fixed.
+- **Latest observation**: 2026-10-19, run 39216159302 @ `ef5da43e4` (failed),
+  then 39219887454 @ `ef5da43e4` (13/13 success). Locally the same day, macOS
+  Firefox reproduced the `/reference` `networkidle` hang at the 420 s ceiling
+  (11/12 other direct-URL routes passed) and the classified wrapper reported
+  `engine timeout: phase=direct-url-access engine=firefox url=/reference`.
+- **Latest observation (2026-10-19, post-review batch)**: run 39262312202 @
+  `722fb56ed` — `e2e-full (fixture-gates)` failed on the WebKit
+  `effective-tuple.spec.ts:83` row (`page.goto: Test ended` at the 60 s ceiling)
+  while the same spec passes 9/9 in 6.5 s on this machine's WebKit with the same
+  tree and fixture build; no product change in the batch touches that path. The
+  run's `pack` job failure in the same run is a separate, real defect (the
+  starter's bare `oxlint` lint leg, fixed separately), not this class.
+
+## KR-22 · A6 (review FR-08): pure-static `dist/server` removal failure was silent
+
+- **Status**: FIXED (this batch; the review's observation itself remains
+  unreproduced on the fixed toolchain).
+- **Symptom**: review FR-08 reported
+  `www/tools/site-package-sheet-admission.test.ts:346` failing with
+  `open-input.css` referenced by `server/entry.js` after a clean site build, on
+  the reviewer's Node 24.19.x / pnpm 11.25.x toolchain. On the fixed toolchain
+  (node 24.18.0 / pnpm 12.8.1) that file passes 6/6 and `www/dist` has no
+  `server/` at any depth.
+- **Root cause (the fixable arm)**: `packages/router/src/cli/build-ssg.ts`
+  removed the build-time SSR bundle with `rm(...).catch(() => {})` and then
+  printed `Pure-static build: removed build-time SSR bundle (dist/server)`
+  unconditionally — a failed removal could leave a stale
+  `dist/server/entry.js` while the log claimed the tree was clean.
+- **Fix**: `finalizePureStaticOutput()` removes, re-checks, logs only a verified
+  removal, and throws `SsrRenderError` with the underlying cause when
+  `dist/server` survives; pinned by 5 cases in
+  `packages/router/__tests__/build-ssg-bundle-url.test.ts`. The static boundary
+  (ADR-0171) is the second, runtime layer: even a stale tree cannot serve
+  `/server/**`.
+- **Evidence path**: `docs/release/evidence/alpha15/rel05-a6-adjudication.md`
+  (three claims separated, built-output probe, fix, and the empty-directory
+  rebuild recorded at consolidation).
+- **Impact**: a stale private bundle could stay in a deployable static output;
+  the fix makes that state visible or fatal. Residual risk: an environmental
+  `rm` failure now fails an otherwise-green build (accepted, documented).
+- **Owner**: alpha15 batch (REL-05).
+- **Retirement condition**: the frozen candidate's empty-directory rebuild
+  passes A6 with a truthful removal log; retire this row with the release
+  evidence.
+- **Latest observation**: 2026-10-19, fixed toolchain, existing `www/dist`
+  (Lead `site:build` 17:45): A6 6/6 pass, no `server/` anywhere, probe
+  4 contract sheets emitted-unreferenced / 3 referenced / 0 orphans.
+
+## KR-23 · CodeQL green is a delta summary, not a zero-alert proof
+
+- **Status**: FIXING (dispositions landed; #4241 flips on the next analysis).
+- **Symptom**: the CodeQL check run on `ef5da43e4` is `success` while its
+  summary still reads "2 new alerts including 1 medium severity security
+  vulnerability". The PR body's "CodeQL 0 open alerts" is true for `main`, not
+  for `refs/pull/1611/merge`. The review thread links #4238 while an owner reply
+  cites dismissed #4236; #4236 is actually `fixed` (2026-10-18T05:10:34Z) and
+  #4238 is the same finding re-raised (2026-10-18T10:18:01Z).
+- **Disposition**: #4238 `js/bad-code-sanitization` traced flow-by-flow to
+  JSON.stringify-quoted TypeScript string literals (a standalone module returned
+  through the Vite transform; consumers read `classCandidates` only, never
+  HTML-inlined) or OEC9032-validated identifiers; one real inconsistency (a
+  class sink spliced without `identifier()`) was hardened with a hostile-input
+  regression; dismissed as a false positive 2026-10-19T12:16:36Z with a written
+  reason. #4241 `js/trivial-conditional` fixed by moving the null-state copy
+  decisions into the generator (`www/tools/generate-site-content-data.ts` emits
+  a typed `COMMON_COMPLETE_VERSION` plus `REGISTER_*`), leaving no dead branch
+  in `www/app/routes/changelog.tsx`.
+- **Evidence path**: `docs/release/evidence/alpha15/rel02-codeql-disposition.md`
+  (authoritative per-ref alert lists, timeline, data-flow table, commands).
+- **Impact**: "CodeQL green" must never be read as "no open alerts"; a release
+  reader must read the per-ref alert list and the thread mapping, not the check
+  summary.
+- **Owner**: alpha15 batch (REL-02); post-push alert read-back belongs to the
+  REL-01 binder.
+- **Retirement condition**: after the consolidation push, the merge-ref alert
+  list shows 0 open and the check summary reflects it.
+- **Latest observation**: 2026-10-19 (pre-push): merge ref 24 alerts / 1 open
+  (#4241) / #4238 dismissed / #4236 fixed; `main` 325 alerts / 0 open.

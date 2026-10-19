@@ -39,6 +39,10 @@ not by priority; each row names where the evidence lives.
 | E1 | attach `alpha15-ab-jfb-evidence.tar.zst` to the alpha15 GitHub Release at publication | `docs/release/evidence/alpha15/README.md` (digest + manifest) | archive is staged in `.artifacts/release-evidence/`; a Release asset cannot exist before the Release |
 | E2 | recover a durable run link or archived log for the KR-18 flake observation | known-reds ledger KR-18 | the originally cited run id now returns 404 |
 | E3 | production long-task profile for the late-host probe, plus an instrumented walk benchmark | ADR-0170 "Cost evidence"; design record §7.4 | current numbers come from a replica benchmark |
+| E4 | automate the evidence-only handoff prerelease (REL-03) and the Release asset attachment, so a reviewer's first verification never depends on a manual command | `docs/release/evidence/alpha15/README.md`; `tools/release/release-preflight.ts`; `docs/release/alpha15-retrospective.md` §5 | the manual command is documented; the release train has no asset step yet |
+| E5 | build and publish the fixed-toolchain image in the release train and record the resolved base/toolchain digests in the qualification report | `tools/release/toolchain/Dockerfile`; `tools/release/check-toolchain-pins.ts` | image recipe lands in alpha15; no Docker runtime on the qualification host |
+| E6 | render the PR/release evidence section directly from the REL-01 binder output instead of pasting a checklist | `tools/release/evidence-bind.ts`; `docs/release/alpha15-retrospective.md` §5 | a hand-pasted run pointer is what went stale in FR-06 |
+| E7 | document the evidence-only prerelease policy (tag namespace, retention, not-a-release semantics) in CONTRIBUTING | `docs/release/evidence/alpha15/README.md`; retrospective §5 | policy currently stated only in the evidence README |
 
 ## Documentation and site
 
@@ -67,6 +71,8 @@ not by priority; each row names where the evidence lives.
 | X38 | `**/.zcode/` is not ignored, so relative report paths under a filtered run can pollute fixture directories | ignore rules | one-line fix candidate |
 | X39 | a kernel dashed `@property` declaration is silently dropped | conditional-block runtime; named in the owner report | needs a coded diagnostic or documented unsupported form |
 | X40 | island CSS is not de-duplicated or minified | style-asset pipeline; owner report | pair with the style provider port |
+| X43 | no stale-output contract test for hybrid projects: a pre-existing `dist/server/index.js` is deployable contract output, while a pure-static tree must not keep `server/` | `packages/router/src/cli/build-ssg.ts` (`finalizePureStaticOutput`); REL-05 evidence | the pure-static removal path is now tested; the hybrid retention state is not |
+| X44 | the tweet-length CodeQL dismissal reason (280-char API cap) forces the written rationale into the disposition record instead of the alert itself | `docs/release/evidence/alpha15/rel02-codeql-disposition.md` | keep the record as the authority; link it from the thread reply |
 
 ## User-journey dogfood findings (2026-10-19, Lead-run)
 
@@ -77,7 +83,7 @@ are tooling, CLI and documentation-precision gaps, not release blockers.
 | id | candidate | evidence | notes |
 | --- | --- | --- | --- |
 | F1 | in a workspace-`link:` candidate install, a fresh starter's `pnpm typecheck` dies with a TypeScript internal `Debug Failure`; packed-tarball types typecheck fine | dogfood log; release log records the packed starter typecheck passing | fixture tsconfigs avoid it by excluding the config file; add a linked-mode gate or fix the TypeScript interaction |
-| F2 | `oe start --port` is silently ignored and `oe start --help` starts the server | dogfood log | unknown flags should fail closed with usage; document env-only port |
+| F2 | ~~`oe start --port` is silently ignored and `oe start --help` starts the server~~ — FIXED in the alpha15 cleanup batch (CLI-01): `--help/-h` prints usage and exits before any filesystem/port work, unknown start args fail closed with exit 2 and env-var guidance | dogfood log; `packages/router/__tests__/start-cli.test.ts` | retained as history; the doc contract stays env-only |
 | F3 | the config file rejects old keys (`appShell`, `html`) with a generic unknown-key error, while the inline form has rename guidance | dogfood log; app-config rename map | reuse the rename map in the config schema |
 | F4 | a directly loaded no-island page still prefetches island chunks in the production build | dogfood browser request log | cost-honesty wording or conditional prefetch |
 | F5 | the dev server ignores the `PORT` environment variable | dogfood log | document the dev port knob or honour `OPEN_ELEMENT_PORT` |
