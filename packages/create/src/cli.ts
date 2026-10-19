@@ -13,9 +13,11 @@
  * prompt and a TTY run is identical to a piped one.
  *
  * Post-scaffold lifecycle: git init (default, skipped when the target already
- * lives inside a repository), dependency install with the first package
- * manager found on PATH — pnpm, npm, yarn, or bun (default on) — an optional
- * dev-server start (--start), and a boxed handoff naming the next commands.
+ * lives inside a repository), dependency install with the INVOKING package
+ * manager when the wrapper named one (npm create / pnpm dlx / yarn / bunx) and
+ * otherwise the first of pnpm, npm, yarn, bun on PATH (default on), an optional
+ * dev-server start (--start), and a boxed handoff naming the next commands in
+ * that same manager's spelling.
  *
  * Target: a new directory, an existing EMPTY directory, or `.` for the
  * current directory (which the same emptiness rule applies to). A non-empty
@@ -24,8 +26,9 @@
  *
  * Manager-neutral since alpha.15: the template carries explicit version pins
  * and no `packageManager` field, so no install protocol is manager-specific
- * and the scaffold installs with whichever of the four the host has. Only a
- * PATH with none of them fails, and that message names all four.
+ * and the scaffold installs with whichever of the four the host has. The
+ * manager is resolved by ./pm.ts (TPL-02): the invoking wrapper first, the PATH
+ * probe second. Only a run with neither fails, and that message names all four.
  *
  * L9: every failure mode exits 1 with one actionable message — never a
  * runtime stack trace.
@@ -44,10 +47,10 @@ import {
 import { createInstallCommand } from './install-command.ts';
 import { assertSupportedNode } from './node-version.ts';
 import {
-  detectPackageManager,
   devCommand,
   installDependenciesCommand,
   PACKAGE_MANAGERS,
+  resolvePackageManager,
   type PackageManager,
 } from './pm.ts';
 import { CREATE_VERSION } from './version.ts';
@@ -361,9 +364,10 @@ function findEnclosingRepository(startDir: string): string | null {
  *
  * An install that did not run leaves the project without dependencies, so the
  * box then names the install command FIRST — spelled for the manager this run
- * would have used (the detected one, or npm when nothing was on PATH) — and
- * the dev command second. Both spellings come from ./pm.ts, the one source
- * the documented quickstarts are asserted against.
+ * resolved (the invoking wrapper, else the first probe hit, else npm when the
+ * host had nothing at all) — and the dev command second. Both spellings come
+ * from ./pm.ts, the one source the documented quickstarts are asserted
+ * against.
  */
 interface HandoffOptions {
   /** True when `--no-install` skipped the dependency install. */
@@ -482,12 +486,14 @@ async function main(): Promise<void> {
 
   let pm: PackageManager | null = null;
   if (flags.install !== false) {
-    // The manager is DETECTED, not assumed: the template is manager-neutral
-    // (explicit version pins, no `packageManager` field, no workspace file),
-    // so the first of pnpm / npm / yarn / bun on PATH installs it. A host
-    // with none of the four fails here — before the install — with the whole
-    // list and one command to run, instead of an unrelated shell error.
-    const detected = detectPackageManager();
+    // The manager is RESOLVED, not assumed (TPL-02): the invoking wrapper
+    // (`npm create`, `pnpm dlx`, `yarn create`, `bunx`) wins — the box and
+    // the install then spell the manager the user actually chose, even when
+    // another one merely sits on PATH — and a DIRECT `node` run falls back to
+    // the first of pnpm / npm / yarn / bun on PATH. Only a run with neither
+    // fails here, before the install, with the whole list and one command to
+    // run instead of an unrelated shell error.
+    const detected = resolvePackageManager();
     if (detected === null) {
       fail(
         `No package manager found: this project installs with any of ${PACKAGE_MANAGERS.join(
@@ -520,9 +526,10 @@ async function main(): Promise<void> {
   }
 
   // With --no-install the box has to teach the install step it skipped: name
-  // the manager this host would have used (the four probes, in order) so the
-  // printed command produces the lockfile the user's next install follows.
-  printHandoff(plan, flags.install === false ? detectPackageManager() : pm, {
+  // the manager this run resolves (the invoking wrapper first, then the four
+  // probes in order) so the printed command produces the lockfile the user's
+  // next install follows — and matches how they invoked the generator.
+  printHandoff(plan, flags.install === false ? resolvePackageManager() : pm, {
     installSkipped: flags.install === false,
     startRequested: flags.start,
   });

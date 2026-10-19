@@ -1,11 +1,11 @@
 /**
  * Playwright configuration for the packed-starter smoke gate (#934/#936).
  *
- * Tests run against the starter generated and built by setup.ts
- * (tests/e2e/starter-smoke/work/my-blog), served by the starter's own `start`
- * command — static dist/ plus request-time routes via dist/server/index.js.
- * This is the exact user surface: everything runs from the packed create
- * tarball output + monorepo framework sources.
+ * Tests run against the starter generated and built by setup.ts at the shared
+ * scratch root (./paths.ts — outside the repository), served by the starter's
+ * own `start` command — static dist/ plus request-time routes via
+ * dist/server/index.js. This is the exact user surface: everything runs from
+ * the packed create tarball output + monorepo framework sources.
  *
  * Prerequisites:
  *   pnpm --dir tests/e2e/starter-smoke run setup
@@ -14,6 +14,7 @@
  */
 import { defineConfig } from '@playwright/test';
 import process from 'node:process';
+import { starterSmokeAppDir } from './paths.ts';
 
 const PORT = Number(process.env.STARTER_SMOKE_PORT ?? 4274);
 const baseURL = `http://127.0.0.1:${PORT}`;
@@ -83,7 +84,7 @@ export default defineConfig({
     // B5 (ADR-0161): the starter's own `start` script IS the documented
     // production surface — serve it exactly as an adopter would.
     command: 'exec pnpm run start',
-    cwd: new URL('./work/my-blog', import.meta.url).pathname,
+    cwd: starterSmokeAppDir,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

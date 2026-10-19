@@ -11,8 +11,13 @@
  * surface with pnpm, then builds it. The built dist/ + dist/server/ are
  * served by the starter's own `start` script during the Playwright run.
  *
+ * The scaffold is created under a scratch root OUTSIDE the repository
+ * (./paths.ts — the repository's .gitignore used to make the starter's own
+ * `oxlint` walk find zero files, so the quality gate could not exercise the
+ * real lifecycle; TPL-03 CI fix for run 39262312202).
+ *
  * Usage:
- *   pnpm --dir tests/e2e/starter-smoke run setup   (build everything into work/)
+ *   pnpm --dir tests/e2e/starter-smoke run setup   (pack + scaffold + install + build)
  */
 
 import { readFile, writeFile } from 'node:fs/promises';
@@ -20,12 +25,12 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join, resolve } from 'node:path';
 import { runStep } from '../../lib/qualify-harness/command-run.ts';
+import { starterSmokeAppDir, starterSmokeDepsDir, starterSmokeWorkDir } from './paths.ts';
 
 const repoRoot = resolve(import.meta.dirname!, '..', '..', '..');
-const suiteDir = join(repoRoot, 'tests', 'e2e', 'starter-smoke');
-const workDir = join(suiteDir, 'work');
-const appDir = join(workDir, 'my-blog');
-const depsDir = join(workDir, 'deps');
+const workDir = starterSmokeWorkDir;
+const appDir = starterSmokeAppDir;
+const depsDir = starterSmokeDepsDir;
 
 const PACKAGES = ['protocol', 'element', 'compiler', 'router', 'create'] as const;
 /**
@@ -322,8 +327,11 @@ async function writeHarnessOverrides(
 }
 
 async function main(): Promise<void> {
+  // Recreate the whole scratch root: a stale `deps/` extraction or scaffold
+  // from an earlier tree must never be qualified (the root lives outside the
+  // repository, so nothing else cleans it).
+  rmSync(workDir, { recursive: true, force: true });
   mkdirSync(depsDir, { recursive: true });
-  if (existsSync(appDir)) rmSync(appDir, { recursive: true });
   // Pack fresh on every setup run: a stale tarball would silently qualify
   // yesterday's sources (one pack produces every retained tarball).
   await runStep('pnpm', ['--dir', 'tools/release', 'run', 'pack:dry-run'], { cwd: repoRoot });

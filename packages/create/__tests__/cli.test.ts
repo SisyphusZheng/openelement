@@ -20,10 +20,12 @@ import { OPEN_ELEMENT_CONFIG_KEYS } from '../../router/src/config.ts';
 import { CREATE_VERSION } from '../src/version.ts';
 import { createInstallCommand } from '../src/install-command.ts';
 import {
+  detectInvokingPackageManager,
   detectPackageManager,
   devCommand,
   installDependenciesCommand,
   PACKAGE_MANAGERS,
+  resolvePackageManager,
 } from '../src/pm.ts';
 import {
   assertUnifiedProductVersions,
@@ -51,13 +53,31 @@ const gitAvailable = spawnSync('git', ['--version'], { stdio: 'ignore' }).status
 // and stays active in CI where pnpm is the package manager.
 const pnpmAvailable = spawnSync('pnpm', ['--version'], { stdio: 'ignore' }).status === 0;
 
+/**
+ * The environment a DIRECT `node …/cli.ts` run sees: the manager signals a
+ * wrapper (`npm create`, `pnpm dlx`) exports to its child are removed, because
+ * this suite spawns the CLI itself rather than through one. Manager resolution
+ * then falls back to the PATH probe, which the install/handoff tests pin; the
+ * TPL-02 invocation tests set the signals explicitly on top of this base.
+ */
+function directInvocationEnv(overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  delete env.npm_config_user_agent;
+  delete env.npm_execpath;
+  delete env.npm_lifecycle_event;
+  return { ...env, ...overrides };
+}
+
 async function runCreate(
   executable: string,
   cwd: string,
   name: string,
   ...extra: string[]
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  const child = spawn(process.execPath, [executable, name, ...extra], { cwd });
+  const child = spawn(process.execPath, [executable, name, ...extra], {
+    cwd,
+    env: directInvocationEnv(),
+  });
   const [out, err] = await Promise.all([
     Array.fromAsync(child.stdout!),
     Array.fromAsync(child.stderr!),
@@ -112,12 +132,14 @@ test('starter exposes only product dependencies and the standard lifecycle', () 
   // scripts name, and no `catalog:` / `vite-plus` / `vp` specifier is left for
   // a non-pnpm manager to reject. Dev-side packages: the Vite pin, the
   // Tailwind-ON single default pins (#1524 form restored as the ONE scaffold),
-  // the lazy dev-server pair, the two toolchain tools, and the type-check pin.
+  // the lazy dev-server pair, the two toolchain tools, the type-check pin, and
+  // the Node type surface the generated tsconfig's `types` list names.
   // No browser-automation dependency ships: the starter has no Playwright
   // surface (owner ruling 2026-10-09).
   expect(Object.keys(manifest.devDependencies).sort()).toEqual([
     '@hono/vite-dev-server',
     '@tailwindcss/vite',
+    '@types/node',
     'hono',
     'oxfmt',
     'oxlint',
@@ -125,6 +147,10 @@ test('starter exposes only product dependencies and the standard lifecycle', () 
     'typescript',
     'vite',
   ]);
+  // The @types/node pin is the repo's own (asserted against the root manifest
+  // in the pin-alignment test below): the generated tsconfig resolves "node"
+  // from it, so a floating or absent pin is a TS2591 the user meets first.
+  expect(/^\d+\.\d+\.\d+$/.test(manifest.devDependencies['@types/node'])).toBeTruthy();
   expect(manifest.devDependencies['vite-plus']).toEqual(undefined);
   expect(manifest.devDependencies['vite']).toEqual('8.0.16');
   expect(Object.keys(manifest.scripts).sort()).toEqual([
@@ -173,6 +199,13 @@ test('starter exposes only product dependencies and the standard lifecycle', () 
   expect(tsconfig.compilerOptions.jsxImportSource).toEqual('@openelement/element');
   expect(tsconfig.compilerOptions.noEmit).toEqual(true);
   expect(tsconfig.include).toEqual(['app', 'vite.config.ts', 'openelement.config.ts']);
+  // TPL-01: the `types` allowlist names BOTH the CSS-module surface and node.
+  // Without "node" a generated starter fails `tsc --noEmit` with TS2591 on its
+  // first `process`/`Buffer`/timer reference; the fix is the entry, never an
+  // `exclude` that drops whole authoring directories (app/components) from the
+  // type-check surface.
+  expect(tsconfig.compilerOptions.types).toEqual(['@openelement/element/css-modules', 'node']);
+  expect('exclude' in tsconfig).toBeFalsy();
 });
 
 // ── The two alpha.15 guards ─────────────────────────────────────────────
@@ -458,6 +491,17 @@ test('starter islands are single-module compiled classes with declared strategie
   expect(timer.includes('disconnectedCallback'), timer).toBeTruthy();
   expect(timer.includes('setInterval'), timer).toBeTruthy();
   expect(timer.includes('clearInterval'), timer).toBeTruthy();
+  // TPL-01: the interval rides the DOM owner and is typed as the number the
+  // DOM call returns. With both DOM and node types loaded, the bare
+  // `setInterval` resolves to Node's overload (a NodeJS.Timeout handle) and
+  // fails TS2322 — and `ReturnType<typeof window.setInterval>` does NOT fix
+  // it, because the merged window type's ReturnType is also Node's Timeout
+  // (verified against the generated tsconfig). Disconnect clears the same
+  // handle it set.
+  expect(timer.includes('window.setInterval'), timer).toBeTruthy();
+  expect(timer.includes('window.clearInterval'), timer).toBeTruthy();
+  expect(timer.includes('interval = 0'), timer).toBeTruthy();
+  expect(timer.includes('ReturnType<typeof'), timer).toBeFalsy();
   expect(timer.includes('elapsed = '), timer).toBeTruthy();
   expect(timer.includes('data-signal'), timer).toBeFalsy();
 
@@ -1002,6 +1046,11 @@ test('starter pins the Vite tree directly, aligned with the router', async () =>
   );
   expect(raw.devDependencies.oxfmt).toEqual(repoManifest.devDependencies.oxfmt);
   expect(raw.devDependencies.oxlint).toEqual(repoManifest.devDependencies.oxlint);
+  // TPL-01: the Node type surface is the repo's own exact pin. The generated
+  // tsconfig names "node" in its `types` allowlist, so the starter must ship
+  // the same @types/node the repository type-checks its own Node code with —
+  // aligned the same way the Vite, TypeScript, oxfmt and oxlint pins are.
+  expect(raw.devDependencies['@types/node']).toEqual(repoManifest.devDependencies['@types/node']);
   // No browser-automation dependency ships with the starter (owner ruling
   // 2026-10-09): the packed starter-browser gate adds its own Playwright pin to
   // the scaffolded manifest before installing
@@ -1084,7 +1133,7 @@ test.skipIf(process.platform === 'win32')(
       });
       const child = spawn(process.execPath, [join(packageDir, 'src', 'cli.ts'), 'pm-app'], {
         cwd: tmpRoot,
-        env: { ...process.env, PATH: `${binDir}:${process.env.PATH}` },
+        env: directInvocationEnv({ PATH: `${binDir}:${process.env.PATH}` }),
       });
       const [out] = await Promise.all([Array.fromAsync(child.stdout!)]);
       const code = await new Promise<number>((resolve) =>
@@ -1123,7 +1172,7 @@ test.skipIf(process.platform === 'win32')(
       });
       const child = spawn(process.execPath, [join(packageDir, 'src', 'cli.ts'), 'npm-app'], {
         cwd: tmpRoot,
-        env: { ...process.env, PATH: resolve(binDir) },
+        env: directInvocationEnv({ PATH: resolve(binDir) }),
       });
       const [out, err] = await Promise.all([
         Array.fromAsync(child.stdout!),
@@ -1276,6 +1325,195 @@ test('manager detection prefers pnpm, then npm, yarn, bun — and answers null w
   expect(probed).toEqual([...PACKAGE_MANAGERS]);
 });
 
+test('invoking-manager detection reads the user agent, then exec path, then argv[1]', () => {
+  // TPL-02: a packed npm-create run must spell npm, not pnpm, even when pnpm
+  // sits on PATH. These signals are the ones each manager exports to its
+  // child; the precedence is agent, exec path, runner name.
+  expect(
+    detectInvokingPackageManager(
+      { npm_config_user_agent: 'npm/11.6.0 node/v24.18.0 darwin arm64 workspaces/false' },
+      ['node', '/pkg/src/cli.ts'],
+    ),
+  ).toEqual('npm');
+  expect(
+    detectInvokingPackageManager(
+      { npm_config_user_agent: 'pnpm/12.8.1 npm/? node/v24.18.0 darwin arm64' },
+      ['node', '/pkg/src/cli.ts'],
+    ),
+  ).toEqual('pnpm');
+  expect(
+    detectInvokingPackageManager({ npm_config_user_agent: 'yarn/4.5.0 npm/? node/v24.18.0' }, []),
+  ).toEqual('yarn');
+  expect(detectInvokingPackageManager({ npm_config_user_agent: 'bun/1.2.0' }, [])).toEqual('bun');
+
+  // A signal that names no manager (corepack is a shim over one, not one) is
+  // not an answer: the next signal decides.
+  expect(
+    detectInvokingPackageManager(
+      {
+        npm_config_user_agent: 'corepack/0.34.0 node/v24.18.0',
+        npm_execpath: '/opt/pnpm/bin/pnpm.cjs',
+      },
+      [],
+    ),
+  ).toEqual('pnpm');
+  // The exec path is matched on the basename, pnpm first (pnpm contains npm).
+  expect(
+    detectInvokingPackageManager(
+      { npm_execpath: '/usr/local/lib/node_modules/npm/bin/npm-cli.js' },
+      [],
+    ),
+  ).toEqual('npm');
+  expect(
+    detectInvokingPackageManager({ npm_execpath: 'C:\\Program Files\\nodejs\\npm.cmd' }, []),
+  ).toEqual('npm');
+  expect(detectInvokingPackageManager({ npm_execpath: '/usr/lib/yarn/bin/yarn.js' }, [])).toEqual(
+    'yarn',
+  );
+  // The runner name is the last resort, and a direct node run names the CLI
+  // file itself: no signal.
+  expect(detectInvokingPackageManager({}, ['node', '/usr/local/bin/pnpm.cjs'])).toEqual('pnpm');
+  expect(detectInvokingPackageManager({}, ['node', '/usr/local/bin/bunx'])).toEqual('bun');
+  expect(detectInvokingPackageManager({}, ['node', '/pkg/src/cli.ts'])).toEqual(null);
+  expect(detectInvokingPackageManager({}, [])).toEqual(null);
+});
+
+test('resolvePackageManager prefers the invoking manager over every PATH probe', () => {
+  // The probe would answer pnpm, but npm invoked this run: npm wins and the
+  // probe is never consulted (the invoking manager is running by definition).
+  let probed = false;
+  expect(
+    resolvePackageManager({
+      env: { npm_config_user_agent: 'npm/11.6.0 node/v24.18.0' },
+      argv: ['node', '/pkg/src/cli.ts'],
+      probe: () => {
+        probed = true;
+        return true;
+      },
+    }),
+  ).toEqual('npm');
+  expect(probed).toBeFalsy();
+  // No wrapper named itself: the PATH probe decides in its documented order.
+  expect(
+    resolvePackageManager({
+      env: {},
+      argv: ['node', '/pkg/src/cli.ts'],
+      probe: (pm) => pm === 'yarn',
+    }),
+  ).toEqual('yarn');
+  expect(resolvePackageManager({ env: {}, argv: [], probe: () => false })).toEqual(null);
+});
+
+test.skipIf(process.platform === 'win32')(
+  'the handoff spells the INVOKING manager, not the first one on PATH (TPL-02)',
+  async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'open-create-invoked-'));
+    try {
+      // PATH carries a fake pnpm, so the PATH probe would answer pnpm. The run
+      // was invoked through npm (the packed npm-create scenario): every
+      // printed next step must be npm's.
+      const binDir = join(tmpRoot, 'bin');
+      mkdirSync(binDir);
+      symlinkSync(process.execPath, join(binDir, 'node'));
+      writeFileSync(join(binDir, 'pnpm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+      const executable = join(packageDir, 'src', 'cli.ts');
+      const runHandoff = async (
+        name: string,
+        agent: string,
+      ): Promise<{ code: number; stdout: string }> => {
+        const child = spawn(process.execPath, [executable, name, '--no-install', '--no-git'], {
+          cwd: tmpRoot,
+          env: directInvocationEnv({
+            PATH: `${binDir}:${process.env.PATH}`,
+            npm_config_user_agent: agent,
+          }),
+        });
+        const [out] = await Promise.all([Array.fromAsync(child.stdout!)]);
+        const code = await new Promise<number>((resolve) =>
+          child.once('exit', (c) => resolve(c ?? -1)),
+        );
+        return { code, stdout: Buffer.concat(out).toString() };
+      };
+
+      const npmRun = await runHandoff(
+        'npm-invoked-app',
+        'npm/11.6.0 node/v24.18.0 darwin arm64 workspaces/false',
+      );
+      expect(npmRun.code, npmRun.stdout).toEqual(0);
+      expect(
+        npmRun.stdout.includes('npm install      # install dependencies'),
+        npmRun.stdout,
+      ).toBeTruthy();
+      expect(
+        npmRun.stdout.includes('npm run dev      # start the dev server'),
+        npmRun.stdout,
+      ).toBeTruthy();
+      // The manager merely on PATH must not appear in the box at all.
+      expect(npmRun.stdout.includes('pnpm '), npmRun.stdout).toBeFalsy();
+
+      const pnpmRun = await runHandoff(
+        'pnpm-invoked-app',
+        'pnpm/12.8.1 npm/? node/v24.18.0 darwin arm64',
+      );
+      expect(pnpmRun.code, pnpmRun.stdout).toEqual(0);
+      expect(
+        pnpmRun.stdout.includes('pnpm install      # install dependencies'),
+        pnpmRun.stdout,
+      ).toBeTruthy();
+      expect(
+        pnpmRun.stdout.includes('pnpm run dev      # start the dev server'),
+        pnpmRun.stdout,
+      ).toBeTruthy();
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test.skipIf(process.platform === 'win32')(
+  'the default install drives the invoking manager even when another is on PATH (TPL-02)',
+  async () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'open-create-invoked-install-'));
+    try {
+      const binDir = join(tmpRoot, 'bin');
+      mkdirSync(binDir);
+      symlinkSync(process.execPath, join(binDir, 'node'));
+      const log = join(tmpRoot, 'invocations.log');
+      // Both managers exist on PATH; only the INVOKED one may be run, and it
+      // is used directly (no --version probe: the wrapper is already running).
+      for (const name of ['npm', 'pnpm']) {
+        writeFileSync(join(binDir, name), `#!/bin/sh\necho "${name} $@" >> ${log}\nexit 0\n`, {
+          mode: 0o755,
+        });
+      }
+      const child = spawn(process.execPath, [join(packageDir, 'src', 'cli.ts'), 'invoked-app'], {
+        cwd: tmpRoot,
+        env: directInvocationEnv({
+          PATH: `${binDir}:${process.env.PATH}`,
+          npm_config_user_agent: 'npm/11.6.0 node/v24.18.0 darwin arm64 workspaces/false',
+        }),
+      });
+      const [out, err] = await Promise.all([
+        Array.fromAsync(child.stdout!),
+        Array.fromAsync(child.stderr!),
+      ]);
+      const code = await new Promise<number>((resolve) =>
+        child.once('exit', (c) => resolve(c ?? -1)),
+      );
+      const stdout = Buffer.concat(out).toString();
+      expect(code, `${stdout}\n${Buffer.concat(err).toString()}`).toEqual(0);
+      expect(stdout.includes('Installing dependencies with npm'), stdout).toBeTruthy();
+      const invocations = readFileSync(log, 'utf8').trim().split('\n');
+      expect(invocations).toHaveLength(1);
+      expect(invocations[0], invocations.join('\n')).toContain('install');
+      expect(invocations[0]!.startsWith('npm '), invocations.join('\n')).toBeTruthy();
+      expect(stdout.includes('npm run dev      # start the dev server'), stdout).toBeTruthy();
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  },
+);
+
 test('a host without any package manager fails naming all four, with the files intact', async () => {
   // PATH keeps node (already running this process) and nothing else, so none
   // of the four probes resolves. The scaffold must still be written — the
@@ -1289,7 +1527,7 @@ test('a host without any package manager fails naming all four, with the files i
   try {
     const child = spawn(process.execPath, [join(packageDir, 'src', 'cli.ts'), 'no-pm-app'], {
       cwd: tmpRoot,
-      env: { ...process.env, PATH: resolve(binDir) },
+      env: directInvocationEnv({ PATH: resolve(binDir) }),
     });
     const writes = await Promise.all([
       Array.fromAsync(child.stdout!),
@@ -1317,7 +1555,7 @@ test('a host without any package manager fails naming all four, with the files i
     const noInstall = spawn(
       process.execPath,
       [join(packageDir, 'src', 'cli.ts'), 'no-pm-handoff-app', '--no-install', '--no-git'],
-      { cwd: tmpRoot, env: { ...process.env, PATH: resolve(binDir) } },
+      { cwd: tmpRoot, env: directInvocationEnv({ PATH: resolve(binDir) }) },
     );
     const [out] = await Promise.all([Array.fromAsync(noInstall.stdout!)]);
     const noInstallCode = await new Promise<number>((resolve) =>
@@ -1570,7 +1808,7 @@ test('the template is never asked for: a bare run takes showcase even when stdio
     const child = spawn(
       process.execPath,
       ['--import', ttySeam, executable, 'tty-app', '--no-install', '--no-git'],
-      { cwd: tmpRoot, stdio: ['pipe', 'pipe', 'pipe'] },
+      { cwd: tmpRoot, stdio: ['pipe', 'pipe', 'pipe'], env: directInvocationEnv() },
     );
     const [out] = await Promise.all([Array.fromAsync(child.stdout!)]);
     const code = await Promise.race([

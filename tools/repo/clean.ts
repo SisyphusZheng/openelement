@@ -52,6 +52,9 @@ export const DEFAULT_TARGETS: readonly string[] = [
   '.coverage-*',
   '.coverage-check',
   '.openElement',
+  // Legacy location: the starter-smoke harness now scaffolds OUTSIDE the repo
+  // ($RUNNER_TEMP|os.tmpdir()/openelement-starter-smoke), so this entry only
+  // clears leftovers from checkouts that ran the pre-batch harness.
   'tests/e2e/starter-smoke/work',
   'tests/fixtures/*/dist',
   'tests/fixtures/*/test-results',

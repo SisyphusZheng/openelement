@@ -336,7 +336,12 @@ jobs:
   # ── Job 4: Pack & Consumer Verification ────────────────────────────────
   # 40 minutes (measured): the starter smoke alone runs pack, scaffold,
   # install, SSG build and the bfcache probe; shared runners need 2-3x the
-  # local wall clock (runs timed out at exactly 15, then at 25).
+  # local wall clock (runs timed out at exactly 15, then at 25). The pack job
+  # also carries the TPL-03 fresh-scaffold quality gate (create -> typecheck ->
+  # lint -> test -> build -> smoke) as a step inside THIS job, not a new job:
+  # the job already pays for the packed scaffold and its install, and the
+  # qualification contract's job IDs/instance counts stay untouched (Lead
+  # ruling 2026-10-19; see docs/release/evidence/alpha15/tpl03-starter-quality-gate.md).
   pack:
     needs: [sha-guard]
     runs-on: ubuntu-latest
@@ -376,6 +381,18 @@ jobs:
         run: vp run --no-cache --fail-if-no-match --filter @openelement/tools-release publish:npm:dry-run
       - name: Starter smoke (needs packed workspace)
         run: vp run --no-cache --fail-if-no-match --filter @openelement/e2e-starter-smoke gate
+      - name: Starter quality gate (create -> typecheck -> lint -> test -> build -> smoke)
+        # TPL-03: the template regression contract. The step above created the
+        # fresh scaffold through the packed create CLI and installed it; this
+        # one runs the starter's OWN lifecycle scripts on that same scaffold —
+        # typecheck (the TPL-01 @types/node + tsconfig "node" surface), lint
+        # (oxlint at the shipped pin), test (node --test), build (oe build),
+        # then boots `oe start` and probes /, /about and /api/ping over the
+        # wire. It fails closed: any nonzero script or failed probe exits 1, so
+        # a template regression is a red step here instead of a user's first
+        # run. Reuses the scaffold the packed workspace built above; it never
+        # re-packs or re-installs.
+        run: vp run --no-cache --fail-if-no-match --filter @openelement/e2e-starter-smoke quality
 
   # ── Heavy qualification layer (5 jobs) ────────────────────────────────
   # Runs on a main push (unchanged) and on a workflow_dispatch with

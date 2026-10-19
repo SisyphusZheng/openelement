@@ -58,6 +58,7 @@ import {
   resolveElementRuntimeIdentity,
 } from '../vite/internal/element-runtime-chunk.ts';
 import { requireViteHelperChunk, viteHelperChunkName } from '../vite/internal/vite-helper-chunk.ts';
+import { browserEntryBoundaryPlugin } from '../vite/internal/browser-entry-boundary.ts';
 import {
   analyzeModuleSemantics,
   clearStyleRequests,
@@ -1011,6 +1012,14 @@ async function buildClient(ctx: OpenElementBuildContext): Promise<ClientAssetMan
         | undefined,
     },
     plugins: [
+      // The browser entry's Node boundary (TPL-01, fail closed): the client
+      // graph — the generated entry, every island, and everything they import
+      // transitively — may not reach a `node:*` builtin. Vite's browser
+      // resolver would otherwise replace the import with an empty module and
+      // keep the build green, so the failure would only surface in the
+      // browser. Registered first and `enforce: 'pre'` so it sees the raw
+      // specifier before the core resolver rewrites it.
+      browserEntryBoundaryPlugin(),
       // The engine's graph half (stage 2B): the document entry module and the
       // official peer that compiles it, both inert until the entry is reached.
       ...styleGraphPlugins,

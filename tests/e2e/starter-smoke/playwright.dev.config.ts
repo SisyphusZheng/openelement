@@ -12,6 +12,7 @@
  */
 import { defineConfig } from '@playwright/test';
 import process from 'node:process';
+import { starterSmokeAppDir } from './paths.ts';
 
 const PORT = Number(process.env.STARTER_SMOKE_DEV_PORT ?? 4299);
 const baseURL = `http://127.0.0.1:${PORT}`;
@@ -38,7 +39,7 @@ export default defineConfig({
     // 'localhost' binding is IPv6-first on some platforms while the probe
     // URL is 127.0.0.1.
     command: `exec pnpm run dev --port ${PORT} --host 127.0.0.1 --strictPort`,
-    cwd: new URL('./work/my-blog', import.meta.url).pathname,
+    cwd: starterSmokeAppDir,
     url: baseURL,
     reuseExistingServer: false,
     timeout: 120_000,

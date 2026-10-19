@@ -25,12 +25,14 @@
  */
 import { expect, test } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { starterSmokeAppDir } from './paths.ts';
 
 // v0.44: the route module is a thin definePage wrapper; the page markup lives
 // in the compiled page element it imports, so the edit target is the page
 // component (the #952 invalidation chain is the same: watcher → module
 // re-evaluation → next request renders the edited module).
-const PAGE_FILE = new URL('./work/my-blog/app/components/page-home.tsx', import.meta.url).pathname;
+const PAGE_FILE = join(starterSmokeAppDir, 'app/components/page-home.tsx');
 const H1_ORIGINAL = 'Rendered before JavaScript arrives';
 const H1_EDITED = 'Edited in dev mode';
 
