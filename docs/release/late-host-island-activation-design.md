@@ -40,7 +40,7 @@ Owner 批准 4/4，均按本文 §11 的推荐取值；第 5 条（引擎口径�
 
 | # | 偏离 | 为什么必须 | 既有钉法（证明其必要性） |
 | --- | --- | --- | --- |
-| D-1 | **`idle` 不参与探测**：`pendingTags()` 在 `idlePending === true` 时跳过 idle tag | idle bucket 自带 deferred step。探测在构造末尾 arm，此刻 idle 尝试**必然**还 outstanding；再为它排一个 timer 就是给同一个 tag 排两次 deferred step | `#605 idle fallback defers through setTimeout with the injected policy timeout`（断言 `scheduled.length === 1`）、`#F01 idle: the re-armed attempt keeps the fallback selection`（断言重扫后恰好 2 个 timer 且 `[1][1] === 25`） |
+| D-1 | **`idle` 尝试 outstanding 时不参与探测**：`pendingTags()` 在 `idlePending === true` 时跳过 idle tag；该尝试**结束后**若仍有未消费的 idle factory，则由 deferred 步骤 arm 同一探测（2026-10-19 补记，FR-02 收口；原「idle 永不探测」的范围表述作废） | idle bucket 自带 deferred step。探测在构造末尾 arm，此刻 idle 尝试**必然**还 outstanding；再为它排一个 timer 就是给同一个 tag 排两次 deferred step。等尝试结束再 arm，既不重复排 idle step，又补上了「尝试已花掉、宿主才出现」的缺口 | `#605 idle fallback defers through setTimeout with the injected policy timeout`（断言 `scheduled.length === 1`）、`#F01 idle: the re-armed attempt keeps the fallback selection`（断言重扫后恰好 2 个 timer 且 `[1][1] === 25`）、`FR-02 idle-only: a host that appears after the idle attempt activates` |
 | D-2 | **探测搭 ready 门，不抢跑**：`readyState === 'loading'` 且存在 `visible` island 时，构造末尾不 arm，改由 `onReady(rescanAndArm)` 在那次扫描结束时 arm | `onReady(observeVisible)` 在等 DOMContentLoaded；若探测直接调 `observeVisible()`，就会在文档 ready 前挂上 observer，破坏 ready 扫描承诺的延后语义 | `the ready-time visible scan waits for DOMContentLoaded on a loading document`（断言 `observed === []` 且 `listeners.length === 1`） |
 | D-3 | **`visible` 命中即 settle**：命中记入 `probeSettled`，`pendingTags()` 跳过已 settle 的 tag | `visible` island 的 host 存在但未进入视口是**健康态**，不是缺 host。不 settle 则探测每轮重复命中、耗尽预算，并对完全正常的 tag 报 `open:island-host-timeout`（假诊断） | `#1039 detached visible island is released and a reinsert gets a fresh observer`（证明 visible 的 host-present 状态由 observer 链路拥有，与"缺 host"无关） |
 | D-4 | **seam 判定与 §10.5 措辞订正**：实现同时把 `open:island-host-timeout` 登记进 `docs/architecture/seams.md`（P8），因此 §10.5 原句「本改动不新增跨系统 seam」不再成立，改为「新增一个 client runtime → page 的公开诊断面，已登记」 | 该事件是面向页面的公开诊断面，按 ADR-0163 / P8 必须登记 owner 与 consumer-form guard；scheduler 仍是唯一 owner，未新增构建期产物或跨阶段交接 | `docs/architecture/seams.md` 的「Late-host activation give-up announcement」行 + `tests/fixtures/third-party-web-components/qualify.ts` 的 listener / zero-fetch guard；ADR-0170 记录该判定 |
@@ -317,6 +317,7 @@ if (pendingTags().length > 0) {
 探测**只在满足以下条件时**排程首个 timer：
 
 1. `pendingTags().length > 0` —— 有「已声明但 host 还没出现」的 tag（全部 bucket 合并，media 中不匹配者排除）。
+2. 下列**策略状态转换**在构造之后补一次 arm（2026-10-19 补记，FR-02）：idle 尝试执行完且仍有未消费 idle factory；media 监听器翻为 matching 且该 tag 仍未被消费。arm 幂等、每页至多一条探测链，且不新增激活权限（仍只调用 `observeVisible()`）。
 
 **并且不做** `activatedAny` 门控。理由（这是一个必须写清的反直觉点）：若加「本页至少激活过一个 island」的条件，则「页面只声明一个 island、且它的 host 恰好是 late host」的合法场景会被误杀 —— 这正是最需要修的形状之一。成本由预算表（≤6 次/窗口）而非 arm 条件控制。
 
@@ -779,3 +780,41 @@ vp run --no-cache --fail-if-no-match --filter @openelement/fixture-third-party-w
 5. **`ssr:false` island 的 host 也可能在 SSR 标记里**（只是组件未序列化）——文档描述 late host 时不要把它等价为「客户端加载」，需以「host 出现时机」表述。
 6. **三引擎 WC smoke 的 flake 面**：KR-18（firefox fixture flake，`retries=0` 政策）说明本仓库的三引擎 fixture 已在 flake 边缘。WC smoke 加密到三引擎后，任何新的跨引擎差异都会被 gate 观察到；收敛口径见 §11.5（只把契约级断言设成全绿），并把首次三引擎跑的结果如实记录（包括合法的引擎差异）。
 7. **KR-17 摘钩的证据形态**：ledger 摘钩需要「三引擎全绿的日志」作为证据；建议在 PR body 直接贴三段引擎的 smoke 结论摘要 + `OPEN_ELEMENT_TIER_REPORT` 产物路径（产物不入库），不要只写「本地通过」。
+
+---
+
+## 实现补记（2026-10-19，PR #1611 评审 FR-02 / FR-03 收口）
+
+本节是 §3.1 伪代码与 D-1…D-4 偏离表之后的状态机**收口记录**；预算常量、单一激活权限和诊断事件均未变，ADR-0170 的 2026-10-19 Amendment 与本补记同义。
+
+### A. 策略状态转换补 arm（FR-02）
+
+评审复现的两条路径在原状态机下**永远不会 arm** 探测：
+
+- **idle-only（默认策略）**：构造时 idle 尝试 outstanding ⇒ `pendingTags()` 按 D-1 排除该 tag ⇒ 不 arm；idle callback 执行时没有宿主，该尝试就此花掉，之后没有任何路径再看一眼。
+- **media-only**：不匹配的查询被能力门控排除在 `pendingTags()` 外 ⇒ 构造时不 arm；查询翻为 matching 时没有宿主，change listener 当时是唯一事件，也不 arm。
+
+现实现（`packages/router/src/vite/internal/ssg/island-scheduler.ts`）：
+
+- idle 的 deferred 步骤在 `loadAll(idleTags)` **之后**调用 `armProbe()`：加载本身仍走浏览器 idle 原语（探测只重跑 rescan，不直接 load），因此 idle 的异步调度语义不变；尝试仍在 outstanding 时 `pendingTags()` 的排除保持不变（不重复排 idle step）。
+- media 的 change listener 在 `event.matches === true` 且该 tag 仍未被消费时调用 `armProbe()`。
+- `armProbe()` 幂等（每页一条链）、无激活权限（`load()` 的 host gate 仍是唯一入口）；预算耗尽仍只发一次 `open:island-host-timeout`。
+
+### B. 9000 ms 绝对上限改为入口闸（FR-03）
+
+原实现只在 `probe()` 的**扫描之后**（`probeAttempt`/窗口判定）与 `endWindow()` 中检查总时限，`onIslandLoadActivity()` 的续窗入口完全不查；评审以「冻结首个 probe timer、把注入时钟推进到 10,000 ms、再插入宿主」复现了超限激活。
+
+现实现新增 `probeAgeOut(now)`，并在以下**每一个入口**、任何 DOM 扫描或激活之前判 `now - probeStartedAt >= LATE_HOST_MAX_TOTAL_MS`：
+
+1. `probe(now)` 首部（覆盖所有 timer 唤醒，含后台标签页挂起/节流后迟到的唤醒）；
+2. `onIslandLoadActivity()` 首部（覆盖续窗入口；此处同时 `clearTimeout` 掉待命 timer，保证上限后不再持有 timer）。
+
+超限路径：注销探测链（`probeDone`）、不扫描、不激活、不消费 factory，派发一次 `open:island-host-timeout` 且 `elapsedMs >= 9000`；随后显式 rescan 与 media change 仍可激活（契约边界未变）。
+
+### C. 证据
+
+- `packages/router/__tests__/island-scheduler.test.ts`（58 例，原 50 例；原有用例的语义断言未削弱）：
+  - FR-02：`FR-02 idle-only: …activates, with open:ready`、`FR-02 media-only: …arms the probe`、`FR-02 no duplicate load`、`FR-02 positive control`、`FR-02 idle-only: … never gets a host … diagnostic`；
+  - FR-03：`T-18b`（冻结 timer + 10,000 ms：不扫描——以 `CountingElement` 断言查询数不变、不加载、无 `open:ready`、超时事件 `elapsedMs >= 9000`）、`T-18c`（8,999 ms 正控制，仍激活）、`T-18d`（挂起/节流：待命 timer 与 load activity 两个续窗入口都只注销）；
+  - `#F01 idle: the re-armed attempt keeps the fallback selection` 改为按 25 ms 策略延迟定位 idle 重排步骤（该页现在合法的多出一个有界探测 step，fallback 选择断言保留）。
+- 合同文档：`docs/adr/ADR-0170-late-host-island-activation.md` 的 2026-10-19 Amendment；公开文档 `www/content/docs/guide/islands-and-ssr.md` / `.zh.md`（新增“Late hosts / 迟到宿主”）与 `recipe-island-strategies.md` / `.zh.md`。

@@ -36,6 +36,15 @@
  * new activation path — `load()`'s host gate stays the only one — so a page
  * with no host still fetches nothing.
  *
+ * Two strategy transitions arm the probe because they are the only events
+ * those pages ever get (FR-02): an idle attempt that completes with idle
+ * factories still unconsumed arms it from the deferred step, and a media
+ * query whose change listener turns matching while the tag is unconsumed
+ * arms it from that listener. The probe is armed once per page and adds no
+ * activation authority, so both hooks only decide "keep looking"; the
+ * 9000 ms absolute cap is checked at every probe entry and every
+ * continuation-window entry before any DOM scan or activation (FR-03).
+ *
  * The generated client entry imports this module through the
  * virtual:open-client-runtime specifier (resolved by build-client.ts) and the
  * bundler wires it in: there is no parallel string copy to drift, and the
@@ -341,7 +350,15 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
     }
     if (query.matches) dispatchMedia(tag);
     const listener = (event: MediaQueryListLike): void => {
-      if (event.matches) dispatchMedia(tag);
+      if (!event.matches) return;
+      dispatchMedia(tag);
+      // FR-02: this listener is the ONLY event a query that starts
+      // non-matching ever produces, and dispatchMedia() is a no-op while the
+      // page has no host. Without an arm here a host created after the
+      // transition would never be discovered (the construction-time arm
+      // could not see this tag). Arming is idempotent and adds no activation
+      // authority: load() still owns the host gate.
+      if (map[tag]) armProbe();
     };
     if (query.addEventListener) query.addEventListener('change', listener);
     else if (query.addListener) query.addListener(listener);
@@ -380,6 +397,13 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
       idlePending = false;
       const activated = loadAll(idleTags);
       if (activated.length > 0) dispatchReady('idle', activated);
+      // FR-02: the idle attempt was this page's only scheduled look for an
+      // idle island. If a declared factory is still unconsumed, a host may
+      // still arrive later — keep the late-host probe running for exactly
+      // those tags. The idle load itself stays asynchronous (the probe only
+      // rescans; load()'s host gate decides), and armProbe() is idempotent so
+      // every other page shape keeps its no-timer behaviour.
+      armProbe();
     };
     const schedule: (fn: () => void) => unknown =
       win.requestIdleCallback ||
@@ -421,13 +445,12 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
    *   one-shot guard the whole scheduler already trusts;
    * - an `idle` tag is skipped while its own attempt is still outstanding:
    *   the browser has not been asked yet, so there is nothing to recover
-   *   from and probing would just duplicate a scheduled attempt. The probe
-   *   arms right after the construction-time schedule, so a page with idle
-   *   islands always lands in this case — idle delivery therefore keeps
-   *   exactly its pre-probe semantics, and its re-arm stays the post-morph
-   *   rescan's job. This is a declared scope boundary, not an oversight: the
-   *   idle chain already owns its own deferred step and re-arming it here
-   *   would schedule a second one.
+   *   from and probing would just duplicate a scheduled attempt. When that
+   *   attempt completes and the tag is still unconsumed, the deferred step
+   *   arms this probe (FR-02): idle delivery keeps its own asynchronous
+   *   scheduling, and a host created after the attempt is still discovered
+   *   inside the same bounded budget. Arming from the deferred also cannot
+   *   schedule a second idle step — this probe only rescans.
    */
   function pendingTags(): string[] {
     const out: string[] = [];
@@ -511,6 +534,16 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
    */
   function probe(now: number): void {
     if (probeDone) return;
+    // The absolute wall-clock cap is the FIRST question of every probe entry
+    // (FR-03): a page can be suspended or its timers throttled, so a step
+    // scheduled inside the budget may run long after it. Past the cap this
+    // must give up without any DOM scan or activation: a timer that wakes at
+    // 10 s may not discover a host and let a window/attempt bound decide the
+    // budget later. elapsedMs is therefore always >= the cap here.
+    if (now - probeStartedAt >= LATE_HOST_MAX_TOTAL_MS) {
+      probeAgeOut(now);
+      return;
+    }
     // The previous window ran out and nothing has loaded since: stop, and
     // say so. Waiting forever for an activity signal would make the give-up
     // diagnostic unreachable, which is exactly the silent-drop failure the
@@ -580,15 +613,41 @@ export function createIslandScheduler(deps: IslandSchedulerDeps): IslandSchedule
    */
   function onIslandLoadActivity(): void {
     if (probeDone || !probeAwaiting) return;
+    const now = probeNow();
+    // A continuation window is a probe entry too (FR-03). A page resumed from
+    // a suspend/throttle can deliver this activity long after the absolute
+    // cap; reopening a window here would schedule a scan the contract forbids
+    // and could still activate a host the cap already ruled out. Retire the
+    // chain with the same observable signal instead.
+    if (now - probeStartedAt >= LATE_HOST_MAX_TOTAL_MS) {
+      probeAgeOut(now);
+      return;
+    }
     probeAwaiting = false;
     probeWindow++;
     probeAttempt = 0;
-    probeStartTs = probeNow();
+    probeStartTs = now;
     // The spent window's give-up timer is replaced by the new window's first
     // step, so a fresh window never leaves the old deadline armed behind it.
     win.clearTimeout(probeTimer);
     probePending = false;
     scheduleProbe(0);
+  }
+
+  /**
+   * The absolute wall-clock cap has passed. Every probe entry and every
+   * continuation-window entry funnels here: retire the chain, leave the
+   * factories unconsumed, and emit the same one give-up signal. No DOM scan
+   * and no activation happens on this path — the cap is a hard stop, not a
+   * question answered from the tree.
+   */
+  function probeAgeOut(now: number): void {
+    const stranded = pendingTags();
+    probeDone = true;
+    probeAwaiting = false;
+    win.clearTimeout(probeTimer);
+    probePending = false;
+    if (stranded.length > 0) giveUp(stranded, now);
   }
 
   /**

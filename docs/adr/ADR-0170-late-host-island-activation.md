@@ -176,3 +176,70 @@ trusted. The measurements taken for this decision (2026-10-19):
 - Decision record and approved deviations D-1…D-4:
   `docs/release/late-host-island-activation-design.md`.
 - Retired known red: KR-17 in `docs/maintainers/known-reds-ledger.md`.
+
+## Amendment (2026-10-19, PR #1611 review FR-02/FR-03)
+
+The decision above stands. Two state-machine gaps that the review reproduced
+are closed without changing the budget, the single activation authority, or the
+give-up event. Where this section is more specific than the text above, this
+section governs.
+
+### 1. Strategy transitions arm the probe (FR-02)
+
+The original arm condition was "at factory construction, `pendingTags()` is
+non-empty". Two legitimate page shapes fall outside it:
+
+- **idle-only** (idle is the DEFAULT strategy): at construction the idle attempt
+  is outstanding, so `pendingTags()` excludes the idle tags by design (D-1 in
+  the design record) and the probe is not armed. The idle callback then runs
+  with no host and is spent — nothing ever looked again.
+- **media-only:** a non-matching query is excluded from `pendingTags()` (the
+  capability gate). When the query flips to matching with no host, the change
+  listener is the only event that transition produces, and at construction
+  there was nothing to arm.
+
+Both transitions now arm the SAME bounded probe, and only that:
+
+- the idle deferred step calls `armProbe()` after its load attempt completes —
+  the idle load itself still goes through the browser's idle primitive (the
+  probe only re-runs the rescan, so idle asynchronous scheduling is preserved);
+- the media change listener arms when it turns matching while the tag is still
+  unconsumed.
+
+`load()`'s host gate remains the only activation authority: arming never loads
+a tag, it is idempotent (one chain per page), and a spent budget still ends in
+the one `open:island-host-timeout`. D-1 is narrowed accordingly: the exclusion
+while an idle attempt is outstanding is unchanged, but "idle re-arm stays the
+post-morph rescan's job" no longer describes the closed state machine.
+
+### 2. The absolute deadline is an entry gate (FR-03)
+
+`probe()` checked the 9000 ms cap only AFTER `collectHosts()`/`observeVisible()`,
+and `onIslandLoadActivity()` opened a continuation window without checking the
+cap at all — so a suspended or throttled page could still activate a host past
+the contract (the review reproduced a load at 10,000 ms). The cap is now the
+first check of:
+
+- every `probe()` entry, and
+- every continuation-window entry (`onIslandLoadActivity`),
+
+before any DOM scan or activation, through one `probeAgeOut()` path that retires
+the chain (clears the outstanding timer), leaves the factories unconsumed and
+emits the one give-up event with `elapsedMs >= LATE_HOST_MAX_TOTAL_MS`.
+Boundary of the fix: automatic probing stops at the cap; an explicit rescan
+(`observeVisible`) and a later media change keep their existing ability to
+activate a still-unconsumed factory.
+
+### Updated evidence
+
+- `packages/router/__tests__/island-scheduler.test.ts`: FR-02 idle-only /
+  media-only activation with `open:ready`, the no-duplicate-load negative, the
+  positive rescan control and the no-host diagnostic; T-18b adds the
+  frozen-timer negative (no DOM scan, no `open:ready`, timeout with
+  `elapsedMs >= 9000`), T-18c the just-under-cap positive control, and T-18d
+  both suspend/throttle continuation entries (awaiting timer and load activity).
+  The file now runs 58 tests (was 50); T-18's original three-window cap case is
+  unchanged.
+- Matching design-record amendment:
+  `docs/release/late-host-island-activation-design.md` ("Implementation
+  deviations" D-1 note and the 2026-10-19 addendum).

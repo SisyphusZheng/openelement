@@ -25,6 +25,10 @@ export const openElement = defineIslandConfig({ hydrate: 'visible', ssr: true, d
 - `only`——无法产出可靠 DSD 的纯浏览器组件（canvas、媒体、WebGL）。服务端只输出宿主标签与序列化 props；跳过 SSR。
 - `none`——纯 SSR：服务端照常序列化该组件，但构建永不发射它的 chunk。用于交互性已退役的 chrome——按组件编写，按纯标记交付。
 
+## 迟到宿主
+
+策略决定 island 的 JavaScript 何时加载，而不是「之后才出现的宿主是否还会被发现」。第三方组件可以在页面扫描之后于它自己的 open shadow root 里创建宿主；只要本页仍有已声明但未激活的 island，调度器就会持续进行有界查找——`'idle'` 页面（空闲尝试执行后开始查找）与 `'media'` 页面（查询翻为匹配时开始查找）也包含在内。tag 仍按其声明的策略激活，并触发同样的 `open:ready`。若 9000 ms 预算先耗尽，信息性的 `open:island-host-timeout` 事件会点名该 tag，显式 rescan 仍可激活它。真正不使用该 island 的页面依旧不会拉取任何东西。
+
 ## 实例决策
 
 - **主题切换** → `load`。它必须响应第一次点击；来晚了会闪错主题。

@@ -26,6 +26,12 @@ export const openElement = defineIslandConfig({ hydrate: 'visible', ssr: true, d
 
 upgrade 本身是浏览器的 Custom Element 机制。服务端把编译后的 Part Program 序列化为 Declarative Shadow DOM；类被定义后，生成的 claim 产物对已经存在的 DOM 重放同一份程序，绑定模板声明过的处理器，并用宿主 attribute 还原 `@property` 字段。不会重建树，不会用字符串查找绑定，也不会从 attribute 合成事件。[流式渲染](/zh/guide/streaming)路由是这条序列化承诺的例外——见上文。
 
+## 迟到宿主
+
+已声明 island 的宿主不必在页面的 ready 扫描时就已存在。第三方组件、另一个 island 的渲染、或应用在一次异步请求后运行的代码，都可能在之后创建它——在 open shadow root 内，或在 light DOM 里。只要本页仍有「已声明但工厂尚未被消费」的 island，调度器就会按有界预算重跑同一套页面范围扫描：每个 3000 ms 窗口最多 6 次尝试，最多 3 个窗口且只有 island 模块仍在加载时才续期，并在每次探测入口与每个续窗入口检查 9000 ms 绝对上限。因此被挂起或节流的页面无法在上限之后才激活宿主。预算内找到的宿主会沿其声明的策略激活，并触发同样的 `open:ready` 事件；调度器只是重新询问宿主是否存在，真正做出激活决定的仍然只有 `load()` 的宿主门——「页面永远到不了的 island 永远不会被拉取」这条承诺不变。
+
+只有一次机会的两种策略也在覆盖范围内。`'idle'` 页面的空闲尝试在无宿主时执行过后，deferred 步骤会启动同一套有界查找（加载本身仍走浏览器的空闲调度）；`'media'` 页面的查询在宿主仍缺失时翻为匹配，则查询的 change 监听器会启动它。若上限耗尽而仍有已声明 island 未激活，调度器会在 `document` 上派发一次信息性的 `CustomEvent('open:island-host-timeout')`，`detail.pending` 会点名这些 tag。该事件是提示而非错误——页面声明了本页不使用的 island 是合法的——之后的显式 rescan 或媒体变更仍可激活这些 tag。
+
 ## Light islands
 
 island 的 root 由其组件决定：`@element(tag, { root: 'light' })` 编译出的程序，其子节点落在文档树中；默认的 shadow 模式则序列化 Declarative Shadow DOM。island 配置可以重申该模块属于哪个家族：

@@ -875,9 +875,15 @@ test('#F01 idle: the re-armed attempt keeps the fallback selection (injected pol
 
   body.children.push(new FakeElement('x-idle'));
   scheduler.observeVisible();
-  expect(scheduled.length).toEqual(2);
-  expect(scheduled[1][1]).toEqual(25); // same policy timeout, same selection chain
-  scheduled[1][0]();
+  // The idle re-arm must still go through the injected fallback with the same
+  // policy timeout. FR-02 also arms the bounded late-host probe on this page
+  // shape (the construction attempt was spent with the tag unconsumed), and
+  // that step shares the injected timer, so identify the idle attempt by its
+  // policy delay instead of by position.
+  const idleSteps = scheduled.filter(([, delay]) => delay === 25);
+  expect(idleSteps.length).toEqual(2); // construction attempt + the re-arm
+  expect(scheduled[scheduled.length - 1]![1]).toEqual(25); // same selection chain
+  scheduled[scheduled.length - 1]![0]();
   expect(imports).toEqual(1);
   expect(readyEvents).toEqual([{ strategy: 'idle', islands: ['x-idle'] }]);
 });
@@ -1756,6 +1762,73 @@ test('late-host probe T-18: three windows is the cap, and the absolute clock end
   expect(clocked.hostTimeouts[0]!.elapsedMs >= 9000).toEqual(true);
 });
 
+// FR-03 (PR #1611 review): the 9000 ms cap is a hard ENTRY gate, not a bound
+// applied after a DOM scan. A page suspended or throttled past it must give up
+// without walking the tree or activating a host that appeared meanwhile.
+test('late-host probe T-18b: a probe entry past the absolute cap never scans or activates', async () => {
+  const body = new CountingElement('body');
+  const { timers, readyEvents, hostTimeouts, loaded } = lateHostFixture({ body });
+  // The first probe step was queued inside the budget but has not run yet:
+  // exactly the suspended-page shape the review reproduced.
+  expect(timers.pending()).toEqual(1);
+  const queriesBefore = body.queries;
+  timers.advance(10_000);
+  // The late host arrives while the page is suspended — the frozen step must
+  // not discover it.
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual([]);
+  expect(readyEvents).toEqual([]);
+  // No fused walk ran: the entry gate retired the chain before collectHosts.
+  expect(body.queries).toEqual(queriesBefore);
+  expect(hostTimeouts.length).toEqual(1);
+  expect(hostTimeouts[0]!.pending).toEqual(['x-late']);
+  expect(hostTimeouts[0]!.elapsedMs >= 9000).toEqual(true);
+  expect(timers.pending()).toEqual(0);
+});
+
+test('late-host probe T-18c: the last permitted moment before the cap still activates a late host', async () => {
+  const body = new FakeElement('body');
+  const { timers, readyEvents, hostTimeouts, loaded } = lateHostFixture({ body });
+  // One millisecond inside the absolute budget: the probe still runs.
+  timers.advance(8_999);
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'load', islands: ['x-late'] }]);
+  expect(hostTimeouts).toEqual([]);
+});
+
+test('late-host probe T-18d: a suspend/throttle resume past the cap retires at every continuation entry', async () => {
+  // (a) The awaiting give-up timer fires after the page resumes. The probe
+  // entry behind that timer must not run its DOM scan or activate the host.
+  const timerResumed = renewingFixture();
+  spendWindow(timerResumed.timers);
+  expect(timerResumed.timers.pending()).toEqual(1);
+  timerResumed.timers.advance(10_000);
+  timerResumed.body.children.push(new FakeElement('x-late'));
+  timerResumed.timers.runNext();
+  await Promise.resolve();
+  expect(timerResumed.hostTimeouts.length).toEqual(1);
+  expect(timerResumed.hostTimeouts[0]!.elapsedMs >= 9000).toEqual(true);
+  expect(timerResumed.timers.pending()).toEqual(0);
+
+  // (b) Island-load activity delivered after the resume is a continuation
+  // entry too: it must not reopen a window, queue a timer, or scan.
+  const activityResumed = renewingFixture();
+  spendWindow(activityResumed.timers);
+  activityResumed.timers.advance(10_000);
+  activityResumed.resume('x-host-a');
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(activityResumed.timers.pending()).toEqual(0);
+  expect(activityResumed.hostTimeouts.length).toEqual(1);
+  expect(activityResumed.hostTimeouts[0]!.pending).toEqual(['x-late']);
+  expect(activityResumed.hostTimeouts[0]!.elapsedMs >= 9000).toEqual(true);
+});
+
 test('late-host probe T-19: a morph during the wait leaves nothing stranded, so nothing is reported', async () => {
   const fixture = renewingFixture();
   spendWindow(fixture.timers);
@@ -1767,6 +1840,190 @@ test('late-host probe T-19: a morph during the wait leaves nothing stranded, so 
   // The give-up timer fires with an empty pending set: no diagnostic.
   fixture.timers.runNext();
   expect(fixture.hostTimeouts).toEqual([]);
+});
+
+// ─── FR-02 (PR #1611 review): idle/media transitions arm the late-host probe ───
+//
+// Before this fix a page declaring only idle islands (the default strategy) or
+// only media islands never armed the probe: pendingTags() excluded the idle tag
+// while its callback was outstanding, and a non-matching media query was
+// filtered out at construction — and neither transition that followed had an
+// arm. A host created after that transition was never discovered. These tests
+// reproduce both review scenarios DOM-free, plus a positive rescan control and
+// a no-duplicate-load negative.
+
+/** Idle-only page: one idle island, no host; the test owns the idle callback. */
+function idleLateHostPage() {
+  const readyEvents: ReadyEvent[] = [];
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  const loaded: string[] = [];
+  const idleCallbacks: Array<() => void> = [];
+  const timers = makeTimers();
+  const body = new FakeElement('body');
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin({
+      ...timers.win,
+      requestIdleCallback: (fn: () => void) => {
+        idleCallbacks.push(fn);
+      },
+    }),
+    doc: makeDoc(body, readyEvents, hostTimeouts),
+    map: {
+      'x-late': () => {
+        loaded.push('x-late');
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ idle: ['x-late'] }),
+    onIslandLoaded: null,
+  });
+  return { body, timers, scheduler, readyEvents, hostTimeouts, loaded, idleCallbacks };
+}
+
+/** Media-only page: one media island whose query starts non-matching. */
+function mediaLateHostPage() {
+  const readyEvents: ReadyEvent[] = [];
+  const hostTimeouts: HostTimeoutEvent[] = [];
+  const loaded: string[] = [];
+  const changeListeners: Array<(event: { matches: boolean }) => void> = [];
+  const timers = makeTimers();
+  const body = new FakeElement('body');
+  const query = {
+    matches: false,
+    addEventListener: (_type: 'change', listener: (event: { matches: boolean }) => void) => {
+      changeListeners.push(listener);
+    },
+  };
+  const scheduler = createIslandScheduler({
+    log: { warn: () => {} },
+    idleFallbackTimeoutMs: 25,
+    win: makeWin(timers.win),
+    doc: makeDoc(body, readyEvents, hostTimeouts),
+    map: {
+      'x-media': () => {
+        loaded.push('x-media');
+        return Promise.resolve();
+      },
+    },
+    strategies: STRATEGIES({ media: ['x-media'] }),
+    mediaQueries: { 'x-media': query },
+    onIslandLoaded: null,
+  });
+  return { body, timers, scheduler, readyEvents, hostTimeouts, loaded, changeListeners, query };
+}
+
+test('FR-02 idle-only: a host that appears after the idle attempt activates, with open:ready', async () => {
+  const { body, timers, readyEvents, hostTimeouts, loaded, idleCallbacks } = idleLateHostPage();
+  // Construction scheduled the one idle attempt and armed nothing: the probe
+  // must not race an attempt the browser has not been asked for yet.
+  expect(idleCallbacks.length).toEqual(1);
+  expect(timers.pending()).toEqual(0);
+
+  // The idle callback runs, finds no host, and is now spent.
+  idleCallbacks[0]!();
+  expect(loaded).toEqual([]);
+  expect(readyEvents).toEqual([]);
+  // Its completion armed the bounded probe (this is the review's first gap).
+  expect(timers.pending()).toEqual(1);
+
+  // The host appears after the opportunity was spent.
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  // The probe hit hands the decision to the SAME rescan; idle then re-runs
+  // through its own idle primitive — activation is still asynchronous.
+  expect(loaded).toEqual([]);
+  expect(idleCallbacks.length).toEqual(2);
+  idleCallbacks[1]!();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'idle', islands: ['x-late'] }]);
+  expect(hostTimeouts).toEqual([]);
+  expect(timers.pending()).toEqual(0);
+});
+
+test('FR-02 media-only: a query that flips matching before any host arms the probe', async () => {
+  const { body, timers, scheduler, readyEvents, hostTimeouts, loaded, changeListeners, query } =
+    mediaLateHostPage();
+  // Non-matching at construction: capability-gated, so nothing is pending and
+  // nothing is scheduled.
+  expect(timers.pending()).toEqual(0);
+  expect(changeListeners.length).toEqual(1);
+
+  // The query matches while the page still has no host: the one-shot media
+  // attempt is a no-op. That transition now arms the probe (the review's
+  // second gap). A real MediaQueryList updates `matches` before dispatching.
+  query.matches = true;
+  changeListeners[0]!({ matches: true });
+  expect(loaded).toEqual([]);
+  expect(timers.pending()).toEqual(1);
+
+  // A host created after the transition is discovered and activated.
+  body.children.push(new FakeElement('x-media'));
+  timers.runNext();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-media']);
+  expect(readyEvents).toEqual([{ strategy: 'media', islands: ['x-media'] }]);
+  expect(hostTimeouts).toEqual([]);
+
+  // Negative: re-firing the change and rescanning never loads the tag again.
+  changeListeners[0]!({ matches: true });
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-media']);
+  expect(readyEvents.length).toEqual(1);
+});
+
+test('FR-02 no duplicate load: the idle-transition arm and later rescans are one-shot', async () => {
+  const { body, timers, scheduler, readyEvents, hostTimeouts, loaded, idleCallbacks } =
+    idleLateHostPage();
+  idleCallbacks[0]!();
+  body.children.push(new FakeElement('x-late'));
+  timers.runNext();
+  await Promise.resolve();
+  idleCallbacks[1]!();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'idle', islands: ['x-late'] }]);
+  expect(timers.pending()).toEqual(0);
+  // Explicit rescans after the activation cannot consume the factory twice.
+  scheduler.observeVisible();
+  scheduler.observeVisible();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents.length).toEqual(1);
+  expect(hostTimeouts).toEqual([]);
+});
+
+test('FR-02 positive control: an explicit rescan still activates the idle-only late host', async () => {
+  const { body, timers, scheduler, readyEvents, loaded, idleCallbacks } = idleLateHostPage();
+  idleCallbacks[0]!(); // the idle attempt is spent with no host
+  body.children.push(new FakeElement('x-late'));
+  // The review's positive control: an explicit rescan alone reaches the host.
+  scheduler.observeVisible();
+  expect(idleCallbacks.length).toEqual(2);
+  idleCallbacks[1]!();
+  await Promise.resolve();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents).toEqual([{ strategy: 'idle', islands: ['x-late'] }]);
+  // Drain the probe step the deferred arm queued: it retires with nothing
+  // pending and adds no second event.
+  while (timers.pending() > 0) timers.runNext();
+  expect(loaded).toEqual(['x-late']);
+  expect(readyEvents.length).toEqual(1);
+});
+
+test('FR-02 idle-only: a page that never gets a host still ends in the one diagnostic', () => {
+  const { timers, hostTimeouts, loaded, idleCallbacks } = idleLateHostPage();
+  idleCallbacks[0]!();
+  for (let step = 0; step < 10 && timers.pending() > 0; step++) timers.runNext();
+  expect(loaded).toEqual([]);
+  expect(timers.pending()).toEqual(0);
+  expect(hostTimeouts.length).toEqual(1);
+  expect(hostTimeouts[0]!.pending).toEqual(['x-late']);
 });
 
 test('late-host probe T-20: the walk stops descending once every pending tag is found', () => {
