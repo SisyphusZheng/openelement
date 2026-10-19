@@ -313,6 +313,24 @@ test('router bins: start and preview dispatch identically to the cli/start entry
       expect(binStart.code, `${binName} start code`).toEqual(entryStart.code);
     }
 
+    // CLI-01: `start --help` answers from the command's own usage (exit 0,
+    // no boot) and an unknown start-mode argument fails closed (exit 2) —
+    // through both bin spellings, identical to the cli/start entry.
+    const entryHelp = await run(startEntry, ['--help'], dir);
+    const entryBogus = await run(startEntry, ['--bogus'], dir);
+    expect(entryHelp.code, entryHelp.output).toEqual(0);
+    expect(entryHelp.output).toContain('Usage: openelement start [options]');
+    expect(entryBogus.code, entryBogus.output).toEqual(2);
+    for (const binName of Object.keys(declaredBins())) {
+      const binHelp = await run(binTarget(binName), ['start', '--help'], dir);
+      expect(binHelp.output, `${binName} start --help output`).toEqual(entryHelp.output);
+      expect(binHelp.code).toEqual(0);
+      const binBogus = await run(binTarget(binName), ['start', '--bogus'], dir);
+      expect(binBogus.output, `${binName} start --bogus output`).toEqual(entryBogus.output);
+      expect(binBogus.code).toEqual(2);
+      expect(binBogus.output).toContain('OPEN_ELEMENT_PORT');
+    }
+
     // The preview mode flag passes through verbatim, and the refusal names
     // the bin's own spelling as the alternative (#1633).
     await mkdir(join(dir, 'dist', 'server'), { recursive: true });

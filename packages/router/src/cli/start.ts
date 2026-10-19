@@ -31,6 +31,16 @@
  *                      (`openelement start --mode=preview`; a generated
  *                      project ships no preview script.)
  *
+ * Argument contract (CLI-01): `--help`/`-h` prints the command's usage and
+ * exits 0 BEFORE any filesystem or port work (the missing-dist check, config
+ * load and listen all come after it), and start mode fails closed on any
+ * argument it does not own — exit code 2, one actionable line naming the
+ * environment variables. Start mode takes no `--port`/`--host` flags; the
+ * listen address is the environment only (OPEN_ELEMENT_PORT / PORT,
+ * OPEN_ELEMENT_HOST). Preview keeps its vite-preview flags (--port, --host,
+ * --strictPort) because they are part of that mode's documented local
+ * ergonomics, and `--mode=preview` / `--debug` work in both modes.
+ *
  * Node/Workers/Bun deploys are produced by the Nitro mount from the same
  * standard fetch entry; this CLI serves the local/preview surface only.
  */
@@ -116,15 +126,98 @@ async function loadProductionConfig(mode: ServeMode): Promise<void> {
   }
 }
 
+/**
+ * The command's own usage text (CLI-01). Help answers from the command, not
+ * the top-level dispatcher: `oe start --help` reaches this module with
+ * `--help` in argv, so the start surface documents itself (modes, the two
+ * environment variables, and the flags each mode owns).
+ */
+const START_USAGE = [
+  'Usage: openelement start [options]',
+  'Alias: oe start [options] (same entry, same behavior)',
+  '',
+  'Serve the built output (dist/) for the app in the current directory.',
+  'start (default) runs the deployment server: dist/server/index.js is',
+  'dispatched for request-time routes when the build emitted it.',
+  '',
+  'Modes:',
+  '  start                  serve the built output (default)',
+  '  --mode=preview         serve a static-only build as a local preview;',
+  '                         refuses a build with request-time routes',
+  '',
+  'Options:',
+  '  --mode=preview         select the preview serve mode',
+  '  --debug                print the raw stack on failure',
+  '  --help, -h             print this usage',
+  '',
+  'Environment (start mode takes NO --port/--host flags):',
+  '  OPEN_ELEMENT_PORT      port to listen on (start default: 4173)',
+  '  OPEN_ELEMENT_HOST      hostname to bind (start default: 0.0.0.0)',
+  '',
+  'preview mode also accepts the vite-preview flags:',
+  '  --port <number>        port to listen on (default: 4173)',
+  '  --host [host]          hostname to bind (default: localhost)',
+  '  --strictPort           exit if the port is already in use',
+].join('\n');
+
+/** Does the argument list ask for the command's usage? */
+function wantsUsage(argv: string[]): boolean {
+  return argv.some((arg) => arg === '--help' || arg === '-h');
+}
+
+/**
+ * One actionable line for an argument start mode does not own (CLI-01: no
+ * silent swallow). The listen address is environment-only, so the refusal
+ * teaches the supported surface instead of naming an unsupported flag.
+ */
+function unexpectedStartArgument(arg: string): string {
+  if (arg === '--port' || arg.startsWith('--port=')) {
+    return (
+      `[openElement start] start mode has no --port flag; set OPEN_ELEMENT_PORT ` +
+      '(OPEN_ELEMENT_HOST for the bind address) — for a local preview, use ' +
+      '`--mode=preview --port` (run `oe start --help`).'
+    );
+  }
+  if (arg === '--host' || arg.startsWith('--host=')) {
+    return (
+      `[openElement start] start mode has no --host flag; set OPEN_ELEMENT_HOST ` +
+      '(OPEN_ELEMENT_PORT for the port) — for a local preview, use ' +
+      '`--mode=preview --host` (run `oe start --help`).'
+    );
+  }
+  return (
+    `[openElement start] unexpected argument "${arg}"; start mode takes only ` +
+    '--mode=preview and --debug — set the listen address with OPEN_ELEMENT_PORT / ' +
+    'OPEN_ELEMENT_HOST (run `oe start --help`).'
+  );
+}
+
 async function main(argv: string[]): Promise<void> {
+  // Help answers before the mode parser, the missing-dist check, the config
+  // import and the listen: `oe start --help` is a documentation request even
+  // when the cwd has no dist/ and even beside otherwise-invalid arguments.
+  if (wantsUsage(argv)) {
+    console.log(START_USAGE);
+    process.exit(0);
+  }
   let parsed: { mode: ServeMode; rest: string[]; debug: boolean };
   try {
     parsed = extractServeMode(argv);
   } catch (error) {
+    // A usage error (unknown --mode value or a missing one) is not a serve
+    // failure: exit 2 keeps it distinguishable from a failed boot.
     console.error(renderCliFailure(error, false));
-    process.exit(1);
+    process.exit(2);
   }
   cliDebug = parsed.debug;
+
+  // Start mode owns no pass-through flags: anything left in `rest` is an
+  // argument this command cannot honor. Refuse it before any filesystem work
+  // rather than booting a server that silently ignored it (CLI-01).
+  if (parsed.mode === 'start' && parsed.rest.length > 0) {
+    console.error(unexpectedStartArgument(parsed.rest[0]!));
+    process.exit(2);
+  }
 
   const { distDir } = resolveServePaths();
   if (!existsSync(distDir)) {

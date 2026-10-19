@@ -420,3 +420,148 @@ test('start cli: preview mode probes the next port when the requested one is bus
     await rm(dir, { recursive: true });
   }
 });
+// ─── CLI-01: help early-exit + unknown arguments fail closed ────────────────
+
+/** An ephemeral port the OS just handed out and took back. */
+async function freePort(): Promise<number> {
+  const probe = createServer();
+  const port = await new Promise<number>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', () => resolve((probe.address() as AddressInfo).port));
+  });
+  await new Promise<void>((resolve) => probe.close(() => resolve()));
+  return port;
+}
+
+test('start cli: --help/-h prints usage and exits 0 without touching the filesystem', async () => {
+  // A cwd with NO dist/: reaching the missing-dist check would exit 1, so an
+  // exit-0 usage answer proves help runs before that filesystem work.
+  const dir = await mkdtemp(join(tmpdir(), 'start-cli-'));
+  const port = await freePort();
+  try {
+    for (const args of [['--help'], ['-h'], ['--mode=preview', '--help'], ['--bogus', '--help']]) {
+      const { code, output } = await runCli(dir, args, {
+        OPEN_ELEMENT_PORT: String(port),
+        OPEN_ELEMENT_HOST: '127.0.0.1',
+      });
+      expect(code, 'args=' + args.join(' ') + ':\n' + output).toEqual(0);
+      expect(output).toContain('Usage: openelement start [options]');
+      // The usage documents the modes, the two environment variables, the
+      // mode/preview flags, and --debug.
+      expect(output).toContain('--mode=preview');
+      expect(output).toContain('--debug');
+      expect(output).toContain('OPEN_ELEMENT_PORT');
+      expect(output).toContain('OPEN_ELEMENT_HOST');
+      expect(output).toContain('--port');
+      expect(output).toContain('--host');
+      // No boot happened: no listening line, no missing-dist refusal. The
+      // ephemeral port stays closed after the process exits.
+      expect(output).not.toContain('http://');
+      expect(output).not.toContain('not found. Run');
+      await expect(fetch('http://127.0.0.1:' + port + '/')).rejects.toThrow();
+    }
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test('start cli: unknown start-mode arguments fail closed with the env guidance', async () => {
+  // No dist/ on purpose: a usage error must answer before the filesystem
+  // check, so an EXIT 2 here cannot be the missing-dist path (which is 1).
+  const dir = await mkdtemp(join(tmpdir(), 'start-cli-'));
+  const port = await freePort();
+  try {
+    for (const [args, needle] of [
+      [['--bogus'], 'unexpected argument "--bogus"'],
+      [['extra-positional'], 'unexpected argument "extra-positional"'],
+      [['--port', String(port)], 'start mode has no --port flag'],
+      [['--port=' + port], 'start mode has no --port flag'],
+      [['--host', '127.0.0.1'], 'start mode has no --host flag'],
+      [['--strictPort'], 'unexpected argument "--strictPort"'],
+      [['--debug', '--port', String(port)], 'start mode has no --port flag'],
+    ] as const) {
+      const { code, output } = await runCli(dir, [...args]);
+      expect(code, args.join(' ') + ' must be a usage error (exit 2):\n' + output).toEqual(2);
+      expect(output).toContain(needle);
+      // One actionable line points at the environment, not a dead end.
+      expect(output).toContain('OPEN_ELEMENT_PORT');
+      expect(output).toContain('OPEN_ELEMENT_HOST');
+      expect(output).toContain('--mode=preview');
+      // The failed invocation never bound the port and never printed a URL.
+      expect(output).not.toContain('http://');
+      expect(output).not.toContain('not found. Run');
+      await expect(fetch('http://127.0.0.1:' + port + '/')).rejects.toThrow();
+    }
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test('start cli: unknown --mode values are usage errors (exit 2)', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'start-cli-'));
+  try {
+    for (const args of [['--mode=bogus'], ['--mode', 'bogus'], ['--mode']]) {
+      const { code, output } = await runCli(dir, args);
+      expect(code, 'args=' + args.join(' ') + ':\n' + output).toEqual(2);
+      expect(output).toContain('Start failed:');
+    }
+  } finally {
+    await rm(dir, { recursive: true });
+  }
+});
+
+test('start cli: preview mode still owns its --port/--host/--strictPort flags', async () => {
+  // The fail-closed rule above is specific to start mode: the same flags ride
+  // the preview mode's documented vite-preview ergonomics. The build has no
+  // dist/server, so preview boots on the requested port; --strictPort turns a
+  // busy port into the actionable failure instead of probing upward.
+  const dir = await mkdtemp(join(tmpdir(), 'start-cli-'));
+  const occupier = createServer();
+  await new Promise<void>((resolve) => occupier.listen(0, '127.0.0.1', resolve));
+  const { port: busyPort } = occupier.address() as AddressInfo;
+  const port = await freePort();
+
+  let server: ChildProcess | undefined;
+  try {
+    await mkdir(join(dir, 'dist'), { recursive: true });
+    await writeFile(join(dir, 'dist', 'index.html'), '<h1>preview flags</h1>\n');
+
+    server = spawn(
+      process.execPath,
+      [startCli, '--mode=preview', '--port', String(port), '--host', '--strictPort'],
+      { cwd: dir, env: { ...process.env, OPEN_ELEMENT_HOST: '127.0.0.1' }, stdio: 'ignore' },
+    );
+
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      try {
+        response = await fetch('http://127.0.0.1:' + port + '/');
+        break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+    expect(response, 'preview did not come up on its own --port').toBeTruthy();
+    expect(response.status).toEqual(200);
+    expect(await response.text()).toContain('preview flags');
+    server.kill('SIGTERM');
+    await new Promise<void>((resolve) => server!.once('exit', () => resolve()));
+
+    const strict = await runCli(
+      dir,
+      ['--mode=preview', '--port', String(busyPort), '--strictPort'],
+      { OPEN_ELEMENT_HOST: '127.0.0.1' },
+    );
+    expect(strict.code).toEqual(1);
+    expect(strict.output).toContain('already in use (EADDRINUSE)');
+    expect(strict.output).toContain('--port');
+  } finally {
+    try {
+      server?.kill('SIGTERM');
+    } catch {
+      // The process may have already exited.
+    }
+    await new Promise<void>((resolve) => occupier.close(() => resolve()));
+    await rm(dir, { recursive: true });
+  }
+});
