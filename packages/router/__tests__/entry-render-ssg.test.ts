@@ -44,8 +44,13 @@ async function loadGeneratedRenderRoute(options: {
   renderLayoutBody: string;
   loaderBody?: string;
   prod?: boolean;
+  /** Configured document head (`openElement({ head: { lang } })`). */
+  html?: { lang?: string; title?: string };
 }): Promise<(path: string, opts?: Record<string, unknown>) => Promise<RenderedPage>> {
-  const desc = buildEntryDescriptor(routes, { ssg: true });
+  const desc = buildEntryDescriptor(routes, {
+    ssg: true,
+    ...(options.html === undefined ? {} : { html: options.html }),
+  });
   const section = renderSsgSection(desc).replaceAll(
     'import.meta.env.PROD',
     options.prod ? 'true' : 'false',
@@ -115,6 +120,29 @@ test('renderRoute: happy path returns html with empty errors', async () => {
   expect(result.html).toContain('<div>ok boom-page</div>');
   expect(result.status).toEqual(undefined);
   expect(result.errors).toEqual([]);
+});
+
+test('renderRoute: with no locale the configured document lang reaches <html lang>', async () => {
+  // FRM-01/ADR-0172 priority below i18n: no derived locale on a single-locale
+  // site, so the configured head.lang is the language the document carries.
+  const renderRoute = await loadGeneratedRenderRoute({
+    renderLayoutBody: 'return "<div>" + pageHtml + "</div>";',
+    html: { lang: 'zh-CN' },
+  });
+  const result = await renderRoute('/boom');
+  expect(result.html).toContain('<html lang="zh-CN">');
+});
+
+test('renderRoute: a derived i18n locale overrides the configured document lang', async () => {
+  // FRM-01/ADR-0172 priority above config: when a locale is actually
+  // resolved, it is the document language, even over an explicit head.lang.
+  const renderRoute = await loadGeneratedRenderRoute({
+    renderLayoutBody: 'return "<div>" + pageHtml + "</div>";',
+    html: { lang: 'zh-CN' },
+  });
+  const result = await renderRoute('/boom', { locale: 'en' });
+  expect(result.html).toContain('<html lang="en">');
+  expect(result.html.includes('lang="zh-CN"')).toEqual(false);
 });
 
 test('renderRoute: locale reaches the page props projector', async () => {

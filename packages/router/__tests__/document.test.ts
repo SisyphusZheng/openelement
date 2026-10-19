@@ -91,6 +91,12 @@ test('resolvePageDocument: an undefined head resolves to an empty document carry
   expect(resolvePageDocument(undefined, ctx())).toEqual({ links: [] });
 });
 
+test('resolvePageDocument: an empty locale never becomes the document language', () => {
+  // ADR-0172: the seam stays undefined unless a locale is actually derived;
+  // '' is not a locale, so the configured head.lang fallback keeps working.
+  expect(resolvePageDocument(undefined, ctx({ locale: '' }))).toEqual({ links: [] });
+});
+
 test('resolvePageDocument: malformed heads fail loudly', () => {
   const cases: Array<[string, PageHead | (() => never)]> = [
     ['resolver returning null', (() => null) as never],

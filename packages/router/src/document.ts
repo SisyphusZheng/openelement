@@ -75,7 +75,14 @@ export interface ResolvedDocument {
    * per-request CSP nonce; SSG output carries none.
    */
   clientScripts?: ClientScriptDescriptor[];
-  /** Document language: the resolved application locale for this render. */
+  /**
+   * Document language: the resolved application locale for this render, and
+   * ONLY that. It stays undefined on a single-locale site — the seam never
+   * defaults it to `'en'` — so the configured document `head.lang` remains
+   * the fallback the serializers apply. A project that declared i18n always
+   * resolves a locale, and that locale overrides the configured value
+   * (the document-language decision record).
+   */
   lang?: string;
   canonical?: string;
   alternates?: PageHeadAlternate[];
@@ -193,7 +200,12 @@ export function resolvePageDocument(
   clientScripts?: readonly ClientScriptDescriptor[],
 ): ResolvedDocument {
   const resolved = typeof head === 'function' ? head(context) : head;
-  const lang = typeof context.locale === 'string' ? context.locale : undefined;
+  // Only a derived, non-empty i18n locale becomes the document language.
+  // An empty string is not a locale, and the absence of one must stay
+  // `undefined` rather than a silent 'en' so `head.lang` can win downstream
+  // (the document-language decision record).
+  const lang =
+    typeof context.locale === 'string' && context.locale.length > 0 ? context.locale : undefined;
   const normalizedClientScripts =
     clientScripts === undefined ? undefined : normalizeClientScriptDescriptors(clientScripts, fail);
   if (resolved === undefined) {

@@ -607,9 +607,11 @@ test('renderEntry: definePage descriptor feeds load and metadata wiring', () => 
   // declared compiled properties onto the host; the legacy __openElement*
   // host-prop channel is gone (the #1129/#1130 guarantee is structural).
   // #1326: the request-scoped context is built once and feeds both the props
-  // projector and the resolved-Document seam.
+  // projector and the resolved-Document seam. ADR-0172: the locale is
+  // derived only when the project declared i18n, so a single-locale site
+  // leaves it undefined and the configured head.lang keeps its contract.
   expect(code).toContain(
-    'const __pageContext = { data: __data, actionData: undefined, params: __params, request: c.req.raw, locale: __localeFromPath(__locales, c.req.path, __getDefaultLocale()), route: __routeContext, meta: __routeMetaValue };',
+    'const __pageContext = { data: __data, actionData: undefined, params: __params, request: c.req.raw, locale: __locales.length > 0 ? __localeFromPath(__locales, c.req.path, __getDefaultLocale()) : undefined, route: __routeContext, meta: __routeMetaValue };',
   );
   expect(code).toContain(
     'const __doc = __resolvePageDocument(__page.head, __pageContext, __clientScriptDescriptors());',

@@ -97,13 +97,25 @@ export function documentResolutionSetupLines(
  * setup: ONE context object per render feeds both the props projector and the
  * head resolver, so the Document never sees a divergent view of the render.
  * Shared by the page/action handlers and the styled-404 handler.
+ *
+ * The locale is derived ONLY for a project that declared i18n: `__locales`
+ * is `openElement({ i18n })`'s declaration, and on a single-locale site
+ * there is no resolved locale to derive. The old unconditional form fell
+ * back to `getDefaultLocale()` ('en' even with no i18n) and fed that into
+ * the resolved Document's `lang`, which then beat the configured
+ * `head.lang` in every generated wrap expression
+ * (`lang: __doc.lang || <configured>`), making `head.lang` a dead fallback
+ * on request-time pages. Leaving the context locale undefined keeps
+ * `ResolvedDocument.lang` undefined unless a locale is actually derived, so
+ * the configured document language wins on single-locale sites and an i18n
+ * locale still overrides it (the document-language decision record).
  */
 export function requestTimePageContextLines(
   lines: string[],
   options: { dataExpr: string; actionDataExpr: string; indent: string },
 ): void {
   lines.push(
-    `${options.indent}const __pageContext = { data: ${options.dataExpr}, actionData: ${options.actionDataExpr}, params: __params, request: c.req.raw, locale: __localeFromPath(__locales, c.req.path, __getDefaultLocale()), route: __routeContext, meta: __routeMetaValue };`,
+    `${options.indent}const __pageContext = { data: ${options.dataExpr}, actionData: ${options.actionDataExpr}, params: __params, request: c.req.raw, locale: __locales.length > 0 ? __localeFromPath(__locales, c.req.path, __getDefaultLocale()) : undefined, route: __routeContext, meta: __routeMetaValue };`,
   );
   lines.push(...documentResolutionSetupLines('__page', '__pageContext', options.indent));
 }
@@ -112,7 +124,15 @@ export function requestTimePageContextLines(
 export function documentWrapOptionsLines(options: {
   /** Expression yielding the title, reading the resolved document, e.g. `title || __doc.title || "Default"`. */
   titleExpr: string;
-  /** Expression yielding the document language, reading the resolved document. */
+  /**
+   * Expression yielding the document language, reading the resolved document.
+   * Every call site spells the same three-tier precedence: an explicit render
+   * option (`lang`, used by the SSG dynamic/i18n expansion) → the resolved
+   * locale (`__doc.lang`) → the configured document `head.lang` fallback.
+   * `__doc.lang` is only present when a locale was actually derived (a
+   * declared i18n project), so the configured fallback is real on
+   * single-locale sites (the document-language decision record).
+   */
   langExpr: string;
   headExtrasExpr: string;
   allowHeadExtrasScripts: boolean;

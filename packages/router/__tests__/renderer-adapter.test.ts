@@ -123,13 +123,27 @@ const routes: RouteEntry[] = [
 // code-injection fix), so the server entries' specifiers changed from single to
 // double quotes: same byte COUNT (16773/16876, the cross-mode delta is still
 // 103), new hashes. Client bytes are untouched.
+// FRM-01/ADR-0172 re-baseline (PR #1611 review): the request-time page context
+// derives a locale only when the project declared i18n — `locale:
+// __locales.length > 0 ? __localeFromPath(__locales, c.req.path,
+// __getDefaultLocale()) : undefined` — so a single-locale site leaves
+// ResolvedDocument.lang undefined and the configured head.lang wins the
+// document wrap instead of being shadowed by a synthetic default 'en'. The
+// probe's single page route emits the context at four sites (GET success +
+// error-boundary re-render, POST success + error-boundary re-render), +35
+// bytes each = +140 per mode; replacing the new expression with the old one
+// reconstructs exactly the previous pins (16773/16876), and the native/lit
+// delta stays 103, so the cross-mode invariant holds. Client bytes are
+// untouched (the derivation is request-time server wiring only): 2862/e962…
+// and 3167/7dcb… are unchanged. Native server: 16773→16913, lit server:
+// 16876→17016.
 const expected = {
   native: {
-    server: [16773, 'cf8c6e65e5f10d6f38881e1844318eb14eba6a5100fa8581153a11f0039ce401'],
+    server: [16913, '9d12d9ca03948eb33a2a65403ab60c50029a26cf8c5cc50aa7ffa9ffb05a17cc'],
     client: [2862, 'e9629cded31adcb2237afa612acd50c1bd9cd8a17dbd889ab1ae46066616e5ed'],
   },
   lit: {
-    server: [16876, 'b5754048cfe273e4db9150deaa01aab89df17a387c9dda3f333e68294072b6c2'],
+    server: [17016, '3d9e9a2059ec7e05c52b0f5279a9225a196643597dc176cd69095f1fead49ae5'],
     client: [3167, '7dcb18fd659ffe53b039adfc5139a2496e1b4c02b5d4322ed6c216606511f418'],
   },
 } as const;
