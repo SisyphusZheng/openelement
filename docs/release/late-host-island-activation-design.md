@@ -36,13 +36,14 @@ Owner 批准 4/4，均按本文 §11 的推荐取值；第 5 条（引擎口径�
 
 ## 实现偏离（已批准意图内）
 
-实现 `672847cb7` 时，**冻结既有 28 例零修改**这一硬约束（§4.5 I-4）逼出了三处对 §3.1 伪代码字面的收敛。三条都不改 B2 / F01 的语义，也都由既有钉法直接证明其必要性，经 lead 判定**在 G1 批准意图内**（不需重开决策门）。在此集中登记，便于 owner 复审一处可见。
+实现 `672847cb7` 时，**冻结既有 28 例零修改**这一硬约束（§4.5 I-4）逼出了三处对 §3.1 伪代码字面的收敛。三条都不改 B2 / F01 的语义，也都由既有钉法直接证明其必要性，经 lead 判定**在 G1 批准意图内**（不需重开决策门）。D-4 是 seam 登记后的记录订正，不涉及实现行为。四条在此集中登记，便于 owner 复审一处可见。
 
 | # | 偏离 | 为什么必须 | 既有钉法（证明其必要性） |
 | --- | --- | --- | --- |
 | D-1 | **`idle` 不参与探测**：`pendingTags()` 在 `idlePending === true` 时跳过 idle tag | idle bucket 自带 deferred step。探测在构造末尾 arm，此刻 idle 尝试**必然**还 outstanding；再为它排一个 timer 就是给同一个 tag 排两次 deferred step | `#605 idle fallback defers through setTimeout with the injected policy timeout`（断言 `scheduled.length === 1`）、`#F01 idle: the re-armed attempt keeps the fallback selection`（断言重扫后恰好 2 个 timer 且 `[1][1] === 25`） |
 | D-2 | **探测搭 ready 门，不抢跑**：`readyState === 'loading'` 且存在 `visible` island 时，构造末尾不 arm，改由 `onReady(rescanAndArm)` 在那次扫描结束时 arm | `onReady(observeVisible)` 在等 DOMContentLoaded；若探测直接调 `observeVisible()`，就会在文档 ready 前挂上 observer，破坏 ready 扫描承诺的延后语义 | `the ready-time visible scan waits for DOMContentLoaded on a loading document`（断言 `observed === []` 且 `listeners.length === 1`） |
 | D-3 | **`visible` 命中即 settle**：命中记入 `probeSettled`，`pendingTags()` 跳过已 settle 的 tag | `visible` island 的 host 存在但未进入视口是**健康态**，不是缺 host。不 settle 则探测每轮重复命中、耗尽预算，并对完全正常的 tag 报 `open:island-host-timeout`（假诊断） | `#1039 detached visible island is released and a reinsert gets a fresh observer`（证明 visible 的 host-present 状态由 observer 链路拥有，与"缺 host"无关） |
+| D-4 | **seam 判定与 §10.5 措辞订正**：实现同时把 `open:island-host-timeout` 登记进 `docs/architecture/seams.md`（P8），因此 §10.5 原句「本改动不新增跨系统 seam」不再成立，改为「新增一个 client runtime → page 的公开诊断面，已登记」 | 该事件是面向页面的公开诊断面，按 ADR-0163 / P8 必须登记 owner 与 consumer-form guard；scheduler 仍是唯一 owner，未新增构建期产物或跨阶段交接 | `docs/architecture/seams.md` 的「Late-host activation give-up announcement」行 + `tests/fixtures/third-party-web-components/qualify.ts` 的 listener / zero-fetch guard；ADR-0170 记录该判定 |
 
 `observeVisible()` 的函数体逐字未改（F01 语义冻结）；新增的只是 `rescanAndArm = observeVisible(); armProbe()` 这层**幂等**包装（`armProbe()` 在已 arm / 已注销 / 无 pending tag 时立即返回）。另在实现中移除了两处死分支以保覆盖：`endWindow` 内永远为假的 `probePending` 清 timer 块（真正需要清的是 `onIslandLoadActivity` 内那次，由 T-8 覆盖），以及 `giveUp` 载荷改用重算的 `pendingTags()`（避免点名已 settle 的 tag）。
 
@@ -437,6 +438,8 @@ detail：{ pending: string[], attempts: number, elapsedMs: number }
 3. **零成本断言**：静态页（无 island）与全托管页各跑一次，断言 `setTimeout` 调用计数不因本改动增加。
 4. 若 (1) 不达标：把实测数字带回 owner，按 §3.3 升级 P-B 或调低 `LATE_HOST_MAX_ATTEMPTS`；**不得**在 release PR 内悄悄改预算常量。
 
+**测量状态（2026-10-19）**：第 1 项已用 10,100 元素合成树（100 个 open shadow root + 5,000 个 light 节点，1 个 pending tag、无 host）在 Chromium headless 中以生产融合遍历的复刻脚本实测：单次 p50 **0.40 ms** / p95 **0.70 ms**（worst 1.7 ms）；按 18 次绝对上限折算 p50 合计 7.2 ms、p95 上界 12.6 ms。单次目标（< 2 ms）达标，18 次 p50 达标，p95 上界高于 10 ms 目标 2.6 ms，按原样记录、不做四舍五入（方法、局限与结论见 ADR-0170「Cost evidence」）。第 3 项由既有 DOM-free 测试 T-1/T-6/T-6b 的 `setTimeout` 计数断言覆盖。第 2 项（生产长任务剖面）与「用插桩构建替代复刻脚本」登记为 alpha16 项，不在本批声称。
+
 ---
 
 ## 8. 可测性
@@ -654,7 +657,7 @@ function makeTimers() {
 - [ ] `pnpm --dir tests/fixtures/third-party-web-components run smoke` 在 `wc-open-child` 上**由红转绿**（当前失败信息是 `custom-element registration failed; missing=wc-open-child; browserErrors=`，三引擎都要绿）。
 - [ ] C4 负向用例（unused tag 0 fetch）为绿。
 - [ ] C2 closed root 记为 gap（`null`），**不得**转成 pass。
-- [ ] **KR-17 退休**：`docs/maintainers/known-reds-ledger.md:55-78` 的 `Latest observation` 更新为「已修复」并摘钩（或按 ledger 惯例保留条目 + 标注 retired），证据 = 三引擎 smoke 全绿的日志。
+- [ ] **KR-17 退休**：`docs/maintainers/known-reds-ledger.md` 的 KR-17 条目 `Latest observation` 更新为「已修复」并摘钩（或按 ledger 惯例保留条目 + 标注 retired），证据 = 三引擎 smoke 全绿的日志。
 - [ ] 不 revert t3-release 已落地的 `--no-install`（`qualify.ts:583-589`）。
 - [ ] 新增直接依赖仅 `@stencil/core@4.43.5`，且确认它为 0 额外体积；在 PR body 记录该事实与验证方式（`@ionic/core@8.8.18` 的 dependencies 已含同版本）。
 
@@ -663,7 +666,7 @@ function makeTimers() {
 - [ ] `docs/integrations/using-third-party-web-components.md`：late-host 支持声明 + closed shadow root 不支持声明 + 支持矩阵更新。
 - [ ] `www/content/docs/guide/islands-and-ssr.md`（+ `.zh.md`）：B2 段落补一句「可达性在有界 late 窗口内持续求值」；如触发 `doc-figures` >1% 增长则按 ritual 重基线。
 - [ ] 新增 `open:island-host-timeout` 事件记入公开事件面文档（与 `open:ready` / `open:action-failure` 并列）。
-- [ ] 按 constitution P8 / ADR-0163 判断是否需要登记 seam：本改动**不新增跨系统 seam**（scheduler 仍是唯一 owner，未新增构建期产物或跨阶段交接），在 PR body 写明该判断与理由。
+- [x] 按 constitution P8 / ADR-0163 判定：该事件构成 client runtime → page 的公开诊断面，已登记 `docs/architecture/seams.md`（「Late-host activation give-up announcement」行，owner/consumer-form guard 齐备）；scheduler 仍是唯一 owner，未新增构建期产物或跨阶段交接。判定与替代方案见 ADR-0170。
 - [ ] 若 owner 要求把设计提交为文档：`docs/release/late-host-island-activation-design.md`（G1 批准后由本 lane 提交）。
 
 ### 10.6 门禁命令（提交前本地全绿）
@@ -763,8 +766,8 @@ vp run --no-cache --fail-if-no-match --filter @openelement/fixture-third-party-w
 **上游记录**
 
 - `.zcode/plans/alpha15-external-audit-verification-2026-10-18.md:15,75,88,104,128`（P1-1 与 `missing=wc-open-child` 的核实结论；owner 决策建议 a/b/c）。
-- `docs/maintainers/known-reds-ledger.md:55-78`（**KR-17**，committed；`Owner: alpha15 batch — T8 takes the fixture follow-up`；`Retirement condition: T8's three-engine, multi-library cases green`；`Latest observation: 2026-10-18, lane/t3-release @ f395b1e1f`——smoke 到达浏览器阶段且恰好 `missing=wc-open-child`、browser errors 为空）。同文件 `:80+` KR-18（firefox fixture flake；`retries=0` 为已批准策略、禁止 retry 掩盖）直接约束 §8.4 的三引擎方案。
-- t3-release handoff（lane/t3-release，未 push）：`6d52fa580` fix(tests): keep the pre-publish registry install out of qualify scaffolds；`36c60cdd1` test(release): qualify the create initializer alias before and after publish；`ed50abeaa` docs(release): commit the known-reds ledger for release readers。lane 报告：`.zcode/scratch/t3-release/REPORT.md`（§1 harness 修复 + 正/负向证明；handoff notes；「no gate currently runs `fixture-web-component-interop#qualify`」记为 alpha16 候选）。
+- `docs/maintainers/known-reds-ledger.md` 的 **KR-17** 条目（committed；`Owner: alpha15 batch — T8 takes the fixture follow-up`；`Retirement condition: T8's three-engine, multi-library cases green`；`Latest observation: 2026-10-18, lane/t3-release @ f395b1e1f`——smoke 到达浏览器阶段且恰好 `missing=wc-open-child`、browser errors 为空）。同文件 KR-18（firefox fixture flake；`retries=0` 为已批准策略、禁止 retry 掩盖）直接约束 §8.4 的三引擎方案。
+- t3-release handoff（lane/t3-release，未 push）：`6d52fa580` fix(tests): keep the pre-publish registry install out of qualify scaffolds；`36c60cdd1` test(release): qualify the create initializer alias before and after publish；`ed50abeaa` docs(release): commit the known-reds ledger for release readers（三者均为 lane 历史提交，不是主分支祖先；主分支落地提交见 KR-17 条目）。lane 报告：`.zcode/scratch/t3-release/REPORT.md`（§1 harness 修复 + 正/负向证明；handoff notes；「no gate currently runs `fixture-web-component-interop#qualify`」记为 alpha16 候选）。
 - git：`c27f1ae6b`（F01）、`3c472f08f` / `82792403d`（toString 自包含不变量及其后的注释改写；F01 已把 `hasIslandHost` 提升回模块作用域，inline 路径退役 —— `tests/fixtures/router-request-time/app/routes/visible-probe.tsx:6` 明示改为 virtual module）。
 
 ## 附录 B：未决 / 残留风险

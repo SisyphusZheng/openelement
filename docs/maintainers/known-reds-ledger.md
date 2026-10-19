@@ -46,11 +46,18 @@ boundary, not a failure).
   reaches `gate:packed` completion — no `ERR_PNPM_NO_MATCHING_VERSION` in any
   scaffold step; the only remaining reds are entries recorded below.
 - **Owner**: alpha15 batch (T3).
+- **Status**: FIXED. The registry trap is gone: on the unpublished candidate the
+  release train now reaches `gate:packed` completion and the publish dry-run
+  (the local release-train log shows `gate:release` green, `gate:packed` green
+  including the third-party smoke, and `Packed starter typecheck passed for
+  1.0.0-alpha.15`; the log is the untracked copy under `.zcode/scratch/lead/`).
+  The KR-17 browser gap that this entry used to stop at was closed separately by
+  the T8 late-host work below.
 - **Latest observation**: 2026-10-18, lane/t3-release worktree @ `f395b1e1f`.
   Without the fix the smoke dies at `scaffoldApp` in 2 s with
   `ERR_PNPM_NO_MATCHING_VERSION`; with the fix it scaffolds `--no-install`,
-  installs and BUILDS green, then stops at the KR-17 browser gap
-  (`missing=wc-open-child`).
+  installs and BUILDS green, then reaches the KR-17 gap (`missing=wc-open-child`)
+  — which is now retired (see KR-17).
 
 ## KR-17 · Third-party WC qualification: `wc-open-child` never registers
 
@@ -126,6 +133,7 @@ boundary, not a failure).
 
 ## KR-18 · firefox fixture flake: `live.spec.ts:897` and `lit-flow.spec.ts:246`
 
+- **Status**: OPEN.
 - **Symptom**: run `39116176828` @ `f395b1e1f` (fork full qualification, 13
   instances) finished only at attempt 3. Attempt 1 failed
   `e2e-full (fixture-gates)` on a firefox 5 s poll timeout in
@@ -137,7 +145,10 @@ boundary, not a failure).
   Both specs pass on chromium/webkit and in other attempts.
 - **Evidence path**: `.zcode/plans/alpha15-fix-batch-report-2026-10-18.md`
   (§3) and `.zcode/scratch/audit-verify/lane-release/verdict.md` (independent
-  audit read-back); CI run `39116176828` attempts 1/2 failure, 3 success.
+  audit read-back). NOTE (2026-10-19): the cited CI run id no longer resolves on
+  either origin or the fork (`gh run view` returns 404); the observation rests on
+  the archived CI-log excerpt and the lane report, and recovering a durable run
+  link/archived log is registered as an alpha16 item.
 - **Policy**: `retries=0` is the APPROVED fixture-gate policy — every fixture
   playwright config pins it (`tests/fixtures/router-request-time/e2e/playwright.config.ts:29`,
   `tests/fixtures/router-lit-framework/e2e/playwright.config.ts:35`, and the
@@ -215,6 +226,7 @@ boundary, not a failure).
 
 ## KR-20 · Third-party WC qualification: advisory T0 tier report reads 0/11
 
+- **Status**: OPEN.
 - **Symptom**: the fixture's advisory tier report (`OPEN_ELEMENT_TIER_REPORT`)
   reports `0/11 T0 proved` while the smoke's contract assertions all pass and
   the process exits 0. The 11 entries fail in two shapes: 8 (the tags with no
