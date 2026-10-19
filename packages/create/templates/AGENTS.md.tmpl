@@ -1,0 +1,44 @@
+# AGENTS.md
+
+An openElement application. This file is the entry pointer for AI coding agents
+working in this project.
+
+## Start here
+
+- Agent and consumer index: <https://openelement.org/llms.txt>
+- Getting started: <https://openelement.org/guide/getting-started>
+- API reference (packages, exports, custom elements, config): <https://openelement.org/reference>
+- Diagnostics (the `OEC` codes the compiler and runtime emit): <https://openelement.org/errors>
+
+## Commands
+
+```sh
+npm run dev        # dev server with HMR
+npm run build      # production build into dist/
+npm run start      # serve the built output (and request-time routes)
+npm run typecheck  # tsc --noEmit
+npm run lint       # oxlint
+npm run test       # node --test
+npm run fmt        # oxfmt
+```
+
+## Project layout
+
+- `app/routes/` — pages (default export) and form actions.
+- `app/islands/` — interactive islands; each one hydrates with its declared strategy.
+- `app/components/` — presentational components and their root CSS.
+- `app/layout.tsx` — the shared document chrome every page renders inside.
+- `app/head.tsx` — document head entries a config URL list cannot express.
+- `openelement.config.ts` — framework options (head, i18n, middleware, ...).
+- `public/` — copied verbatim into `dist/`.
+
+## Rules
+
+- Never edit `dist/` by hand: it is build output.
+- Islands run in the browser. Importing `node:*` from an island fails the build
+  by design — server-only code belongs in route loaders and actions.
+- A page that mounts no island ships no island JavaScript; keep static surfaces
+  static instead of widening the island graph.
+- `dist/server/` is private server code; never publish it as a static asset.
+- Keep `npm run typecheck`, `npm run lint`, `npm run test` and `npm run build`
+  green after a change; `npm run check` is not a script in this scaffold.

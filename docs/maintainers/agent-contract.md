@@ -17,6 +17,24 @@ both dist-tags and no `v1.0.0-alpha.15` Git tag exists — source version and
 published line are separate facts. The published
 consumer index is [llms.txt](https://openelement.org/llms.txt).
 
+## Repository entry points
+
+There are three committed, public entry points for an agent:
+
+- this contract (the maintainer/agent surface of the repository),
+- the published consumer index [llms.txt](https://openelement.org/llms.txt),
+- the `AGENTS.md` a generated application ships (the starter template), which
+  points a user's agents at the index, the lifecycle commands, the layout and
+  the server/client boundary rules.
+
+A **root** `AGENTS.md` is deliberately not part of the committed tree.
+Owner ruling 2026-10-20: the working copy's root file is environment-local
+(session execution policy, excluded via the clone's `.git/info/exclude`) and
+must not ship as product guidance; the #1613 scope's "AGENTS.md entry pointer"
+is satisfied by the generated-project template above plus this contract and
+`llms.txt`. Restoring a root pointer requires the owner to move that policy out
+of the working copy first.
+
 ## The canonical task entry
 
 All tasks enter through the vp CLI (owner ruling, 2026-10-03): package.json

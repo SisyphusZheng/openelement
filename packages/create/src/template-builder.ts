@@ -139,7 +139,7 @@ export function assertUnifiedProductVersions(versions: ProductVersions): Product
 
 // [sourceTemplate, targetRelativePath] pairs — the SINGLE source for the
 // starter file mapping (M-C2). The cli.test.ts toolchain gate consumes this
-// exact list instead of keeping its own 28-pair copy, so adding a template
+// exact list instead of keeping its own hand-maintained copy, so adding a template
 // file cannot pass the scaffold and fail the gate (or vice versa).
 //
 // The starter manifest is stored
@@ -162,6 +162,12 @@ export const TEMPLATE_FILES: readonly (readonly [string, string])[] = [
   ['gitignore.tmpl', '.gitignore'],
   ['.node-version', '.node-version'],
   ['README.tmpl', 'README.md'],
+  // The generated project's agent entry pointer (#1613 scope, completed in the
+  // alpha15 cleanup batch): a scaffold user's agents get a local AGENTS.md that
+  // names the public consumer index, lifecycle commands, layout and the
+  // server/client boundary rules. The repository's own root AGENTS.md is
+  // environment-local by owner ruling (see docs/maintainers/agent-contract.md).
+  ['AGENTS.md.tmpl', 'AGENTS.md'],
   ['public/openelement-mark.svg', 'public/openelement-mark.svg'],
   // B5 (ADR-0161): the starter is a plain Node project. Framework
   // consumption resolves through package.json dependencies (npm is the only

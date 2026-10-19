@@ -365,6 +365,7 @@ test('the showcase template is the one scaffold, Tailwind-ON (#1530 + owner sing
   const expectedTargets = [
     '.gitignore',
     '.node-version',
+    'AGENTS.md',
     'README.md',
     'app/components/page-404.css',
     'app/components/page-404.tsx',
