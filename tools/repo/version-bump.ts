@@ -1,7 +1,7 @@
 /**
  * One-knob release version bump (#1415; full stamp-surface rewrite in alpha9
  * C5, #1508 — the transitional manual is deleted with this rewrite and its
- * procedure lives in docs/maintainers/version-bump.md; #1524 extends the
+ * procedure lives in the internal release procedure (not published); #1524 extends the
  * stamp to every pnpm-workspace member).
  *
  * A version bump is the TWELVE release-line text points, the workspace-member

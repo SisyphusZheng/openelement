@@ -30,7 +30,7 @@ the prose below is an alpha16 candidate; this summary plus the machine-checked
 table is the contract today.
 
 方向一栏回答"谁写、谁读"——P8 接缝（见
-[seams.md](../architecture/seams.md)）在跨界工件上有常驻守卫测试；本表
+[seams.md](./seams.md)）在跨界工件上有常驻守卫测试；本表
 回答的是另一个问题："这块代码为什么还活着、平台/工具链追上来时删什么"。
 两表互补，不重复登记守卫。
 
@@ -213,7 +213,7 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 - 方向：`node:http` 请求 → 标准 `fetch(Request): Promise<Response>`
   派发（`start` CLI、fixture server 共用）。
 - 存在原因：node:* 没有把 fetch 处理器暴露为服务器的单行原语
-  （[node-porting-residuals.md](./node-porting-residuals.md) §5）。
+  （node 移植残留记录：内部文档，不发布，§5）。
 - 退役条件：Node 原生提供 fetch-handler 服务器原语（或仓库放弃本地
   `start` 通道）之日删除。
 - 处置：保留为平台边缘。
@@ -366,10 +366,10 @@ adapter / compat / fallback / 退役 / "Delete when" / deno；再对每处命中
 
 ## 复审机制
 
-本登记簿由"平台追账评审"（[design-principles](../architecture/design-principles.md#platform-catch-up-review)；
+本登记簿由"平台追账评审"（[design-principles](./design-principles.md#platform-catch-up-review)；
 逐版本记录见 [platform-catch-up.md](../release/platform-catch-up.md)）按 release 周期驱动：每周期逐行重估"条件到即删"的到期情况与
 "平台边缘"的追账进度，新 shim 入场时必须同时入表并写死条件。与
-[seams.md](../architecture/seams.md) 的分工：接缝表管"谁写谁读、守卫
+[seams.md](./seams.md) 的分工：接缝表管"谁写谁读、守卫
 在哪"，本表管"为何存在、何时能删"；同一工件两边都该有一行，交叉引用
 即可，不重复维护事实。
 

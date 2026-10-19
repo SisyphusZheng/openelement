@@ -36,7 +36,7 @@
  * lands, `@openelement/tools-release#registry-drift:check` fails a build whose
  * displayed version values no longer match the live registry — it runs in the
  * release train (`gate:release`), and it is what a maintainer runs before
- * publishing. See docs/maintainers/releasing.md.
+ * publishing. See the internal release procedure (not published).
  *
  * One ordering fact callers must respect on the 1.0 line: the publish step
  * runs the sync while the `alpha` alias still points at the PREVIOUS release
@@ -165,8 +165,8 @@ export const REGISTRY_METHOD = 'read-only npm view versions + dist-tags';
  * the tag the record is read from can never drift from the tag the publish act
  * wrote — with one caveat worth knowing: on the 1.0 line that is `latest`, and
  * the `alpha` alias beside it is written by the release workflow AFTER the
- * publish step (the alias re-point is best-effort; see
- * docs/maintainers/releasing.md), so a read-back taken inside the publish
+ * publish step (the alias re-point is best-effort and owned by the internal
+ * release procedure, not published), so a read-back taken inside the publish
  * step records the alias as it still stands and the workflow re-reads the
  * registry after the re-point. Both reads go through this function; only the
  * moment differs.

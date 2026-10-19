@@ -115,22 +115,26 @@ export const ALLOWLIST: readonly AllowEntry[] = [
   {
     rule: 'version',
     value: '1.0.0-alpha.1',
-    reason: 'the historic first public baseline, documented as history in releasing.md',
+    reason:
+      'the historic first public baseline, documented as history in the internal release procedure (not published)',
   },
   {
     rule: 'version',
     value: '1.0.3',
-    reason: 'the retired Deno-era line, recorded as history in the Deno diagnostic exception',
+    reason:
+      'the retired Deno-era line, recorded as history in the internal Deno diagnostic-exception record (not published)',
   },
   {
     rule: 'version',
     value: '2.9.0',
-    reason: 'the retired Deno-era pin, recorded as history in deno-pack/node-porting docs',
+    reason:
+      'the retired Deno-era pin, recorded as history in the internal Deno porting records (not published)',
   },
   {
     rule: 'version',
     value: '2.9.6',
-    reason: 'the retired Deno-era pin, recorded as history in the Deno diagnostic exception',
+    reason:
+      'the retired Deno-era pin, recorded as history in the internal Deno diagnostic-exception record (not published)',
   },
   {
     rule: 'version',
@@ -148,18 +152,6 @@ export const ALLOWLIST: readonly AllowEntry[] = [
     value: 'packages/router/src/vite/internal/island-css.ts',
     reason:
       'a historical path in the shim inventory: the module moved; the row records the retired shim',
-  },
-  {
-    rule: 'path',
-    value: 'tools/release/native-pack-check.ts',
-    reason:
-      'a deleted verdict in the historic alpha7 design review; the doc records what was retired',
-  },
-  {
-    rule: 'path',
-    value: 'tools/repo/check-deno-floor.ts',
-    reason:
-      'a deleted check in the historic alpha7 design review; the doc records what was retired',
   },
   {
     rule: 'path',
@@ -555,9 +547,10 @@ export function coveredFiles(root: string = repoRoot): string[] {
     const readme = `packages/${entry.name}/README.md`;
     if (existsSync(join(root, readme))) files.push(readme);
   }
-  const maintainers = join(root, 'docs/maintainers');
-  for (const entry of readdirSync(maintainers)) {
-    if (entry.endsWith('.md')) files.push(`docs/maintainers/${entry}`);
+  // The two public contract docs that left the retired maintainer tree are
+  // hand-listed: they live outside the guide, README and package trees.
+  for (const name of ['docs/agent-contract.md', 'docs/architecture/shim-inventory.md']) {
+    if (existsSync(join(root, name))) files.push(name);
   }
   for (const path of walkFiles(join(root, 'www/content'), (name) => name.endsWith('.md'))) {
     files.push(relative(root, path));
@@ -974,11 +967,8 @@ export function checkGateCounts(files: Map<string, string>, corpus: Corpus): Fin
   const findings: Finding[] = [];
   const sourceGate = '@openelement/tools-repo#gate:source';
   const steps = corpus.authorities.gateSteps.get(sourceGate) ?? [];
-  const a = corpus.authorities;
   const atTasks = steps.filter((step) => step.startsWith('@')).length;
-  const baseLayer = steps.filter((step) => a.ciSteps.get(step)?.layer === 'base');
-  const fullLayer = steps.filter((step) => a.ciSteps.get(step)?.layer === 'full');
-  const localOnly = steps.filter((step) => !a.ciSteps.has(step));
+  const baseLayer = steps.filter((step) => corpus.authorities.ciSteps.get(step)?.layer === 'base');
 
   interface Site {
     file: string;
@@ -990,27 +980,12 @@ export function checkGateCounts(files: Map<string, string>, corpus: Corpus): Fin
   }
   const sites: Site[] = [
     {
-      file: 'docs/maintainers/releasing.md',
-      pattern:
-        /gate:source` — the local source gate \((\w+)\s+steps: (\w+)\s+`@`-qualified tasks plus `check:dep-age`/,
-      expected: [steps.length, atTasks],
-      rule: 'gate-count',
-      what: 'gate:source step count',
-    },
-    {
       file: 'CONTRIBUTING.md',
       pattern:
         /`tools\/repo#gate:source` \((\w+)\s+steps: (\w+)\s+`@`-qualified tasks plus `check:dep-age`/,
       expected: [steps.length, atTasks],
       rule: 'gate-count',
       what: 'gate:source step count',
-    },
-    {
-      file: 'docs/maintainers/releasing.md',
-      pattern: /(\w+)\s+of those steps also run in AutoFlow CI/,
-      expected: [baseLayer.length],
-      rule: 'gate-count-ci',
-      what: 'gate:source steps in the fast CI layer',
     },
     {
       file: 'CONTRIBUTING.md',
@@ -1055,33 +1030,6 @@ export function checkGateCounts(files: Map<string, string>, corpus: Corpus): Fin
       });
     });
   }
-
-  // Every gate step must be accounted for in prose: a step with no CI path is
-  // named as local-only, and a step that only the full-qualification layer runs
-  // is named there. Otherwise "which run in CI" is silently wrong.
-  const releasing = files.get('docs/maintainers/releasing.md') ?? '';
-  for (const step of localOnly) {
-    const task = step.includes('#') ? step.split('#')[1]! : step;
-    if (releasing.includes(task)) continue;
-    findings.push({
-      rule: 'gate-count-ci',
-      file: 'docs/maintainers/releasing.md',
-      line: 1,
-      value: step,
-      message: `gate:source step ${step} has no CI path and releasing.md never names it as local-only`,
-    });
-  }
-  for (const step of fullLayer) {
-    const task = step.includes('#') ? step.split('#')[1]! : step;
-    if (releasing.includes(task)) continue;
-    findings.push({
-      rule: 'gate-count-ci',
-      file: 'docs/maintainers/releasing.md',
-      line: 1,
-      value: step,
-      message: `gate:source step ${step} runs only in the full-qualification layer and releasing.md never names it`,
-    });
-  }
   return findings;
 }
 
@@ -1103,20 +1051,6 @@ export function checkCiClaims(files: Map<string, string>, corpus: Corpus): Findi
     what: string;
   }
   const sites: Site[] = [
-    {
-      file: 'docs/maintainers/releasing.md',
-      pattern: /every instance of the (\w+) required qualification job IDs/,
-      expected: [a.requiredCiJobs.length],
-      rule: 'ci-job',
-      what: 'required qualification job IDs',
-    },
-    {
-      file: 'docs/maintainers/releasing.md',
-      pattern: /— (\w+) job instances in total/,
-      expected: [requiredInstances],
-      rule: 'ci-instances',
-      what: 'qualification job instances',
-    },
     {
       file: 'CONTRIBUTING.md',
       pattern: /every one of the (\w+) qualification job IDs \((\w+) instances\)/,

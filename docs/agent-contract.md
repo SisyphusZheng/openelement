@@ -120,7 +120,7 @@ task by design: the repo vitest `tools` project (`vitest.config.ts`) owns
 | Generated surface | Written only by | Checked by |
 | --- | --- | --- |
 | `www/app/data/_generated-*.ts` (blog data, nav, article routes, API reference, error reference, error codes, install command) | the `www` `generate:*` tasks, auto-enrolled in `vp run generate:all` | the paired `--check` tasks (byte-identical compare), wired into `gate:release` |
-| `www/app/data/_generated-release-line.ts` | the release train's registry read-back (see `docs/maintainers/releasing.md`) | `@openelement/tools-release#registry-drift:check` (in `gate:release`) |
+| `www/app/data/_generated-release-line.ts` | the release train's registry read-back (internal release procedure, not published) | `@openelement/tools-release#registry-drift:check` (in `gate:release`) |
 | `docs/release/public-interface-snapshot.json` | `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot:write` | `vp run --fail-if-no-match @openelement/tools-repo#interface:snapshot` (in `gate:source` and CI) |
 | `packages/ui/src/generated-manifest.json` | `vp run --fail-if-no-match @openelement/ui#generate:ui-manifest` | `@openelement/ui#ui-manifest:check` (in `gate:release`) |
 | `www/dist/**` | `vp run site:build` (redirects/sitemap/RSS emitters write into it) | the site build and consumer gates that read `dist` |
@@ -210,7 +210,7 @@ coded failure surface.
 - CI green is necessary, not sufficient: merge authorization is a human
   owner decision per PR.
 - CodeQL findings need their thread resolved before merge.
-- The tracked agent-facing entry is [CONTRIBUTING.md](../../CONTRIBUTING.md)
+- The tracked agent-facing entry is [CONTRIBUTING.md](../CONTRIBUTING.md)
   (the vp task doctrine and the gate architecture); this contract is its
   detailed, mechanically checked form. `AGENTS.md`, where a checkout carries
   one, is an owner-local overlay, not a repository fact.
@@ -223,10 +223,10 @@ coded failure surface.
 | Content dates | `vp run --fail-if-no-match @openelement/www#check:content-dates` | The manifest `www/lib/content-dates.json` is hand-edited inside the content commit itself; the check is read-only validation. |
 | Doc figures | `vp run --fail-if-no-match @openelement/www#check:doc-figures` | The measured-output numbers in the comparison docs must match a fresh `www/dist` measurement; re-baseline on >1% growth. |
 | e2e outline pins | (www e2e specs) | Adding H2 sections to outline-pinned docs requires updating the pins; prefer not adding H2 sections. |
-| Version bump | `pnpm --dir tools/repo run version-bump <version> [--write]` | One knob: twelve release-line points plus the four release-line-shaped workspace-member stamps — 16 files today (the dry run's `points:` line is authoritative); see `docs/maintainers/version-bump.md`. |
+| Version bump | `pnpm --dir tools/repo run version-bump <version> [--write]` | One knob: twelve release-line points plus the four release-line-shaped workspace-member stamps — 16 files today (the dry run's `points:` line is authoritative); see the internal release procedure (not published). |
 | Workflow lint | `zizmor --offline .` | Required after touching anything under `.github` — workflows AND composite actions. |
 | Cross-system seams | (register + test) | A seam change registers in `docs/architecture/seams.md` AND ships a consumer-form test (constitution P8, ADR-0163); a seam missing either does not pass the gate. |
-| Shim inventory | `vp run --fail-if-no-match @openelement/tools-repo#shims:check` | `docs/maintainers/shim-inventory.md` is a hand-maintained registry with a mechanical reader: every row carries an existing tracked path, an owner, a status, and a non-empty retirement condition. The reader rides `gate:source`. |
+| Shim inventory | `vp run --fail-if-no-match @openelement/tools-repo#shims:check` | `docs/architecture/shim-inventory.md` is a hand-maintained registry with a mechanical reader: every row carries an existing tracked path, an owner, a status, and a non-empty retirement condition. The reader rides `gate:source`. |
 | Doc claims | `vp run --fail-if-no-match @openelement/www#check:doc-claims` | Every machine-checkable factual claim in the covered docs (versions, commands, subpaths, gate and CI counts, ADR and path references, locale parity, the meta-description budget) must agree with the file that owns the fact. Narrative prose is explicitly out of scope; exemptions live in the checker's allowlist and each needs a reason. |
 | ADR index | `vp run --fail-if-no-match @openelement/tools-repo#adr-index:check` | A record must be listed, its links resolvable, and a non-active record annotated `SUPERSEDED` / `RETIRED` / `EXECUTED`; the reader rides `gate:source`. |
 | Publish dispatch | (GitHub Actions) | Requires main push CI green FIRST — the exact-SHA contract. |

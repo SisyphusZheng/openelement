@@ -150,4 +150,4 @@ Use Conventional Commits with the prefixes actually in use: `fix`, `feat`, `docs
 
 ## Release work
 
-Follow [the release operation](./docs/maintainers/releasing.md). Local passes never authorize publication; releases require the exact candidate SHA, green required CI, human review, independent verification, and explicit maintainer approval.
+Follow the release gate sequence in the [release workflow](./.github/workflows/autoflow-release.yml). Local passes never authorize publication; releases require the exact candidate SHA, green required CI, human review, independent verification, and explicit maintainer approval.

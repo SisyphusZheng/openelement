@@ -6,7 +6,7 @@
  * tarball paths, the raw manifest shape (name/version/type/main/types and
  * exports with types+import+default over `src/*.js`/`src/*.d.ts`), and the
  * coordinator post-processing contract
- * (docs/maintainers/pack-post-processing.md).
+ * (the internal pack post-processing notes, not published).
  *
  * The vp toolchain is staged per pack run in a temp workspace and never
  * enters the repository tree:

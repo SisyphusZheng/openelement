@@ -42,6 +42,6 @@ versions — while release tooling may publish a selected subset of that line
 shared version line, never independent SemVer, and package count does not
 change the two-product model. From the 1.0 line onward the prerelease is the
 shipping line: it publishes onto npm `latest`, and the `alpha` channel tag is
-kept as a re-pointed alias ([releasing.md](../maintainers/releasing.md), "Public
-1.0 prerelease baseline"). Pre-1.0 candidates use `alpha` only and never move
+kept as a re-pointed alias (the internal release procedure, not published —
+"Public 1.0 prerelease baseline"). Pre-1.0 candidates use `alpha` only and never move
 `latest` onto a prerelease.

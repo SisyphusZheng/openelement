@@ -60,7 +60,7 @@ test('the extractor reads commands from fences and inline code, and skips prose'
 test('isCommandShape rejects prose tokens so the contract may cite code freely', () => {
   expect(isCommandShape('packages/router/src/cli/cli.ts')).toBe(false);
   expect(isCommandShape('openelement.config.ts')).toBe(false);
-  expect(isCommandShape('docs/maintainers/agent-contract.md')).toBe(false);
+  expect(isCommandShape('docs/agent-contract.md')).toBe(false);
   expect(isCommandShape('vp run fmt')).toBe(true);
   expect(isCommandShape('pnpm --dir tools/repo run version-bump <version> [--write]')).toBe(true);
 });
@@ -104,7 +104,7 @@ test('drift guard: pnpm --dir targets a real workspace script', async () => {
 
 test('drift guard: a mutated derived block fails the byte compare, a stale command fails resolution', async () => {
   const facts = await readContractFacts(repoRoot);
-  const markdown = await readFile(join(repoRoot, 'docs/maintainers/agent-contract.md'), 'utf8');
+  const markdown = await readFile(join(repoRoot, 'docs/agent-contract.md'), 'utf8');
 
   // The checked-in derived blocks are current (byte-identical to the facts).
   const current = applyDerivedBlock(
@@ -149,7 +149,7 @@ test('gate compositions derive from the root gate.ts scripts only', () => {
 });
 
 test('the published llms.txt fails closed when a repository link rots', async () => {
-  const contract = await readFile(join(repoRoot, 'docs/maintainers/agent-contract.md'), 'utf8');
+  const contract = await readFile(join(repoRoot, 'docs/agent-contract.md'), 'utf8');
   const clean = await validateLlmsTxt(repoRoot, contract);
   expect(clean, clean.join('\n')).toEqual([]);
 

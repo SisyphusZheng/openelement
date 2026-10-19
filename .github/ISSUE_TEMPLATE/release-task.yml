@@ -4,7 +4,7 @@ title: '[Release]: '
 body:
   - type: markdown
     attributes:
-      value: 'Release work must follow `docs/maintainers/releasing.md` and bind evidence to one exact candidate SHA.'
+      value: 'Release work must follow the gate sequence in `.github/workflows/autoflow-release.yml` and bind evidence to one exact candidate SHA.'
   - type: input
     id: version
     attributes:

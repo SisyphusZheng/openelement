@@ -62,7 +62,7 @@ OpenElement × Supabase × Cloudflare 是第一方全栈交付路径，所有权
 
 - Custom Elements 作为持久的应用契约——静态面与请求时应用闭环由当前架构文档描述。[当前架构](https://github.com/open-element/openelement/tree/main/docs/architecture)
 - DSD-first SSR 与选择性升级，以及显式的外来 WC 准入——语料库把每个第三方库形态的观测 SSR 输出与准入钉为机器可读证据。[第三方 WC 互操作语料库](https://github.com/open-element/openelement/blob/main/tests/fixtures/web-component-interop/corpus.json)
-- 浏览器与打包产物验证——候选版本需要 Chromium、Firefox 与 WebKit 证明，消费方从打包的公开产物构建。[发布流程](https://github.com/open-element/openelement/blob/main/docs/maintainers/releasing.md)
+- 浏览器与打包产物验证——候选版本需要 Chromium、Firefox 与 WebKit 证明，消费方从打包的公开产物构建。[发布工作流](https://github.com/open-element/openelement/blob/main/.github/workflows/autoflow-release.yml)
 - 可组合的服务提供方栈，而不是框架自有的 Auth 或数据库包——由第一方 SaaS 消费方实现并通过单元测试；托管与部署的 qualification 仍待外部完成，消费方 README 记录着该 qualification 状态。[Supabase × Cloudflare SaaS](https://github.com/open-element/openelement/tree/main/apps/saas)
 
 ## 来源与评审范围

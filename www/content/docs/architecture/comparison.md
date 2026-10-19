@@ -64,7 +64,7 @@ contract and have no assigned release version.
 
 - Custom Elements as the durable application contract — the static surface and the request-time application loop are described by the current architecture. [Current architecture](https://github.com/open-element/openelement/tree/main/docs/architecture)
 - DSD-first SSR with selective upgrade, and explicit foreign-WC admission — the corpus pins the observed SSR form and admission of each third-party library kind as machine-readable evidence. [Third-party WC interop corpus](https://github.com/open-element/openelement/blob/main/tests/fixtures/web-component-interop/corpus.json)
-- Browser and packaged-artifact qualification — candidate releases prove Chromium, Firefox and WebKit, and consumers build from packed public artifacts. [Release procedure](https://github.com/open-element/openelement/blob/main/docs/maintainers/releasing.md)
+- Browser and packaged-artifact qualification — candidate releases prove Chromium, Firefox and WebKit, and consumers build from packed public artifacts. [Release workflow](https://github.com/open-element/openelement/blob/main/.github/workflows/autoflow-release.yml)
 - A composable provider stack instead of framework-owned Auth or database packages — implemented and unit-tested by the first-party SaaS consumer; hosted and deployed qualification is external pending, and the consumer's README records that qualification status. [Supabase × Cloudflare SaaS](https://github.com/open-element/openelement/tree/main/apps/saas)
 
 ## Sources and review scope
