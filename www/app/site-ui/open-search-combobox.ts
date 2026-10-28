@@ -286,7 +286,24 @@ export function connectSearchRuntime(host: SearchHost, callbacks: RuntimeCallbac
       shellKeys.clear();
       for (const key of written) shellKeys.add(key);
     }
-    apply('content', `#${IDS.content}`, api.getContentProps());
+    const content = apply('content', `#${IDS.content}`, api.getContentProps());
+    // The machine owns role=listbox on the results surface, but the role is
+    // only valid while option children exist: the idle ("type at least 2
+    // characters") and no-results states render a status message, not
+    // options, and axe's aria-required-children (critical) fires on a
+    // listbox without option/group children (P2 audit D2). Populate the role
+    // with the same options the view actually shows: absent until Pagefind
+    // returns, restored when the hit anchors render. Both directions are
+    // written explicitly because spreadProps diffs attributes against its own
+    // snapshot and cannot observe a manual override.
+    if (content instanceof HTMLElement) {
+      const hasOptions = content.querySelector('a.result') !== null;
+      if (hasOptions) {
+        if (content.getAttribute('role') !== 'listbox') content.setAttribute('role', 'listbox');
+      } else {
+        content.removeAttribute('role');
+      }
+    }
     apply('label', `#${IDS.label}`, api.getLabelProps());
     // Per-hit option props: the anchors are declaratively rendered by the
     // island, so they are (re)spread after every render that changed them.

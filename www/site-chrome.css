@@ -234,7 +234,7 @@ open-search .overlay {
 /* The badge is the row's last track; once the package row stacks (≤860px) it
    must not stretch across the column. */
 @media (max-width: 860px) {
-  page-reference .kind {
+  .page-reference .kind {
     justify-self: start;
   }
 }
@@ -831,11 +831,13 @@ open-standards-visual[motion="off"] .package {
  *
  * Kept here, and why:
  *   - the host box (the host tag is not authored markup);
- *   - the rail marker rules: `a::before` is the counter-rendered "§N" chip
- *     (content + counter-increment are pseudo-element subjects markup cannot
- *     address) and `a[aria-current="location"]::before` is that pseudo's
- *     current-state ink. The `counter-reset` the chip consumes lives on the
- *     navs as a utility (`[counter-reset:rail-item]`), not here.
+ *   - the rail marker rules: `open-page-rail a::before` is the counter-rendered
+ *     "§N" chip (content + counter-increment are pseudo-element subjects markup
+ *     cannot address) and `open-page-rail a[aria-current="location"]::before`
+ *     is that pseudo's current-state ink. The host prefix is load-bearing: this
+ *     sheet is document-wide, so a bare `a::before` would prefix EVERY anchor on
+ *     the site. The `counter-reset` the chip consumes lives on the navs as a
+ *     utility (`[counter-reset:rail-item]`), not here.
  *
  * Everything else — the two outline copies' display tiers, the grid, the gap,
  * the link box/border/type/inks, the depth-3 tier, hover/focus-visible, the
@@ -847,13 +849,13 @@ open-page-rail {
   display: block;
 }
 
-a::before {
+open-page-rail a::before {
   counter-increment: rail-item;
   content: '§' counter(rail-item) '  ';
   color: color-mix(in srgb, var(--color-muted-foreground) 70%, transparent);
 }
 
-a[aria-current='location']::before {
+open-page-rail a[aria-current='location']::before {
   color: var(--color-primary);
 }
 

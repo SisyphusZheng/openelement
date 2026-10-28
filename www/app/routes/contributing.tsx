@@ -26,7 +26,7 @@ const content = {
     serifLine: 'with us.',
     lede: 'A precise, Node-first contributor workflow for the Web Standards Lab.',
     setupAriaLabel: 'Development setup',
-    setupLabel: '§1 — Setup',
+    setupLabel: '01 — Setup',
     setupCopyBefore:
       'openElement core CLI, SSG, serverless API, tests, publishing, and docs site tasks all run on Node 24.2+ with pnpm as the package manager. Tasks go through ',
     setupCopyVite: 'pnpm run <task>',
@@ -88,7 +88,7 @@ const content = {
         after: '',
       },
     ],
-    beforePrLabel: '§2 — Before a PR',
+    beforePrLabel: '02 — Before a PR',
     checklist: [
       {
         id: 'format',
@@ -117,7 +117,7 @@ const content = {
     ],
     layeringCopy:
       'Layering discipline: before adding a feature, check whether it can be solved at a lower level — L0 HTML, L1 CSS, L2 Browser API, L3 Hono/Vite/Lit, then L4 custom code.',
-    helpLabel: '§3 — Where to help',
+    helpLabel: '03 — Where to help',
     helpRows: [
       {
         id: 'corpus',
@@ -156,7 +156,7 @@ const content = {
     serifLine: '与我们一起。',
     lede: '面向 Web Standards Lab 的精确、Node 优先的贡献者工作流。',
     setupAriaLabel: '开发环境设置',
-    setupLabel: '§1 — 环境设置',
+    setupLabel: '01 — 环境设置',
     setupCopyBefore:
       'openElement 核心 CLI、SSG、serverless API、测试、发布与文档站任务都运行在 Node 24.2+ 上，以 pnpm 作为包管理器。任务通过 ',
     setupCopyVite: 'pnpm run <task>',
@@ -218,7 +218,7 @@ const content = {
         after: '',
       },
     ],
-    beforePrLabel: '§2 — 提交 PR 之前',
+    beforePrLabel: '02 — 提交 PR 之前',
     checklist: [
       {
         id: 'format',
@@ -247,7 +247,7 @@ const content = {
     ],
     layeringCopy:
       '分层纪律：新增功能之前，先检查能否在更低层解决——L0 HTML、L1 CSS、L2 浏览器 API、L3 Hono/Vite/Lit，最后才是 L4 自定义代码。',
-    helpLabel: '§3 — 可以从哪里入手',
+    helpLabel: '03 — 可以从哪里入手',
     helpRows: [
       {
         id: 'corpus',

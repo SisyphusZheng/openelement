@@ -1,5 +1,5 @@
 ---
-title: 'Island Hydration'
+title: 'Island 水合'
 lede: 'openElement 默认让文档与 Web Components 保持服务端渲染。island 只为需要运行时状态或框架互操作的客户端组件保留。'
 order: 40
 ---

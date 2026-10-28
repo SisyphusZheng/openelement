@@ -665,11 +665,11 @@ export function ReferencePage(props: {
                 data-kind={pkg.kind}
                 key={pkg.id}
               >
-                <div>
-                  <span class='block text-primary text-[length:clamp(1.7rem,2.8vw,2.5rem)] font-extrabold leading-none tracking-[-0.03em] group-data-[kind=optional]:text-muted-foreground'>
+                <div class='min-w-0'>
+                  <span class='block [overflow-wrap:anywhere] text-primary text-[length:clamp(1.7rem,2.8vw,2.5rem)] font-extrabold leading-none tracking-[-0.03em] group-data-[kind=optional]:text-muted-foreground'>
                     {pkg.name}
                   </span>
-                  <span class='mt-2 block text-(length:--text-xs) text-muted-foreground'>
+                  <span class='mt-2 block [overflow-wrap:anywhere] text-(length:--text-xs) text-muted-foreground'>
                     {pkg.importPath}
                   </span>
                   <p class='mt-3 mb-0 text-(length:--text-sm) leading-normal text-muted-foreground'>

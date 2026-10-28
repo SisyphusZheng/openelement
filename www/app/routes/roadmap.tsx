@@ -96,14 +96,14 @@ const entries: Record<SiteLocale, TimelineEntry[]> = {
 const content = {
   en: {
     headTitle: 'Roadmap',
-    headDescription: `The openElement roadmap: the v1.0.0-alpha.1 baseline, the ${STABLE_LINE.series} stable maintenance line and the gated path to v1.0.`,
+    headDescription: `The openElement roadmap: the public Alpha admission (v1.0.0-alpha.1), the ${STABLE_LINE.series} stable maintenance line and the gated path to v1.0.`,
     pageTitle: 'Roadmap',
     heroLede:
       'OpenElement roadmap labels describe the public product surface, tied to package truth, docs truth and CI evidence rather than a wish list.',
     railItems:
       '[{"id":"release-line","label":"Release line"},{"id":"product-boundary","label":"Product boundary"},{"id":"decision-matrix","label":"Decision matrix"},{"id":"system-visual","label":"System visual"}]',
     architecture: 'Architecture',
-    freezeBadge: 'Alpha baseline — v1.0.0-alpha.1',
+    freezeBadge: 'Alpha admission — v1.0.0-alpha.1',
     // The "now" band states the two lines the release record proves. Both
     // halves derive (data/version.ts ← the generated release-line module ←
     // CHANGELOG.md + docs/release/release-state.json): the series the stable
@@ -190,15 +190,14 @@ const content = {
   },
   zh: {
     headTitle: '路线图',
-    headDescription:
-      'openElement 路线图：v1.0.0-alpha.1 基线、0.43 稳定维护基线，以及通往 v1.0 的门禁路径。',
+    headDescription: `openElement 路线图：公开 Alpha 准入（v1.0.0-alpha.1）、${STABLE_LINE.series} 稳定维护线，以及通往 v1.0 的门禁路径。`,
     pageTitle: 'Roadmap',
     heroLede:
       'OpenElement 的 roadmap 标签描述的是公开产品面，锚定包真相、文档真相与 CI 证据，而不是愿望清单。',
     railItems:
       '[{"id":"release-line","label":"发布线"},{"id":"product-boundary","label":"产品边界"},{"id":"decision-matrix","label":"决策矩阵"},{"id":"system-visual","label":"系统图示"}]',
     architecture: '架构',
-    freezeBadge: 'Alpha 基线 — v1.0.0-alpha.1',
+    freezeBadge: 'Alpha 准入 — v1.0.0-alpha.1',
     // See the en block: the zh band derives the same two lines.
     nowTitle: stableLineTitle('zh'),
     nowCopy: stableLineNote('zh'),

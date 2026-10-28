@@ -37,9 +37,22 @@ interface SearchState {
    * reinstall created a fresh state for the same host element.
    */
   epoch: number;
+  /**
+   * The element that opened the dialog: focus returns here on dismissal
+   * (P2 audit D3 — Escape/backdrop/result close must not drop focus on body).
+   */
+  returnFocus: HTMLElement | null;
 }
 
 const states = new WeakMap<SearchHost, SearchState>();
+
+/** The dialog's opener: the header trigger button (the island's `part=trigger`). */
+function searchTrigger(host: SearchHost): HTMLElement | null {
+  const trigger = host.querySelector<HTMLElement>('button[part="trigger"]');
+  if (trigger) return trigger;
+  const active = host.ownerDocument.activeElement;
+  return active instanceof HTMLElement ? active : null;
+}
 
 /**
  * The guard every continuation runs before acting: the SAME install must
@@ -120,7 +133,14 @@ export function installSearch(host: SearchHost): void {
       if (states.get(host)?.runtime) event.preventDefault();
     }
   };
-  states.set(host, { keydown, runtime: null, connectPromise: null, openSequence: 0, epoch: 0 });
+  states.set(host, {
+    keydown,
+    runtime: null,
+    connectPromise: null,
+    openSequence: 0,
+    epoch: 0,
+    returnFocus: null,
+  });
   globalThis.addEventListener('keydown', keydown);
 }
 
@@ -154,6 +174,9 @@ export function openSearch(host: SearchHost): void {
   const target = overlay(host);
   const state = states.get(host);
   if (!target || !state) return;
+  // Bind the dismissal focus target to THIS open: the reader returns to the
+  // control that opened the dialog, even if focus has drifted since.
+  state.returnFocus = searchTrigger(host);
   state.openSequence++;
   const sequence = state.openSequence;
   target.hidden = false;
@@ -186,6 +209,10 @@ export function openSearch(host: SearchHost): void {
 
 export function closeSearch(host: SearchHost): void {
   const target = overlay(host);
+  // Whether this close actually dismissed an open dialog: the failure path
+  // below can call closeSearch for a dialog that never opened, and that path
+  // must not yank focus.
+  const wasOpen = target !== null && !target.hidden;
   if (target) target.hidden = true;
   const field = input(host);
   if (field) field.value = '';
@@ -199,6 +226,14 @@ export function closeSearch(host: SearchHost): void {
   state?.runtime?.close();
   showMessage(host, searchChromeStrings(searchLocale()).emptyMessage);
   state?.runtime?.syncHits(host, []);
+  // Modal focus restoration (P2 audit D3, APG dialog pattern): a dismissal —
+  // Escape, backdrop click, result click — returns the reader to the control
+  // that opened the dialog instead of stranding focus on <body>.
+  if (wasOpen && state?.returnFocus) {
+    const returnFocus = state.returnFocus;
+    state.returnFocus = null;
+    if (returnFocus.isConnected) returnFocus.focus({ preventScroll: true });
+  }
 }
 
 /** Backdrop dismissal, bound by the compiled view on the overlay. */

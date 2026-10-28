@@ -301,9 +301,20 @@ export function prepareArticle(
     .join('');
   // Code display goes through open-code-block (copy button; the highlighting
   // itself is already compiled into the fence HTML at generation time).
+  //
+  // Every block is also a keyboard entry point: a horizontally scrollable
+  // `open-code-block > pre` that cannot take focus is the axe
+  // `scrollable-region-focusable` violation (WCAG 2.1.1). Shiki's highlighted
+  // output carries `tabindex="0"` itself; the plain-fence path (marked's
+  // unhighlighted `<pre><code>`, driven by PLAIN_FENCE_LANGS in
+  // www/lib/markdown.ts — e.g. the directory-tree `text` fence) does not, so
+  // normalize it here, where every article/blog `<pre>` is already rewritten.
   const withCodeBlocks = withIds.replace(
     /(<pre[\s\S]*?<\/pre>)/gi,
-    '<open-code-block>$1</open-code-block>',
+    (block) =>
+      `<open-code-block>${
+        /^<pre[^>]*\stabindex=/i.test(block) ? block : block.replace(/^<pre/i, '<pre tabindex="0"')
+      }</open-code-block>`,
   );
   return { html: withCodeBlocks, outline };
 }

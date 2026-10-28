@@ -8,6 +8,14 @@ import type { ReadingMetadata, ReadingNavigation } from './page-contract.ts';
 type ReadingTag = { key: string; label: string };
 type CompiledComputed<T> = ReturnType<typeof computed<T>> & T;
 
+/** One row of the reading shell's source-freshness meta line (no rows when absent). */
+interface FreshnessRow {
+  key: string;
+  prefix: string;
+  updated: string;
+  label: string;
+}
+
 @element('open-reading-shell')
 export default class OpenReadingShell extends OpenElement {
   // The shell's authored rules and the shared generated-content treatment
@@ -60,24 +68,32 @@ export default class OpenReadingShell extends OpenElement {
   accent = computed(() => this.metadata?.accent ?? '');
   @property({ reflect: false, attribute: false })
   lede = computed(() => this.metadata?.lede ?? '');
-  // Source-freshness meta row: version mark + machine-derived update date,
-  // both from metadata, folded into one string so fmt and jsx-curly-braces
-  // stop fighting over the separator children. Hidden unless both are
-  // present so slot-driven pages (blog/changelog/roadmap) keep their own
-  // meta.
-  @property({ reflect: false, attribute: false })
-  hideMetaRow = computed(() => !(this.metadata?.version && this.metadata?.updated));
-  @property({ reflect: false, attribute: false })
-  freshnessPrefix = computed(
-    () =>
-      `${readingChromeStrings(this.locale).appliesTo} ${this.metadata?.version ?? ''}${
-        readingChromeStrings(this.locale).freshnessSeparator
-      }${readingChromeStrings(this.locale).updated} `,
-  );
-  @property({ reflect: false, attribute: false })
-  metaUpdated = computed(() => this.metadata?.updated ?? '');
-  @property({ reflect: false, attribute: false })
-  metaUpdatedLabel = computed(() => formatFreshnessDate(this.metadata?.updated ?? '', this.locale));
+  // Source-freshness meta row: version mark + machine-derived update date.
+  // The row must not EXIST when there is nothing to show. The previous form
+  // rendered it always and only toggled `hidden`, so non-article pages
+  // (/reference, /roadmap, /errors) shipped a hidden row with dangling
+  // "Applies to  · Updated " text and `<time datetime="">` (WEB-003 F3).
+  // Compiled branches cannot interpolate text (OEC9012), so the row is a
+  // zero-or-one list — the same root fix as open-article-view's fallback: an
+  // empty list emits no element and no text, while article pages keep the
+  // real, visible version+date row.
+  @property({ reflect: false, attribute: false, type: Array })
+  freshnessRows = computed(() =>
+    this.metadata?.version && this.metadata?.updated
+      ? [
+          {
+            key: 'freshness',
+            prefix: `${readingChromeStrings(this.locale).appliesTo} ${
+              this.metadata?.version ?? ''
+            }${readingChromeStrings(this.locale).freshnessSeparator}${
+              readingChromeStrings(this.locale).updated
+            } `,
+            updated: this.metadata?.updated ?? '',
+            label: formatFreshnessDate(this.metadata?.updated ?? '', this.locale),
+          },
+        ]
+      : [],
+  ) as CompiledComputed<FreshnessRow[]>;
   @property({ reflect: false, attribute: false })
   date = computed(() => this.metadata?.date ?? '');
   @property({ reflect: false, attribute: false, type: Array })
@@ -144,13 +160,15 @@ export default class OpenReadingShell extends OpenElement {
                 <p class='mt-4 mb-0 max-w-[640px] leading-[1.65] text-muted-foreground min-[901px]:text-[clamp(var(--text-base),1.4vw,var(--text-xl))]'>
                   {this.lede}
                 </p>
-                <p
-                  class='mt-3 mb-0 font-mono text-(length:--text-xs) text-muted-foreground'
-                  hidden={this.hideMetaRow}
-                >
-                  <span>{this.freshnessPrefix}</span>
-                  <time datetime={this.metaUpdated}>{this.metaUpdatedLabel}</time>
-                </p>
+                {this.freshnessRows.map((row) => (
+                  <p
+                    key={row.key}
+                    class='mt-3 mb-0 font-mono text-(length:--text-xs) text-muted-foreground'
+                  >
+                    <span>{row.prefix}</span>
+                    <time datetime={row.updated}>{row.label}</time>
+                  </p>
+                ))}
                 <p class='mt-4 mb-0 flex flex-wrap gap-2 font-mono text-(length:--text-xs) text-muted-foreground'>
                   <time>{this.date}</time>
                   {this.tags.map((tag) => (

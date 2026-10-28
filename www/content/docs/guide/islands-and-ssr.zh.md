@@ -4,9 +4,60 @@ lede: 'SSR 与 DSD 提供文档基线。Islands 在声明的边界上添加客�
 order: 90
 ---
 
+## Light DOM、DSD、SSR 与 islands
+
+本指南反复出现的这些术语不是互相竞争的默认值：它们回答两个不同的问题——**组件的标记落在哪里**（root 选择：light DOM 或 shadow DOM），以及 **HTML 到达浏览器之后发生什么**（DSD、SSR、islands）。
+
+| 术语 | 它是什么 | 它决定什么 |
+| --- | --- | --- |
+| Light DOM | 组件把子节点渲染进文档树本身 | 没有样式边界：页面样式直接作用于子节点 |
+| Shadow DOM | 组件渲染进自己拥有的 shadow root | 有样式边界：外部的类选择器到不了组件的子节点 |
+| DSD（Declarative Shadow DOM） | 一种平台 HTML 格式，用标记携带 shadow root——`<template shadowrootmode="open">` 由浏览器原生解析 | shadow 内容在任何客户端 JavaScript 加载之前就已存在，且不涉及任何框架 |
+| SSR | 在服务端把页面渲染为 HTML：静态路由在构建期，`renderIntent: { mode: 'dynamic' }` 路由按请求 | 首个响应里包含什么 |
+| Islands | 按模块选择进入客户端投递，声明在组件旁 | 组件的 chunk 是否、以及何时被拉取、其行为何时绑定 |
+
+**Root：light 还是 shadow。** `@element(tag, { root })` 决定组件内容的渲染位置。light DOM 是当前编译默认；`root: 'shadow-open'` 与 `'shadow-closed'` 是显式声明的模式，声明了 shadow root 的组件以 Declarative Shadow DOM 交付。两种情况下都是同一个编译器、同一份 Part Program：这个选择改变的是样式可达范围，而不是渲染机制——两种模式也都不等于“交互模式”。
+
+**DSD 是浏览器格式，不是客户端框架。** Declarative Shadow DOM 是平台 HTML 格式：`<template shadowrootmode="open">` 由 HTML 解析器解析成真正的 shadow root，不需要脚本。openElement 把它当作 shadow-root 组件的线上格式，所以这些组件的标记在任何客户端模块被拉取之前就可读、已样式化。DSD 与交互性无关：DSD 组件也完全可以保持静态。
+
+**先服务端 HTML，再浏览器 upgrade。** 服务端把编译类序列化为 HTML——静态路由在构建期，动态路由按请求，两边是同一份程序。light DOM 本来就在文档里；DSD 被解析成 shadow root。随后，生成客户端入口定义该类时，浏览器自身的 Custom Element upgrade 开始运行：编译后的 claim 对已经存在的 DOM 重放同一份程序，绑定模板声明过的处理器，并用宿主 attribute 填充 `@property` 字段。不会重建树，不会用字符串查找绑定，也不会从 `data-*` attribute 合成事件。因为 upgrade 只绑定模板声明过的行为，类始终没有加载的元素会保留它的标记与样式。
+
+**Islands 决定的是“在哪、何时”，不是渲染模式。** island 是通过 `defineIslandConfig({ hydrate, ssr, dsd })` 选择进入客户端投递的模块；`hydrate` 选择浏览器何时 import 它——`load`、`idle`、`visible`、`media` 或 `only`——构建会逐页记录它实际到达哪些 island，所以页面只拉取自己 manifest 里点名的 chunk。island 与静态组件走同一个编译类，可以是 light root，也可以是 DSD shadow root；`ssr` 与 `dsd` 说明服务端是否序列化它，`only` 则跳过 SSR。island 增加的只是必须在浏览器里运行的那部分：状态、处理器、生命周期。
+
+整条路径，一行一个阶段：
+
+```text
+1  请求
+   │
+   ▼
+2  服务端渲染——静态路由在构建期，
+   动态路由按请求
+   │  产出
+   ▼
+3  HTML——light DOM，或声明了 shadow root
+   时的 DSD
+   │
+   ▼
+4  浏览器解析——DSD 无需脚本就变成真正
+   的 shadow root
+   │
+   ▼
+5  Custom Element upgrade——只为类会随
+   客户端发布的元素运行：claim 对既有
+   DOM 重放编译后的程序
+   │
+   ▼
+6  交互——island chunk 按其声明的策略
+   加载，随后状态与处理器开始运行
+```
+
+步骤 1–4 复用的都是服务端已经产出的内容：不需要任何客户端工作，HTML 本身就是页面。步骤 5 只为“类会随客户端发布”的组件需要客户端模块——而且它复用既有 DOM 而不是重建，这正是同一份编译程序既能服务静态产物、又能服务请求时渲染与浏览器的原因。步骤 6 是唯一与 island 专属的步骤：它只在模块声明了 `hydrate` 策略的地方运行，没有任何交互 island 的页面不会执行自己页面的 island chunk。
+
+需要说明的边界：“不需要客户端工作”指的是渲染和阅读页面不需要，而不是永远不执行任何字节——只要应用声明了任意 island 或增强表单，静态页面上仍会运行一个很小的全应用 claim 引导脚本；而 manifest 里带可客户端激活 island 的页面还会预加载共享的 element-runtime chunk（[小运行时](#小运行时)会给这两项定价）。至于“不重建”，它描述的是 upgrade 路径，而不是“永远不更新”的承诺：upgrade 之后，signal 变化只会重渲染读取该值的那些编译 Part。
+
 ## 服务端优先
 
-默认情况下每个路由都在构建时渲染为 HTML。输出是普通的声明式标记：内容组件被序列化为浏览器无需脚本即可解析的 shadow root，样式表被内联（light root 用 `@scope(<tag>)` 限定作用域），文档在任何客户端模块被拉取之前就已样式化且可读。因此只要标记是静态的，即使网络很慢、模块加载失败或 JavaScript 被禁用，页面依然是静态的。
+默认情况下每个路由都在构建时渲染为 HTML。输出是普通的声明式标记：内容组件默认序列化为 light DOM，声明了 shadow 模式的组件则序列化为浏览器无需脚本即可解析的 shadow root；样式表被内联（light root 用 `@scope(<tag>)` 限定作用域），文档在任何客户端模块被拉取之前就已样式化且可读。因此只要标记是静态的，即使网络很慢、模块加载失败或 JavaScript 被禁用，页面依然是静态的。
 
 页作用域组件——位于 islands 目录之外、以标签组合进页面的编译模块——只做服务端渲染，这是契约而非降级。它们的代码完全不随客户端发布：浏览器收到的是序列化好的 shadow root，且永远不会升级它们，因此它们在运行时没有生命周期、事件处理器或 context。任何必须在浏览器中响应的东西都采用 island 形态，并只为那条边界付费。每种形态如何被发现见[编译模块文法](/zh/guide/compiled-grammar)——页作用域组件经路由导入链以默认导出被发现，island 经页面/岛模板扫描被发现、无需导入。
 
@@ -34,7 +85,7 @@ upgrade 本身是浏览器的 Custom Element 机制。服务端把编译后的 P
 
 ## Light islands
 
-island 的 root 由其组件决定：`@element(tag, { root: 'light' })` 编译出的程序，其子节点落在文档树中；默认的 shadow 模式则序列化 Declarative Shadow DOM。island 配置可以重申该模块属于哪个家族：
+island 的 root 由其组件决定：`@element(tag, { root: 'light' })` 编译出的程序，其子节点落在文档树中；声明了 shadow root（`shadow-open` 或 `shadow-closed`）的组件则序列化为 Declarative Shadow DOM。island 配置可以重申该模块属于哪个家族：
 
 ```tsx
 export const openElement = defineIslandConfig({ hydrate: 'visible', root: 'light' });
