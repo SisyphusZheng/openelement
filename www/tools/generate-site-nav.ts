@@ -154,7 +154,16 @@ async function collectContentNav(): Promise<Map<string, ContentNavMeta>> {
       markdown: (content: string) => content,
     });
     for (const entry of entries) {
-      const path = `${collection.basePath}/${entry.slug}`;
+      // The collection overview article owns the collection root URL: the
+      // article-route generator emits `index.tsx` when the slug equals the
+      // collection name (generate-site-article-routes.ts, `routeFile:
+      // slug === collection ? 'index.tsx' : …`), so `/architecture` is served
+      // by `architecture/architecture.md`. Projecting the raw slug would key
+      // it as `/architecture/architecture` — a URL that only exists as a
+      // redirect — so the entry could never join the sidebar tree and the
+      // page lost its own current-page state (P2 audit D10).
+      const path =
+        entry.slug === name ? collection.basePath : `${collection.basePath}/${entry.slug}`;
       const label = navLabel(entry.frontmatter);
       if (entry.locale === 'zh') {
         labelsZh.set(path, label);

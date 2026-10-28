@@ -32,7 +32,7 @@ Declarative Shadow DOM 通过带 `shadowrootmode` 的 template，让 HTML 在客
 
 ## openElement 分层
 
-- 静态 DSD 组件，用于内容、布局与文档。
+- 静态组件承担内容、布局与文档——两种写法最终都是普通 HTML：编译默认 root 是 light DOM，声明了 shadow root 的组件则以 DSD 传输。
 - 交互元素，承担浏览器内的局部行为。
 - islands，用于需要框架运行时的客户端组件。
 
@@ -56,4 +56,5 @@ OpenElement 依赖 Web 平台契约，而非自研的注册表产品。Custom El
 
 - [Island Hydration](/zh/architecture/islands)——组件何时进入客户端投递：分层与 hydration 策略。
 - [核心概念](/zh/guide/core-concepts)——声明组件的 root 模式。
+- [Light DOM、DSD、SSR 与 islands](/zh/guide/islands-and-ssr)——四个概念并排对照、当前编译默认，以及从请求到交互的流程。
 - [当前架构](/zh/architecture)——每个包在图中的位置。

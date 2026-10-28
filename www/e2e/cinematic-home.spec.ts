@@ -188,6 +188,116 @@ test.describe('Cinematic homepage', () => {
     await expect(page.getByText(installCommand)).toBeVisible();
   });
 
+  /**
+   * WEB-001: the home page carries ONE numbering system. The scenes used to
+   * show a `§N` chapter label in the copy while the Element scene also painted
+   * a decorative outlined `01` numeral behind the copy, so the same section
+   * carried two numbers. The unified labels are `01 — …` … `05 — …` in both
+   * locales (the zh section names stay translated), and the decorative span is
+   * gone: a re-added `§` label or a returned outlined numeral fails here.
+   */
+  test('the five scenes carry one unified number+label each (WEB-001)', async ({ page }) => {
+    const expected: Record<string, string[]> = {
+      '/': [
+        '01 — Element',
+        '02 — Declarative Shadow DOM',
+        '03 — Islands',
+        '04 — Output',
+        '05 — Begin',
+      ],
+      '/zh': ['01 — Element', '02 — 声明式 Shadow DOM', '03 — Islands', '04 — 输出', '05 — 开始'],
+    };
+    for (const [path, labels] of Object.entries(expected)) {
+      await page.goto(path);
+      const scenes = page.locator('.page-home section.scene');
+      await expect(scenes, `${path}: five scenes`).toHaveCount(5);
+      // Each scene owns exactly one label paragraph; read them in DOM order.
+      const rendered = await scenes.evaluateAll((sections) =>
+        sections.map((section) =>
+          (section.querySelector('p')?.textContent ?? '').trim().replace(/\s+/g, ' '),
+        ),
+      );
+      expect(rendered, `${path}: the five scene labels`).toEqual(labels);
+      for (const label of rendered) {
+        expect(label, `${path}: "${label}" is not a 01-05 label`).toMatch(/^0[1-5] — /);
+      }
+      // No second numbering system may back the label (the removed `01` span).
+      await expect(
+        page.locator('.page-home .scene-outlined'),
+        `${path}: outlined numeral`,
+      ).toHaveCount(0);
+      // No legacy `§N` chapter marker survives anywhere in the page's text.
+      const text = await page.locator('body').evaluate((body) => body.textContent ?? '');
+      expect(text, `${path} still renders a § chapter marker`).not.toMatch(/§[1-5]/);
+    }
+  });
+
+  /**
+   * WEB-101: the hero must answer "what is this / why try it" in seconds,
+   * keep the alpha status honest, and both CTAs must lead somewhere real — the
+   * primary to the getting-started guide (locale-aware), the secondary to the
+   * mechanism narrative's real `#element` anchor (never a fake playground).
+   */
+  test('the hero says what it is and its CTAs point at real targets (WEB-101)', async ({
+    page,
+  }) => {
+    const cases: Array<{
+      path: string;
+      lede: string;
+      support: string;
+      alpha: RegExp;
+      guide: string;
+    }> = [
+      {
+        path: '/',
+        lede: 'Build static-first web apps with native Web Components.',
+        support: 'Render HTML on the server, and activate only the interactive regions you need.',
+        alpha: /1\.0 alpha prerelease — breaking changes possible between alphas/,
+        guide: '/guide/getting-started',
+      },
+      {
+        path: '/zh',
+        lede: '用原生 Web Components 构建静态优先的 Web 应用。',
+        support: 'HTML 在服务端渲染，只激活真正需要交互的区域。',
+        alpha: /1\.0 alpha 预发布——alpha 之间可能存在破坏性变更/,
+        guide: '/zh/guide/getting-started',
+      },
+    ];
+    for (const item of cases) {
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.goto(item.path);
+      const hero = page.locator('.page-home .hero-foot');
+      await expect(hero.locator('.lede').first()).toHaveText(item.lede);
+      await expect(hero.locator('.lede-support')).toHaveText(item.support);
+      await expect(page.locator('.page-home .release-status')).toHaveText(item.alpha);
+      const primary = hero.locator('.action').first();
+      const secondary = hero.locator('.action.link');
+      await expect(primary).toBeVisible();
+      await expect(primary).toHaveAttribute('href', item.guide);
+      await expect(secondary).toBeVisible();
+      await expect(secondary).toHaveAttribute('href', '#element');
+      // The secondary target is a real in-document section, and clicking it
+      // lands there.
+      await expect(page.locator('.page-home #element')).toHaveCount(1);
+      await secondary.click();
+      await expect(page).toHaveURL(/#element$/);
+      // The primary target is a real built page.
+      const guide = await page.request.get(item.guide);
+      expect(guide.status(), `${item.guide} must exist`).toBe(200);
+      // Mobile: same hero copy/CTAs, no document-level horizontal overflow.
+      await page.setViewportSize({ width: 375, height: 812 });
+      await page.goto(item.path);
+      await expect(hero.locator('.lede-support')).toBeVisible();
+      await expect(page.locator('.page-home .release-status')).toBeVisible();
+      await expect(primary).toBeVisible();
+      await expect(secondary).toBeVisible();
+      const overflow = await page.evaluate(
+        () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      );
+      expect(overflow, `${item.path}: horizontal overflow at 375px`).toBe(0);
+    }
+  });
+
   test('the spec strip states its facts and the version block stays one line', async ({ page }) => {
     await page.setViewportSize({ width: 1024, height: 900 });
     await page.goto('/');
@@ -210,6 +320,47 @@ test.describe('Cinematic homepage', () => {
     await expect(home.locator('.spec-strip')).toContainText('DSD server output');
     // The index/sentence pair no longer renders a "four packages" graph cell.
     await expect(home.locator('.spec-strip')).not.toContainText('four packages');
+    // WEB-104: every claim is a link to the file or page that owns it, so a
+    // reader verifies it instead of trusting the sentence. External proof
+    // opens in a new tab with the neutralizer; the site's own page stays
+    // same-tab and locale-correct.
+    const evidence = home.locator('.spec-strip a.spec-fact');
+    await expect(evidence).toHaveCount(3);
+    const engines = evidence.nth(0);
+    const deps = evidence.nth(1);
+    const dsd = evidence.nth(2);
+    await expect(engines).toHaveAttribute(
+      'href',
+      'https://github.com/open-element/openelement/blob/main/.github/workflows/autoflow-ci.yml',
+    );
+    await expect(deps).toHaveAttribute(
+      'href',
+      'https://github.com/open-element/openelement/blob/main/packages/element/package.json',
+    );
+    for (const external of [engines, deps]) {
+      await expect(external).toHaveAttribute('target', '_blank');
+      await expect(external).toHaveAttribute('rel', 'noopener noreferrer');
+      // Keyboard focus must land on the link itself (visible focus ring is the
+      // class contract; being the active element proves reachability).
+      await external.focus();
+      await expect(external).toBeFocused();
+    }
+    await expect(dsd).toHaveAttribute('href', '/architecture/dsd');
+    await expect(dsd).not.toHaveAttribute('target', '');
+    await dsd.focus();
+    await expect(dsd).toBeFocused();
+    // The internal evidence target is a real built page in both locales.
+    for (const href of ['/architecture/dsd', '/zh/architecture/dsd']) {
+      const response = await page.request.get(href);
+      expect(response.status(), `${href} must exist`).toBe(200);
+    }
+    // The zh homepage localizes the evidence link instead of leaving the reader
+    // on the English page.
+    await page.goto('/zh');
+    await expect(page.locator('.page-home .spec-strip a.spec-fact').nth(2)).toHaveAttribute(
+      'href',
+      '/zh/architecture/dsd',
+    );
   });
 
   test('the stats strip keeps its copy on the page ground while the hero exits', async ({

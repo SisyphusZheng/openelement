@@ -21,18 +21,40 @@ import {
 import {
   alphaLineNote,
   COMMON_PUBLISHED_NOTE,
+  CURRENT_ALPHA_VERSION,
   packageCountModifier,
   REGISTRY_NOTE,
 } from '../../data/version.ts';
 import { installCommand } from '../../data/_generated-install-command.ts';
 import { homeHeroCodeHtml } from '../../data/_generated-page-code.ts';
 
+/**
+ * Evidence links behind the three spec-strip claims (WEB-104). A claim is a
+ * link to the file or page that owns it, so a reader can verify it instead of
+ * trusting the sentence:
+ *  - engines: the `e2e-full` job in the PR workflow (main push / full
+ *    qualification) installs chromium+firefox+webkit and runs both the
+ *    3-engine site E2E and the element `browser:gate:full` matrix;
+ *  - deps: element's published package manifest — its only runtime dependency
+ *    is the first-party workspace package `@openelement/protocol`;
+ *  - dsd: the site's own Declarative Shadow DOM architecture page (localized
+ *    per page locale at props time, so zh readers stay in zh).
+ */
+const SPEC_EVIDENCE = {
+  engines:
+    'https://github.com/open-element/openelement/blob/main/.github/workflows/autoflow-ci.yml',
+  deps: 'https://github.com/open-element/openelement/blob/main/packages/element/package.json',
+  dsd: '/architecture/dsd',
+} as const;
+
 const content = {
   en: {
     headTitle: 'openElement — The Web, composed.',
     headDescription:
       'OpenElement is a Web Components-native, static-first application framework built on Custom Elements, Declarative Shadow DOM and selective islands.',
-    lede: 'A Web Components-native application framework — beautiful, static-first applications composed from real browser primitives.',
+    lede: 'Build static-first web apps with native Web Components.',
+    ledeSupport: 'Render HTML on the server, and activate only the interactive regions you need.',
+    releaseNote: 'alpha prerelease — breaking changes possible between alphas',
     heroMono: 'THE WEB,',
     heroSerif: 'composed.',
     sceneElementLead: 'One durable',
@@ -64,7 +86,9 @@ const content = {
     headTitle: 'openElement — 组合而生的 Web。',
     headDescription:
       'openElement 是一个 Web Components 原生、静态优先的应用框架，构建于 Custom Elements、Declarative Shadow DOM 与按需 islands 之上。',
-    lede: 'Web Components 原生应用框架——用真实的浏览器原语，组合出美观的 static-first 应用。',
+    lede: '用原生 Web Components 构建静态优先的 Web 应用。',
+    ledeSupport: 'HTML 在服务端渲染，只激活真正需要交互的区域。',
+    releaseNote: 'alpha 预发布——alpha 之间可能存在破坏性变更',
     heroMono: '组合而生的',
     heroSerif: 'Web。',
     sceneElementLead: '一份持久的',
@@ -285,11 +309,13 @@ const marquee = 'CUSTOM ELEMENTS ✳ DECLARATIVE SHADOW DOM ✳ ES MODULES ✳ S
  * The region hooks the kept rules in site-chrome.css and the site's e2e/axe
  * specs address (hero-main, hero-foot, action, hero-stage, spec-strip,
  * spec-cell, spec-fact, version-line, marquee, scene, scene-copy, scene-art,
- * scene-split, scene-outlined, flood, flood-panel, flood-arrow, strategy,
- * glyph, tag-default, output-row, links) stay in the class lists as hooks.
+ * scene-split, flood, flood-panel, flood-arrow, strategy, glyph, tag-default,
+ * output-row, links) stay in the class lists as hooks.
  */
 export function PageHome(props: {
   lede: string;
+  ledeSupport: string;
+  releaseNote: string;
   eyebrow: string;
   heroMono: string;
   heroSerif: string;
@@ -298,6 +324,9 @@ export function PageHome(props: {
   enginesValue: string;
   depsValue: string;
   outputValue: string;
+  enginesHref: string;
+  depsHref: string;
+  outputHref: string;
   badgeRuntime: string;
   badgeAuthoring: string;
   sceneElementIndex: string;
@@ -376,6 +405,9 @@ export function PageHome(props: {
             <p class='lede m-0 max-w-[36rem] text-[clamp(1rem,1.2vw,1.1rem)] leading-[1.75] text-[rgba(244,241,234,.92)] text-shadow-[0_1px_18px_rgba(0,0,0,.6)] [&:lang(zh)]:leading-[1.9]'>
               {props.lede}
             </p>
+            <p class='lede lede-support mt-2 mb-0 max-w-[38rem] text-[clamp(.85rem,.95vw,.95rem)] leading-[1.65] text-[rgba(244,241,234,.78)] text-shadow-[0_1px_18px_rgba(0,0,0,.6)] [&:lang(zh)]:leading-[1.9]'>
+              {props.ledeSupport}
+            </p>
             <div class='actions mt-3 mb-0 flex flex-wrap justify-center gap-3'>
               <a
                 class='action inline-flex items-center rounded-md border border-primary bg-primary px-5 py-2 font-bold text-primary-foreground no-underline transition-[border-color,background] duration-[150ms] ease-[ease] hover:border-[color-mix(in_srgb,var(--color-primary)_80%,var(--color-foreground))] hover:bg-[color-mix(in_srgb,var(--color-primary)_80%,var(--color-foreground))]'
@@ -390,6 +422,9 @@ export function PageHome(props: {
                 {props.watchUnfold}
               </a>
             </div>
+            <p class='lede release-status mt-3 mb-0 max-w-[38rem] font-mono text-(length:--font-size-micro) tracking-[.14em] text-[rgba(244,241,234,.58)] uppercase [&:lang(zh)]:normal-case [&:lang(zh)]:tracking-[.08em]'>
+              {props.releaseNote}
+            </p>
             <span
               class='scroll-cue mt-2 grid justify-items-center gap-2 font-mono text-(length:--font-size-micro) tracking-[.34em] text-[rgba(244,241,234,.62)] uppercase indent-[.34em] [@media(max-height:760px)]:hidden [@media(max-width:520px)]:hidden'
               aria-hidden='true'
@@ -413,19 +448,32 @@ export function PageHome(props: {
             </small>
           </div>
           <div class='spec-cell flex min-w-0 flex-col justify-center gap-2 border-border border-s-0 px-[clamp(1rem,2.5vw,2rem)] py-4 [&:nth-child(n+2)]:border-t @min-[641px]/band:border-s @min-[641px]/band:[&:nth-child(odd)]:border-s-0 @min-[641px]/band:[&:nth-child(n+2)]:border-t-0 @min-[1081px]/band:[&:nth-child(odd):not(:first-child)]:border-s'>
-            <p class='spec-fact m-0 text-(length:--text-sm) font-semibold leading-[1.4] text-foreground [&:lang(zh)]:leading-[1.9]'>
+            <a
+              class='spec-fact m-0 text-(length:--text-sm) font-semibold leading-[1.4] text-foreground no-underline underline-offset-[calc(var(--spacing)*1)] hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[3px] [&:lang(zh)]:leading-[1.9]'
+              href={props.enginesHref}
+              target='_blank'
+              rel='noopener noreferrer'
+            >
               {props.enginesValue}
-            </p>
+            </a>
           </div>
           <div class='spec-cell flex min-w-0 flex-col justify-center gap-2 border-border border-s-0 px-[clamp(1rem,2.5vw,2rem)] py-4 [&:nth-child(n+2)]:border-t @min-[641px]/band:border-s @min-[641px]/band:[&:nth-child(odd)]:border-s-0 @min-[641px]/band:[&:nth-child(n+2)]:border-t-0 @min-[1081px]/band:[&:nth-child(odd):not(:first-child)]:border-s'>
-            <p class='spec-fact m-0 text-(length:--text-sm) font-semibold leading-[1.4] text-primary [&:lang(zh)]:leading-[1.9]'>
+            <a
+              class='spec-fact m-0 text-(length:--text-sm) font-semibold leading-[1.4] text-primary no-underline underline-offset-[calc(var(--spacing)*1)] hover:underline hover:decoration-current focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[3px] [&:lang(zh)]:leading-[1.9]'
+              href={props.depsHref}
+              target='_blank'
+              rel='noopener noreferrer'
+            >
               {props.depsValue}
-            </p>
+            </a>
           </div>
           <div class='spec-cell flex min-w-0 flex-col justify-center gap-2 border-border border-s-0 px-[clamp(1rem,2.5vw,2rem)] py-4 [&:nth-child(n+2)]:border-t @min-[641px]/band:border-s @min-[641px]/band:[&:nth-child(odd)]:border-s-0 @min-[641px]/band:[&:nth-child(n+2)]:border-t-0 @min-[1081px]/band:[&:nth-child(odd):not(:first-child)]:border-s'>
-            <p class='spec-fact m-0 text-(length:--text-sm) font-semibold leading-[1.4] text-foreground [&:lang(zh)]:leading-[1.9]'>
+            <a
+              class='spec-fact m-0 text-(length:--text-sm) font-semibold leading-[1.4] text-foreground no-underline underline-offset-[calc(var(--spacing)*1)] hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-ring focus-visible:outline-offset-[3px] [&:lang(zh)]:leading-[1.9]'
+              href={props.outputHref}
+            >
               {props.outputValue}
-            </p>
+            </a>
           </div>
         </div>
         {/* `marqueeText` carries the slogan twice by construction (the
@@ -454,12 +502,6 @@ export function PageHome(props: {
         class='scene scene-split relative grid grid-cols-1 items-center gap-[clamp(2rem,6vw,6rem)] px-[clamp(1.5rem,5vw,4.5rem)] py-[clamp(4rem,10vh,8rem)] @container/band min-[901px]:grid-cols-[minmax(0,.9fr)_minmax(0,1.1fr)]'
         id='element'
       >
-        <span
-          class='scene-outlined pointer-events-none absolute left-[clamp(-.5rem,-.4vw,0rem)] top-[clamp(1rem,4vh,3rem)] z-[-1] font-mono text-[clamp(9rem,18vw,16rem)] font-extrabold leading-none text-transparent select-none'
-          aria-hidden='true'
-        >
-          {'01'}
-        </span>
         <div class='scene-copy max-w-[34rem] leading-[1.75] text-muted-foreground [&_p+p]:mt-3'>
           <p class='text-(length:--text-xs) font-extrabold tracking-[.24em] text-primary uppercase [&:lang(zh)]:normal-case [&:lang(zh)]:tracking-[.08em] [&:lang(zh)]:leading-[1.9]'>
             {props.sceneElementIndex}
@@ -519,7 +561,7 @@ export function PageHome(props: {
             <small class='mb-3 block text-(length:--font-size-micro) font-bold tracking-[.14em] uppercase'>
               {props.floodServer}
             </small>
-            <code class='block text-(length:--text-xs) leading-[1.8] whitespace-pre'>
+            <code class='block overflow-x-auto text-(length:--text-xs) leading-[1.8] whitespace-pre'>
               {`<open-counter count="0">
   <template shadowrootmode="open">
     <button>0</button>
@@ -539,7 +581,7 @@ export function PageHome(props: {
             <span class='mb-2 inline-block rounded-md border-[1.5px] border-dashed border-primary px-3 py-1 text-(length:--text-xs) text-primary'>
               #shadow-root (open)
             </span>
-            <code class='block text-(length:--text-xs) leading-[1.8] whitespace-pre'>
+            <code class='block overflow-x-auto text-(length:--text-xs) leading-[1.8] whitespace-pre'>
               {`└─ <button> → markup available/readable
    upgrade → signals/handlers bound`}
             </code>
@@ -711,6 +753,8 @@ export default definePage(PageHome, {
   props({ locale }) {
     const resolved = contentLocale(locale ?? 'en');
     const { headTitle: _headTitle, headDescription: _headDescription, ...copy } = content[resolved];
+    const chrome = homeStrings(resolved);
+    const alphaLine = CURRENT_ALPHA_VERSION.split('-')[0]!.split('.').slice(0, 2).join('.');
     // The version block is the per-package version table (T7): one entry
     // per package from the release-state registry projection, on one nowrap
     // row. It never claims a shared "one version" line — packages may ride
@@ -721,7 +765,18 @@ export default definePage(PageHome, {
     const versionLine = REGISTRY_NOTE;
     return {
       ...copy,
-      ...homeStrings(resolved),
+      ...chrome,
+      // Spec-strip evidence links (WEB-104): external proof opens in a new tab
+      // (the page keeps its scroll position), the site's own DSD page stays in
+      // the reader's locale and the same tab.
+      enginesHref: SPEC_EVIDENCE.engines,
+      depsHref: SPEC_EVIDENCE.deps,
+      outputHref: localizePath(SPEC_EVIDENCE.dsd, resolved),
+      // The hero's alpha-status note names the line from release truth; only
+      // the prose half lives in the content map. The major.minor is derived
+      // here (a function body) — the compiled route-module grammar keeps
+      // module scope data-only.
+      releaseNote: `${alphaLine} ${copy.releaseNote}`,
       // The begin-scene command is the create CLI's canonical string (#1414):
       // the page renders the generated module, never a copy of the flags.
       beginCommand: installCommand,

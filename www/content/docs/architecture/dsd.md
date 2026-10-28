@@ -32,7 +32,7 @@ The browser parses shadow roots from HTML. Custom Elements then upgrade existing
 
 ## openElement layers
 
-- Static DSD components for content, layout, and documentation.
+- Static components for content, layout and documentation — plain HTML either way: the compiled default root is light DOM, and a component that declares a shadow root travels as DSD.
 - Interactive elements for local browser behavior.
 - Islands for client components that need framework runtimes.
 
@@ -56,4 +56,5 @@ Standard Custom Elements and Declarative Shadow DOM define the durable component
 
 - [Island Hydration](/architecture/islands) — when a component crosses into client delivery: the layers and hydration strategies.
 - [Core Concepts](/guide/core-concepts) — declaring a component's root mode.
+- [Light DOM, DSD, SSR and islands](/guide/islands-and-ssr) — the four terms side by side, the current compiled default, and the request-to-interaction flow.
 - [Current Architecture](/architecture) — where each package sits in the graph.

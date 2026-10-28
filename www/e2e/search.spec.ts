@@ -32,7 +32,10 @@ test.describe('Search', () => {
     await page.waitForFunction(() => customElements.get('open-search'));
 
     await page.getByRole('button', { name: 'Search' }).click();
-    const results = page.getByRole('listbox', { name: 'Search results' });
+    // The results element is the dialog's stable surface; role=listbox is
+    // populated only once option anchors exist (the idle/no-results states
+    // expose a status message, not a listbox — P2 audit D2).
+    const results = page.locator('#open-search-results');
     await expect(results).toBeVisible();
     // The hint is written on open, synchronously, and it is NOT a side effect of
     // loading pagefind — that is the point of the change: opening the dialog to
@@ -248,7 +251,7 @@ test.describe('Search', () => {
     // The results listbox lives inside the closed overlay — it enters the
     // accessibility tree once the user opens the search.
     await page.getByRole('button', { name: 'Search' }).click();
-    const results = page.getByRole('listbox', { name: 'Search results' });
+    const results = page.locator('#open-search-results');
     await expect(results).toBeVisible();
     const text = await results.evaluate((el) => el.textContent ?? '');
     expect(text).not.toContain('[object Object]');
@@ -360,7 +363,8 @@ test.describe('Search session races', () => {
     return {
       dialog: page.getByRole('dialog', { name: 'Search' }),
       input: page.getByRole('combobox', { name: 'Search documentation' }),
-      results: page.getByRole('listbox', { name: 'Search results' }),
+      // The stable results surface: role=listbox appears only with options.
+      results: page.locator('#open-search-results'),
       // The loading placeholder marks itself with data-skeleton: the class
       // that used to carry it went away with the utility-first migration.
       skeleton: page.locator('#open-search-results [data-skeleton]'),
