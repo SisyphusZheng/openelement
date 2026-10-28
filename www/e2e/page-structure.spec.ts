@@ -75,11 +75,24 @@ test.describe('Unified page structure', () => {
     await page.goto('/docs');
     const hub = page.locator('.page-docs');
     await expect(hub.locator('h1')).toContainText('MANUAL.');
-    const entrances = hub.getByRole('link');
+    // The five entrances are the page's entrance navigation, not every link on
+    // the page: the WEB-201 Examples section below it adds its own repository
+    // and doc links (4 cards × source+doc), so an unscoped link count would
+    // encode a page shape that no longer exists.
+    const entrances = hub
+      .getByRole('navigation', { name: 'Documentation entrances' })
+      .getByRole('link');
     await expect(entrances).toHaveCount(5);
     await expect(entrances.first()).toHaveAttribute('href', '/guide/getting-started');
     // The tutorial is the guided second step, not just a sidebar entry.
     await expect(entrances.nth(1)).toHaveAttribute('href', '/guide/tutorial');
+    // WEB-201: the honest Examples entry sits below the entrances — four
+    // scenario cards, each bound to a real repository source and an in-site doc.
+    const examples = hub.getByRole('region', { name: 'Example scenarios' });
+    await expect(examples).toHaveCount(1);
+    await expect(examples.locator('h2')).toHaveText('Examples');
+    await expect(examples.locator('ol > li')).toHaveCount(4);
+    await expect(examples.locator('a[target="_blank"]')).toHaveCount(4);
   });
 
   test('blog index is a v4 dispatch journal with a featured band', async ({ page, request }) => {
