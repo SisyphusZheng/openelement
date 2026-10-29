@@ -23,10 +23,8 @@ The source tree is `1.0.0-alpha.15`, a new public baseline for Element and Route
 
 These references are reproducible and verifiable by third parties.
 
-- [OpenSSF Best Practices badge](https://www.bestpractices.dev/projects/16052) (passing)
-- [Software Heritage](https://archive.softwareheritage.org/browse/origin/directory/?origin_url=https://github.com/open-element/openelement) archive (SWHID `swh:1:snp:8b5e101c0a44ad8a2db79a7c9f6cd31d04288875`)
-- [js-framework-benchmark](https://krausest.github.io/js-framework-benchmark/) entry merged upstream: [krausest/js-framework-benchmark#2104](https://github.com/krausest/js-framework-benchmark/pull/2104) (results entry `openelement-v1.0.0-alpha.4-keyed`)
-- [A/B evaluation](./docs/release/alpha15-ab-evaluation.md) and [JFB runtime evaluation](./docs/release/alpha15-jfb-runtime-evaluation.md)
+- [Software Heritage](https://archive.softwareheritage.org/browse/origin/directory/?origin_url=https://github.com/open-element/openelement)
+- [js-framework-benchmark](https://krausest.github.io/js-framework-benchmark/) — available from v1.0.0-alpha.4 onward
 - [deps.dev package view](https://deps.dev/npm/%40openelement%2Frouter) and npm provenance attestations on [npm](https://www.npmjs.com/package/@openelement/router)
 - Bundle size via [Bundlephobia](https://bundlephobia.com/package/@openelement/element)
 

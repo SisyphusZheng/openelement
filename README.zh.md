@@ -23,10 +23,8 @@ Element 将 JSX 编写的 Custom Element 编译为 Part Program，并统一用�
 
 以下均为可复现、可第三方核验的参考。
 
-- [OpenSSF Best Practices 徽章](https://www.bestpractices.dev/projects/16052)（passing）
-- [Software Heritage](https://archive.softwareheritage.org/browse/origin/directory/?origin_url=https://github.com/open-element/openelement) 归档（SWHID `swh:1:snp:8b5e101c0a44ad8a2db79a7c9f6cd31d04288875`）
-- [js-framework-benchmark](https://krausest.github.io/js-framework-benchmark/) 条目已合并上游：[krausest/js-framework-benchmark#2104](https://github.com/krausest/js-framework-benchmark/pull/2104)（结果条目 `openelement-v1.0.0-alpha.4-keyed`）
-- [A/B 评测](./docs/release/alpha15-ab-evaluation.md) 与 [JFB 运行时评测](./docs/release/alpha15-jfb-runtime-evaluation.md)
+- [Software Heritage](https://archive.softwareheritage.org/browse/origin/directory/?origin_url=https://github.com/open-element/openelement)
+- [js-framework-benchmark](https://krausest.github.io/js-framework-benchmark/) — 自 1.0.0-alpha.4 起可查询
 - [deps.dev 包视图](https://deps.dev/npm/%40openelement%2Frouter) 与 [npm](https://www.npmjs.com/package/@openelement/router) 上的 npm provenance 证明
 - Bundle 体积见 [Bundlephobia](https://bundlephobia.com/package/@openelement/element)
 
