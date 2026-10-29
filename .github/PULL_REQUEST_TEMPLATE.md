@@ -34,6 +34,7 @@ required, and list it above under "Active ADRs changed".
 - [ ] `vp run test`
 - [ ] `vp run build`
 - [ ] Packed/browser/runtime gates applicable to this change
+- [ ] Commits carry `Signed-off-by` trailers (DCO, `git commit -s`)
 
 ## Release impact
 
