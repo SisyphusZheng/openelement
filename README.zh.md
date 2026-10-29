@@ -1,4 +1,16 @@
+<p align="center">
+  <img src="./www/public/assets/open-avatar.svg" alt="OpenElement logo" width="132" height="132" />
+</p>
+
 # OpenElement
+
+<p align="center">
+  <a href="https://www.bestpractices.dev/projects/16052"><img src="https://www.bestpractices.dev/projects/16052/badge" alt="OpenSSF Best Practices: passing" /></a>
+  <img src="https://img.shields.io/npm/v/%40openelement%2Frouter" alt="npm version" />
+  <img src="https://img.shields.io/npm/dm/%40openelement%2Felement" alt="npm monthly downloads" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT" />
+  <img src="https://img.shields.io/badge/node-%3E%3D24.2-informational" alt="node: >=24.2" />
+</p>
 
 [English](./README.md) | 简体中文
 
@@ -6,6 +18,17 @@ OpenElement 是一个 Web Platform 优先、只围绕两个核心产品构建的
 Element 将 JSX 编写的 Custom Element 编译为 Part Program，并统一用于服务端序列化、创建新 DOM 与复用现有 DOM。Router 负责路由选择、HTTP 语义、导航、loader/action，以及 Native 与 Lit 文件路由共享的应用协议。
 
 源码目前是 Element 与 Router 的全新公开基线 `1.0.0-alpha.15`。它不是从历史 0.x API 到 1.x 的兼容迁移。从这个版本起，六个包（`protocol`、`element`、`compiler`、`router`、`create`、`ui`）作为同一条版本线发布，npm `latest` 指向该线——`npm install @openelement/router` 解析到当前 1.0 预发布。自 #1557 起，Element 单体拆为三个包：`@openelement/protocol`（跨系统契约，零依赖）、`@openelement/element`（纯运行时）与 `@openelement/compiler`（构建期 TSX-to-Part-Program 编译器 + Vite 插件）。
+
+## 证据与收录
+
+以下均为可复现、可第三方核验的参考。
+
+- [OpenSSF Best Practices 徽章](https://www.bestpractices.dev/projects/16052)（passing）
+- [Software Heritage](https://archive.softwareheritage.org/browse/origin/directory/?origin_url=https://github.com/open-element/openelement) 归档（SWHID `swh:1:snp:8b5e101c0a44ad8a2db79a7c9f6cd31d04288875`）
+- [js-framework-benchmark](https://krausest.github.io/js-framework-benchmark/) 条目已合并上游：[krausest/js-framework-benchmark#2104](https://github.com/krausest/js-framework-benchmark/pull/2104)（结果条目 `openelement-v1.0.0-alpha.4-keyed`）
+- [A/B 评测](./docs/release/alpha15-ab-evaluation.md) 与 [JFB 运行时评测](./docs/release/alpha15-jfb-runtime-evaluation.md)
+- [deps.dev 包视图](https://deps.dev/npm/%40openelement%2Frouter) 与 [npm](https://www.npmjs.com/package/@openelement/router) 上的 npm provenance 证明
+- Bundle 体积见 [Bundlephobia](https://bundlephobia.com/package/@openelement/element)
 
 ## 快速开始
 

@@ -1,4 +1,16 @@
+<p align="center">
+  <img src="./www/public/assets/open-avatar.svg" alt="OpenElement logo" width="132" height="132" />
+</p>
+
 # OpenElement
+
+<p align="center">
+  <a href="https://www.bestpractices.dev/projects/16052"><img src="https://www.bestpractices.dev/projects/16052/badge" alt="OpenSSF Best Practices: passing" /></a>
+  <img src="https://img.shields.io/npm/v/%40openelement%2Frouter" alt="npm version" />
+  <img src="https://img.shields.io/npm/dm/%40openelement%2Felement" alt="npm monthly downloads" />
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="license: MIT" />
+  <img src="https://img.shields.io/badge/node-%3E%3D24.2-informational" alt="node: >=24.2" />
+</p>
 
 English | [简体中文](./README.zh.md)
 
@@ -6,6 +18,17 @@ OpenElement is a Web Platform-first core for two products: **Element** and **Rou
 Element compiles JSX-authored Custom Elements into a Part Program used by server serialization, fresh DOM, and existing-DOM hydration. Router owns route selection, HTTP semantics, navigation, loaders, actions, and the shared Native/Lit Framework Mode application contract.
 
 The source tree is `1.0.0-alpha.15`, a new public baseline for Element and Router. It is not a compatibility migration from historic 0.x snapshots. From this release the six packages (`protocol`, `element`, `compiler`, `router`, `create`, `ui`) publish as one line, and npm `latest` points at that line — `npm install @openelement/router` resolves to the current 1.0 prerelease. Since #1557 the Element monolith is three packages: `@openelement/protocol` (cross-system contracts, zero dependencies), `@openelement/element` (pure runtime), and `@openelement/compiler` (build-time TSX-to-Part-Program compiler + Vite plugin).
+
+## Evidence & recognition
+
+These references are reproducible and verifiable by third parties.
+
+- [OpenSSF Best Practices badge](https://www.bestpractices.dev/projects/16052) (passing)
+- [Software Heritage](https://archive.softwareheritage.org/browse/origin/directory/?origin_url=https://github.com/open-element/openelement) archive (SWHID `swh:1:snp:8b5e101c0a44ad8a2db79a7c9f6cd31d04288875`)
+- [js-framework-benchmark](https://krausest.github.io/js-framework-benchmark/) entry merged upstream: [krausest/js-framework-benchmark#2104](https://github.com/krausest/js-framework-benchmark/pull/2104) (results entry `openelement-v1.0.0-alpha.4-keyed`)
+- [A/B evaluation](./docs/release/alpha15-ab-evaluation.md) and [JFB runtime evaluation](./docs/release/alpha15-jfb-runtime-evaluation.md)
+- [deps.dev package view](https://deps.dev/npm/%40openelement%2Frouter) and npm provenance attestations on [npm](https://www.npmjs.com/package/@openelement/router)
+- Bundle size via [Bundlephobia](https://bundlephobia.com/package/@openelement/element)
 
 ## Quick Start
 
