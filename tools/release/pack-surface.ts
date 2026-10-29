@@ -7,7 +7,7 @@
  * things a consumer would otherwise see:
  *
  *   1. facade metadata (`homepage`, `keywords`, `engines`, `sideEffects`,
- *      `bin`) missing or diverging from packedMetadata();
+ *      `bin`, `customElements`) missing or diverging from packedMetadata();
  *   2. repository-internal references in shipped text — a repo directory path
  *      (`packages/`, `tools/`, `www/`, `apps/`, `tests/`, `benchmarks/`,
  *      `docs/`) or a decision-record citation. The tarball is the only
@@ -196,6 +196,15 @@ export function findMetadataViolations(
     JSON.stringify(packageJson.bin) !== JSON.stringify(metadata.bin)
   ) {
     fail('bin', metadata.bin);
+  }
+  // The CEM publish pointer: a package that ships a Custom Elements Manifest
+  // must name it in the packed manifest, or the artifact advertises no
+  // component metadata to npm consumers and tooling.
+  if (
+    metadata.customElements !== undefined &&
+    packageJson.customElements !== metadata.customElements
+  ) {
+    fail('customElements', metadata.customElements);
   }
   return violations;
 }
