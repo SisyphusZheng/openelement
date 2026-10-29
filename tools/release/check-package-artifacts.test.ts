@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import {
   type ArtifactViolation,
   cssExportSubpaths,
+  findCustomElementsManifestViolations,
   findPublishSurfaceViolations,
   findTemplateScriptViolations,
   scanExtractedPackage,
@@ -41,6 +42,30 @@ async function withPackage(
     await rm(root, { recursive: true });
   }
 }
+
+test('package artifacts: ui ships the tracked CEM byte-for-byte', async () => {
+  const expected = '{"schemaVersion":"2.1.0","modules":[]}\n';
+  await withPackage('@openelement/ui', { 'custom-elements.json': expected }, async (root) => {
+    const tracked = join(root, 'tracked-custom-elements.json');
+    await writeFile(tracked, expected);
+    expect(findCustomElementsManifestViolations('@openelement/ui', root, tracked)).toEqual([]);
+    // Other packages publish no CEM, so the rule stays exempt for them.
+    expect(findCustomElementsManifestViolations('@openelement/element', root, tracked)).toEqual([]);
+
+    await writeFile(join(root, 'custom-elements.json'), `${expected} `);
+    const stale = findCustomElementsManifestViolations('@openelement/ui', root, tracked);
+    expect(stale.length).toEqual(1);
+    expect(stale[0].message).toContain('stale');
+  });
+
+  await withPackage('@openelement/ui', {}, (root) => {
+    const tracked = join(root, 'tracked-custom-elements.json');
+    writeFileSync(tracked, '{}');
+    const missing = findCustomElementsManifestViolations('@openelement/ui', root, tracked);
+    expect(missing.length).toEqual(1);
+    expect(missing[0].message).toContain('missing');
+  });
+});
 
 test('package artifacts: accepts ESM runtime package with Web APIs', async () => {
   await withPackage(

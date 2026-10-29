@@ -8,10 +8,10 @@
  * checked for CJS syntax, undeclared imports, and the JSR bridge.
  */
 
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { mkdtemp, rm, stat } from 'node:fs/promises';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { stripComments } from '../lib/text.ts';
 import { runCommand } from '../lib/process.ts';
 import { type PackageInfo, readPackages, releasePublishOrder } from '../lib/package-graph.ts';
@@ -20,6 +20,8 @@ import { extractStaticModuleSpecifiers } from '../lib/typescript-ast.ts';
 
 const PUBLINT_VERSION = '0.3.21';
 const ATTW_VERSION = '0.18.4';
+
+const repoRoot = resolve(import.meta.dirname!, '../..');
 
 const RUNTIME_FREE_PACKAGES = new Set([
   '@openelement/protocol',
@@ -312,6 +314,48 @@ function extension(path: string): string {
 
 function isModuleScanPath(path: string): boolean {
   return MODULE_SCAN_EXTENSIONS.has(extension(path)) || path.endsWith('.d.ts');
+}
+
+/**
+ * The published Custom Elements Manifest (CEM) contract for @openelement/ui:
+ * the tarball must contain `custom-elements.json` and its bytes must equal the
+ * tracked source-of-truth file (`packages/ui/custom-elements.json`), whose
+ * drift gate is `@openelement/ui#ui-cem:check`. The packed copy is what a
+ * consumer actually reads, so a tarball built from a stale file (or packaged
+ * without the file's `files` entry) fails here rather than on npm.
+ */
+export function findCustomElementsManifestViolations(
+  packageName: string,
+  packageRoot: string,
+  expectedManifestPath: string,
+): ArtifactViolation[] {
+  if (packageName !== '@openelement/ui') return [];
+  const relative = 'custom-elements.json';
+  const packedPath = join(packageRoot, relative);
+  if (!existsSync(packedPath)) {
+    return [
+      {
+        path: `${packageName}/${relative}`,
+        message:
+          `required Custom Elements Manifest is missing from the packed tarball; keep ` +
+          `'${relative}' in packages/ui/package.json files and re-run pack:dry-run`,
+      },
+    ];
+  }
+  const expected = readFileSync(expectedManifestPath);
+  const packed = readFileSync(packedPath);
+  if (!packed.equals(expected)) {
+    return [
+      {
+        path: `${packageName}/${relative}`,
+        message:
+          'packed Custom Elements Manifest is stale (bytes differ from ' +
+          `'${expectedManifestPath}'); run pnpm --filter @openelement/ui run generate:ui-cem and ` +
+          're-run pack:dry-run',
+      },
+    ];
+  }
+  return [];
 }
 
 function dependencyName(specifier: string): string | null {
@@ -681,7 +725,15 @@ async function verifyTarball(pkg: PackageInfo): Promise<PackageScanResult> {
     }
     const packedBytes = (await stat(tarball)).size;
     console.log(`[artifact-size] ${pkg.name}: packed=${packedBytes}B unpacked=${unpackedBytes}B`);
-    return scanExtractedPackage(pkg.name, packageRoot);
+    const result = scanExtractedPackage(pkg.name, packageRoot);
+    result.violations.push(
+      ...findCustomElementsManifestViolations(
+        pkg.name,
+        packageRoot,
+        join(repoRoot, 'packages', 'ui', 'custom-elements.json'),
+      ),
+    );
+    return result;
   } finally {
     await rm(dirname(packageRoot), {
       recursive: true,
