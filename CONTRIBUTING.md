@@ -148,6 +148,20 @@ Package test tasks run vitest on the node host; a single file runs through the s
 
 Use Conventional Commits with the prefixes actually in use: `fix`, `feat`, `docs`, `chore`, `refactor`, `test`, `ci`, `release`.
 
+### Developer Certificate of Origin (DCO)
+
+Contributions are accepted under the Developer Certificate of Origin 1.1
+(<https://developercertificate.org/>): every commit must carry a
+`Signed-off-by: Name <email>` trailer whose name and email match the commit
+author, certifying that you have the right to submit the change under this
+repository's MIT license (inbound = outbound).
+
+Create signed-off commits with `git commit -s`. Repair a branch that is missing
+trailers with `git rebase --signoff <base>`; keep the trailer when you rebase,
+amend or squash. Do not rewrite already-published history to add trailers.
+Automated bot commits (dependabot, renovate, and the repository service
+identities) are out of scope.
+
 ## Release work
 
 Follow the release gate sequence in the [release workflow](./.github/workflows/autoflow-release.yml). Local passes never authorize publication; releases require the exact candidate SHA, green required CI, human review, independent verification, and explicit maintainer approval.
