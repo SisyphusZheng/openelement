@@ -35,6 +35,7 @@ function manifest(
     engines: metadata.engines,
     sideEffects: metadata.sideEffects,
     ...(metadata.bin ? { bin: metadata.bin } : {}),
+    ...(metadata.customElements ? { customElements: metadata.customElements } : {}),
     exports: { '.': {} },
     ...overrides,
   };
@@ -114,6 +115,25 @@ test('pack surface: create declares a Node-floor engine and a cli side effect', 
   );
   expect(violations.length).toEqual(1);
   expect(violations[0].message).toContain('sideEffects');
+});
+
+test('pack surface: ui declares the packaged Custom Elements Manifest', () => {
+  const metadata = packedMetadata('@openelement/ui');
+  expect(metadata.customElements).toEqual('custom-elements.json');
+  expect(findMetadataViolations('@openelement/ui', manifest('@openelement/ui'), metadata)).toEqual(
+    [],
+  );
+  for (const value of [undefined, 'custom-elements.json.bak']) {
+    const violations = findMetadataViolations(
+      '@openelement/ui',
+      manifest('@openelement/ui', { customElements: value }),
+      metadata,
+    );
+    expect(violations.length, `customElements=${JSON.stringify(value)} must fail`).toEqual(1);
+    expect(violations[0].message).toContain('customElements');
+  }
+  // Every other package declares no CEM, so the field stays exempt for them.
+  expect(packedMetadata('@openelement/element').customElements).toBeUndefined();
 });
 
 test('pack surface: repository-internal paths and ADR citations fail', () => {

@@ -16,6 +16,7 @@
   },
   "files": [
     "src/**",
+    "custom-elements.json",
     "README.md",
     "CUSTOMIZATION.md",
     "LICENSE"
@@ -26,13 +27,17 @@
     "lint": "oxlint src __tests__",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "generate:ui-manifest": "node tools/generate-ui-manifest.ts",
-    "ui-manifest:check": "node tools/generate-ui-manifest.ts --check"
+    "ui-manifest:check": "node tools/generate-ui-manifest.ts --check",
+    "generate:ui-cem": "node tools/generate-cem.ts",
+    "ui-cem:check": "node tools/generate-cem.ts --check"
   },
   "dependencies": {
     "@openelement/element": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "26.5.0",
+    "ajv": "8.20.0",
+    "custom-elements-manifest": "2.1.0",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3"
   }
