@@ -1,7 +1,7 @@
 ---
 status: active
-topic: M09 exit docket (decisions recorded; effective on signature)
-summary: M09 exit docket for signature: fixed SHA, §13.6 provenance, delivered slices, blocking set, empty signature fields, plus the three owner decisions of 2026-11-14 (M09-3/4 scope, CEM contract migration, two-step P5). Records no status and claims no exit.
+topic: M09 exit docket (decisions recorded; owner-signed, not an exit record)
+summary: M09 exit docket (owner-signed, not an exit record): fixed SHA, §13.6 provenance, delivered slices, blocking set, single owner sign-off, plus the three owner decisions of 2026-11-14 (M09-3/4 scope, CEM contract migration, two-step P5). Records no status and claims no exit.
 ---
 
 # M09 exit docket
@@ -18,8 +18,8 @@ each item instead of restating it.
 The point of collecting it is narrow. When M09 exit evidence exists it is
 recorded **once**, by a consolidation PR naming the fixed SHA and carrying its
 own evidence (`alpha16-18-progress.md`:286-289, the adopted Closeout form), never
-as a by-product of a slice PR. This file is what that PR would contain minus the
-signatures.
+as a by-product of a slice PR. This file is what that PR would contain, with a single owner sign-off
+instead of the old four-signature block.
 
 ## Owner decisions of record (2026-11-14)
 
@@ -128,7 +128,8 @@ because the record that closes M09 is the action that satisfies it.
 - No change to the §4 verdict that Alpha16b has no exit evidence.
 - No status flip of the §3 M09 row; that row is a historical single-writer
   record.
-- No P5 evidence, no §13.5 inventory, no owner sign-off.
+- No P5 evidence, no §13.5 inventory and no §13.5/P5 owner sign-off; the
+docket's own owner sign-off is not a P5 sign-off.
 - No generated-product entry, packaging/registration, or public API.
 - No three-engine (M13) qualification; the browser leg here is chromium-only.
 - No version, tag, publication or release-train change. The published surface
@@ -136,27 +137,28 @@ because the record that closes M09 is the action that satisfies it.
 - No M10 progress: M10 P1–P5 are separate proofs and none of them is met or
   moved by this file.
 
-## 6. Signature block
+## 6. Owner sign-off
 
-An M09 exit record needs four separate signatures and they are **not
-interchangeable**:
+One owner sign-off records this docket. The former four-signature block (D2
+gate record, Closeout form, §13.5 inventory sign-off, maintainer approval) was
+collapsed because the repository has a single owner: four fields signed by the
+same person carried no additional information, and the facts they named are
+already recorded where they live (`alpha16-18-progress.md` §4.4/§4.7, §13.5,
+`CONTRIBUTING.md`:197).
 
-| # | Signature | Holder | State |
-| --- | --- | --- | --- |
-| ① | D2 gate-record sign-off (the G1/G2 gate record that precedes any §4 row flip) | architect (G1) | _empty_ |
-| ② | Milestone exit / Closeout form, by consolidation PR (`alpha16-18-progress.md`:286-289) | milestone owner | _empty_ |
-| ③ | §13.5 capability-inventory owner sign-off | owner | _empty_ |
-| ④ | Explicit maintainer approval (`CONTRIBUTING.md`:197) | maintainer | _empty_ |
+| Signature | Holder | State |
+| --- | --- | --- |
+| M09 exit docket owner sign-off | owner (SisyphusZheng) | 2026-11-14 — approved; recorded in PR #1793 |
 
-A signature here authorizes recording an M09 exit. It is **not** a release
-authorization (`CONTRIBUTING.md`:197), and it does not admit a publication: S4
-is the only step that ships `1.0.0-alpha.16`, and it is gated separately.
+This sign-off records the docket; it is **not** an M09 exit, a release
+authorization or a status flip. S4 is the only step that ships
+`1.0.0-alpha.16`, and it is gated separately.
 
-D-③ does not move signature ③ earlier. The §13.5 sign-off stays unavailable
-while the inventory's count of production-equivalent replacements is zero, and
-"tracked" is not "signed".
+D-③ does not move the §13.5 sign-off earlier. The §13.5 sign-off stays
+unavailable while the inventory's count of production-equivalent replacements
+is zero, and "tracked" is not "signed".
 
-The record becomes effective only when all four are filled **and** B1 is closed
-by a decision or B1–B2 are explicitly accepted as scope in a dated
-§14-style amendment. Filling the four fields while B1 is undecided would record
-an exit whose own scope is undefined.
+The record becomes effective as an exit record only when the §4 blocking set
+is cleared — B1 closed by a decision or B1–B2 explicitly accepted as scope in a
+dated §14-style amendment, and the remaining blockers closed or explicitly
+accepted. This owner sign-off does not discharge those.
