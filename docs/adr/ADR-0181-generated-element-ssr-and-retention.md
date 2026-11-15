@@ -150,13 +150,52 @@ RETIRE the generated-host registration pair WHEN P1 reports MET on the tracked
 RETIRE the private instance ledger WHEN the emitted retention plan is replaced by the
   Alpha17 precompiled distribution AND no emitted module imports the ledger ;
   VERIFY gate:source GREEN AT one SHA ; RECORD 16b-MN row ; OWNER single owner
-RETIRE OE_ISLAND_STYLE_SHADOW_UNWIRED WHEN GH #1800 lands a shadow style-link carrier AND
-  a shadow-root generated island with styles builds and renders on three engines ;
+RETIRE OE_ISLAND_STYLE_SHADOW_UNWIRED WHEN the Alpha16 minimum shadow style delivery lands
+  (see the 2026-11-15 amendment) AND a shadow-root generated island with styles builds and
+  renders on three engines ;
   VERIFY gate:release GREEN AT one SHA ; RECORD 16b-MN row ; OWNER single owner
 ```
 
 Each condition is an event on a standard artifact, never a date or a review
 cadence.
+
+## Amendment 2026-11-15 (scope correction: the minimum shadow style delivery is Alpha16 work)
+
+This record originally carried the whole shadow-root style question to GH #1800
+(Alpha17). That reading was wrong and is corrected here; the body above keeps
+the record of the earlier wording.
+
+**The correction.** P1 requires the old generic browser executor to be
+unreachable from every *applicable production browser entry graph*. The
+applicable island set is not only light-root islands: three of the eight `www`
+islands are `@openelement/ui` components, and every `@openelement/ui` component
+is `root: 'shadow-open'` with `static styles`:
+
+```
+open-button · open-code-block · open-dialog · open-dropdown · open-input · open-theme-toggle
+```
+
+Those three cannot leave the class lane without a shadow-root style delivery
+path, so leaving that path to Alpha17 would make **P1 unreachable in Alpha16**
+and therefore make the Alpha16 exit unreachable. The split is therefore:
+
+| Scope | Carrier |
+| --- | --- |
+| **Minimum** shadow style delivery for a generated shadow host — the DSD template carries the island's declared stylesheet links, reusing the class lane's existing `declaredStyleLinks` → serializer `styleLinks` mechanism | **Alpha16** (bounded slice; this record authorizes the mechanism, no second pipeline) |
+| Full shadow style **adoption productization** — `adoptedStyleSheets` adoption semantics, dedupe, FOUC/productization surface | GH #1800 (Alpha17) |
+
+Consequences for the records above:
+
+- The `OE_ISLAND_STYLE_SHADOW_UNWIRED` refusal is a **temporary** Alpha16 state,
+  not a permanent boundary. Its retirement condition becomes: *when the Alpha16
+  minimum delivery lands and a shadow-root generated island with `styles` builds
+  and renders on three engines*, verified by `gate:release` at one SHA.
+- "Application of the emitted stylesheet is carried by GH #1800" applies only to
+  the **light-root** path (document link) and to full adoption; the shadow-root
+  path is Alpha16 work.
+- No second style pipeline is authorized by this amendment: the delivered links
+  must come from the same `IslandConfig.styles` declaration and the same style
+  plan the class lane uses.
 
 ## Alternatives rejected
 

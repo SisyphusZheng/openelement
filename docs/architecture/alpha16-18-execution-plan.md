@@ -619,7 +619,23 @@ plan's own record stands:
 - `M10-0 preparation` is tracked but **unsigned**; the unsigned document is not
   §13.5 P5 evidence (§13.5:447-451 unchanged).
 
-### 16.4 What this amendment does not change
+### 16.4 Shadow-root style delivery is Alpha16 work (scope correction, 2026-11-15)
+
+The generated-island style channel admitted in ADR-0181 ships the light-root
+path (asset + client manifest) and fails closed on a shadow-root declaration.
+That refusal is **temporary**: three of the eight `www` islands are
+`@openelement/ui` components, all of which are `root: 'shadow-open'` with
+`static styles`. P1 cannot be met while those islands remain class-authored, so
+the **minimum** shadow style delivery (the DSD template carries the island's
+declared stylesheet links, reusing the class lane's existing link mechanism) is
+an **Alpha16** obligation. Full adoption productization — `adoptedStyleSheets`,
+dedupe, FOUC surface — stays in GH #1800 (Alpha17).
+
+This correction changes no milestone status and introduces no new milestone or
+slice label; it fixes which milestone carries a duty that was mis-assigned to
+Alpha17.
+
+### 16.5 What this amendment does not change
 
 - §2 items 1–8, §12a's five separate proofs, §13.1, §13.2, §13.4, §13.5, §13.6,
   §14 and §15 are unchanged.
